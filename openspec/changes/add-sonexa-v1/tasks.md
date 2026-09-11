@@ -48,13 +48,13 @@
 
 ## 5. Provider 抽象与限流
 
-- [ ] 5.1 定义 `Provider` 接口与 `ProviderID` / `Query` / `Candidate` / `Detail` / `Ref` / `CoverGroup` 类型，所有字段用可空类型，验证 `go build` 通过且无零值伪装缺失的字段
-- [ ] 5.2 定义 `Capabilities` 位集（`SecondaryTypes | Composer | Lyricist | PerformerRoles | Label | CatalogNumber | MediumFormat | Country | ISRC | CoverArt | MultiSizeCover`），验证两个 provider 的声明与 3.2 节对照表一致
-- [ ] 5.3 实现 registry（注册、`List()`、按 ID 取用），验证注册一个 stub provider 后它出现在 `List()` 中
-- [ ] 5.4 实现每 provider 一个进程级共享令牌桶（搜索/导入/详情共用），验证并发 5 个请求时平均速率不超过声明值
-- [ ] 5.5 实现 `IsConfigured()` 与出网前置条件检查，验证联系方式为空时不发出任何请求并返回可展示错误
-- [ ] 5.6 实现统一重试策略（429/5xx/超时指数退避、尊重 `Retry-After`、累计 5 次标记失败），验证退避与失败上限的单元测试
-- [ ] 5.7 实现 `provider_cache` 的先落盘后解析路径，验证同参数请求在 TTL 内命中缓存且不消耗令牌
+- [x] 5.1 定义 `Provider` 接口与 `ProviderID` / `Query` / `Candidate` / `Detail` / `Ref` / `CoverGroup` 类型，所有字段用可空类型，验证 `go build` 通过且无零值伪装缺失的字段
+- [x] 5.2 定义 `Capabilities` 位集（`SecondaryTypes | Composer | Lyricist | PerformerRoles | Label | CatalogNumber | MediumFormat | Country | ISRC | CoverArt | MultiSizeCover`），验证两个 provider 的声明与 3.2 节对照表一致
+- [x] 5.3 实现 registry（注册、`List()`、按 ID 取用），验证注册一个 stub provider 后它出现在 `List()` 中
+- [x] 5.4 实现每 provider 一个进程级共享令牌桶（搜索/导入/详情共用），验证并发 5 个请求时平均速率不超过声明值
+- [x] 5.5 实现 `IsConfigured()` 与出网前置条件检查，验证联系方式为空时不发出任何请求并返回可展示错误
+- [x] 5.6 实现统一重试策略（429/5xx/超时指数退避、尊重 `Retry-After`、累计 5 次标记失败），验证退避与失败上限的单元测试
+- [x] 5.7 实现 `provider_cache` 的先落盘后解析路径，验证同参数请求在 TTL 内命中缓存且不消耗令牌
 
 ## 6. MusicBrainz Provider
 
