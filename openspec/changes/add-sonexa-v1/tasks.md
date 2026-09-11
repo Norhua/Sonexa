@@ -58,15 +58,15 @@
 
 ## 6. MusicBrainz Provider
 
-- [ ] 6.1 实现 `User-Agent: Sonexa/<版本> ( <联系方式> )` 请求头注入，验证抓包或 stub server 断言该头存在且格式正确
-- [ ] 6.2 实现 recording 搜索并展开为 (recording × release × medium × track) 的 track 粒度候选，验证一条 recording 收录于 3 张发行时产出 3 行且各行载体/国家/年份不同
-- [ ] 6.3 实现一次拉满的详情请求（`artist-credits+labels+recordings+release-groups+media+artist-rels+recording-level-rels+work-rels+work-level-rels+genres+isrcs+annotation`），验证仅发出 1 次请求即可解析出全部所需字段
-- [ ] 6.4 解析作曲/作词（经 Work 层级的 `work-rels` + `work-level-rels`），验证挂在 Work 上的作曲作词不被判为缺失
-- [ ] 6.5 解析演唱者与器乐演奏者（`recording-level-rels` 的 `vocal` / `performer` / `instrument`，乐器名存 `attribute`），验证金样例响应的解析结果
-- [ ] 6.6 详情响应顺带写入 `release` + `release_track` 并置 `tracklist_state = complete`，验证不额外发出请求且清单含 track MBID/曲序/标题/时长/recording MBID
-- [ ] 6.7 实现角色↔声优的补充请求（仅当 artist `type == "Character"`）并缓存结果，验证非角色艺术家不触发该请求、同一角色二次出现命中缓存
-- [ ] 6.8 声明 MusicBrainz 的 `Capabilities` 与速率限制（默认 1.0 req/s，可配置），验证设置中调整后令牌桶随之变化
-- [ ] 6.9 接入上游 relevance score 到评分，验证其按 ×0.05、上限 5 分计入
+- [x] 6.1 实现 `User-Agent: Sonexa/<版本> ( <联系方式> )` 请求头注入，验证抓包或 stub server 断言该头存在且格式正确
+- [x] 6.2 实现 recording 搜索并展开为 (recording × release × medium × track) 的 track 粒度候选，验证一条 recording 收录于 3 张发行时产出 3 行且各行载体/国家/年份不同
+- [x] 6.3 实现一次拉满的详情请求（`artist-credits+labels+recordings+release-groups+media+artist-rels+recording-level-rels+work-rels+work-level-rels+genres+isrcs+annotation`），验证仅发出 1 次请求即可解析出全部所需字段
+- [x] 6.4 解析作曲/作词（经 Work 层级的 `work-rels` + `work-level-rels`），验证挂在 Work 上的作曲作词不被判为缺失
+- [x] 6.5 解析演唱者与器乐演奏者（`recording-level-rels` 的 `vocal` / `performer` / `instrument`，乐器名存 `attribute`），验证金样例响应的解析结果
+- [x] 6.6 详情响应顺带写入 `release` + `release_track` 并置 `tracklist_state = complete`，验证不额外发出请求且清单含 track MBID/曲序/标题/时长/recording MBID
+- [x] 6.7 实现角色↔声优的补充请求（仅当 artist `type == "Character"`）并缓存结果，验证非角色艺术家不触发该请求、同一角色二次出现命中缓存
+- [x] 6.8 声明 MusicBrainz 的 `Capabilities` 与速率限制（默认 1.0 req/s，可配置），验证设置中调整后令牌桶随之变化
+- [x] 6.9 接入上游 relevance score 到评分，验证其按 ×0.05、上限 5 分计入
 
 ## 7. iTunes Provider
 

@@ -49,6 +49,11 @@ type Candidate struct {
 	// 上游相关度分值（仅 MB 提供）
 	UpstreamScore *int
 
+	// ReleaseRef 是该候选所属发行的上游标识（MB 为 release MBID，
+	// iTunes 为 {country}:{collectionId}）。封面降级链与清单写入都需要它，
+	// 它与 ReleaseGroupRef 是两个不同层级，不能互相代替。
+	ReleaseRef *string
+
 	// release 优选阶梯所需
 	ReleaseStatus    *string
 	FirstReleaseDate *string

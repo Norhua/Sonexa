@@ -1,0 +1,14 @@
+{
+  "id": "art-haruhi",
+  "name": "涼宮ハルヒ",
+  "sort-name": "Suzumiya, Haruhi",
+  "type": "Character",
+  "relations": [
+    {
+      "type": "voice",
+      "direction": "backward",
+      "target-type": "artist",
+      "artist": { "id": "art-hirano", "name": "平野綾", "sort-name": "Hirano, Aya", "type": "Person" }
+    }
+  ]
+}
