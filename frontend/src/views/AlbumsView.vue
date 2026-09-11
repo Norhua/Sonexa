@@ -6,7 +6,8 @@
  * 至少拥有一首才会出现在列表里：灰色行是「补全你已开始收藏的专辑」，
  * 不是上游目录浏览器。
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { Search } from 'lucide-vue-next'
 import { App, display, type Models } from '@/api'
 import type { Row } from '@/components/TrackTable.vue'
 import TrackTable from '@/components/TrackTable.vue'
@@ -19,6 +20,16 @@ const error = ref('')
 
 /** 「仅显示已有」开关的状态被记住。 */
 const onlyOwned = ref(localStorage.getItem('sonexa.onlyOwned') === '1')
+/** 中列的就地过滤：这一列是专辑名单，不是曲目，因此不走曲目筛选。 */
+const filter = ref('')
+
+const visibleAlbums = computed(() => {
+  const q = filter.value.trim().toLowerCase()
+  if (!q) return albums.value
+  return albums.value.filter(
+    (a) => (a.title ?? '').toLowerCase().includes(q) || (a.credit ?? '').toLowerCase().includes(q),
+  )
+})
 
 const emit = defineEmits<{
   openTrack: [trackId: number]
@@ -129,9 +140,19 @@ async function addGhost(row: Row) {
 <template>
   <div class="flex min-h-0 flex-1">
     <!-- 中列：专辑列表 -->
-    <div class="w-72 shrink-0 overflow-auto border-r">
+    <div class="flex w-72 shrink-0 flex-col border-r">
+      <div class="relative shrink-0 border-b p-2">
+        <Search class="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <input
+          v-model="filter"
+          type="search"
+          placeholder="在专辑中查找"
+          class="w-full rounded-md border bg-background py-1 pl-7 pr-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+        />
+      </div>
+      <div class="min-h-0 flex-1 overflow-auto">
       <button
-        v-for="a in albums"
+        v-for="a in visibleAlbums"
         :key="`${a.level}-${a.key}`"
         :class="[
           'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent',
@@ -145,9 +166,10 @@ async function addGhost(row: Row) {
         </div>
         <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{{ countLabel(a) }}</span>
       </button>
-      <p v-if="albums.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-foreground">
-        还没有专辑
+      <p v-if="visibleAlbums.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-foreground">
+        {{ filter ? '没有匹配的专辑' : '还没有专辑' }}
       </p>
+      </div>
     </div>
 
     <!-- 主区：专辑详情 -->

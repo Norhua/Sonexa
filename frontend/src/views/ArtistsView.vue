@@ -4,12 +4,15 @@
  *
  * 艺术家视图是按 artist_id 过滤的标准曲目表格，不是结构不同的独立页面。
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { Search } from 'lucide-vue-next'
 import { App, type Models } from '@/api'
 import { useLibraryStore } from '@/stores/library'
 
 const library = useLibraryStore()
 const artists = ref<Models.store.ArtistListItem[]>([])
+/** 中列的就地过滤：这一列是艺术家名单，不是曲目，因此不走曲目筛选。 */
+const filter = ref('')
 const header = ref<Models.main.ArtistHeader | null>(null)
 const activeRole = ref('')
 const loading = ref(false)
@@ -32,6 +35,12 @@ function titleOf(a: Models.store.ArtistListItem): string {
   return a.voiceActor ? `${a.name} (CV: ${a.voiceActor})` : a.name
 }
 
+const visibleArtists = computed(() => {
+  const q = filter.value.trim().toLowerCase()
+  if (!q) return artists.value
+  return artists.value.filter((a) => titleOf(a).toLowerCase().includes(q))
+})
+
 async function select(a: Models.store.ArtistListItem) {
   activeRole.value = ''
   header.value = await App.GetArtistHeader(a.id)
@@ -51,9 +60,19 @@ defineExpose({ header, activeRole, pickFacet })
 <template>
   <div class="flex min-h-0 flex-1">
     <!-- 中列：艺术家列表 -->
-    <div class="w-64 shrink-0 overflow-auto border-r">
+    <div class="flex w-64 shrink-0 flex-col border-r">
+      <div class="relative shrink-0 border-b p-2">
+        <Search class="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <input
+          v-model="filter"
+          type="search"
+          placeholder="在艺术家中查找"
+          class="w-full rounded-md border bg-background py-1 pl-7 pr-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+        />
+      </div>
+      <div class="min-h-0 flex-1 overflow-auto">
       <button
-        v-for="a in artists"
+        v-for="a in visibleArtists"
         :key="a.id"
         :class="[
           'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent',
@@ -64,16 +83,17 @@ defineExpose({ header, activeRole, pickFacet })
         <span class="flex-1 truncate">{{ titleOf(a) }}</span>
         <span class="text-xs text-muted-foreground">{{ a.trackCount }}</span>
       </button>
-      <p v-if="artists.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-foreground">
-        还没有艺术家
+      <p v-if="visibleArtists.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-foreground">
+        {{ filter ? '没有匹配的艺术家' : '还没有艺术家' }}
       </p>
+      </div>
     </div>
 
-    <!-- 主区：分面 + 标准曲目表格（由父组件渲染表格） -->
+    <!-- 主区：页头 + 分面 + 标准曲目表格（表格由父组件经默认插槽渲染） -->
     <div class="flex min-w-0 flex-1 flex-col">
-      <div v-if="header" class="shrink-0 border-b px-4 py-2">
-        <h2 class="text-base font-semibold">{{ header.title }}</h2>
-        <div class="mt-2 flex flex-wrap gap-1">
+      <slot name="header" />
+      <div v-if="header" class="shrink-0 border-b px-4 py-1.5">
+        <div class="flex flex-wrap gap-1">
           <button
             v-for="f in header.facets"
             :key="f.role || 'all'"

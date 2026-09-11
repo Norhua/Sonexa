@@ -4,6 +4,7 @@ import { App, type Models } from '@/api'
 
 /** 当前视图的种类。搜索作用域跟随它。 */
 export type ViewKind =
+  | 'search'
   | 'all'
   | 'recent'
   | 'artists'
@@ -12,9 +13,8 @@ export type ViewKind =
   | 'tag'
   | 'artist'
   | 'album'
-  | 'upstream'
+  | 'importQueue'
   | 'review'
-  | 'settings'
 
 /** 生效的筛选条件，以可清除的 chip 呈现。 */
 export interface FilterChip {
@@ -41,20 +41,17 @@ export const useLibraryStore = defineStore('library', () => {
   const filter = ref<Models.store.TrackFilter>({} as Models.store.TrackFilter)
   const chips = ref<FilterChip[]>([])
 
-  /** 顶栏快速搜索的占位文案，明示作用域。 */
+  /** 视图内搜索框的占位文案，明示作用域。 */
   const searchPlaceholder = computed(() => `在“${contextTitle.value}”中搜索…`)
 
-  /** 高级搜索里把作用域显式切到「全部曲目」。 */
-  const scopeOverrideAll = ref(false)
+  /** 该视图是否提供右上角的视图内搜索框——只有曲目列表类视图有。 */
+  const hasViewSearch = computed(() =>
+    ['all', 'recent', 'playlist', 'tag', 'artist'].includes(view.value),
+  )
 
   /** 当前视图对应的基础筛选条件。 */
   function baseFilter(): Models.store.TrackFilter {
     const f = { ...filter.value } as Models.store.TrackFilter
-    // 作用域被显式切到「全部曲目」时，不再受当前歌单/标签限定
-    if (scopeOverrideAll.value) {
-      f.collectionId = 0
-      return f
-    }
     switch (view.value) {
       case 'playlist':
       case 'tag':
@@ -131,9 +128,9 @@ export const useLibraryStore = defineStore('library', () => {
       case 'recent': return '最近添加'
       case 'artists': return '艺术家'
       case 'albums': return '专辑'
-      case 'upstream': return '上游搜索'
+      case 'search': return '搜索'
+      case 'importQueue': return '导入队列'
       case 'review': return '复核队列'
-      case 'settings': return '设置'
       default: return ''
     }
   }
@@ -173,7 +170,6 @@ export const useLibraryStore = defineStore('library', () => {
   function clearFilter() {
     filter.value = {} as Models.store.TrackFilter
     chips.value = []
-    scopeOverrideAll.value = false
   }
 
   async function clearAllFilters() {
@@ -184,7 +180,7 @@ export const useLibraryStore = defineStore('library', () => {
   return {
     view, contextId, contextKey, contextLevel, contextTitle,
     playlists, tags, tracks, total, loading, error,
-    filter, chips, searchPlaceholder, scopeOverrideAll,
+    filter, chips, searchPlaceholder, hasViewSearch,
     baseFilter, loadTracks, loadCollections, goTo,
     applyFilter, quickSearch, removeChip, clearFilter, clearAllFilters,
     visibleCoverKeys, cancelOutOfViewCovers,

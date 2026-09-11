@@ -11,11 +11,13 @@ import CandidateTable from '@/components/CandidateTable.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useLibraryStore } from '@/stores/library'
+import { useSearchStore } from '@/stores/search'
 import { useTasksStore } from '@/stores/tasks'
 
 const settings = useSettingsStore()
 const tasks = useTasksStore()
 const library = useLibraryStore()
+const search = useSearchStore()
 
 const emit = defineEmits<{ jumpLocal: [trackId: number]; goSettings: [] }>()
 
@@ -126,6 +128,16 @@ function accept(row: Models.main.CandidateRow) {
   void act(() => App.AcceptCandidate(current.value!.id, row))
 }
 
+/** 空态的引导动作。上游搜索现在是搜索页的一种范围，不再是独立视图。 */
+async function onEmptyAction(key: string) {
+  if (key !== 'upstream') {
+    await library.goTo('all')
+    return
+  }
+  search.setScope(settings.providers[0]?.id ?? 'musicbrainz')
+  await library.goTo('search')
+}
+
 function prev() {
   if (index.value > 0) index.value--
 }
@@ -161,7 +173,7 @@ function next() {
       title="复核队列是空的"
       description="导入时无法自动判断的条目会出现在这里，逐条处置即可。"
       :actions="[{ label: '到全部曲目', key: 'all' }, { label: '到上游搜索', key: 'upstream' }]"
-      @action="(key) => key === 'upstream' ? library.goTo('upstream') : library.goTo('all')"
+      @action="onEmptyAction"
     />
 
     <div v-else-if="current" class="min-h-0 flex-1 overflow-auto">
@@ -282,7 +294,7 @@ function next() {
             @click="act(() => App.RetryReviewItem(current!.id))">
             立即重试
           </button>
-          <button class="rounded border px-3 py-1 hover:bg-accent" @click="tasks.expanded = true">
+          <button class="rounded border px-3 py-1 hover:bg-accent" @click="library.goTo('importQueue')">
             查看日志
           </button>
         </div>

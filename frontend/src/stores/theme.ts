@@ -14,10 +14,15 @@ export const useThemeStore = defineStore('theme', () => {
     theme.value = theme.value === 'dark' ? 'light' : 'dark'
   }
 
+  /** 直接设为某个主题。下拉框要的是「设为所选」而不是「翻转」。 */
+  function set(next: Theme) {
+    theme.value = next
+  }
+
   watchEffect(() => {
     document.documentElement.classList.toggle('dark', theme.value === 'dark')
     localStorage.setItem('sonexa.theme', theme.value)
   })
 
-  return { theme, toggle }
+  return { theme, toggle, set }
 })

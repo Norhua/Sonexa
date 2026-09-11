@@ -1,6 +1,9 @@
 <script setup lang="ts">
 /**
- * 设置页：常规、上游、匹配、导入导出、缓存、关于 六个分组。
+ * 设置：常规、上游、匹配、导入导出、缓存、关于 六个分组。
+ *
+ * 以弹窗呈现（见 SettingsDialog）：设置不是浏览目的地，
+ * 占用主内容区会把用户当前的浏览位置顶掉。
  *
  * 上游分组按注册表动态渲染，每个 provider 一个配置分组——
  * 不硬编码 provider 名称或数量。
@@ -13,6 +16,8 @@ import { useThemeStore } from '@/stores/theme'
 const settings = useSettingsStore()
 const theme = useThemeStore()
 
+const props = defineProps<{ anchor?: string }>()
+
 const draft = ref<Models.config.Settings | null>(null)
 const about = ref<Models.main.AboutInfo | null>(null)
 const countries = ref<Models.main.CountryOption[]>([])
@@ -21,7 +26,7 @@ const message = ref('')
 const error = ref('')
 
 type GroupKey = 'general' | 'upstream' | 'matching' | 'io' | 'cache' | 'about'
-const active = ref<GroupKey>('general')
+const active = ref<GroupKey>((props.anchor as GroupKey) ?? 'general')
 
 const groups: { key: GroupKey; label: string }[] = [
   { key: 'general', label: '常规' },
@@ -74,9 +79,9 @@ defineExpose({ active })
 </script>
 
 <template>
-  <div v-if="draft" class="flex min-h-0 flex-1">
+  <div v-if="draft" class="flex min-h-0 flex-1 overflow-hidden">
     <!-- 分组导航 -->
-    <nav class="w-32 shrink-0 border-r py-2">
+    <nav class="w-32 shrink-0 overflow-auto border-r py-2">
       <button
         v-for="g in groups"
         :key="g.key"
@@ -94,11 +99,12 @@ defineExpose({ active })
       <!-- 常规 -->
       <section v-if="active === 'general'" class="max-w-lg space-y-4">
         <h2 class="text-base font-semibold">常规</h2>
+        <!-- 主题切换的唯一入口。顶栏取消后，这里是唯一改主题的地方 -->
         <label class="block text-sm">主题
           <select
             :value="theme.theme"
             class="mt-1 block rounded border bg-background px-2 py-1"
-            @change="theme.toggle()"
+            @change="theme.set(($event.target as HTMLSelectElement).value as 'dark' | 'light')"
           >
             <option value="dark">暗色</option>
             <option value="light">亮色</option>

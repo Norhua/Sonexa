@@ -36,7 +36,10 @@ type TrackView struct {
 	MatchSource  *string `json:"matchSource"`
 	MatchRef     *string `json:"matchRef"`
 
-	CreatedAt time.Time `json:"createdAt"`
+	// CreatedAt 不导出给前端：界面上没有用到它，而 Wails 的 TS 模型生成器
+	// 不认识 time.Time——留着只会在每次构建时打印 `Not found: time.Time`。
+	// 「最近添加」的排序在 SQL 里做，不靠前端读这个字段。
+	CreatedAt time.Time `json:"-"`
 }
 
 // TrackFilter 描述一次曲目查询的条件。

@@ -2,43 +2,50 @@
 /**
  * 应用外壳。
  *
- * 顶栏（快速搜索 + 高级 + 设置）、侧栏四分组、主内容区、详情抽屉。
+ * 没有顶栏：macOS 用 TitleBarHiddenInset 时红绿灯浮在内容之上，
+ * 顶栏左侧放什么都会被压住。红绿灯的位置让给侧栏顶部，
+ * 原顶栏上的三个入口各自归位——
+ * 搜索去了搜索页与各视图右上角，导入去了导入队列页，主题切换去了设置。
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Moon, Sun, Music4, Upload } from 'lucide-vue-next'
 import { App as Api, Events, EventsOn, display } from '@/api'
 import type { Models } from '@/api'
 import AppSidebar from '@/components/AppSidebar.vue'
-import SearchBar from '@/components/SearchBar.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import PromptDialog from '@/components/PromptDialog.vue'
 import TrackTable, { type Row } from '@/components/TrackTable.vue'
+import ViewHeader from '@/components/ViewHeader.vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import GlobalNotice from '@/components/GlobalNotice.vue'
 import ArtistsView from '@/views/ArtistsView.vue'
 import AlbumsView from '@/views/AlbumsView.vue'
-import UpstreamSearchView from '@/views/UpstreamSearchView.vue'
+import SearchView from '@/views/SearchView.vue'
+import ImportQueueView from '@/views/ImportQueueView.vue'
 import ReviewView from '@/views/ReviewView.vue'
-import SettingsView from '@/views/SettingsView.vue'
+import SettingsDialog from '@/views/SettingsDialog.vue'
 import ImportWizard from '@/views/ImportWizard.vue'
 import EditDialog from '@/views/EditDialog.vue'
 import { useLibraryStore } from '@/stores/library'
+import { useSearchStore } from '@/stores/search'
 import { useSettingsStore } from '@/stores/settings'
 import { useTasksStore } from '@/stores/tasks'
 import { useThemeStore } from '@/stores/theme'
+import { useUiStore } from '@/stores/ui'
 
 const library = useLibraryStore()
 const settings = useSettingsStore()
 const tasks = useTasksStore()
-const theme = useThemeStore()
+const search = useSearchStore()
+const ui = useUiStore()
+useThemeStore()
 
 const drawerOpen = ref(false)
 const detail = ref<Models.main.TrackDetail | null>(null)
 const editing = ref<number | null>(null)
-const importOpen = ref(false)
 const notice = ref('')
 /** 离线态：在统一的全局提示位显示，页面内不重复弹出相同错误。 */
 const offline = ref(false)
-const upstreamPrefill = ref<{ title: string; artist: string; album: string } | undefined>()
 const selectedIds = ref<number[]>([])
 
 let offLibrary: (() => void) | null = null
@@ -122,10 +129,18 @@ const emptyState = computed(() => {
 async function onEmptyAction(key: string) {
   switch (key) {
     case 'clear': await library.clearAllFilters(); break
-    case 'upstream': await library.goTo('upstream'); break
+    case 'upstream': await goUpstreamSearch(); break
     case 'all': await library.goTo('all'); break
-    case 'import': importOpen.value = true; break
+    case 'import': ui.importOpen = true; break
   }
+}
+
+/** 到上游搜索：搜索页 + 范围切到主上游。 */
+async function goUpstreamSearch(prefill?: { title: string; artist: string; album: string }) {
+  const provider = settings.providers[0]?.id ?? 'musicbrainz'
+  if (prefill) search.prefillUpstream(provider, prefill)
+  else search.setScope(provider)
+  await library.goTo('search')
 }
 
 async function openDetail(row: Row) {
@@ -157,14 +172,16 @@ async function openTrackById(trackId: number) {
 
 async function addToCollection(targets: Row[], kind: 'playlist' | 'tag') {
   const list = kind === 'playlist' ? library.playlists : library.tags
-  const name = window.prompt(
-    `加入哪个${kind === 'playlist' ? '歌单' : '标签'}？（输入名称，不存在则新建）\n现有：${list.map((c) => c.name).join('、') || '（无）'}`,
-  )
-  if (!name?.trim()) return
+  const label = kind === 'playlist' ? '歌单' : '标签'
+  const name = await ui.prompt({
+    title: `加入${label}`,
+    description: `现有${label}：${list.map((c) => c.name).join('、') || '（无）'}`,
+    label: `${label}名称（不存在则新建）`,
+  })
+  if (!name) return
   try {
-    let target = list.find((c) => c.name === name.trim())
-    let id = target?.id
-    if (!id) id = await Api.CreateCollection(name.trim(), kind, undefined)
+    let id = list.find((c) => c.name === name)?.id
+    if (!id) id = await Api.CreateCollection(name, kind, undefined)
     await Api.AddToCollection(id, targets.map((t) => t.id))
     await library.loadCollections()
   } catch (e) {
@@ -183,7 +200,13 @@ async function removeFromCollection(targets: Row[]) {
 }
 
 async function removeTracks(targets: Row[]) {
-  if (!window.confirm(`删除 ${targets.length} 首曲目？此操作不可撤销。`)) return
+  const ok = await ui.confirm({
+    title: `删除 ${targets.length} 首曲目？`,
+    message: '此操作不可撤销。',
+    confirmLabel: '删除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await Api.DeleteTracks(targets.map((t) => t.id))
     drawerOpen.value = false
@@ -193,14 +216,13 @@ async function removeTracks(targets: Row[]) {
   }
 }
 
-/** 「查看上游」：以该曲的字段跳到上游搜索页。 */
+/** 「查看上游」：以该曲的字段跳到搜索页的上游范围。 */
 async function viewUpstream(row: Row) {
-  upstreamPrefill.value = {
+  await goUpstreamSearch({
     title: row.title,
     artist: row.artist ?? '',
     album: row.album ?? '',
-  }
-  await library.goTo('upstream')
+  })
 }
 
 async function viewArtist(row: Row) {
@@ -270,33 +292,45 @@ async function reorderPlaylist(orderedIds: number[]) {
   }
 }
 
-async function toUpstream(fields: { title: string; artist: string; album: string }) {
-  upstreamPrefill.value = fields
-  await library.goTo('upstream')
-}
-
 async function newCollection(kind: 'playlist' | 'tag') {
-  const name = window.prompt(`新建${kind === 'playlist' ? '歌单' : '标签'}名称`)
-  if (!name?.trim()) return
+  const label = kind === 'playlist' ? '歌单' : '标签'
+  const name = await ui.prompt({ title: `新建${label}`, label: `${label}名称` })
+  if (!name) return
   try {
-    await Api.CreateCollection(name.trim(), kind, undefined)
+    await Api.CreateCollection(name, kind, undefined)
     await library.loadCollections()
   } catch (e) {
     notice.value = String(e)
   }
 }
 
-async function renameCollection(id: number, _kind: 'playlist' | 'tag', name: string) {
+async function renameCollection(id: number, kind: 'playlist' | 'tag') {
+  const list = kind === 'playlist' ? library.playlists : library.tags
+  const current = list.find((c) => c.id === id)
+  const name = await ui.prompt({
+    title: `重命名${kind === 'playlist' ? '歌单' : '标签'}`,
+    label: '新名称',
+    value: current?.name ?? '',
+  })
+  if (!name || name === current?.name) return
   try {
     await Api.RenameCollection(id, name)
     await library.loadCollections()
+    if (library.contextId === id) library.contextTitle = name
   } catch (e) {
     notice.value = String(e)
   }
 }
 
 async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
-  if (!window.confirm(`删除这个${kind === 'playlist' ? '歌单' : '标签'}？曲目本身不会被删除。`)) return
+  const label = kind === 'playlist' ? '歌单' : '标签'
+  const ok = await ui.confirm({
+    title: `删除这个${label}？`,
+    message: '曲目本身不会被删除。',
+    confirmLabel: '删除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await Api.DeleteCollection(id)
     await library.loadCollections()
@@ -308,52 +342,29 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
 </script>
 
 <template>
-  <div class="flex h-full flex-col bg-background text-foreground">
-    <!-- 顶栏 -->
-    <header class="flex h-12 shrink-0 items-center gap-3 border-b px-4">
-      <Music4 class="size-5 shrink-0" />
-      <span class="shrink-0 font-semibold">Sonexa</span>
-      <SearchBar class="max-w-2xl" @to-upstream="toUpstream" />
-      <button
-        class="flex shrink-0 items-center gap-1 rounded-md border px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
-        :disabled="!settings.outboundAllowed"
-        :title="!settings.outboundAllowed ? settings.outboundReason : '导入表格'"
-        @click="importOpen = true"
-      >
-        <Upload class="size-4" />
-        导入
-      </button>
-      <button
-        class="shrink-0 rounded-md p-1.5 hover:bg-accent"
-        :title="theme.theme === 'dark' ? '切换到亮色' : '切换到暗色'"
-        @click="theme.toggle()"
-      >
-        <Moon v-if="theme.theme === 'dark'" class="size-4" />
-        <Sun v-else class="size-4" />
-      </button>
-    </header>
-
-    <!-- 全局提示位置：出网禁用、离线、出网失败统一在这里 -->
-    <GlobalNotice
-      :message="offline ? '' : notice"
-      :offline="offline"
-      @dismiss="notice = ''"
-      @open-settings="library.goTo('settings')"
+  <div class="flex h-full bg-background text-foreground">
+    <AppSidebar
+      @new-collection="newCollection"
+      @rename-collection="renameCollection"
+      @delete-collection="deleteCollection"
     />
 
-    <div class="flex min-h-0 flex-1">
-      <AppSidebar
-        @new-collection="newCollection"
-        @rename-collection="renameCollection"
-        @delete-collection="deleteCollection"
+    <div class="flex min-w-0 flex-1 flex-col">
+      <!-- 红绿灯不在这一侧，但窗口仍需一条可拖拽的区域 -->
+      <div class="h-2 shrink-0" style="--wails-draggable: drag" />
+
+      <!-- 全局提示位置：出网禁用、离线、出网失败统一在这里 -->
+      <GlobalNotice
+        :message="offline ? '' : notice"
+        :offline="offline"
+        @dismiss="notice = ''"
+        @open-settings="ui.openSettings('upstream')"
       />
 
-      <main class="flex min-w-0 flex-1 flex-col">
+      <main class="flex min-h-0 min-w-0 flex-1 flex-col">
         <!-- 标准曲目表格：全部曲目 / 最近添加 / 歌单 / 标签 -->
         <template v-if="showTrackTable">
-          <div class="shrink-0 border-b px-4 py-2">
-            <h2 class="text-base font-semibold">{{ library.contextTitle }}</h2>
-          </div>
+          <ViewHeader />
           <TrackTable
             v-if="rows.length > 0"
             :rows="rows"
@@ -380,8 +391,23 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
           />
         </template>
 
+        <SearchView
+          v-else-if="library.view === 'search'"
+          @open-track="openDetail"
+          @edit-track="(r) => (editing = r.id)"
+          @add-to-collection="addToCollection"
+          @view-artist="viewArtist"
+          @copy-info="copyInfo"
+          @remove-tracks="removeTracks"
+          @selection-change="(ids) => (selectedIds = ids)"
+          @export-scope="exportScope"
+          @jump-local="openTrackById"
+          @go-settings="ui.openSettings('upstream')"
+        />
+
         <!-- 艺术家视图：中列 + 按 artist_id 过滤的标准曲目表格 -->
         <ArtistsView v-else-if="library.view === 'artists' || library.view === 'artist'">
+          <template #header><ViewHeader /></template>
           <TrackTable
             :rows="rows"
             :loading="library.loading"
@@ -409,36 +435,33 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
           @view-upstream="viewUpstream"
         />
 
-        <UpstreamSearchView
-          v-else-if="library.view === 'upstream'"
-          :prefill="upstreamPrefill"
-          @jump-local="openTrackById"
+        <ImportQueueView
+          v-else-if="library.view === 'importQueue'"
+          @go-review="library.goTo('review')"
         />
 
         <ReviewView
           v-else-if="library.view === 'review'"
           @jump-local="openTrackById"
-          @go-settings="library.goTo('settings')"
+          @go-settings="ui.openSettings('upstream')"
         />
-
-        <SettingsView v-else-if="library.view === 'settings'" />
       </main>
-
-      <DetailDrawer
-        :detail="detail"
-        :open="drawerOpen"
-        @close="drawerOpen = false"
-        @edit="(id) => (editing = id)"
-        @view-artist="goToArtist"
-        @cover-adopted="onCoverAdopted"
-      />
     </div>
 
+    <DetailDrawer
+      :detail="detail"
+      :open="drawerOpen"
+      @close="drawerOpen = false"
+      @edit="(id) => (editing = id)"
+      @view-artist="goToArtist"
+      @cover-adopted="onCoverAdopted"
+    />
+
     <ImportWizard
-      v-if="importOpen"
-      @close="importOpen = false"
+      v-if="ui.importOpen"
+      @close="ui.importOpen = false"
       @submitted="tasks.refresh()"
-      @go-settings="importOpen = false; library.goTo('settings')"
+      @go-settings="ui.openSettings('upstream')"
     />
 
     <EditDialog
@@ -447,5 +470,9 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
       @close="editing = null"
       @saved="library.loadTracks()"
     />
+
+    <SettingsDialog />
+    <PromptDialog />
+    <ConfirmDialog />
   </div>
 </template>

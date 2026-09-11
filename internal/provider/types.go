@@ -140,7 +140,10 @@ type Detail struct {
 	// 该 release 的完整曲目清单（详情响应本就包含，顺带写入）
 	Tracklist []TracklistEntry
 
-	FetchedAt time.Time
+	// FetchedAt 不导出给前端：Detail 只在 Go 侧流转，绑定层导出的是
+	// AlbumDetail.FetchedAt（RFC3339 串）。带 time.Time 会让 Wails 的
+	// TS 模型生成器每次构建都打印 `Not found: time.Time`。
+	FetchedAt time.Time `json:"-"`
 }
 
 // DetailArtist 是详情中的一位参与者。
