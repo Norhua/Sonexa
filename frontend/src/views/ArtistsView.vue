@@ -107,7 +107,13 @@ defineExpose({ header, activeRole, pickFacet })
           </button>
         </div>
       </div>
-      <slot />
+
+      <!-- 未选中艺术家时不显示曲目表格：这一屏还没有「该艺术家的曲目」可言，
+           沿用上一个视图残留的行会让人以为它们属于某位艺术家 -->
+      <slot v-if="library.view === 'artist'" />
+      <div v-else class="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        从左侧选择一位艺术家
+      </div>
     </div>
   </div>
 </template>

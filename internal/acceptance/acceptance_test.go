@@ -353,6 +353,47 @@ func TestF8_ZeroConfigCSVImport(t *testing.T) {
 	}
 }
 
+// TestF8b_SuffixedChineseHeadersAutoMap 覆盖 10.4：
+// 「歌名 / 歌手名 / 专辑名」这类带后缀的中文表头也应零配置命中。
+//
+// 这是实际导出文件里最常见的写法。曾因包含匹配的长度门槛按 ASCII 一刀切
+// （三字符起）而把两字中文别名全部挡掉，艺术家与专辑列落到「忽略」，
+// 用户每次导入都要手动改选两列。
+func TestF8b_SuffixedChineseHeadersAutoMap(t *testing.T) {
+	csv := "歌名,歌手名,专辑名\n" +
+		"世界中の雨,See-Saw,夕立\n" +
+		"ツバサ,See-Saw,夕立\n"
+
+	res, err := importer.Parse("music_extracted.csv", []byte(csv), "")
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+
+	for i, want := range []importer.Field{
+		importer.FieldTitle, importer.FieldArtist, importer.FieldAlbum,
+	} {
+		if res.ColumnMap[i] != want {
+			t.Errorf("第 %d 列（%q）映射 = %q, 期望 %q",
+				i, res.Headers[i], res.ColumnMap[i], want)
+		}
+	}
+
+	// 映射命中后艺术家与专辑必须真的进到行里，而不是只在下拉里显示对了
+	rows := importer.AllRows(res)
+	if len(rows) != 2 {
+		t.Fatalf("行数 = %d, 期望 2", len(rows))
+	}
+	if rows[0].Artist == nil || *rows[0].Artist != "See-Saw" {
+		t.Errorf("第一行艺术家 = %v, 期望 See-Saw", rows[0].Artist)
+	}
+	if rows[0].Album == nil || *rows[0].Album != "夕立" {
+		t.Errorf("第一行专辑 = %v, 期望 夕立", rows[0].Album)
+	}
+	if res.Detection.NeedsAttention {
+		t.Errorf("三列都命中时不应提示需要手动介入: %s", res.Detection.Reason)
+	}
+}
+
 // TestF9_ImportSummaryListsFailures 覆盖 22.5 / F9：
 // 一次导入结束后输出统计并逐行列出失败条目的原始输入。
 func TestF9_ImportSummaryListsFailures(t *testing.T) {
