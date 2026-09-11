@@ -62,22 +62,22 @@ const (
 
 // Artist 是艺术家实体。上游标识可空——手动录入的艺术家没有。
 type Artist struct {
-	ID             int64
-	Name           string
-	SortName       *string
-	Type           *string
-	Disambiguation *string
-	MBID           *string
+	ID             int64   `json:"id"`
+	Name           string  `json:"name"`
+	SortName       *string `json:"sortName"`
+	Type           *string `json:"type"`
+	Disambiguation *string `json:"disambiguation"`
+	MBID           *string `json:"mbid"`
 }
 
 // TrackArtist 是一条曲目-艺术家关系。
 type TrackArtist struct {
-	ArtistID     int64
-	Role         ArtistRole
-	CreditedName *string
-	Attribute    *string // role = instrument 时存乐器名
-	Position     *int
-	Source       *string
+	ArtistID     int64      `json:"artistID"`
+	Role         ArtistRole `json:"role"`
+	CreditedName *string    `json:"creditedName"`
+	Attribute    *string    // role = instrument 时存乐器名 `json:"attribute"`
+	Position     *int       `json:"position"`
+	Source       *string    `json:"source"`
 }
 
 // UpsertArtist 按 (name, disambiguation) 找到或创建艺术家，返回其 id。

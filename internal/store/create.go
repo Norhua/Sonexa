@@ -191,47 +191,47 @@ func (s *Store) GetMetadata(trackID int64) (*TrackMetadata, error) {
 
 // TrackMetadata 是丰富信息的读出结构。全部字段可空——缺失即缺失。
 type TrackMetadata struct {
-	TrackID          int64
-	Title            *string
-	Album            *string
-	TrackCredit      *string
-	AlbumCredit      *string
-	CreditSpansJSON  *string
-	PrimaryType      *string
-	SecondaryTypes   *string
-	ReleaseStatus    *string
-	MediumFormat     *string
-	Country          *string
-	Year             *int
-	ReleaseDate      *string
-	FirstReleaseDate *string
-	TrackNumber      *int
-	TrackNumberText  *string
-	TrackTotal       *int
-	DiscNumber       *int
-	DiscTotal        *int
-	DurationMS       *int
-	Genre            *string
-	Label            *string
-	CatalogNumber    *string
-	Comment          *string
-	CoverPath        *string
-	CoverSource      *string
-	CoverSourceURL   *string
-	CoverWidth       *int
-	CoverHeight      *int
-	RecordingMBID    *string
-	ReleaseMBID      *string
-	ReleaseGroupMBID *string
-	WorkMBID         *string
-	ISRC             *string
-	ITunesTrackID    *string
-	ITunesCollection *string
-	MatchSource      *string
-	MatchRef         *string
-	MatchedAt        *time.Time
-	ProvenanceJSON   *string
-	LockedJSON       *string
+	TrackID          int64      `json:"trackId"`
+	Title            *string    `json:"title"`
+	Album            *string    `json:"album"`
+	TrackCredit      *string    `json:"trackCredit"`
+	AlbumCredit      *string    `json:"albumCredit"`
+	CreditSpansJSON  *string    `json:"creditSpansJson"`
+	PrimaryType      *string    `json:"primaryType"`
+	SecondaryTypes   *string    `json:"secondaryTypes"`
+	ReleaseStatus    *string    `json:"releaseStatus"`
+	MediumFormat     *string    `json:"mediumFormat"`
+	Country          *string    `json:"country"`
+	Year             *int       `json:"year"`
+	ReleaseDate      *string    `json:"releaseDate"`
+	FirstReleaseDate *string    `json:"firstReleaseDate"`
+	TrackNumber      *int       `json:"trackNumber"`
+	TrackNumberText  *string    `json:"trackNumberText"`
+	TrackTotal       *int       `json:"trackTotal"`
+	DiscNumber       *int       `json:"discNumber"`
+	DiscTotal        *int       `json:"discTotal"`
+	DurationMS       *int       `json:"durationMs"`
+	Genre            *string    `json:"genre"`
+	Label            *string    `json:"label"`
+	CatalogNumber    *string    `json:"catalogNumber"`
+	Comment          *string    `json:"comment"`
+	CoverPath        *string    `json:"coverPath"`
+	CoverSource      *string    `json:"coverSource"`
+	CoverSourceURL   *string    `json:"coverSourceUrl"`
+	CoverWidth       *int       `json:"coverWidth"`
+	CoverHeight      *int       `json:"coverHeight"`
+	RecordingMBID    *string    `json:"recordingMbid"`
+	ReleaseMBID      *string    `json:"releaseMbid"`
+	ReleaseGroupMBID *string    `json:"releaseGroupMbid"`
+	WorkMBID         *string    `json:"workMbid"`
+	ISRC             *string    `json:"isrc"`
+	ITunesTrackID    *string    `json:"itunesTrackId"`
+	ITunesCollection *string    `json:"itunesCollectionId"`
+	MatchSource      *string    `json:"matchSource"`
+	MatchRef         *string    `json:"matchRef"`
+	MatchedAt        *time.Time `json:"matchedAt"`
+	ProvenanceJSON   *string    `json:"provenanceJson"`
+	LockedJSON       *string    `json:"lockedJson"`
 }
 
 // metadataColumns 是丰富信息中可由编辑界面写入的字段。

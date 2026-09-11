@@ -95,10 +95,10 @@ const (
 
 // ResolvedPosition 是一个清单位置的解析结果。
 type ResolvedPosition struct {
-	Track ReleaseTrack
-	State TracklistPosition
+	Track ReleaseTrack      `json:"track"`
+	State TracklistPosition `json:"state"`
 	// TrackID 是对应的库中曲目；未入库时为 0。
-	TrackID int64
+	TrackID int64 `json:"trackId"`
 }
 
 // ResolveTracklist 判定某发行清单中每个位置的状态。

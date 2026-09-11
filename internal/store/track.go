@@ -12,15 +12,15 @@ var ErrTitleRequired = errors.New("曲名是必填项")
 
 // Track 是基本信息：每首曲目必有，字段集合稳定。
 type Track struct {
-	ID           int64
-	Title        string
-	Artist       *string
-	Album        *string
-	TitleLocked  bool
-	ArtistLocked bool
-	AlbumLocked  bool
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID           int64     `json:"id"`
+	Title        string    `json:"title"`
+	Artist       *string   `json:"artist"`
+	Album        *string   `json:"album"`
+	TitleLocked  bool      `json:"titleLocked"`
+	ArtistLocked bool      `json:"artistLocked"`
+	AlbumLocked  bool      `json:"albumLocked"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // CreateTrack 创建一首曲目并同步 FTS 索引。丰富信息可以整体为空。

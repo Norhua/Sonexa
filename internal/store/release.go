@@ -19,37 +19,37 @@ const (
 
 // Release 是发行记录，镜像上游事实，不承载任何用户数据。
 type Release struct {
-	ID               int64
-	Provider         string
-	ProviderRef      string
-	ReleaseGroupRef  *string
-	Title            string
-	AlbumCredit      *string
-	PrimaryType      *string
-	SecondaryTypes   *string
-	ReleaseStatus    *string
-	MediumFormat     *string
-	Country          *string
-	ReleaseDate      *string
-	FirstReleaseDate *string
-	TrackTotal       *int
-	DiscTotal        *int
-	CoverPath        *string
-	CoverSourceURL   *string
-	TracklistState   TracklistState
-	FetchedAt        *time.Time
+	ID               int64          `json:"id"`
+	Provider         string         `json:"provider"`
+	ProviderRef      string         `json:"providerRef"`
+	ReleaseGroupRef  *string        `json:"releaseGroupRef"`
+	Title            string         `json:"title"`
+	AlbumCredit      *string        `json:"albumCredit"`
+	PrimaryType      *string        `json:"primaryType"`
+	SecondaryTypes   *string        `json:"secondaryTypes"`
+	ReleaseStatus    *string        `json:"releaseStatus"`
+	MediumFormat     *string        `json:"mediumFormat"`
+	Country          *string        `json:"country"`
+	ReleaseDate      *string        `json:"releaseDate"`
+	FirstReleaseDate *string        `json:"firstReleaseDate"`
+	TrackTotal       *int           `json:"trackTotal"`
+	DiscTotal        *int           `json:"discTotal"`
+	CoverPath        *string        `json:"coverPath"`
+	CoverSourceURL   *string        `json:"coverSourceUrl"`
+	TracklistState   TracklistState `json:"tracklistState"`
+	FetchedAt        *time.Time     `json:"fetchedAt"`
 }
 
 // ReleaseTrack 是清单中的一个位置。
 type ReleaseTrack struct {
-	DiscNumber      int
-	TrackNumber     int
-	TrackRef        *string // 与 track_metadata.match_ref 同一取值方案
-	RecordingRef    *string // 用于「已有其他版本」判定
-	Title           string
-	TrackCredit     *string
-	DurationMS      *int
-	TrackNumberText *string
+	DiscNumber      int     `json:"discNumber"`
+	TrackNumber     int     `json:"trackNumber"`
+	TrackRef        *string // 与 track_metadata.match_ref 同一取值方案 `json:"trackRef"`
+	RecordingRef    *string // 用于「已有其他版本」判定 `json:"recordingRef"`
+	Title           string  `json:"title"`
+	TrackCredit     *string `json:"trackCredit"`
+	DurationMS      *int    `json:"durationMs"`
+	TrackNumberText *string `json:"trackNumberText"`
 }
 
 // UpsertRelease 按 (provider, provider_ref) 写入或更新发行，返回其 id。
