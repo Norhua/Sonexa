@@ -63,14 +63,17 @@ function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | '
 
       <!-- 上游搜索：独立入口 -->
       <section class="mb-3">
+        <!-- 出网前置条件未满足时真正禁用，而不是仅仅调暗；
+             原因说明与跳转设置的入口由全局提示位统一给出 -->
         <button
           :class="[
-            'flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-accent',
+            'flex w-full items-center gap-2 px-3 py-1.5 text-left',
+            settings.outboundAllowed ? 'hover:bg-accent' : 'cursor-not-allowed opacity-50',
             isActive('upstream') ? 'bg-accent font-medium' : '',
-            !settings.outboundAllowed ? 'opacity-50' : '',
           ]"
+          :disabled="!settings.outboundAllowed"
           :title="!settings.outboundAllowed ? settings.outboundReason : ''"
-          @click="library.goTo('upstream')"
+          @click="settings.outboundAllowed && library.goTo('upstream')"
         >
           <Search class="size-4" />
           上游搜索
