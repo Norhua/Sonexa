@@ -440,3 +440,24 @@ func IsCharacter(artistType *string) bool {
 func TracklistTotal(entries []provider.TracklistEntry) int { return len(entries) }
 
 var _ = strconv.Itoa
+
+// ParseDetailJSON 解析详情响应的原始字节。
+//
+// 供离线重放使用：直接喂 provider_cache 中落盘的原始响应，
+// 走的是与在线路径完全相同的解析代码。
+func ParseDetailJSON(body []byte, trackRef string) (*provider.Detail, error) {
+	var rel releaseDetail
+	if err := json.Unmarshal(body, &rel); err != nil {
+		return nil, fmt.Errorf("解析详情响应失败: %w", err)
+	}
+	return ParseDetail(&rel, trackRef), nil
+}
+
+// ParseVoiceActorJSON 解析艺术家响应的原始字节，供离线重放使用。
+func ParseVoiceActorJSON(body []byte) (*provider.DetailArtist, error) {
+	var a artistDetail
+	if err := json.Unmarshal(body, &a); err != nil {
+		return nil, fmt.Errorf("解析艺术家响应失败: %w", err)
+	}
+	return ParseVoiceActor(&a), nil
+}
