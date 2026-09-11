@@ -34,6 +34,9 @@ export interface Row {
   recordingRef?: string | null
 }
 
+/** 封面键的尺寸必须与注册降级链时一致。 */
+const coverThumbSize = 250
+
 const props = withDefaults(
   defineProps<{
     rows: Row[]
@@ -68,6 +71,8 @@ const emit = defineEmits<{
 }>()
 
 const selected = ref<Set<number>>(new Set())
+/** 取图失败的行——显示占位而不是破图。 */
+const brokenCovers = ref<Set<string>>(new Set())
 /** 正在被拖动的行，以及拖动经过的行——仅歌单启用。 */
 const dragId = ref<number | null>(null)
 const dragOverId = ref<number | null>(null)
@@ -298,12 +303,14 @@ defineExpose({ selectedCount, trackCount, selectedRows })
             </td>
             <td class="px-2 py-1.5">
               <img
-                v-if="row.coverKey"
-                :src="coverUrl(row.coverKey, 250)"
+                v-if="row.coverKey && !brokenCovers.has(row.coverKey)"
+                :src="coverUrl(row.coverKey, coverThumbSize)"
                 loading="lazy"
                 class="size-8 rounded object-cover"
                 alt=""
+                @error="brokenCovers.add(row.coverKey)"
               />
+              <!-- 取图失败（CAA 404 是常态）只影响该行：显示占位，其余列照常 -->
               <div v-else class="size-8 rounded bg-muted" />
             </td>
             <td class="max-w-0 truncate px-2 py-1.5" :title="row.title">{{ row.title }}</td>
@@ -318,12 +325,15 @@ defineExpose({ selectedCount, trackCount, selectedRows })
             <td class="px-2 py-1.5">{{ display(row.mediumFormat) }}</td>
             <td class="px-2 py-1.5">{{ display(row.country) }}</td>
             <td class="px-2 py-1.5 text-xs">
-              <span
+              <!-- 「其他版本」点击跳到用户已有的那一首（15.8） -->
+              <button
                 v-if="row.otherVersion"
-                class="rounded bg-secondary px-1.5 py-0.5 text-secondary-foreground"
+                class="rounded bg-secondary px-1.5 py-0.5 text-secondary-foreground hover:bg-accent"
+                title="跳到已有的那一首"
+                @click.stop="emit('open', row)"
               >
                 其他版本
-              </span>
+              </button>
               <button
                 v-else-if="row.ghost"
                 class="rounded border px-1.5 py-0.5 hover:bg-accent"

@@ -8,9 +8,9 @@
  * 必须优雅处理丰富信息为空的情况（「无需匹配」入库的曲目）：
  * 缺失字段显示占位短横线，不报错、不出现空白区域。
  */
-import { computed } from 'vue'
-import { X, Pencil } from 'lucide-vue-next'
-import { display, duration, coverUrl, adoptedCoverUrl, DASH } from '@/api'
+import { computed, ref } from 'vue'
+import { X, Pencil, ImagePlus } from 'lucide-vue-next'
+import { App, display, duration, coverUrl, adoptedCoverUrl, DASH } from '@/api'
 import type { Models } from '@/api'
 
 const props = defineProps<{
@@ -22,7 +22,55 @@ const emit = defineEmits<{
   close: []
   edit: [trackId: number]
   viewArtist: [artistId: number]
+  coverAdopted: []
 }>()
+
+/** 手动重新获取封面的状态。 */
+const coverPickerOpen = ref(false)
+const coverCandidates = ref<Models.main.CoverCandidate[]>([])
+const coverLoading = ref(false)
+const coverError = ref('')
+
+/**
+ * 向**所有**上游查询封面，结果按置信度排序。
+ *
+ * 某首来自 MusicBrainz 的曲目没有封面时，iTunes 的结果也应出现在候选中——
+ * 自动获取跟随来源，手动重选则跨源。
+ */
+async function openCoverPicker() {
+  if (!props.detail) return
+  coverPickerOpen.value = true
+  coverLoading.value = true
+  coverError.value = ''
+  try {
+    const t = props.detail.track
+    coverCandidates.value = await App.SearchCovers(t.title, t.artist ?? '', t.album ?? '')
+  } catch (e) {
+    coverError.value = String(e)
+  } finally {
+    coverLoading.value = false
+  }
+}
+
+/**
+ * 采用某档规格。
+ *
+ * 构造型来源（iTunes）的档位可能失效，因此把同一结果的其他档位
+ * 一并作为退档链交给后端，不可用时自动退到下一档。
+ */
+async function adopt(provider: string, variant: Models.covers.Variant,
+  all: Models.covers.Variant[]) {
+  if (!props.detail) return
+  coverError.value = ''
+  try {
+    const fallback = all.filter((v) => v.url !== variant.url).map((v) => v.url)
+    await App.AdoptCover(props.detail.track.id, provider, variant.url, fallback)
+    coverPickerOpen.value = false
+    emit('coverAdopted')
+  } catch (e) {
+    coverError.value = String(e)
+  }
+}
 
 const meta = computed(() => props.detail?.metadata ?? null)
 
@@ -107,6 +155,15 @@ const releaseInfo = computed(() => [
         <div v-else class="flex aspect-square w-56 items-center justify-center rounded-md bg-muted text-muted-foreground">
           无封面
         </div>
+      </div>
+      <div class="flex justify-center">
+        <button
+          class="flex items-center gap-1 rounded border px-2 py-0.5 text-xs hover:bg-accent"
+          @click="openCoverPicker"
+        >
+          <ImagePlus class="size-3.5" />
+          重新获取封面
+        </button>
       </div>
 
       <!-- 歌名与艺术家 -->
@@ -212,6 +269,42 @@ const releaseInfo = computed(() => [
         </div>
         <p v-else class="text-sm text-muted-foreground">{{ DASH }}</p>
       </section>
+    </div>
+
+    <!-- 封面候选：跨源结果，同一结果的多规格收拢为一条 -->
+    <div v-if="coverPickerOpen" class="shrink-0 border-t p-3">
+      <div class="mb-2 flex items-center justify-between">
+        <h3 class="text-xs font-medium">选择封面</h3>
+        <button class="rounded p-0.5 hover:bg-accent" @click="coverPickerOpen = false">
+          <X class="size-3.5" />
+        </button>
+      </div>
+      <p v-if="coverLoading" class="text-xs text-muted-foreground">正在向全部上游查询…</p>
+      <p v-else-if="coverError" class="text-xs text-destructive">{{ coverError }}</p>
+      <p v-else-if="coverCandidates.length === 0" class="text-xs text-muted-foreground">
+        所有上游都没有返回封面
+      </p>
+      <div v-else class="max-h-64 space-y-2 overflow-auto">
+        <!-- 一条候选 = 一个结果；其可选规格在同一行内标注，不重复成行 -->
+        <div v-for="c in coverCandidates" :key="`${c.provider}-${c.sourceRef}`"
+          class="rounded border p-2">
+          <p class="truncate text-xs">
+            <span class="rounded bg-secondary px-1 text-[10px]">{{ c.provider }}</span>
+            {{ c.title }}
+          </p>
+          <div class="mt-1.5 flex flex-wrap gap-1">
+            <button
+              v-for="v in c.variants"
+              :key="v.url"
+              class="rounded border px-1.5 py-0.5 text-[10px] hover:bg-accent"
+              :title="c.constructed ? '构造型来源，采用时先验证，不可用自动退档' : v.type"
+              @click="adopt(c.provider, v, c.variants)"
+            >
+              {{ v.label }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 底部明确的编辑按钮——右键不应是进入编辑的唯一入口 -->

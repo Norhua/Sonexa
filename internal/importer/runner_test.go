@@ -398,3 +398,63 @@ func containsStr(s, sub string) bool {
 	}
 	return false
 }
+
+// TestPauseEmitsSummary 覆盖 11.10：
+// 「导入完成**或暂停**时」都要输出统计并逐行列出失败条目。
+// 此前暂停路径发的是空行，用户暂停后无从核对本次导入的结果。
+func TestPauseEmitsSummary(t *testing.T) {
+	st := openStore(t)
+	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{}}
+	batchID := enqueueOne(t, st, "某曲", "某艺术家", "某专辑")
+
+	var mu sync.Mutex
+	var lines []string
+	done := make(chan struct{})
+
+	r := NewRunner(st, matching.NewEngine(config.Defaults().Matching), searcher,
+		provider.DefaultRetryPolicy(), false, func(p Progress) {
+			mu.Lock()
+			if p.Line != "" {
+				lines = append(lines, p.Line)
+			}
+			paused := p.Paused
+			mu.Unlock()
+			if paused {
+				select {
+				case <-done:
+				default:
+					close(done)
+				}
+			}
+		})
+
+	// 先暂停再启动：loop 会立刻走到 ctx.Err() 分支
+	if err := r.Pause(batchID); err != nil {
+		t.Fatalf("暂停失败: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	running := make(chan struct{})
+	go func() {
+		r.Start(ctx, batchID)
+		close(running)
+	}()
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("暂停后未收到带统计的进度事件")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	var sawSummary bool
+	for _, l := range lines {
+		if containsStr(l, "本次导入") && containsStr(l, "进入复核") {
+			sawSummary = true
+		}
+	}
+	if !sawSummary {
+		t.Errorf("暂停时应输出统计而非空行, 实际收到: %v", lines)
+	}
+}

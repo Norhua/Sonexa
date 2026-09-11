@@ -75,7 +75,26 @@ export const useLibraryStore = defineStore('library', () => {
     return f
   }
 
+  /**
+   * 视口内的封面键。
+   *
+   * 供滚出视口的任务取消使用——工作池转而服务用户当前看得见的行。
+   */
+  const visibleCoverKeys = ref<string[]>([])
+
+  /** 通知后端取消已滚出视口的取图任务。 */
+  async function cancelOutOfViewCovers() {
+    try {
+      await App.CancelCovers(visibleCoverKeys.value)
+    } catch {
+      // 取消失败不影响渲染
+    }
+  }
+
   async function loadTracks() {
+    // 换视图/换筛选后，上一批的取图任务应让位给新的一批
+    void cancelOutOfViewCovers()
+    visibleCoverKeys.value = []
     loading.value = true
     error.value = ''
     try {
@@ -168,5 +187,6 @@ export const useLibraryStore = defineStore('library', () => {
     filter, chips, searchPlaceholder, scopeOverrideAll,
     baseFilter, loadTracks, loadCollections, goTo,
     applyFilter, quickSearch, removeChip, clearFilter, clearAllFilters,
+    visibleCoverKeys, cancelOutOfViewCovers,
   }
 })

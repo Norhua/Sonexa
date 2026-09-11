@@ -215,6 +215,18 @@ async function viewArtist(row: Row) {
   }
 }
 
+/** 采用封面后重新读一次详情，使抽屉立刻显示新图。 */
+async function onCoverAdopted() {
+  if (detail.value) {
+    try {
+      detail.value = await Api.GetTrackDetail(detail.value.track.id)
+    } catch (e) {
+      markFailure(e)
+    }
+  }
+  await library.loadTracks()
+}
+
 async function goToArtist(artistId: number) {
   try {
     const header = await Api.GetArtistHeader(artistId)
@@ -418,6 +430,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
         @close="drawerOpen = false"
         @edit="(id) => (editing = id)"
         @view-artist="goToArtist"
+        @cover-adopted="onCoverAdopted"
       />
     </div>
 

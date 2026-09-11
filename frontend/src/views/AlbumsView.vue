@@ -94,6 +94,8 @@ function toRows(): Row[] {
   return detail.value.rows
     .filter((r) => !onlyOwned.value || !r.ghost)
     .map((r) => ({
+      // 「其他版本」行的 trackId 就是被命中的那首已有曲目，
+      // 因此点击它能直接跳到用户手上的那一首。
       id: r.trackId,
       title: r.title,
       artist: r.credit,

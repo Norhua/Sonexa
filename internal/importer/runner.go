@@ -145,7 +145,9 @@ func (r *Runner) ResumeAll(ctx context.Context) error {
 func (r *Runner) loop(ctx context.Context, batchID int64) {
 	for {
 		if ctx.Err() != nil {
-			r.emitProgress(batchID, "", false, true)
+			// 暂停与完成一样要给出统计：规格要求「导入完成或暂停时」
+			// 都输出各类计数并逐行列出失败条目，空行会让用户无从核对。
+			r.emitProgress(batchID, r.summaryFor(batchID), false, true)
 			return
 		}
 
@@ -165,7 +167,7 @@ func (r *Runner) loop(ctx context.Context, batchID int64) {
 			// 有条目在退避中，稍后再看
 			select {
 			case <-ctx.Done():
-				r.emitProgress(batchID, "", false, true)
+				r.emitProgress(batchID, r.summaryFor(batchID), false, true)
 				return
 			case <-time.After(time.Second):
 				continue
