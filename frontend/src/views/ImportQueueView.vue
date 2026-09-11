@@ -43,6 +43,14 @@ onMounted(load)
 // 后端每推一条进度就刷新一次计数：页面开着时数字要跟着动
 watch(() => tasks.summary?.processed, () => void refresh())
 
+// 导入向导关掉就重读一次：刚提交的批次要立刻出现在这一页上
+watch(
+  () => ui.importOpen,
+  (open) => {
+    if (!open) void load()
+  },
+)
+
 // 新日志到达时把日志区滚到底
 watch(
   () => tasks.log.length,

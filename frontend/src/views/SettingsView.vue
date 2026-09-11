@@ -48,6 +48,9 @@ const contactMissing = computed(() => !draft.value?.musicbrainz.contact?.trim())
 
 async function save() {
   if (!draft.value) return
+  // 主题由 theme store 持有（需同步读取以避免首帧闪白），
+  // 保存时写回草稿，免得 settings.json 里留着一个与界面不符的值
+  draft.value.general.theme = theme.theme
   saving.value = true
   error.value = ''
   message.value = ''

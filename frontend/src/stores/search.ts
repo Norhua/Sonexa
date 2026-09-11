@@ -151,15 +151,6 @@ export const useSearchStore = defineStore('search', () => {
     }
   }
 
-  function clear() {
-    query.value = ''
-    conditions.value = []
-    libraryRows.value = []
-    upstreamRows.value = []
-    searched.value = false
-    error.value = ''
-  }
-
   return {
     scope,
     query,
@@ -180,6 +171,5 @@ export const useSearchStore = defineStore('search', () => {
     setScope,
     prefillUpstream,
     run,
-    clear,
   }
 })
