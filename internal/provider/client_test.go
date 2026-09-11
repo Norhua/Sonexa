@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -179,6 +180,8 @@ func TestHTTPErrorCarriesRetryAfter(t *testing.T) {
 
 	c := NewClient(NewLimiters(), newMemCache(), "test")
 	c.Limiters.Configure("p", 100, time.Second)
+	// 这里测的是错误字段被带出，不是重试行为——留着重试只会白等 42 秒
+	c.Retry.MaxAttempts = 1
 
 	_, err := c.Get(context.Background(), GetRequest{
 		Provider: "p", Endpoint: "/x", BaseURL: srv.URL, ParamsHash: "h",
@@ -212,11 +215,150 @@ func TestErrorResponseNotCached(t *testing.T) {
 	cache := newMemCache()
 	c := NewClient(NewLimiters(), cache, "test")
 	c.Limiters.Configure("p", 100, time.Second)
+	c.Retry.MaxAttempts = 1
 
 	c.Get(context.Background(), GetRequest{
 		Provider: "p", Endpoint: "/x", BaseURL: srv.URL, ParamsHash: "h",
 	})
 	if cache.puts != 0 {
 		t.Error("失败响应不应落盘")
+	}
+}
+
+// TestGetRetriesTransient503 覆盖「上游瞬时 503 不应上抛给调用方」：
+// MusicBrainz 即便在完全遵守 1 req/s 的前提下也会频繁返回
+// `503 … currently busy`，不在传输层吸收掉会让整批导入变成整批失败。
+func TestGetRetriesTransient503(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&hits, 1) < 3 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`{"error": "currently busy"}`))
+			return
+		}
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(NewLimiters(), newMemCache(), "ua")
+	c.Limiters.Configure("p", 1000, time.Second)
+	c.Retry = RetryPolicy{MaxAttempts: 4, BaseDelay: time.Millisecond, MaxDelay: 5 * time.Millisecond}
+
+	body, err := c.Get(context.Background(), GetRequest{
+		Provider: "p", Endpoint: "/x", BaseURL: srv.URL, ParamsHash: "h1",
+	})
+	if err != nil {
+		t.Fatalf("瞬时 503 应被重试吸收，却失败了: %v", err)
+	}
+	if string(body) != `{"ok":true}` {
+		t.Errorf("body = %q，期望重试后的成功响应", body)
+	}
+	if got := atomic.LoadInt32(&hits); got != 3 {
+		t.Errorf("请求次数 = %d，期望 3（两次 503 + 一次成功）", got)
+	}
+}
+
+// TestGetGivesUpAfterMaxAttempts 覆盖「持续失败仍要上抛」：
+// 传输层重试只吸收抖动，不能把一直不可用的上游伪装成可用。
+func TestGetGivesUpAfterMaxAttempts(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	c := NewClient(NewLimiters(), newMemCache(), "ua")
+	c.Limiters.Configure("p", 1000, time.Second)
+	c.Retry = RetryPolicy{MaxAttempts: 3, BaseDelay: time.Millisecond, MaxDelay: 5 * time.Millisecond}
+
+	_, err := c.Get(context.Background(), GetRequest{
+		Provider: "p", Endpoint: "/x", BaseURL: srv.URL, ParamsHash: "h1",
+	})
+	if err == nil {
+		t.Fatal("上游持续 503 时应返回错误")
+	}
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("err = %v，期望 503 的 HTTPError", err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 3 {
+		t.Errorf("请求次数 = %d，期望恰好 3 次（MaxAttempts）", got)
+	}
+}
+
+// TestGetDoesNotRetryClientError 覆盖「4xx 不重试」：
+// 查询语法错误重试多少次结果都一样，重试只会白白消耗令牌。
+func TestGetDoesNotRetryClientError(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	c := NewClient(NewLimiters(), newMemCache(), "ua")
+	c.Limiters.Configure("p", 1000, time.Second)
+	c.Retry = RetryPolicy{MaxAttempts: 4, BaseDelay: time.Millisecond, MaxDelay: 5 * time.Millisecond}
+
+	if _, err := c.Get(context.Background(), GetRequest{
+		Provider: "p", Endpoint: "/x", BaseURL: srv.URL, ParamsHash: "h1",
+	}); err == nil {
+		t.Fatal("400 应作为错误返回")
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Errorf("请求次数 = %d，期望 1（4xx 不重试）", got)
+	}
+}
+
+// TestRetryTakesTokenEachAttempt 覆盖「重试不绕过限流」：
+// 重试是抖动的补偿，不是超过上游速率上限的后门。
+func TestRetryTakesTokenEachAttempt(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	c := NewClient(NewLimiters(), newMemCache(), "ua")
+	// 每 40ms 一个令牌：3 次尝试至少要等掉 2 个令牌
+	c.Limiters.Configure("p", 1, 40*time.Millisecond)
+	c.Retry = RetryPolicy{MaxAttempts: 3, BaseDelay: time.Millisecond, MaxDelay: time.Millisecond}
+
+	start := time.Now()
+	_, _ = c.Get(context.Background(), GetRequest{
+		Provider: "p", Endpoint: "/x", BaseURL: srv.URL, ParamsHash: "h1",
+	})
+	if elapsed := time.Since(start); elapsed < 60*time.Millisecond {
+		t.Errorf("耗时 %v，重试未取令牌——限流被绕过了", elapsed)
+	}
+}
+
+// TestGetHonoursContextCancelDuringBackoff 覆盖「退避期间要响应取消」：
+// 用户暂停导入时不该被一串退避拖住。
+func TestGetHonoursContextCancelDuringBackoff(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	c := NewClient(NewLimiters(), newMemCache(), "ua")
+	c.Limiters.Configure("p", 1000, time.Second)
+	c.Retry = RetryPolicy{MaxAttempts: 5, BaseDelay: 10 * time.Second, MaxDelay: time.Minute}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	if _, err := c.Get(ctx, GetRequest{
+		Provider: "p", Endpoint: "/x", BaseURL: srv.URL, ParamsHash: "h1",
+	}); err == nil {
+		t.Fatal("取消后应返回错误")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("耗时 %v，退避期间没有响应 ctx 取消", elapsed)
 	}
 }

@@ -181,6 +181,52 @@ func TestColumnMappingChineseHeaders(t *testing.T) {
 	}
 }
 
+// TestColumnMappingChineseSuffixedHeaders 覆盖「歌手名 / 专辑名」这类带后缀的中文表头。
+//
+// 这是实际文件里最常见的写法之一。曾因「包含匹配」的长度门槛按 ASCII 一刀切
+// （三字符起）而把所有两字中文别名挡在门外，导致这些列全部落到「忽略」，
+// 用户每次导入都得手动改选艺术家与专辑。
+func TestColumnMappingChineseSuffixedHeaders(t *testing.T) {
+	cases := []struct {
+		header string
+		want   Field
+	}{
+		{"歌手名", FieldArtist}, {"艺术家名", FieldArtist}, {"演唱者", FieldArtist},
+		{"专辑名", FieldAlbum}, {"专辑名称", FieldAlbum}, {"唱片名", FieldAlbum},
+		{"歌曲名", FieldTitle}, {"曲目名称", FieldTitle},
+		{"时长(秒)", FieldDuration},
+	}
+	for _, c := range cases {
+		t.Run(c.header, func(t *testing.T) {
+			if got := MapColumn(c.header); got != c.want {
+				t.Errorf("MapColumn(%q) = %q, 期望 %q", c.header, got, c.want)
+			}
+		})
+	}
+}
+
+// TestShortAliasesStillRequireExactMatch 确保放宽 CJK 门槛没有连带放宽 ASCII 与单字别名。
+func TestShortAliasesStillRequireExactMatch(t *testing.T) {
+	cases := []struct {
+		header string
+		want   Field
+	}{
+		// "no" 是音轨号的别名，但 Note 不该因此被判为音轨号
+		{"Note", FieldIgnore},
+		{"Nobody", FieldIgnore},
+		// 单字的 年 / 碟 只在完全相等时命中
+		{"年", FieldYear}, {"碟", FieldAlbum},
+		{"备注", FieldIgnore},
+	}
+	for _, c := range cases {
+		t.Run(c.header, func(t *testing.T) {
+			if got := MapColumn(c.header); got != c.want {
+				t.Errorf("MapColumn(%q) = %q, 期望 %q", c.header, got, c.want)
+			}
+		})
+	}
+}
+
 // TestUnknownColumnIgnored 覆盖 10.4：未命中的列默认映射为忽略。
 func TestUnknownColumnIgnored(t *testing.T) {
 	if got := MapColumn("Note"); got != FieldIgnore {

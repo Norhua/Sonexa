@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // DelimiterResult 是分隔符探测的结果。
@@ -125,9 +126,9 @@ func sampleLines(text string, n int) []string {
 //
 // 同时包含中文与英文的常见写法。
 var headerDictionary = map[Field][]string{
-	FieldTitle:    {"曲名", "歌名", "标题", "题目", "title", "track", "song", "song name", "name"},
-	FieldArtist:   {"艺术家", "歌手", "艺人", "演唱", "artist", "singer", "performer", "vocalist"},
-	FieldAlbum:    {"专辑", "唱片", "碟", "歌集", "album", "collection", "release"},
+	FieldTitle:    {"曲名", "歌名", "标题", "题目", "曲目", "歌曲", "title", "track", "song", "song name", "name"},
+	FieldArtist:   {"艺术家", "歌手", "艺人", "演唱", "演唱者", "歌手名", "artist", "singer", "performer", "vocalist"},
+	FieldAlbum:    {"专辑", "唱片", "碟", "歌集", "专辑名", "album", "collection", "release"},
 	FieldYear:     {"年份", "发行年", "年", "year", "date", "released"},
 	FieldTrackNo:  {"音轨", "音轨号", "曲序", "序号", "track no", "track number", "trackno", "#", "no", "no.", "track_no"},
 	FieldDiscNo:   {"碟号", "disc", "disc no", "disc number", "discno", "disc_no"},
@@ -258,11 +259,18 @@ func isNumericOrDate(cell string) bool {
 		durationPattern.MatchString(cell)
 }
 
-// minSubstringAliasLen 是允许参与「包含匹配」的别名最短长度。
+// minASCIIAliasLen 是允许参与「包含匹配」的 ASCII 别名最短长度。
 //
-// 更短的别名（no / # / 年 / 碟）只在完全相等时命中——
+// 更短的 ASCII 别名（no / # ）只在完全相等时命中——
 // 否则 Note 会因为含 "no" 而被误判为音轨号。
-const minSubstringAliasLen = 3
+const minASCIIAliasLen = 3
+
+// minCJKAliasLen 是允许参与「包含匹配」的 CJK 别名最短长度。
+//
+// 中文别名两个字就足够特异（歌手 / 专辑 / 唱片），按 ASCII 的三字符门槛
+// 一刀切会把它们全部挡掉，于是「歌手名」「专辑名」这类再常见不过的表头
+// 全部落到「忽略」。单字的 年 / 碟 仍只允许完全相等。
+const minCJKAliasLen = 2
 
 // MapColumn 按表头词典把列名映射到字段；未命中返回 FieldIgnore。
 //
@@ -281,7 +289,7 @@ func MapColumn(header string) Field {
 			}
 		}
 	}
-	// 再找包含关系。短别名（如 no / # / 年 / 碟）只允许完全相等，
+	// 再找包含关系。太短的别名（如 no / # / 年 / 碟）只允许完全相等，
 	// 否则 Note 会因为含 "no" 而被误判为音轨号。
 	for _, field := range []Field{
 		FieldTitle, FieldArtist, FieldAlbum, FieldYear,
@@ -289,7 +297,7 @@ func MapColumn(header string) Field {
 	} {
 		for _, alias := range headerDictionary[field] {
 			a := normalizeHeader(alias)
-			if len([]rune(a)) < minSubstringAliasLen {
+			if len([]rune(a)) < minSubstringAliasLen(a) {
 				continue
 			}
 			if strings.Contains(normalized, a) {
@@ -298,6 +306,19 @@ func MapColumn(header string) Field {
 		}
 	}
 	return FieldIgnore
+}
+
+// minSubstringAliasLen 返回该别名参与包含匹配所需的最短长度。
+//
+// 门槛按字符类型区分：一个汉字承载的信息远多于一个拉丁字母，
+// 用同一个长度门槛衡量两者会一边失之过宽、一边失之过严。
+func minSubstringAliasLen(alias string) int {
+	for _, r := range alias {
+		if r > unicode.MaxASCII {
+			return minCJKAliasLen
+		}
+	}
+	return minASCIIAliasLen
 }
 
 // normalizeHeader 标准化列名：转小写、去空白与常见标点。

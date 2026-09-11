@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
@@ -31,9 +30,10 @@ type ReviewItem struct {
 	Candidates []CandidateRow `json:"candidates"`
 
 	// 失败状态的状态说明
-	AttemptCount int        `json:"attemptCount"`
-	LastError    *string    `json:"lastError"`
-	LastErrorAt  *time.Time `json:"lastErrorAt"`
+	AttemptCount int     `json:"attemptCount"`
+	LastError    *string `json:"lastError"`
+	// LastErrorAt 是 RFC3339 时间串；不用 time.Time，理由见 AlbumDetail.FetchedAt。
+	LastErrorAt *string `json:"lastErrorAt"`
 }
 
 // ReviewQueue 是复核队列的整体状态。
@@ -62,7 +62,7 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 			ID: it.ID, BatchID: it.BatchID, Status: string(it.Status),
 			InTitle: it.InTitle, InArtist: it.InArtist, InAlbum: it.InAlbum,
 			AttemptCount: it.AttemptCount,
-			LastError:    it.LastError, LastErrorAt: it.LastErrorAt,
+			LastError:    it.LastError, LastErrorAt: formatTime(it.LastErrorAt),
 		}
 		if b, _ := a.store.GetBatch(it.BatchID); b != nil {
 			r.BatchTag = b.Filename

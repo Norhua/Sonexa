@@ -46,7 +46,7 @@ func NewClient(limiters *Limiters, cache Cache, userAgent string) *Client {
 		HTTP:      &http.Client{Timeout: 30 * time.Second},
 		Limiters:  limiters,
 		Cache:     cache,
-		Retry:     DefaultRetryPolicy(),
+		Retry:     TransportRetryPolicy(),
 		UserAgent: userAgent,
 	}
 }
@@ -71,6 +71,10 @@ type GetRequest struct {
 //
 // 响应先落盘再交给解析器：解析器是本项目最容易出错的部分，
 // 而复现一次 bug 在 1 req/s 下代价高昂，落盘后可离线反复重放。
+//
+// 瞬时错误在这里就地重试，不上抛给调用方——MusicBrainz 即便在完全遵守
+// 1 req/s 的前提下也会频繁返回 `503 … currently busy`，把这种抖动一路
+// 传上去会让整批导入变成整批失败。
 func (c *Client) Get(ctx context.Context, req GetRequest) ([]byte, error) {
 	// 缓存命中时不消耗令牌
 	if !req.SkipCache && c.Cache != nil && req.ParamsHash != "" {
@@ -83,14 +87,7 @@ func (c *Client) Get(ctx context.Context, req GetRequest) ([]byte, error) {
 		}
 	}
 
-	// 取令牌：同一上游的全部受限端点共用一个桶
-	if c.Limiters != nil {
-		if err := c.Limiters.Wait(ctx, req.Provider); err != nil {
-			return nil, err
-		}
-	}
-
-	body, err := c.do(ctx, req)
+	body, err := c.getWithRetry(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -102,6 +99,48 @@ func (c *Client) Get(ctx context.Context, req GetRequest) ([]byte, error) {
 		}
 	}
 	return body, nil
+}
+
+// getWithRetry 取令牌、出网，并对可重试错误按策略退避重试。
+//
+// 每次尝试都重新取令牌：重试不是绕过限流的后门，退避等待与令牌等待相加，
+// 实际速率只会比配置的更慢。
+func (c *Client) getWithRetry(ctx context.Context, req GetRequest) ([]byte, error) {
+	attempts := c.Retry.MaxAttempts
+	if attempts <= 0 {
+		attempts = TransportMaxAttempts
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if c.Limiters != nil {
+			if err := c.Limiters.Wait(ctx, req.Provider); err != nil {
+				return nil, err
+			}
+		}
+
+		body, err := c.do(ctx, req)
+		if err == nil {
+			return body, nil
+		}
+		lastErr = err
+
+		// 不可重试的错误立刻上抛：400 的查询语法错误重试多少次都一样
+		if !IsRetryable(err) || attempt == attempts {
+			return nil, err
+		}
+		// ctx 已取消时不必再等退避
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(c.Retry.JitteredBackoff(attempt, err)):
+		}
+	}
+	return nil, lastErr
 }
 
 // do 执行实际的 HTTP 请求。

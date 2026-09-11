@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,6 +12,14 @@ import (
 
 // DefaultMaxAttempts 是同一条目累计失败的上限；达到后标记失败状态，不再自动重排。
 const DefaultMaxAttempts = 5
+
+// TransportMaxAttempts 是单次 HTTP 请求内部的尝试次数上限。
+//
+// 与条目级的 DefaultMaxAttempts 是两层不同的重试：这一层吸收上游的瞬时抖动，
+// 条目级那层处理「这条目前确实查不到」。两层都省掉的话，
+// MusicBrainz 的 503 会直接变成条目失败——实测在完全遵守 1 req/s 的前提下，
+// MB 仍有过半的请求返回 `503 … currently busy`，不吸收掉这层抖动导入必然大面积失败。
+const TransportMaxAttempts = 4
 
 // RetryPolicy 是统一的重试策略。
 type RetryPolicy struct {
@@ -25,6 +34,18 @@ func DefaultRetryPolicy() RetryPolicy {
 		MaxAttempts: DefaultMaxAttempts,
 		BaseDelay:   2 * time.Second,
 		MaxDelay:    5 * time.Minute,
+	}
+}
+
+// TransportRetryPolicy 返回单次 HTTP 请求内部使用的重试策略。
+//
+// 退避远比条目级的短：用户正盯着搜索结果等，而 503 多半下一秒就好了；
+// 真的连续几次都不行，再交给条目级那层用分钟量级的退避处理。
+func TransportRetryPolicy() RetryPolicy {
+	return RetryPolicy{
+		MaxAttempts: TransportMaxAttempts,
+		BaseDelay:   time.Second,
+		MaxDelay:    10 * time.Second,
 	}
 }
 
@@ -94,6 +115,19 @@ func (p RetryPolicy) ShouldGiveUp(attempts int) bool {
 		max = DefaultMaxAttempts
 	}
 	return attempts >= max
+}
+
+// JitteredBackoff 在 Backoff 之上加入 ±25% 的抖动。
+//
+// 一批条目往往在同一秒撞上同一次上游抖动；不加抖动它们此后会一直同步重试，
+// 把一次瞬时拥塞变成周期性拥塞。
+func (p RetryPolicy) JitteredBackoff(attempt int, err error) time.Duration {
+	d := p.Backoff(attempt, err)
+	if d <= 0 {
+		return 0
+	}
+	spread := float64(d) * 0.25
+	return time.Duration(float64(d) - spread + rand.Float64()*2*spread)
 }
 
 // parseRetryAfter 解析 Retry-After 响应头，支持秒数与 HTTP 日期两种形态。

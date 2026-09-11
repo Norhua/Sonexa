@@ -48,8 +48,12 @@ type AlbumDetail struct {
 	ReleaseRef   *string `json:"releaseRef"`
 
 	// TracklistState 为 none | partial | complete | failed。
-	TracklistState string     `json:"tracklistState"`
-	FetchedAt      *time.Time `json:"fetchedAt"`
+	TracklistState string `json:"tracklistState"`
+	// FetchedAt 是 RFC3339 时间串。
+	//
+	// 绑定层不导出 time.Time：Wails 的 TS 模型生成器不认识它，
+	// 会打印 `Not found: time.Time` 并把字段生成为 any。
+	FetchedAt *string `json:"fetchedAt"`
 	// TracklistError 在状态为 failed 时给出错误信息。
 	TracklistError string `json:"tracklistError"`
 
@@ -127,7 +131,7 @@ func (a *App) GetAlbumDetail(key, level string) (*AlbumDetail, error) {
 	detail.PrimaryType = rel.PrimaryType
 	detail.MediumFormat = rel.MediumFormat
 	detail.Country = rel.Country
-	detail.FetchedAt = rel.FetchedAt
+	detail.FetchedAt = formatTime(rel.FetchedAt)
 
 	// 清单过期判定收口在 isStale：所有读取清单的路径都经过它
 	staleCfg := a.staleConfig()

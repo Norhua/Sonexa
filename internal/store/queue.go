@@ -501,3 +501,33 @@ func nullIfEmpty(s string) any {
 	}
 	return s
 }
+
+// RecentBatches 返回最近的若干批次，最新的在前。
+//
+// 与 ActiveBatches 的区别是它也包含已完成的批次——导入队列页面要让用户
+// 看到刚刚跑完的那一批的统计，而不是任务一结束页面就空掉。
+func (s *Store) RecentBatches(limit int) ([]ImportBatch, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.Query(`
+		SELECT id, filename, encoding, delimiter, column_map, total_rows, status, created_at, finished_at
+		FROM import_batch ORDER BY created_at DESC, id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []ImportBatch
+	for rows.Next() {
+		var b ImportBatch
+		var status string
+		if err := rows.Scan(&b.ID, &b.Filename, &b.Encoding, &b.Delimiter, &b.ColumnMap,
+			&b.TotalRows, &status, &b.CreatedAt, &b.FinishedAt); err != nil {
+			return nil, err
+		}
+		b.Status = BatchStatus(status)
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}

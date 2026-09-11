@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/norhua/sonexa/internal/importer"
 	"github.com/norhua/sonexa/internal/store"
@@ -272,3 +273,69 @@ func (a *App) ResumeImport(batchID int64) error {
 }
 
 func strPtr(s string) *string { return &s }
+
+// ImportBatchView 是导入队列页面上的一个批次。
+type ImportBatchView struct {
+	ID       int64  `json:"id"`
+	Filename string `json:"filename"`
+	// Status 为 running | paused | done。
+	Status    string           `json:"status"`
+	TotalRows int              `json:"totalRows"`
+	Processed int              `json:"processed"`
+	Stats     store.BatchStats `json:"stats"`
+	// Running 是驱动器的真实状态；与 Status 可能短暂不一致（如刚重启尚未恢复）。
+	Running bool `json:"running"`
+	// CreatedAt / FinishedAt 是 RFC3339 时间串，理由见 AlbumDetail.FetchedAt。
+	CreatedAt  string  `json:"createdAt"`
+	FinishedAt *string `json:"finishedAt"`
+	// FailedTitles 逐行列出失败条目的原始曲名，供用户核对。
+	FailedTitles []string `json:"failedTitles"`
+}
+
+// recentBatchLimit 是导入队列页面回看的批次数。
+const recentBatchLimit = 20
+
+// GetImportQueue 返回导入队列页面所需的批次列表，最新的在前。
+//
+// 任务区从「侧栏里展开的一小块」改成独立页面后，这里要给出的不只是
+// 当前这一批的进度，还有刚跑完那几批的统计——用户回头核对失败条目时
+// 任务往往已经结束了。
+func (a *App) GetImportQueue() ([]ImportBatchView, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+
+	batches, err := a.store.RecentBatches(recentBatchLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]ImportBatchView, 0, len(batches))
+	for _, b := range batches {
+		stats, err := a.store.Stats(b.ID)
+		if err != nil {
+			return nil, err
+		}
+		v := ImportBatchView{
+			ID: b.ID, Filename: b.Filename, Status: string(b.Status),
+			TotalRows: b.TotalRows, Processed: stats.Processed(), Stats: stats,
+			Running:      a.runner != nil && a.runner.IsRunning(b.ID),
+			CreatedAt:    b.CreatedAt.UTC().Format(time.RFC3339),
+			FinishedAt:   formatTime(b.FinishedAt),
+			FailedTitles: []string{},
+		}
+		if failed, err := a.store.FailedItems(b.ID); err == nil {
+			for _, it := range failed {
+				v.FailedTitles = append(v.FailedTitles, describeItem(it))
+			}
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// describeItem 返回一条目的可读描述，供失败列表使用。
+func describeItem(it store.ImportItem) string {
+	return fmt.Sprintf("%s · %s · %s", derefOr(it.InTitle, "—"),
+		derefOr(it.InArtist, "—"), derefOr(it.InAlbum, "—"))
+}
