@@ -78,6 +78,21 @@ func (s *Service) CancelOutOfView(visibleKeys []string) {
 // 这样 <img> 的懒加载、滚出视口自动取消、解码不占主线程等原生行为全部保留。
 func (s *Service) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 已采用的封面按落盘路径直接读取；临时缩略图按缓存键取。
+		// 两条路径都要能走通，否则用户采用过的封面显示不出来。
+		if adoptedPath := r.URL.Query().Get("adopted"); adoptedPath != "" {
+			data := s.pool.cache.GetAdopted(adoptedPath)
+			if data == nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", contentTypeOf(data))
+			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+			w.Header().Set("Cache-Control", "no-store")
+			w.Write(data)
+			return
+		}
+
 		key := r.URL.Query().Get("key")
 		if key == "" {
 			http.Error(w, "缺少 key", http.StatusBadRequest)

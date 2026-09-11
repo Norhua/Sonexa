@@ -264,6 +264,12 @@ func buildCandidate(rec recording, rel release, med medium, trk track, credit st
 			c.FirstReleaseDate = strPtr(rel.ReleaseGroup.FirstReleaseDate)
 		}
 	}
+	if len(rel.LabelInfo) > 0 {
+		if rel.LabelInfo[0].Label != nil {
+			c.Label = strPtr(rel.LabelInfo[0].Label.Name)
+		}
+		c.CatalogNumber = strPtr(rel.LabelInfo[0].CatalogNumber)
+	}
 	if rel.CoverArtArchive != nil {
 		c.HasCover = rel.CoverArtArchive.Front || rel.CoverArtArchive.Artwork
 	}
@@ -309,6 +315,12 @@ func buildReleaseLevelCandidate(rec recording, rel release, credit string) provi
 		if rel.ReleaseGroup.FirstReleaseDate != "" {
 			c.FirstReleaseDate = strPtr(rel.ReleaseGroup.FirstReleaseDate)
 		}
+	}
+	if len(rel.LabelInfo) > 0 {
+		if rel.LabelInfo[0].Label != nil {
+			c.Label = strPtr(rel.LabelInfo[0].Label.Name)
+		}
+		c.CatalogNumber = strPtr(rel.LabelInfo[0].CatalogNumber)
 	}
 	if len(rec.ISRCs) > 0 {
 		c.ISRC = strPtr(rec.ISRCs[0])

@@ -62,6 +62,27 @@ func CacheKey(sourceRef string, size int) string {
 	return hex.EncodeToString(sum[:16])
 }
 
+// GetAdopted 按落盘路径读取已采用的封面。
+//
+// 采用后的图按内容哈希落在 adopted/，不在 tmp/ 里，
+// 因此 handler 必须能单独认这条路径——否则用户采用过的封面永远显示不出来。
+func (c *DiskCache) GetAdopted(path string) []byte {
+	if path == "" {
+		return nil
+	}
+	// 只允许读缓存目录内的文件，避免路径穿越
+	clean := filepath.Clean(path)
+	root := filepath.Clean(c.dir)
+	if !strings.HasPrefix(clean, root+string(filepath.Separator)) {
+		return nil
+	}
+	data, err := os.ReadFile(clean)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
 // Get 读取临时缓存中的图片；未命中或已过期时返回 nil。
 func (c *DiskCache) Get(key string) []byte {
 	path := c.tmpPath(key)

@@ -45,6 +45,9 @@ function columnVisible(cap: string): boolean {
 const showMedium = computed(() => columnVisible('MediumFormat'))
 const showCountry = computed(() => columnVisible('Country'))
 const showPrimaryType = computed(() => columnVisible('PrimaryType'))
+// 厂牌列由 Capabilities 驱动：只搜不支持它的上游时隐藏，部分支持时填占位
+const showLabel = computed(() => columnVisible('Label'))
+const showCatalogNumber = computed(() => columnVisible('CatalogNumber'))
 
 /** 某一行是否支持某列——不支持时填占位短横线。 */
 function rowSupports(row: Models.main.CandidateRow, cap: string): boolean {
@@ -91,6 +94,8 @@ function onAct(row: Models.main.CandidateRow) {
             <th class="w-16 px-2 py-2">年份</th>
             <th v-if="showMedium" class="w-20 px-2 py-2">载体</th>
             <th v-if="showCountry" class="w-20 px-2 py-2">国家/地区</th>
+            <th v-if="showLabel" class="px-2 py-2">厂牌</th>
+            <th v-if="showCatalogNumber" class="px-2 py-2">目录号</th>
             <th class="w-16 px-2 py-2">置信度</th>
             <th class="w-24 px-2 py-2">动作</th>
           </tr>
@@ -149,6 +154,12 @@ function onAct(row: Models.main.CandidateRow) {
             <td v-if="showCountry" class="px-2 py-1.5">
               {{ cell(row, 'Country', row.country) }}
             </td>
+            <td v-if="showLabel" class="max-w-0 truncate px-2 py-1.5">
+              {{ cell(row, 'Label', row.label) }}
+            </td>
+            <td v-if="showCatalogNumber" class="max-w-0 truncate px-2 py-1.5">
+              {{ cell(row, 'CatalogNumber', row.catalogNumber) }}
+            </td>
             <td class="px-2 py-1.5 tabular-nums">{{ Math.round(row.confidence) }}</td>
             <td class="px-2 py-1.5">
               <button
@@ -163,7 +174,7 @@ function onAct(row: Models.main.CandidateRow) {
           </tr>
 
           <tr v-if="rows.length === 0 && !loading">
-            <td :colspan="12" class="px-3 py-8 text-center text-muted-foreground">
+            <td :colspan="14" class="px-3 py-8 text-center text-muted-foreground">
               <slot name="empty">没有候选结果</slot>
             </td>
           </tr>

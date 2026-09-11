@@ -80,6 +80,8 @@ type TrackDetail struct {
 	// character 不单独成组——它只出现在署名原串的可点击片段中。
 	Participants []ParticipantGroup `json:"participants"`
 	CoverKey     string             `json:"coverKey"`
+	/** AdoptedCoverPath 非空时用已采用的封面，优先于临时缩略图。 */
+	AdoptedCoverPath string `json:"adoptedCoverPath"`
 }
 
 // GetTrackDetail 读取详情抽屉所需的全部内容。
@@ -128,6 +130,10 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 	// 封面键必须与注册降级链时用的尺寸一致，否则 key 对不上、handler 取不到图。
 	// BuildCoverRefs 一律按缩略图尺寸注册，详情也用同一尺寸取图，
 	// 由 <img> 的显示尺寸决定呈现大小。
+	// 已采用的封面优先：它是用户确认过的那张
+	if meta != nil && meta.CoverPath != nil {
+		detail.AdoptedCoverPath = *meta.CoverPath
+	}
 	if meta != nil && meta.ReleaseMBID != nil && meta.MatchSource != nil {
 		detail.CoverKey = coverKeyFor(*meta.MatchSource, *meta.ReleaseMBID, coverThumbSize)
 	}

@@ -27,6 +27,16 @@ export function coverUrl(key: string | undefined, size = 250): string {
   return `/cover?key=${encodeURIComponent(key)}&size=${size}`
 }
 
+/**
+ * 构造已采用封面的本地地址。
+ *
+ * 采用后的图按内容哈希落在正式区，与临时缩略图是两条不同的读取路径。
+ */
+export function adoptedCoverUrl(path: string): string {
+  if (!path) return ''
+  return `/cover?adopted=${encodeURIComponent(path)}`
+}
+
 /** 缺失值的占位呈现。缺失与空值必须可区分，不用 0 或空白伪装。 */
 export const DASH = '—'
 

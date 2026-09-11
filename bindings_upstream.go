@@ -28,18 +28,20 @@ type CandidateRow struct {
 	// LocalTrackID 非零时表示库中已有对应曲目，可跳转。
 	LocalTrackID int64 `json:"localTrackId"`
 
-	ThumbKey     string  `json:"thumbKey"`
-	Title        *string `json:"title"`
-	Artist       *string `json:"artist"`
-	Album        *string `json:"album"`
-	PrimaryType  *string `json:"primaryType"`
-	DurationMS   *int    `json:"durationMs"`
-	TrackNumber  *int    `json:"trackNumber"`
-	TrackTotal   *int    `json:"trackTotal"`
-	Year         *int    `json:"year"`
-	MediumFormat *string `json:"mediumFormat"`
-	Country      *string `json:"country"`
-	Confidence   float64 `json:"confidence"`
+	ThumbKey      string  `json:"thumbKey"`
+	Title         *string `json:"title"`
+	Artist        *string `json:"artist"`
+	Album         *string `json:"album"`
+	PrimaryType   *string `json:"primaryType"`
+	DurationMS    *int    `json:"durationMs"`
+	TrackNumber   *int    `json:"trackNumber"`
+	TrackTotal    *int    `json:"trackTotal"`
+	Year          *int    `json:"year"`
+	MediumFormat  *string `json:"mediumFormat"`
+	Country       *string `json:"country"`
+	Label         *string `json:"label"`
+	CatalogNumber *string `json:"catalogNumber"`
+	Confidence    float64 `json:"confidence"`
 	// MatchedVariant 供复核队列显示该分值来自哪个变体。
 	MatchedVariant string `json:"matchedVariant"`
 
@@ -193,6 +195,7 @@ func (a *App) toRows(candidates []provider.Candidate, q provider.Query, defaultA
 			PrimaryType: c.PrimaryType, DurationMS: c.DurationMS,
 			TrackNumber: c.TrackNumber, TrackTotal: c.TrackTotal,
 			Year: c.Year, MediumFormat: c.MediumFormat, Country: c.Country,
+			Label: c.Label, CatalogNumber: c.CatalogNumber,
 			Confidence: score.Total,
 			ReleaseRef: c.ReleaseRef, ReleaseGroupRef: c.ReleaseGroupRef,
 			RecordingRef: c.RecordingRef, ISRC: c.ISRC,

@@ -10,7 +10,7 @@
  */
 import { computed } from 'vue'
 import { X, Pencil } from 'lucide-vue-next'
-import { display, duration, coverUrl, DASH } from '@/api'
+import { display, duration, coverUrl, adoptedCoverUrl, DASH } from '@/api'
 import type { Models } from '@/api'
 
 const props = defineProps<{
@@ -25,6 +25,9 @@ const emit = defineEmits<{
 }>()
 
 const meta = computed(() => props.detail?.metadata ?? null)
+
+/** 封面键的尺寸必须与注册降级链时一致。 */
+const coverThumbSize = 250
 
 /**
  * 把署名原串切成可点击与纯文本两种片段。
@@ -90,8 +93,14 @@ const releaseInfo = computed(() => [
       <!-- 封面 -->
       <div class="flex justify-center">
         <img
-          v-if="detail.coverKey"
-          :src="coverUrl(detail.coverKey, 500)"
+          v-if="detail.adoptedCoverPath"
+          :src="adoptedCoverUrl(detail.adoptedCoverPath)"
+          class="aspect-square w-56 rounded-md object-cover shadow"
+          alt=""
+        />
+        <img
+          v-else-if="detail.coverKey"
+          :src="coverUrl(detail.coverKey, coverThumbSize)"
           class="aspect-square w-56 rounded-md object-cover shadow"
           alt=""
         />

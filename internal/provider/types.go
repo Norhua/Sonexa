@@ -60,6 +60,13 @@ type Candidate struct {
 	HasCover         bool
 	ReleaseGroupRef  *string // 同一 release group 的多个 release 归为一组
 
+	// 厂牌与目录号。iTunes 不提供，MB 在搜索响应中带回。
+	//
+	// 这两个字段的存在使 Capabilities 声明的 CapLabel / CapCatalogNumber
+	// 真正有列可驱动：集合中全不支持则隐藏该列，部分支持则填占位短横线。
+	Label         *string
+	CatalogNumber *string
+
 	// 去重与桥接
 	RecordingRef *string // MB recording MBID，用于「已有其他版本」判定
 	ISRC         *string

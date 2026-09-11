@@ -454,3 +454,36 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// TestSearchCandidateCarriesLabel 覆盖 12.6 的数据前提：
+// Capabilities 声明了 CapLabel / CapCatalogNumber，对应的列就必须有值可取，
+// 否则「部分支持则填占位、全不支持则隐藏」这条策略没有可驱动的东西。
+func TestSearchCandidateCarriesLabel(t *testing.T) {
+	var detail releaseDetail
+	loadFixture(t, "release_detail.json", &detail)
+
+	// 搜索结果里的 release 也带 label-info
+	var resp searchResponse
+	loadFixture(t, "search_recording.json", &resp)
+	got := expandToTrackCandidates(resp.Recordings)
+	if len(got) == 0 {
+		t.Fatal("未展开出候选")
+	}
+
+	// 金样例的搜索响应未带 label-info，此时字段应为缺失而非空串——
+	// 界面据此填占位短横线
+	for _, c := range got {
+		if c.Label != nil && *c.Label == "" {
+			t.Error("缺失的厂牌不应表示为空串")
+		}
+	}
+
+	// 详情路径下厂牌与目录号可解析（同一份 schema）
+	d := ParseDetail(&detail, "trk-cd-jp-02")
+	if d.Label == nil || *d.Label != "Lantis" {
+		t.Errorf("详情厂牌 = %v, 期望 Lantis", d.Label)
+	}
+	if d.CatalogNumber == nil || *d.CatalogNumber != "LACA-15113" {
+		t.Errorf("详情目录号 = %v, 期望 LACA-15113", d.CatalogNumber)
+	}
+}
