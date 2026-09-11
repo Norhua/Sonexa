@@ -76,7 +76,7 @@ func TestFullDepthIncludesRichFields(t *testing.T) {
 
 	records := parseCSV(t, buf.Bytes())
 	header := strings.Join(records[0], ",")
-	for _, field := range []string{"年份", "音轨号", "碟号", "时长", "风格", "厂牌", "目录号", "载体", "国家"} {
+	for _, field := range []string{"年份", "音轨", "碟号", "时长", "风格", "厂牌", "目录号", "载体", "国家"} {
 		if !strings.Contains(header, field) {
 			t.Errorf("表头缺少 %q: %s", field, header)
 		}
@@ -98,7 +98,7 @@ func TestMissingFieldsAreEmptyNotZero(t *testing.T) {
 	if row[yearIdx] != "" {
 		t.Errorf("缺失的年份导出为 %q, 期望空串而不是 0", row[yearIdx])
 	}
-	trackNoIdx := indexOf(records[0], "音轨号")
+	trackNoIdx := indexOf(records[0], "音轨")
 	if row[trackNoIdx] != "" {
 		t.Errorf("缺失的音轨号导出为 %q, 期望空串", row[trackNoIdx])
 	}
@@ -200,7 +200,7 @@ func TestExportedCSVHeadersMatchImportDictionary(t *testing.T) {
 	// 这些列名必须是导入词典中的常见写法
 	mustMap := map[string]bool{
 		"曲名": true, "艺术家": true, "专辑": true,
-		"年份": true, "音轨号": true, "碟号": true, "时长": true,
+		"年份": true, "音轨": true, "碟号": true, "时长": true,
 	}
 	var matched int
 	for _, h := range records[0] {

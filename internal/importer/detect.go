@@ -129,7 +129,7 @@ var headerDictionary = map[Field][]string{
 	FieldArtist:   {"艺术家", "歌手", "艺人", "演唱", "artist", "singer", "performer", "vocalist"},
 	FieldAlbum:    {"专辑", "唱片", "碟", "歌集", "album", "collection", "release"},
 	FieldYear:     {"年份", "发行年", "年", "year", "date", "released"},
-	FieldTrackNo:  {"音轨", "曲序", "序号", "track no", "track number", "trackno", "#", "no", "no.", "track_no"},
+	FieldTrackNo:  {"音轨", "音轨号", "曲序", "序号", "track no", "track number", "trackno", "#", "no", "no.", "track_no"},
 	FieldDiscNo:   {"碟号", "disc", "disc no", "disc number", "discno", "disc_no"},
 	FieldDuration: {"时长", "长度", "duration", "length", "time"},
 }

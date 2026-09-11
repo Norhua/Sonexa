@@ -71,7 +71,7 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 			json.Unmarshal([]byte(*it.TriedVariants), &r.TriedVariants)
 		}
 		if it.Candidates != nil {
-			r.Candidates = parseCandidateSnapshot(*it.Candidates)
+			r.Candidates = a.parseCandidateSnapshot(*it.Candidates)
 		}
 		if r.Candidates == nil {
 			r.Candidates = []CandidateRow{}
@@ -92,7 +92,7 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 //
 // 快照可能是管线写入的 ScoredCandidate 数组，
 // 也可能是本地疑似重复写入的简化结构。
-func parseCandidateSnapshot(raw string) []CandidateRow {
+func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 	// 先按管线的评分候选解析
 	var scored []matching.ScoredCandidate
 	if err := json.Unmarshal([]byte(raw), &scored); err == nil && len(scored) > 0 && scored[0].Candidate.MatchRef != "" {
@@ -101,7 +101,9 @@ func parseCandidateSnapshot(raw string) []CandidateRow {
 			c := sc.Candidate
 			out = append(out, CandidateRow{
 				Provider: string(c.Provider), MatchRef: c.MatchRef,
-				Badges: []string{string(c.Provider)}, Action: "接受",
+				// 复核队列的候选必须与上游搜索一样做本地判定，
+				// 否则库里已有的那首不会显示双徽章、动作也不会变成「合并」。
+				Badges: a.badgesFor(c), Action: a.actionFor(c), Note: a.noteFor(c),
 				Title: c.Title, Artist: c.ArtistName, Album: c.AlbumTitle,
 				PrimaryType: c.PrimaryType, DurationMS: c.DurationMS,
 				TrackNumber: c.TrackNumber, TrackTotal: c.TrackTotal,
@@ -177,6 +179,36 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 	return rows, nil
 }
 
+// badgesFor 返回某条候选应显示的徽章。
+//
+// 库中已有且上游也存在时同时标注两个徽章；经 ISRC 桥接命中的标注
+// 「经 ISRC 匹配」；文本模糊比对的疑似命中带问号。
+func (a *App) badgesFor(c provider.Candidate) []string {
+	local, err := matching.ResolveLocal(a.store, c)
+	if err != nil || local.Kind == matching.LocalNone {
+		return []string{string(c.Provider)}
+	}
+	return local.Badges(c.Provider)
+}
+
+// actionFor 返回某条候选应显示的动作。
+func (a *App) actionFor(c provider.Candidate) string {
+	local, err := matching.ResolveLocal(a.store, c)
+	if err != nil || local.Kind == matching.LocalNone {
+		return "接受"
+	}
+	return local.Action()
+}
+
+// noteFor 返回候选的附加说明（如「经 ISRC 匹配」）。
+func (a *App) noteFor(c provider.Candidate) string {
+	local, err := matching.ResolveLocal(a.store, c)
+	if err != nil {
+		return ""
+	}
+	return local.Note()
+}
+
 func sortRowsByConfidence(rows []CandidateRow) {
 	for i := 1; i < len(rows); i++ {
 		for j := i; j > 0 && rows[j-1].Confidence < rows[j].Confidence; j-- {
@@ -186,6 +218,10 @@ func sortRowsByConfidence(rows []CandidateRow) {
 }
 
 // AcceptCandidate 采用某条上游候选入库并写入溯源。
+//
+// 入库后补一次详情：search 的候选只有扁平字段，参与者关系与作曲作词
+// 只有在详情里才有。补详情失败不回滚入库——曲目已经进来了，
+// 缺的丰富信息可以之后在编辑页补。
 func (a *App) AcceptCandidate(itemID int64, row CandidateRow) (int64, error) {
 	if err := a.ready(); err != nil {
 		return 0, err
@@ -196,6 +232,13 @@ func (a *App) AcceptCandidate(itemID int64, row CandidateRow) (int64, error) {
 	}
 	if err := a.store.MarkImported(itemID, trackID); err != nil {
 		return 0, err
+	}
+	if row.ReleaseRef != nil && *row.ReleaseRef != "" {
+		if err := a.RefreshTrackDetail(trackID, row.Provider, *row.ReleaseRef); err != nil {
+			// 记下失败原因供界面显示，但不当作接受失败
+			msg := err.Error()
+			_ = a.store.RecordEnrichFailure(trackID, msg)
+		}
 	}
 	return trackID, nil
 }

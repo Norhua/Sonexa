@@ -218,6 +218,17 @@ async function exportScope(scope: 'playlist' | 'filtered' | 'selection' | 'all')
   }
 }
 
+/** 歌单拖拽重排：持久化新顺序，重开该歌单时保持。 */
+async function reorderPlaylist(orderedIds: number[]) {
+  if (library.view !== 'playlist') return
+  try {
+    await Api.ReorderCollection(library.contextId, orderedIds)
+    await library.loadTracks()
+  } catch (e) {
+    notice.value = String(e)
+  }
+}
+
 async function toUpstream(fields: { title: string; artist: string; album: string }) {
   upstreamPrefill.value = fields
   await library.goTo('upstream')
@@ -305,6 +316,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
             v-if="rows.length > 0"
             :rows="rows"
             :collection-id="library.view === 'playlist' ? library.contextId : 0"
+            :reorderable="library.view === 'playlist'"
             :loading="library.loading"
             @open="openDetail"
             @edit="(r) => (editing = r.id)"
@@ -315,6 +327,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
             @copy-info="copyInfo"
             @selection-change="(ids) => (selectedIds = ids)"
             @export-scope="exportScope"
+            @reorder="reorderPlaylist"
           />
           <EmptyState
             v-else-if="!library.loading"

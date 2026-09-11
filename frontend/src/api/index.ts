@@ -12,6 +12,7 @@ export const Events = {
   ImportProgress: 'import:progress',
   SettingsSaved: 'settings:saved',
   LibraryChanged: 'library:changed',
+  ProviderResults: 'upstream:providerResults',
 } as const
 
 /**

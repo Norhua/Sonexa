@@ -9,6 +9,7 @@ import (
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // CandidateRow 是候选结果表格的一行。
@@ -41,6 +42,9 @@ type CandidateRow struct {
 	Confidence   float64 `json:"confidence"`
 	// MatchedVariant 供复核队列显示该分值来自哪个变体。
 	MatchedVariant string `json:"matchedVariant"`
+
+	/** ArtworkURL 是 iTunes 的基准图地址；其大图尺寸靠构造，需据此生成降级链。 */
+	ArtworkURL *string `json:"artworkUrl"`
 
 	ReleaseRef      *string `json:"releaseRef"`
 	ReleaseGroupRef *string `json:"releaseGroupRef"`
@@ -118,6 +122,19 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 				return
 			}
 			t.rows = a.toRows(candidates, q, "加入曲库")
+
+			// 该上游一完成就推给前端：先返回的先显示，不被慢的上游阻塞。
+			// 仍等到 wg.Wait() 是为了让本次调用的返回值完整，
+			// 前端可以只用事件做增量渲染。
+			if a.ctx != nil {
+				runtime.EventsEmit(a.ctx, EventProviderResults, providerResult{
+					Provider:     string(t.p.ID()),
+					DisplayName:  t.p.DisplayName(),
+					Rows:         t.rows,
+					Count:        len(t.rows),
+					Capabilities: t.p.Capabilities().Names(),
+				})
+			}
 		}(t)
 	}
 	wg.Wait()
@@ -191,7 +208,7 @@ func (a *App) toRows(candidates []provider.Candidate, q provider.Query, defaultA
 		}
 
 		if c.ReleaseRef != nil {
-			row.ThumbKey = covers.CacheKey(string(c.Provider)+":"+*c.ReleaseRef, 250)
+			row.ThumbKey = covers.CacheKey(string(c.Provider)+":"+*c.ReleaseRef, coverThumbSize)
 		}
 		rows = append(rows, row)
 	}
@@ -276,19 +293,41 @@ func (a *App) CancelCovers(visibleKeys []string) {
 func (a *App) BuildCoverRefs(rows []CandidateRow) []covers.Ref {
 	out := make([]covers.Ref, 0, len(rows))
 	for _, r := range rows {
-		if r.ReleaseRef == nil || *r.ReleaseRef == "" {
+		// iTunes 的候选没有 release 级标识，只有 artworkUrl；
+		// 只要有一个可用于构造降级链的来源就应预取。
+		hasRef := r.ReleaseRef != nil && *r.ReleaseRef != ""
+		hasArtwork := r.ArtworkURL != nil && *r.ArtworkURL != ""
+		if !hasRef && !hasArtwork {
 			continue
 		}
-		urls := a.coverLadder(r.Provider, *r.ReleaseRef, r.ReleaseGroupRef)
+		artwork := ""
+		if r.ArtworkURL != nil {
+			artwork = *r.ArtworkURL
+		}
+		urls := a.coverLadder(r.Provider, releaseRefOf(r), artwork, r.ReleaseGroupRef)
 		if len(urls) == 0 {
 			continue
 		}
+		sourceRef := releaseRefOf(r)
+		if sourceRef == "" && r.ArtworkURL != nil {
+			// iTunes 无 release 标识，用基准图地址作为缓存来源
+			sourceRef = *r.ArtworkURL
+		}
 		out = append(out, covers.Ref{
 			Key:       r.ThumbKey,
-			SourceRef: *r.ReleaseRef,
-			Size:      250,
+			SourceRef: sourceRef,
+			Size:      coverThumbSize,
 			URLs:      urls,
 		})
 	}
 	return out
+}
+
+// providerResult 是单个上游的搜索结果事件载荷。
+type providerResult struct {
+	Provider     string         `json:"provider"`
+	DisplayName  string         `json:"displayName"`
+	Rows         []CandidateRow `json:"rows"`
+	Count        int            `json:"count"`
+	Capabilities []string       `json:"capabilities"`
 }

@@ -77,8 +77,14 @@ async function searchLocal() {
     }
   }
 
-  // 作用域可切换：从「当前歌单」切到「全部曲目」
-  if (form.value.scopeAll) next.collectionId = 0
+  // 作用域可切换：从「当前歌单」切到「全部曲目」。
+  // 必须写进 store 的 scopeOverrideAll，否则 baseFilter() 会按当前视图
+  // 重新推导出 collectionId，切换变成空操作。
+  if (form.value.scopeAll) {
+    library.scopeOverrideAll = true
+  } else {
+    library.scopeOverrideAll = false
+  }
 
   await library.applyFilter(next, chips)
   advancedOpen.value = false

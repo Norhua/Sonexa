@@ -17,7 +17,7 @@ import (
 //
 //	来自 MusicBrainz → Cover Art Archive
 //	来自 iTunes      → iTunes 图片地址（尺寸靠构造）
-func (a *App) coverLadder(providerID, releaseRef string, releaseGroupRef *string) []string {
+func (a *App) coverLadder(providerID, releaseRef, artworkURL string, releaseGroupRef *string) []string {
 	switch provider.ProviderID(providerID) {
 	case provider.MusicBrainz:
 		rgRef := ""
@@ -33,9 +33,19 @@ func (a *App) coverLadder(providerID, releaseRef string, releaseGroupRef *string
 		return urls
 
 	case provider.ITunes:
-		// iTunes 的图片地址来自 search 响应，此处无法凭标识构造，
-		// 由调用方在有 artworkUrl 时直接提供。
-		return nil
+		// iTunes 只返回一个 artworkUrl100，大图靠构造地址（未文档化行为），
+		// 因此需要基准地址才能生成降级链——它来自 search 响应。
+		//
+		// 四档从高到低，选中时先 HEAD 验证再采用，不可用自动退档。
+		if artworkURL == "" {
+			return nil
+		}
+		images := itunes.ArtworkLadder(artworkURL)
+		urls := make([]string, 0, len(images))
+		for _, img := range images {
+			urls = append(urls, img.URL)
+		}
+		return urls
 	}
 	return nil
 }
@@ -127,4 +137,18 @@ func (a *App) ITunesArtworkLadder(artworkURL string) []string {
 		out = append(out, img.URL)
 	}
 	return out
+}
+
+// coverThumbSize 是封面键统一使用的尺寸。
+//
+// 缓存键包含尺寸，因此注册降级链与取图必须用同一个值——
+// 此前详情用 500、注册用 250，两边 key 对不上，详情封面永远取不到。
+const coverThumbSize = 250
+
+// releaseRefOf 安全地取出行上的发行标识；缺失时返回空串。
+func releaseRefOf(r CandidateRow) string {
+	if r.ReleaseRef == nil {
+		return ""
+	}
+	return *r.ReleaseRef
 }

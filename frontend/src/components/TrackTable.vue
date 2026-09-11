@@ -41,9 +41,15 @@ const props = withDefaults(
     collectionId?: number
     /** 专辑视图固定按碟号与音轨号排序，不受表格默认排序影响。 */
     fixedOrder?: boolean
+    /**
+     * 是否允许拖拽重排。
+     *
+     * 只有歌单需要显式顺序；标签忽略顺序，专辑视图按曲序读，两者都不提供。
+     */
+    reorderable?: boolean
     loading?: boolean
   }>(),
-  { collectionId: 0, fixedOrder: false, loading: false },
+  { collectionId: 0, fixedOrder: false, reorderable: false, loading: false },
 )
 
 const emit = defineEmits<{
@@ -58,9 +64,13 @@ const emit = defineEmits<{
   viewUpstream: [row: Row]
   selectionChange: [ids: number[]]
   exportScope: [scope: 'playlist' | 'filtered' | 'selection' | 'all']
+  reorder: [orderedIds: number[]]
 }>()
 
 const selected = ref<Set<number>>(new Set())
+/** 正在被拖动的行，以及拖动经过的行——仅歌单启用。 */
+const dragId = ref<number | null>(null)
+const dragOverId = ref<number | null>(null)
 const lastClicked = ref<number | null>(null)
 const menu = ref<{ x: number; y: number; row: Row } | null>(null)
 
@@ -124,6 +134,42 @@ function onRowClick(row: Row, event: MouseEvent) {
   lastClicked.value = row.id
   emit('selectionChange', [...selected.value])
   emit('open', row)
+}
+
+/** 拖拽开始：记下被拖动的行。 */
+function onDragStart(row: Row, event: DragEvent) {
+  if (!props.reorderable || row.ghost) return
+  dragId.value = row.id
+  event.dataTransfer?.setData('text/plain', String(row.id))
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+
+function onDragOver(row: Row, event: DragEvent) {
+  if (!props.reorderable || dragId.value === null || row.ghost) return
+  event.preventDefault()
+  dragOverId.value = row.id
+}
+
+/** 放下：就地重排并把新顺序交给父组件持久化。 */
+function onDrop(row: Row, event: DragEvent) {
+  if (!props.reorderable || dragId.value === null || row.ghost) return
+  event.preventDefault()
+
+  const ids = props.rows.filter((r: Row) => !r.ghost).map((r: Row) => r.id)
+  const from = ids.indexOf(dragId.value)
+  const to = ids.indexOf(row.id)
+  dragId.value = null
+  dragOverId.value = null
+  if (from < 0 || to < 0 || from === to) return
+
+  const next = [...ids]
+  next.splice(to, 0, ...next.splice(from, 1))
+  emit('reorder', next)
+}
+
+function onDragEnd() {
+  dragId.value = null
+  dragOverId.value = null
 }
 
 function onContextMenu(row: Row, event: MouseEvent) {
@@ -221,8 +267,11 @@ defineExpose({ selectedCount, trackCount, selectedRows })
           <tr
             v-for="row in rows"
             :key="row.ghost ? `ghost-${row.discNumber}-${row.trackNumber}` : row.id"
+            :draggable="reorderable && !row.ghost"
             :class="[
               'border-b',
+              dragOverId === row.id && dragId !== row.id ? 'outline outline-1 outline-primary' : '',
+              dragId === row.id ? 'opacity-50' : '',
               // 灰色行：降低对比度，不加删除线——它不是「已失效」，是「你还没有」
               row.ghost
                 ? 'text-ghost-foreground cursor-default'
@@ -231,6 +280,10 @@ defineExpose({ selectedCount, trackCount, selectedRows })
             ]"
             @click="onRowClick(row, $event)"
             @contextmenu="onContextMenu(row, $event)"
+            @dragstart="onDragStart(row, $event)"
+            @dragover="onDragOver(row, $event)"
+            @drop="onDrop(row, $event)"
+            @dragend="onDragEnd"
           >
             <td class="px-2 py-1.5">
               <input

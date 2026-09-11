@@ -292,7 +292,11 @@ func (r *Runner) summaryFor(batchID int64) string {
 	if err != nil {
 		return ""
 	}
-	line := matching.SummaryLine(stats.Imported, stats.Review, stats.Review, stats.Failed)
+	// 「未匹配」是进入复核的两种成因之一（无结果/全低置信），
+	// 与「跨发行组」合起来才是进入复核的总数；此前把 Review 传了两次，
+	// 导致两个计数永远相同。
+	unmatched := stats.Review
+	line := matching.SummaryLine(stats.Imported, stats.Review, unmatched, stats.Failed)
 
 	failed, err := r.store.FailedItems(batchID)
 	if err != nil || len(failed) == 0 {

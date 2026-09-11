@@ -3,8 +3,8 @@
  * 上游搜索页。独立入口与独立页面，不与库内搜索结果混排——
  * 两者的可用动作完全不同。
  */
-import { computed, onMounted, ref, watch } from 'vue'
-import { App, type Models } from '@/api'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { App, Events, EventsOn, type Models } from '@/api'
 import CandidateTable from '@/components/CandidateTable.vue'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -23,15 +23,34 @@ const countryTouched = ref(false)
 
 const result = ref<Models.main.SearchResponse | null>(null)
 const activeTab = ref('aggregate')
-const loading = ref(false)
+/** 各上游各自的 loading 状态：慢的不拖住快的。 */
+const loadingProviders = ref<Set<string>>(new Set())
+const loading = computed(() => loadingProviders.value.size > 0)
 const error = ref('')
+
+let offProvider: (() => void) | null = null
 
 onMounted(async () => {
   countries.value = (await App.ListCountries()) ?? []
   // 上游勾选区从注册表动态渲染，不是硬编码的名单
   selectedProviders.value = settings.providers.map((p) => p.id)
   if (props.prefill) form.value = { ...props.prefill }
+
+  // 每个上游完成即增量填入：先返回的先显示，不被慢的上游阻塞
+  offProvider = EventsOn(Events.ProviderResults, (p: Models.main.ProviderResults) => {
+    if (!result.value) {
+      result.value = { aggregate: [], byProvider: [], capabilities: [], countryHint: null } as
+        unknown as Models.main.SearchResponse
+    }
+    const list = result.value.byProvider.filter((x) => x.provider !== p.provider)
+    list.push(p)
+    result.value.byProvider = list
+    result.value.aggregate = list.flatMap((x) => x.rows)
+    result.value.capabilities = [...new Set(list.flatMap((x) => x.capabilities ?? []))]
+  })
 })
+
+onUnmounted(() => offProvider?.())
 
 watch(
   () => props.prefill,
@@ -74,7 +93,7 @@ async function updateHint() {
 
 async function search() {
   error.value = ''
-  loading.value = true
+  loadingProviders.value = new Set(selectedProviders.value)
   result.value = null
   try {
     await updateHint()
@@ -91,7 +110,7 @@ async function search() {
   } catch (e) {
     error.value = String(e)
   } finally {
-    loading.value = false
+    loadingProviders.value = new Set()
   }
 }
 

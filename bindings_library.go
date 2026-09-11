@@ -113,8 +113,11 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 	}
 	detail.Participants = groups
 
+	// 封面键必须与注册降级链时用的尺寸一致，否则 key 对不上、handler 取不到图。
+	// BuildCoverRefs 一律按缩略图尺寸注册，详情也用同一尺寸取图，
+	// 由 <img> 的显示尺寸决定呈现大小。
 	if meta != nil && meta.ReleaseMBID != nil && meta.MatchSource != nil {
-		detail.CoverKey = coverKeyFor(*meta.MatchSource, *meta.ReleaseMBID, 500)
+		detail.CoverKey = coverKeyFor(*meta.MatchSource, *meta.ReleaseMBID, coverThumbSize)
 	}
 	return detail, nil
 }

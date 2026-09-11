@@ -44,9 +44,17 @@ export const useLibraryStore = defineStore('library', () => {
   /** 顶栏快速搜索的占位文案，明示作用域。 */
   const searchPlaceholder = computed(() => `在“${contextTitle.value}”中搜索…`)
 
+  /** 高级搜索里把作用域显式切到「全部曲目」。 */
+  const scopeOverrideAll = ref(false)
+
   /** 当前视图对应的基础筛选条件。 */
   function baseFilter(): Models.store.TrackFilter {
     const f = { ...filter.value } as Models.store.TrackFilter
+    // 作用域被显式切到「全部曲目」时，不再受当前歌单/标签限定
+    if (scopeOverrideAll.value) {
+      f.collectionId = 0
+      return f
+    }
     switch (view.value) {
       case 'playlist':
       case 'tag':
@@ -146,6 +154,7 @@ export const useLibraryStore = defineStore('library', () => {
   function clearFilter() {
     filter.value = {} as Models.store.TrackFilter
     chips.value = []
+    scopeOverrideAll.value = false
   }
 
   async function clearAllFilters() {
@@ -156,7 +165,7 @@ export const useLibraryStore = defineStore('library', () => {
   return {
     view, contextId, contextKey, contextLevel, contextTitle,
     playlists, tags, tracks, total, loading, error,
-    filter, chips, searchPlaceholder,
+    filter, chips, searchPlaceholder, scopeOverrideAll,
     baseFilter, loadTracks, loadCollections, goTo,
     applyFilter, quickSearch, removeChip, clearFilter, clearAllFilters,
   }

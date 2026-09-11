@@ -174,6 +174,9 @@ const (
 	EventImportProgress = "import:progress"
 	EventSettingsSaved  = "settings:saved"
 	EventLibraryChanged = "library:changed"
+	// EventProviderResults 在每个上游完成时单独推送，
+	// 使先返回的先显示，不被慢的上游阻塞。
+	EventProviderResults = "upstream:providerResults"
 )
 
 // shutdown 在应用退出时释放资源。

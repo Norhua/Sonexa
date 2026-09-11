@@ -45,8 +45,12 @@ func TestExportImportRoundTrip(t *testing.T) {
 		t.Errorf("往返导入不应需要手动设置: %s", res.Detection.Reason)
 	}
 
-	// 列映射自动命中曲名、艺术家、专辑
-	for _, want := range []Field{FieldTitle, FieldArtist, FieldAlbum} {
+	// 列映射自动命中全部七个字段——导出表头必须用的是导入词典认得的那套写法，
+	// 只断言三个会漏掉「音轨号/音轨」这类不一致。
+	for _, want := range []Field{
+		FieldTitle, FieldArtist, FieldAlbum, FieldYear,
+		FieldTrackNo, FieldDiscNo, FieldDuration,
+	} {
 		if !hasField(res.ColumnMap, want) {
 			t.Errorf("列映射未命中 %q, 映射为 %v (表头 %v)", want, res.ColumnMap, res.Headers)
 		}
