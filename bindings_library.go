@@ -372,7 +372,7 @@ func (a *App) ListAlbums() ([]store.AlbumListItem, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
-	return a.store.ListAlbums()
+	return a.store.ListAlbums(a.ladderConfig())
 }
 
 // notifyLibraryChanged 通知前端曲库已变更。

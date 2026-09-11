@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
 )
@@ -70,7 +71,7 @@ func (a *App) GetAlbumDetail(key, level string) (*AlbumDetail, error) {
 		return nil, err
 	}
 
-	albums, err := a.store.ListAlbums()
+	albums, err := a.store.ListAlbums(a.ladderConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -392,4 +393,15 @@ func asAlreadyExistsErr(err error, target **store.ErrAlreadyExists) bool {
 		return true
 	}
 	return false
+}
+
+// ladderConfig 返回发行优选阶梯的配置。
+//
+// 取自用户设置，与匹配阶段用的是同一套配置——
+// 否则用户改了偏好国家或载体优先级后，两处会选出不同的代表 release。
+func (a *App) ladderConfig() matching.LadderConfig {
+	if a.settings == nil {
+		return matching.DefaultLadderConfig()
+	}
+	return matching.LadderFromSettings(a.settings.Get().Matching)
 }

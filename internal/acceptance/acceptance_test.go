@@ -216,7 +216,7 @@ func TestF4_GhostRowsAndCount(t *testing.T) {
 	}
 
 	// 计数 8/12
-	albums, _ := s.ListAlbums()
+	albums, _ := s.ListAlbums(matching.DefaultLadderConfig())
 	if len(albums) != 1 {
 		t.Fatalf("专辑条目 = %d, 期望 1", len(albums))
 	}
@@ -229,7 +229,7 @@ func TestF4_GhostRowsAndCount(t *testing.T) {
 		t.Fatalf("删除失败: %v", err)
 	}
 
-	albums, _ = s.ListAlbums()
+	albums, _ = s.ListAlbums(matching.DefaultLadderConfig())
 	if got := albums[0].CountLabel(); got != "7/12" {
 		t.Errorf("删除后计数 = %q, 期望 7/12", got)
 	}
@@ -460,7 +460,7 @@ func TestF11_UserEditedYearSurvivesRematch(t *testing.T) {
 	trackID, err := s.CreateTrackWithProvenance(store.NewTrackInput{
 		Title: "That Girl", Artist: ptr("Natalia Lesz"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
-		Metadata:    &store.MetadataInput{Year: ptr(2011)},
+		Metadata: &store.MetadataInput{Year: ptr(2011)},
 	})
 	if err != nil {
 		t.Fatalf("入库失败: %v", err)

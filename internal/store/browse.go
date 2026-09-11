@@ -187,7 +187,10 @@ func (a AlbumListItem) CountLabel() string {
 //
 // 一张专辑仅在用户至少拥有其中一首曲目时出现——
 // 灰色行用于补全已开始的收藏，而不是上游目录浏览。
-func (s *Store) ListAlbums() ([]AlbumListItem, error) {
+//
+// ladder 是发行优选阶梯的配置，用于在一个发行组下选出代表 release。
+// 它来自用户设置，与匹配阶段用的是同一套配置。
+func (s *Store) ListAlbums(ladder matching.LadderConfig) ([]AlbumListItem, error) {
 	rows, err := s.db.Query(`
 		SELECT
 			m.release_group_mbid,
@@ -254,7 +257,7 @@ func (s *Store) ListAlbums() ([]AlbumListItem, error) {
 		if out[i].Level == GroupDerived {
 			continue
 		}
-		if err := s.fillAlbumTotals(&out[i]); err != nil {
+		if err := s.fillAlbumTotals(&out[i], ladder); err != nil {
 			return nil, err
 		}
 	}
@@ -274,9 +277,9 @@ func derivedAlbumKey(title string, credit *string) string {
 func DerivedAlbumKey(title string, credit *string) string { return derivedAlbumKey(title, credit) }
 
 // fillAlbumTotals 为某专辑条目选出代表 release 并取其清单总数。
-func (s *Store) fillAlbumTotals(item *AlbumListItem) error {
+func (s *Store) fillAlbumTotals(item *AlbumListItem, ladder matching.LadderConfig) error {
 	if item.Level == GroupByReleaseGroup {
-		rep, err := s.representativeRelease(item.Key)
+		rep, err := s.representativeRelease(item.Key, ladder)
 		if err != nil {
 			return err
 		}
@@ -311,7 +314,12 @@ func (s *Store) fillAlbumTotals(item *AlbumListItem) error {
 //
 // 复用匹配阶段的优选阶梯（4.6/4.8），不另写一套排序——
 // 两处对「哪个版本更有代表性」的判断没有理由不同，分成两套必然漂移。
-func (s *Store) representativeRelease(releaseGroupRef string) (*Release, error) {
+//
+// ladder 由调用方传入而非在此取默认值：阶梯的偏好国家与载体优先级
+// 是用户可配置的，若这里写死默认值，用户把偏好国家改为 DE 后
+// 匹配阶段会照新配置选，而专辑视图仍按默认配置选——
+// 函数共用了，配置却各走一套，漂移照样发生。
+func (s *Store) representativeRelease(releaseGroupRef string, ladder matching.LadderConfig) (*Release, error) {
 	rows, err := s.db.Query(`
 		SELECT provider, provider_ref, release_status, medium_format, country,
 		       first_release_date, cover_path, track_total
@@ -346,7 +354,7 @@ func (s *Store) representativeRelease(releaseGroupRef string) (*Release, error) 
 	for _, r := range rowsOut {
 		candidates = append(candidates, r.candidate)
 	}
-	best := matching.DefaultLadderConfig().SelectRelease(candidates)
+	best := ladder.SelectRelease(candidates)
 	if best == nil {
 		return &rowsOut[0].rel, nil
 	}

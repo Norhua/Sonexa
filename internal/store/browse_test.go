@@ -1,6 +1,10 @@
 package store
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/norhua/sonexa/internal/matching"
+)
 
 // TestAlbumGroupingMergesVersions 覆盖 15.4：
 // CD 版与数字版属同一发行组时合为一条，而不是裂成两条。
@@ -43,7 +47,7 @@ func TestAlbumGroupingMergesVersions(t *testing.T) {
 		}
 	}
 
-	albums, err := s.ListAlbums()
+	albums, err := s.ListAlbums(matching.DefaultLadderConfig())
 	if err != nil {
 		t.Fatalf("查询专辑失败: %v", err)
 	}
@@ -84,7 +88,7 @@ func TestDerivedAlbumGroupHasNoTotal(t *testing.T) {
 		}
 	}
 
-	albums, err := s.ListAlbums()
+	albums, err := s.ListAlbums(matching.DefaultLadderConfig())
 	if err != nil {
 		t.Fatalf("查询失败: %v", err)
 	}
@@ -124,7 +128,7 @@ func TestAlbumDisappearsWhenLastTrackDeleted(t *testing.T) {
 		TrackTotal: ptr(10), TracklistState: TracklistComplete,
 	})
 
-	if albums, _ := s.ListAlbums(); len(albums) != 1 {
+	if albums, _ := s.ListAlbums(matching.DefaultLadderConfig()); len(albums) != 1 {
 		t.Fatalf("删除前专辑数 = %d, 期望 1", len(albums))
 	}
 
@@ -133,7 +137,7 @@ func TestAlbumDisappearsWhenLastTrackDeleted(t *testing.T) {
 	}
 
 	// 专辑从列表中消失（至少拥有一首才出现）
-	albums, _ := s.ListAlbums()
+	albums, _ := s.ListAlbums(matching.DefaultLadderConfig())
 	if len(albums) != 0 {
 		t.Errorf("删光后专辑数 = %d, 期望 0", len(albums))
 	}
@@ -395,5 +399,87 @@ func TestLockedFieldsSurviveMatch(t *testing.T) {
 	}
 	if !got.TitleLocked {
 		t.Error("曲名应仍处于加锁状态")
+	}
+}
+
+// TestRepresentativeReleaseHonoursUserLadder 覆盖 4.8 的完整含义：
+// 专辑视图选「代表 release」与匹配阶段不仅共用同一个函数，
+// 也必须共用同一套**配置**。
+//
+// 这是一处真实缺陷的回归测试：此前专辑视图写死了 DefaultLadderConfig()，
+// 用户把偏好国家改为 DE 后，匹配阶段按新配置选、而专辑视图仍按默认配置选，
+// 两处给出不同的代表 release——函数共用了，配置却各走一套，漂移照样发生。
+func TestRepresentativeReleaseHonoursUserLadder(t *testing.T) {
+	s := openTestStore(t)
+
+	// 同一发行组下两个发行：一个 JP 一个 DE，其余判据完全相同
+	for _, tc := range []struct{ ref, country string }{
+		{"rel-jp", "JP"},
+		{"rel-de", "DE"},
+	} {
+		if _, err := s.UpsertRelease(&Release{
+			Provider: "musicbrainz", ProviderRef: tc.ref,
+			ReleaseGroupRef: ptr("rg-1"), Title: "同一张专辑",
+			ReleaseStatus: ptr("Official"), MediumFormat: ptr("CD"),
+			Country: ptr(tc.country), FirstReleaseDate: ptr("2006-07-05"),
+			TrackTotal: ptr(10), TracklistState: TracklistComplete,
+		}); err != nil {
+			t.Fatalf("写入发行失败: %v", err)
+		}
+	}
+	if _, err := s.CreateTrackWithProvenance(NewTrackInput{
+		Title: "一首歌", Album: ptr("同一张专辑"),
+		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-1"),
+		Metadata: &MetadataInput{
+			ReleaseMBID: ptr("rel-jp"), ReleaseGroupMBID: ptr("rg-1"),
+		},
+	}); err != nil {
+		t.Fatalf("入库失败: %v", err)
+	}
+
+	// 默认配置：JP 排在偏好列表前面 → 选 JP
+	defaults := matching.DefaultLadderConfig()
+	albums, err := s.ListAlbums(defaults)
+	if err != nil {
+		t.Fatalf("查询专辑失败: %v", err)
+	}
+	if len(albums) != 1 || albums[0].RepresentativeRef == nil {
+		t.Fatalf("专辑条目异常: %+v", albums)
+	}
+	if got := *albums[0].RepresentativeRef; got != "rel-jp" {
+		t.Errorf("默认配置下代表 release = %q, 期望 rel-jp", got)
+	}
+
+	// 用户把偏好国家改为 DE：专辑视图必须随之改选
+	custom := matching.LadderConfig{
+		PreferredCountries: []string{"DE"},
+		MediumPriority:     defaults.MediumPriority,
+	}
+	albums, err = s.ListAlbums(custom)
+	if err != nil {
+		t.Fatalf("查询专辑失败: %v", err)
+	}
+	if got := *albums[0].RepresentativeRef; got != "rel-de" {
+		t.Errorf("用户偏好 DE 时代表 release = %q, 期望 rel-de——"+
+			"专辑视图必须与匹配阶段共用同一套阶梯配置", got)
+	}
+
+	// 同一套配置下，两处（匹配阶段与专辑视图）必须选出同一个
+	candidates := []struct {
+		ref, country string
+	}{{"rel-jp", "JP"}, {"rel-de", "DE"}}
+	var forMatching []matchingCandidate
+	for _, c := range candidates {
+		forMatching = append(forMatching, toLadderCandidate(Release{
+			Provider: "musicbrainz", ProviderRef: c.ref,
+			ReleaseGroupRef: ptr("rg-1"), ReleaseStatus: ptr("Official"),
+			MediumFormat: ptr("CD"), Country: ptr(c.country),
+			FirstReleaseDate: ptr("2006-07-05"),
+		}))
+	}
+	matchStage := custom.SelectRelease(forMatching)
+	if matchStage == nil || matchStage.MatchRef != *albums[0].RepresentativeRef {
+		t.Errorf("匹配阶段选出 %v，专辑视图选出 %q——两处应一致",
+			matchStage, *albums[0].RepresentativeRef)
 	}
 }
