@@ -1,0 +1,245 @@
+package covers
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/norhua/sonexa/internal/provider"
+)
+
+// stubProvider 用于跨源搜索测试。
+type stubProvider struct {
+	id     provider.ProviderID
+	groups []provider.CoverGroup
+	delay  time.Duration
+	caps   provider.Capabilities
+}
+
+func (s *stubProvider) ID() provider.ProviderID             { return s.id }
+func (s *stubProvider) DisplayName() string                 { return string(s.id) }
+func (s *stubProvider) Capabilities() provider.Capabilities { return s.caps }
+func (s *stubProvider) RateLimit() (int, time.Duration)     { return 1, time.Second }
+func (s *stubProvider) IsConfigured() error                 { return nil }
+func (s *stubProvider) SearchTracks(context.Context, provider.Query) ([]provider.Candidate, error) {
+	return nil, nil
+}
+func (s *stubProvider) FetchDetail(context.Context, provider.Ref) (*provider.Detail, error) {
+	return nil, nil
+}
+func (s *stubProvider) SearchCovers(ctx context.Context, q provider.Query) ([]provider.CoverGroup, error) {
+	if s.delay > 0 {
+		time.Sleep(s.delay)
+	}
+	return s.groups, nil
+}
+
+// TestSearchAllProvidersIsCrossSource 覆盖 9.10：
+// 手动重新获取向所有上游查询，iTunes 的结果也出现在候选中。
+func TestSearchAllProvidersIsCrossSource(t *testing.T) {
+	reg := provider.NewRegistry()
+	reg.Register(&stubProvider{
+		id: provider.MusicBrainz,
+		groups: []provider.CoverGroup{{
+			Provider: provider.MusicBrainz, SourceRef: "rel-mb", Confidence: 90,
+			Images: []provider.CoverImage{{Type: "Front", URL: "https://caa/front-1200"}},
+		}},
+	})
+	reg.Register(&stubProvider{
+		id: provider.ITunes,
+		groups: []provider.CoverGroup{{
+			Provider: provider.ITunes, SourceRef: "jp:1", Confidence: 70, Constructed: true,
+			Images: []provider.CoverImage{
+				{Type: "Front", URL: "https://mzstatic/3000x3000bb.jpg"},
+				{Type: "Front", URL: "https://mzstatic/1200x1200bb.jpg"},
+				{Type: "Front", URL: "https://mzstatic/600x600bb.jpg"},
+				{Type: "Front", URL: "https://mzstatic/100x100bb.jpg"},
+			},
+		}},
+	})
+
+	got, err := SearchAllProviders(context.Background(), reg, provider.Query{Title: "God knows"})
+	if err != nil {
+		t.Fatalf("跨源搜索失败: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("候选数 = %d, 期望 2（两个上游各一条）", len(got))
+	}
+
+	// 按置信度排序
+	if got[0].Provider != provider.MusicBrainz {
+		t.Errorf("首条来源 = %q, 期望置信度更高的 MusicBrainz", got[0].Provider)
+	}
+
+	// iTunes 的结果也在候选中
+	var itunesFound bool
+	for _, c := range got {
+		if c.Provider == provider.ITunes {
+			itunesFound = true
+			// 多规格收拢为一条，标注可选规格，而不是 4 条重复项
+			if len(c.Variants) != 4 {
+				t.Errorf("规格数 = %d, 期望 4 档收拢在一条里", len(c.Variants))
+			}
+			if !c.Constructed {
+				t.Error("iTunes 的规格靠构造地址得到，应标记 Constructed")
+			}
+			// 规格标签可读
+			if c.Variants[0].Label != "3000px" {
+				t.Errorf("首档标签 = %q, 期望 3000px", c.Variants[0].Label)
+			}
+		}
+	}
+	if !itunesFound {
+		t.Error("iTunes 的结果应出现在候选中")
+	}
+}
+
+// TestMultiSizeCollapsedToOneRow 覆盖 9.10 的「多规格收拢」。
+func TestMultiSizeCollapsedToOneRow(t *testing.T) {
+	g := provider.CoverGroup{
+		Provider: provider.ITunes, SourceRef: "jp:1",
+		Images: []provider.CoverImage{
+			{Type: "Front", URL: "https://x/3000x3000bb.jpg"},
+			{Type: "Front", URL: "https://x/1200x1200bb.jpg"},
+			// 重复地址应被去重
+			{Type: "Front", URL: "https://x/1200x1200bb.jpg"},
+		},
+	}
+	got := collapseVariants(g)
+	if len(got.Variants) != 2 {
+		t.Errorf("规格数 = %d, 期望 2（去重后）", len(got.Variants))
+	}
+}
+
+// TestAdoptRecordsProvenance 覆盖 9.11：
+// 确认采用后按内容哈希落盘并记录来源/地址/尺寸/时间。
+func TestAdoptRecordsProvenance(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(pngBytes(600, 600))
+	}))
+	defer srv.Close()
+
+	svc := NewService(newTestCache(t), 8, "test")
+	url := srv.URL + "/front-1200.jpg"
+
+	got, err := svc.Adopt(context.Background(), provider.MusicBrainz, url)
+	if err != nil {
+		t.Fatalf("采用封面失败: %v", err)
+	}
+
+	if got.Path == "" {
+		t.Error("应返回落盘路径")
+	}
+	if !fileExists(got.Path) {
+		t.Error("封面应已落盘")
+	}
+	if got.Source != "musicbrainz" {
+		t.Errorf("来源 = %q", got.Source)
+	}
+	if got.SourceURL != url {
+		t.Errorf("原始地址 = %q, 期望 %q", got.SourceURL, url)
+	}
+	if got.Width == nil || *got.Width != 600 {
+		t.Errorf("宽度 = %v, 期望 600", got.Width)
+	}
+	if got.Height == nil || *got.Height != 600 {
+		t.Errorf("高度 = %v, 期望 600", got.Height)
+	}
+	if got.FetchedAt.IsZero() {
+		t.Error("应记录获取时间")
+	}
+}
+
+// TestAdoptFromLadderFallsBack 覆盖 9.6：
+// 构造型来源选中的档位不可得时自动退到下一档。
+func TestAdoptFromLadderFallsBack(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 3000 档不存在（未文档化行为可能失效），1200 可用
+		if r.URL.Path == "/1200x1200bb.jpg" {
+			w.Write(pngBytes(1200, 1200))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	svc := NewService(newTestCache(t), 8, "test")
+	got, err := svc.AdoptFromLadder(context.Background(), provider.ITunes, []string{
+		srv.URL + "/3000x3000bb.jpg", // 404
+		srv.URL + "/1200x1200bb.jpg", // 命中
+	})
+	if err != nil {
+		t.Fatalf("应退档到 1200: %v", err)
+	}
+	if got.Width == nil || *got.Width != 1200 {
+		t.Errorf("采用的尺寸 = %v, 期望退到 1200 档", got.Width)
+	}
+}
+
+// TestCancelOutOfView 覆盖 9.3：
+// 滚出视口且尚未开始的任务被取消。
+func TestCancelOutOfView(t *testing.T) {
+	release := make(chan struct{})
+	var started int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&started, 1)
+		<-release // 阻塞住，模拟慢请求
+		w.Write(jpegBytes())
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	// 并发 1：第一个任务占住槽位，其余排队
+	pool := NewPool(newTestCache(t), 1, "test")
+
+	go pool.Fetch(context.Background(), Fetcher{Key: "visible", URLs: []string{srv.URL + "/a"}})
+	time.Sleep(50 * time.Millisecond)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := pool.Fetch(context.Background(), Fetcher{Key: "scrolled-away", URLs: []string{srv.URL + "/b"}})
+		done <- err
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	// 用户快速滚动：只有 visible 还在视口内
+	pool.CancelAllExcept(map[string]bool{"visible": true})
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("滚出视口的任务应被取消")
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("滚出视口的任务未被取消")
+	}
+}
+
+// TestImageDimensions 校准尺寸解析。
+func TestImageDimensions(t *testing.T) {
+	w, h := imageDimensions(pngBytes(1200, 800))
+	if w == nil || h == nil || *w != 1200 || *h != 800 {
+		t.Errorf("PNG 尺寸 = %v×%v, 期望 1200×800", w, h)
+	}
+
+	// 无法判定时返回 nil，而不是伪造 0
+	w2, h2 := imageDimensions([]byte{0x00, 0x01})
+	if w2 != nil || h2 != nil {
+		t.Errorf("无法判定时应返回 nil, 得到 %v×%v", w2, h2)
+	}
+}
+
+// pngBytes 构造一个带指定尺寸 IHDR 的最小 PNG。
+func pngBytes(w, h int) []byte {
+	b := []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}
+	b = append(b, 0, 0, 0, 13, 'I', 'H', 'D', 'R')
+	b = append(b,
+		byte(w>>24), byte(w>>16), byte(w>>8), byte(w),
+		byte(h>>24), byte(h>>16), byte(h>>8), byte(h),
+	)
+	b = append(b, make([]byte, 100)...)
+	return b
+}
