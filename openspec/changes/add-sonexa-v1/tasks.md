@@ -8,18 +8,18 @@
 
 ## 2. 存储层与 schema 迁移
 
-- [ ] 2.1 实现数据库定位（`os.UserConfigDir()` 下的应用目录）与封面缓存目录（同级、可配置），验证首次启动自动创建目录且不提示用户选路径
-- [ ] 2.2 实现迁移引擎：顺序编号迁移 + `schema_version` 表 + 单迁移单事务，验证失败迁移整体回滚且版本号保持不变
-- [ ] 2.3 实现「数据库版本高于程序」时拒绝写入并提示升级，验证对应单元测试通过
-- [ ] 2.4 编写 `0001_init` 迁移，建 `track` / `track_metadata` 表及其索引（含 `idx_match_ref` 部分唯一索引），验证迁移可在空库上应用并通过 schema 断言
-- [ ] 2.5 在 `0001_init` 中建 `artist` / `artist_link` / `track_artist` 及其唯一索引与查找索引，验证同名+歧义消解的唯一约束生效
-- [ ] 2.6 在 `0001_init` 中建 `collection` / `collection_item`，验证 `(kind, name)` 唯一约束允许同名歌单与标签并存
-- [ ] 2.7 在 `0001_init` 中建 `release` / `release_track` 及其索引，验证 `(provider, provider_ref)` 唯一且重复写入走更新而非插入
-- [ ] 2.8 在 `0001_init` 中建 `import_batch` / `import_item` 及队列索引 `(status, next_retry_at)`，验证索引被查询计划命中
-- [ ] 2.9 在 `0001_init` 中建 `provider_cache`（`provider` + `endpoint` + `params_hash` + `fetched_at` + TTL），验证按键读写与过期判定
-- [ ] 2.10 建立 FTS5 索引表并实现同步刷新（曲名、艺术家串、专辑名、`track_credit`、全部关联艺术家名拼接），验证索引刷新与关系写入在同一事务内
-- [ ] 2.11 开启 WAL 并把写操作集中在 store 层，验证后台写循环与前台读操作并发时不出现 `database is locked`
-- [ ] 2.12 实现曲目删除的级联边界（清丰富信息/歌单标签/艺术家关联，不动 `release_track`），验证删除后清单行仍在
+- [x] 2.1 实现数据库定位（`os.UserConfigDir()` 下的应用目录）与封面缓存目录（同级、可配置），验证首次启动自动创建目录且不提示用户选路径
+- [x] 2.2 实现迁移引擎：顺序编号迁移 + `schema_version` 表 + 单迁移单事务，验证失败迁移整体回滚且版本号保持不变
+- [x] 2.3 实现「数据库版本高于程序」时拒绝写入并提示升级，验证对应单元测试通过
+- [x] 2.4 编写 `0001_init` 迁移，建 `track` / `track_metadata` 表及其索引（含 `idx_match_ref` 部分唯一索引），验证迁移可在空库上应用并通过 schema 断言
+- [x] 2.5 在 `0001_init` 中建 `artist` / `artist_link` / `track_artist` 及其唯一索引与查找索引，验证同名+歧义消解的唯一约束生效
+- [x] 2.6 在 `0001_init` 中建 `collection` / `collection_item`，验证 `(kind, name)` 唯一约束允许同名歌单与标签并存
+- [x] 2.7 在 `0001_init` 中建 `release` / `release_track` 及其索引，验证 `(provider, provider_ref)` 唯一且重复写入走更新而非插入
+- [x] 2.8 在 `0001_init` 中建 `import_batch` / `import_item` 及队列索引 `(status, next_retry_at)`，验证索引被查询计划命中
+- [x] 2.9 在 `0001_init` 中建 `provider_cache`（`provider` + `endpoint` + `params_hash` + `fetched_at` + TTL），验证按键读写与过期判定
+- [x] 2.10 建立 FTS5 索引表并实现同步刷新（曲名、艺术家串、专辑名、`track_credit`、全部关联艺术家名拼接），验证索引刷新与关系写入在同一事务内
+- [x] 2.11 开启 WAL 并把写操作集中在 store 层，验证后台写循环与前台读操作并发时不出现 `database is locked`
+- [x] 2.12 实现曲目删除的级联边界（清丰富信息/歌单标签/艺术家关联，不动 `release_track`），验证删除后清单行仍在
 
 ## 3. 文本处理与解析（纯函数，先于出网实现）
 
