@@ -143,6 +143,10 @@ function basename(path: string): string {
             <p class="mt-0.5 text-xs text-muted-foreground">
               {{ statusLabel(current.status) }} ·
               {{ current.processed }}/{{ current.totalRows }}
+              <!-- 缺曲名的行在提交时就跳过了，没进队列——说清楚免得对不上文件行数 -->
+              <template v-if="current.fileRows > current.totalRows">
+                （文件 {{ current.fileRows }} 行，{{ current.fileRows - current.totalRows }} 行缺曲名已跳过）
+              </template>
             </p>
           </div>
           <button

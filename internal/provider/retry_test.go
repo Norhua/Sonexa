@@ -119,3 +119,34 @@ func TestParseRetryAfter(t *testing.T) {
 		t.Errorf("过去的时间 = %v, 期望 0", got)
 	}
 }
+
+// TestJitteredBackoffNeverUndercutsRetryAfter 覆盖「抖动不得削短 Retry-After」：
+// 上游明确说「等 N 秒」时向下抖动就是抢跑，只会招来继续限流。
+func TestJitteredBackoffNeverUndercutsRetryAfter(t *testing.T) {
+	p := RetryPolicy{MaxAttempts: 5, BaseDelay: time.Second, MaxDelay: 20 * time.Second}
+	err := &HTTPError{StatusCode: 503, RetryAfter: 30 * time.Second}
+
+	for i := 0; i < 200; i++ {
+		if got := p.JitteredBackoff(1, err); got < 30*time.Second {
+			t.Fatalf("JitteredBackoff = %v, 不得短于 Retry-After 的 30s", got)
+		}
+	}
+}
+
+// TestJitteredBackoffSpreadsExponentialDelay 确保指数退避那一路仍然被抖开——
+// 否则一批同时失败的条目会永远同步重试，把瞬时拥塞变成周期性拥塞。
+func TestJitteredBackoffSpreadsExponentialDelay(t *testing.T) {
+	p := RetryPolicy{MaxAttempts: 5, BaseDelay: 4 * time.Second, MaxDelay: time.Minute}
+
+	seen := map[time.Duration]bool{}
+	for i := 0; i < 50; i++ {
+		d := p.JitteredBackoff(1, nil)
+		if d < 3*time.Second || d > 5*time.Second {
+			t.Fatalf("抖动后 = %v, 期望落在基数 4s 的 ±25%% 内", d)
+		}
+		seen[d] = true
+	}
+	if len(seen) < 10 {
+		t.Errorf("50 次只出现 %d 个不同取值，抖动没有生效", len(seen))
+	}
+}

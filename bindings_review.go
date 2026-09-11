@@ -103,7 +103,6 @@ func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 				Provider: string(c.Provider), MatchRef: c.MatchRef,
 				// 复核队列的候选必须与上游搜索一样做本地判定，
 				// 否则库里已有的那首不会显示双徽章、动作也不会变成「合并」。
-				Badges: a.badgesFor(c), Action: a.actionFor(c), Note: a.noteFor(c),
 				Title: c.Title, Artist: c.ArtistName, Album: c.AlbumTitle,
 				PrimaryType: c.PrimaryType, DurationMS: c.DurationMS,
 				TrackNumber: c.TrackNumber, TrackTotal: c.TrackTotal,
@@ -112,6 +111,9 @@ func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 				ReleaseRef: c.ReleaseRef, ReleaseGroupRef: c.ReleaseGroupRef,
 				RecordingRef: c.RecordingRef, ISRC: c.ISRC,
 			})
+			// 复核队列的候选必须与上游搜索一样做本地判定，
+			// 否则库里已有的那首不会显示双徽章、动作也不会变成「合并」。
+			a.applyLocalMatch(&out[len(out)-1], c)
 		}
 		return out
 	}
@@ -127,14 +129,16 @@ func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 		// 本地判定不随快照持久化：入库/合并状态可能在存快照之后变了
 		for i := range stored {
 			c := provider.Candidate{
-				Provider:     provider.ProviderID(stored[i].Provider),
-				MatchRef:     stored[i].MatchRef,
+				Provider: provider.ProviderID(stored[i].Provider),
+				MatchRef: stored[i].MatchRef,
+				// 曲名/署名/时长是 ResolveLocal 第三步（文本模糊比对）的输入，
+				// 漏掉它们的话「本地?」这个疑似徽章永远不会出现
+				Title: stored[i].Title, ArtistName: stored[i].Artist,
+				AlbumTitle: stored[i].Album, DurationMS: stored[i].DurationMS,
 				RecordingRef: stored[i].RecordingRef, ReleaseRef: stored[i].ReleaseRef,
 				ReleaseGroupRef: stored[i].ReleaseGroupRef, ISRC: stored[i].ISRC,
 			}
-			stored[i].Badges = a.badgesFor(c)
-			stored[i].Action = a.actionFor(c)
-			stored[i].Note = a.noteFor(c)
+			a.applyLocalMatch(&stored[i], c)
 		}
 		return stored
 	}
@@ -202,34 +206,27 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 	return rows, nil
 }
 
-// badgesFor 返回某条候选应显示的徽章。
+// applyLocalMatch 按一次本地判定填好某行的徽章、动作与附注。
+//
+// 三者本来是三个各自调用 ResolveLocal 的函数——同一条候选要查三遍库，
+// 而 ResolveLocal 每次最多查三张表。一个 200 条的复核队列因此会打出
+// 上千次本来只需三分之一的查询。
 //
 // 库中已有且上游也存在时同时标注两个徽章；经 ISRC 桥接命中的标注
 // 「经 ISRC 匹配」；文本模糊比对的疑似命中带问号。
-func (a *App) badgesFor(c provider.Candidate) []string {
+func (a *App) applyLocalMatch(row *CandidateRow, c provider.Candidate) {
 	local, err := matching.ResolveLocal(a.store, c)
 	if err != nil || local.Kind == matching.LocalNone {
-		return []string{string(c.Provider)}
+		row.Badges = []string{string(c.Provider)}
+		row.Action = "接受"
+		row.Note = ""
+		row.LocalTrackID = 0
+		return
 	}
-	return local.Badges(c.Provider)
-}
-
-// actionFor 返回某条候选应显示的动作。
-func (a *App) actionFor(c provider.Candidate) string {
-	local, err := matching.ResolveLocal(a.store, c)
-	if err != nil || local.Kind == matching.LocalNone {
-		return "接受"
-	}
-	return local.Action()
-}
-
-// noteFor 返回候选的附加说明（如「经 ISRC 匹配」）。
-func (a *App) noteFor(c provider.Candidate) string {
-	local, err := matching.ResolveLocal(a.store, c)
-	if err != nil {
-		return ""
-	}
-	return local.Note()
+	row.Badges = local.Badges(c.Provider)
+	row.Action = local.Action()
+	row.Note = local.Note()
+	row.LocalTrackID = local.TrackID
 }
 
 func sortRowsByConfidence(rows []CandidateRow) {

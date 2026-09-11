@@ -88,8 +88,10 @@ const canSearch = computed(() => {
 })
 
 onMounted(async () => {
-  countries.value = (await App.ListCountries()) ?? []
+  // 先注册再 await：反过来的话，组件在 ListCountries 返回之前就卸载时，
+  // onUnmounted 的 remove 是空操作，随后这个监听器才被加上——漏一个
   window.addEventListener('pointerdown', onPointerDown)
+  countries.value = (await App.ListCountries()) ?? []
 })
 onUnmounted(() => window.removeEventListener('pointerdown', onPointerDown))
 

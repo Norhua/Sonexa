@@ -3,6 +3,7 @@ package importer
 import (
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -265,12 +266,14 @@ func isNumericOrDate(cell string) bool {
 // 否则 Note 会因为含 "no" 而被误判为音轨号。
 const minASCIIAliasLen = 3
 
-// minCJKAliasLen 是允许参与「包含匹配」的 CJK 别名最短长度。
+// namingSuffixes 是两字中文别名允许携带的后缀。
 //
-// 中文别名两个字就足够特异（歌手 / 专辑 / 唱片），按 ASCII 的三字符门槛
-// 一刀切会把它们全部挡掉，于是「歌手名」「专辑名」这类再常见不过的表头
-// 全部落到「忽略」。单字的 年 / 碟 仍只允许完全相等。
-const minCJKAliasLen = 2
+// 「歌手名」「专辑名称」这类写法在导出文件里极常见，必须命中；
+// 但两字别名一旦允许任意包含匹配就会误伤——
+// 「唱片公司」会被 `唱片` 判成专辑（厂牌值写进专辑列），
+// 「歌曲数」会被 `歌曲` 判成曲名（一列数字写进曲名）。
+// 因此只放行「别名 + 表示名称的后缀」这一种构词，别的一律不认。
+var namingSuffixes = []string{"名", "名称", "名字"}
 
 // MapColumn 按表头词典把列名映射到字段；未命中返回 FieldIgnore。
 //
@@ -289,18 +292,13 @@ func MapColumn(header string) Field {
 			}
 		}
 	}
-	// 再找包含关系。太短的别名（如 no / # / 年 / 碟）只允许完全相等，
-	// 否则 Note 会因为含 "no" 而被误判为音轨号。
+	// 再找包含关系。字段顺序固定，保证同一列名总是映射到同一个字段。
 	for _, field := range []Field{
 		FieldTitle, FieldArtist, FieldAlbum, FieldYear,
 		FieldTrackNo, FieldDiscNo, FieldDuration,
 	} {
 		for _, alias := range headerDictionary[field] {
-			a := normalizeHeader(alias)
-			if len([]rune(a)) < minSubstringAliasLen(a) {
-				continue
-			}
-			if strings.Contains(normalized, a) {
+			if aliasMatches(normalized, normalizeHeader(alias)) {
 				return field
 			}
 		}
@@ -308,23 +306,54 @@ func MapColumn(header string) Field {
 	return FieldIgnore
 }
 
-// minSubstringAliasLen 返回该别名参与包含匹配所需的最短长度。
+// aliasMatches 报告列名是否应被该别名命中（完全相等之外的情形）。
 //
-// 门槛按字符类型区分：一个汉字承载的信息远多于一个拉丁字母，
-// 用同一个长度门槛衡量两者会一边失之过宽、一边失之过严。
-func minSubstringAliasLen(alias string) int {
-	for _, r := range alias {
-		if r > unicode.MaxASCII {
-			return minCJKAliasLen
+// 门槛按字符类型分开：一个汉字承载的信息远多于一个拉丁字母，
+// 用同一条规则衡量两者会一边失之过宽、一边失之过严。
+func aliasMatches(normalized, alias string) bool {
+	runes := []rune(alias)
+	switch {
+	case isASCII(alias):
+		// ASCII：够长才允许出现在列名任意位置
+		return len(runes) >= minASCIIAliasLen && strings.Contains(normalized, alias)
+
+	case len(runes) >= 3:
+		// 三字以上的中文别名已足够特异，可出现在任意位置
+		// （「发行年份」含「发行年」、「专辑艺术家」含「艺术家」）
+		return strings.Contains(normalized, alias)
+
+	case len(runes) == 2:
+		// 两字中文别名只认「别名 + 名/名称/名字」这一种构词
+		rest, ok := strings.CutPrefix(normalized, alias)
+		if !ok {
+			return false
 		}
+		return slices.Contains(namingSuffixes, rest)
 	}
-	return minASCIIAliasLen
+	// 单字别名（年 / 碟）只允许完全相等，已在上一阶段处理
+	return false
 }
 
-// normalizeHeader 标准化列名：转小写、去空白与常见标点。
+func isASCII(s string) bool {
+	for _, r := range s {
+		if r > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
+}
+
+// unitSuffix 匹配列名末尾括号里的单位，如「时长(秒)」「Duration (ms)」。
+var unitSuffix = regexp.MustCompile(`[（(][^）)]*[）)]$`)
+
+// normalizeHeader 标准化列名：转小写、去空白与常见标点、去掉末尾的单位括号。
+//
+// 去单位是为了让「时长(秒)」与「时长」完全相等——
+// 否则它只能靠包含匹配命中，而包含匹配对两字别名是收紧过的。
 func normalizeHeader(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.NewReplacer(" ", "", "_", "", "-", "", "　", "").Replace(s)
+	s = unitSuffix.ReplaceAllString(s, "")
 	return s
 }
 

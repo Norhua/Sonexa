@@ -4,7 +4,7 @@
  *
  * 艺术家视图是按 artist_id 过滤的标准曲目表格，不是结构不同的独立页面。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Search } from 'lucide-vue-next'
 import { App, type Models } from '@/api'
 import { useLibraryStore } from '@/stores/library'
@@ -34,6 +34,17 @@ async function load() {
 function titleOf(a: Models.store.ArtistListItem): string {
   return a.voiceActor ? `${a.name} (CV: ${a.voiceActor})` : a.name
 }
+
+// 回到未选中态时清掉上一位艺术家的头部：否则分面条还挂着他的角色计数
+watch(
+  () => library.view,
+  (v) => {
+    if (v !== 'artist') {
+      header.value = null
+      activeRole.value = ''
+    }
+  },
+)
 
 const visibleArtists = computed(() => {
   const q = filter.value.trim().toLowerCase()

@@ -192,9 +192,11 @@ func TestColumnMappingChineseSuffixedHeaders(t *testing.T) {
 		want   Field
 	}{
 		{"歌手名", FieldArtist}, {"艺术家名", FieldArtist}, {"演唱者", FieldArtist},
+		{"歌手名字", FieldArtist},
 		{"专辑名", FieldAlbum}, {"专辑名称", FieldAlbum}, {"唱片名", FieldAlbum},
 		{"歌曲名", FieldTitle}, {"曲目名称", FieldTitle},
-		{"时长(秒)", FieldDuration},
+		{"时长(秒)", FieldDuration}, {"时长（毫秒）", FieldDuration},
+		{"发行年份", FieldYear}, {"专辑艺术家", FieldArtist},
 	}
 	for _, c := range cases {
 		t.Run(c.header, func(t *testing.T) {
@@ -214,6 +216,12 @@ func TestShortAliasesStillRequireExactMatch(t *testing.T) {
 		// "no" 是音轨号的别名，但 Note 不该因此被判为音轨号
 		{"Note", FieldIgnore},
 		{"Nobody", FieldIgnore},
+		// 两字中文别名只认「别名 + 名/名称/名字」，别的构词一律不认：
+		// 「唱片公司」是厂牌列，绝不能当成专辑；「歌曲数」是一列数字，
+		// 当成曲名会把数字写进曲名。两者都曾因放宽包含匹配而误判。
+		{"唱片公司", FieldIgnore},
+		{"歌曲数", FieldIgnore},
+		{"专辑封面", FieldIgnore},
 		// 单字的 年 / 碟 只在完全相等时命中
 		{"年", FieldYear}, {"碟", FieldAlbum},
 		{"备注", FieldIgnore},

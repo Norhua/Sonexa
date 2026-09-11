@@ -279,7 +279,14 @@ type ImportBatchView struct {
 	ID       int64  `json:"id"`
 	Filename string `json:"filename"`
 	// Status 为 running | paused | done。
-	Status    string           `json:"status"`
+	Status string `json:"status"`
+	// FileRows 是文件里的总行数，含因缺少曲名而被跳过、从未入队的行。
+	// 它只用于「文件里有多少行」这一信息，不做进度分母。
+	FileRows int `json:"fileRows"`
+	// TotalRows 是真正入队的条目数，即进度的分母。
+	//
+	// 两者必须分开：缺曲名的行在提交时就被跳过、不写进 import_item，
+	// 用文件行数当分母的话，只要有一行被跳过，进度就永远停在 90% 几。
 	TotalRows int              `json:"totalRows"`
 	Processed int              `json:"processed"`
 	Stats     store.BatchStats `json:"stats"`
@@ -318,7 +325,8 @@ func (a *App) GetImportQueue() ([]ImportBatchView, error) {
 		}
 		v := ImportBatchView{
 			ID: b.ID, Filename: b.Filename, Status: string(b.Status),
-			TotalRows: b.TotalRows, Processed: stats.Processed(), Stats: stats,
+			FileRows: b.TotalRows, TotalRows: stats.Total,
+			Processed: stats.Processed(), Stats: stats,
 			Running:      a.runner != nil && a.runner.IsRunning(b.ID),
 			CreatedAt:    b.CreatedAt.UTC().Format(time.RFC3339),
 			FinishedAt:   formatTime(b.FinishedAt),
