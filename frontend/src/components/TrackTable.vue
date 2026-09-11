@@ -8,7 +8,7 @@
  * 灰色行（ghost）是本组件的显式变体，不是专辑视图的分叉——
  * 列是一样的，分叉会让两边逐渐漂移（加一列时只改了一边）。
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { display, duration, coverUrl } from '@/api'
 
 /** 表格的一行。灰色行与普通行用同一个类型，靠 ghost 区分。 */
@@ -190,6 +190,11 @@ function closeMenu() {
   menu.value = null
 }
 
+// 点击表格之外（侧栏、页头）也要关掉右键菜单——
+// 只在表格内部监听时，菜单会一直悬在侧栏上方
+onMounted(() => window.addEventListener('pointerdown', closeMenu))
+onUnmounted(() => window.removeEventListener('pointerdown', closeMenu))
+
 /** 右键菜单的动作目标：优先用选中项，否则用被右键的那一行。 */
 function menuTargets(): Row[] {
   if (!menu.value) return []
@@ -359,6 +364,7 @@ defineExpose({ selectedCount, trackCount, selectedRows })
       class="fixed z-50 min-w-44 rounded-md border bg-popover py-1 text-sm shadow-md"
       :style="{ left: `${menu.x}px`, top: `${menu.y}px` }"
       @click.stop
+      @pointerdown.stop
     >
       <!-- 灰色行的菜单只有两项：它不是曲目，没有编辑/删除/加入歌单等动作 -->
       <template v-if="menu.row.ghost">

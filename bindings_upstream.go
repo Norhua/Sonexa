@@ -210,8 +210,16 @@ func (a *App) toRows(candidates []provider.Candidate, q provider.Query, defaultA
 			row.Action = "合并"
 		}
 
-		if c.ReleaseRef != nil {
+		// iTunes 没有 release 级标识，只给一个基准图地址；不把它带出来
+		// 就等于把 iTunes 结果的缩略图整片丢掉——降级链的构造逻辑
+		// （coverLadder / BuildCoverRefs）本来就为这条路径准备好了，
+		// 缺的只是这里的一次赋值。
+		row.ArtworkURL = c.ThumbURL
+		switch {
+		case c.ReleaseRef != nil && *c.ReleaseRef != "":
 			row.ThumbKey = covers.CacheKey(string(c.Provider)+":"+*c.ReleaseRef, coverThumbSize)
+		case c.ThumbURL != nil && *c.ThumbURL != "":
+			row.ThumbKey = covers.CacheKey(string(c.Provider)+":"+*c.ThumbURL, coverThumbSize)
 		}
 		rows = append(rows, row)
 	}
@@ -313,7 +321,8 @@ func (a *App) BuildCoverRefs(rows []CandidateRow) []covers.Ref {
 		}
 		sourceRef := releaseRefOf(r)
 		if sourceRef == "" && r.ArtworkURL != nil {
-			// iTunes 无 release 标识，用基准图地址作为缓存来源
+			// iTunes 无 release 标识，用基准图地址作为缓存来源；
+			// 取源须与 toRows 里算 ThumbKey 时一致
 			sourceRef = *r.ArtworkURL
 		}
 		out = append(out, covers.Ref{

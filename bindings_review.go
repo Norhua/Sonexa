@@ -116,7 +116,30 @@ func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 		return out
 	}
 
-	// 再按本地候选解析
+	// 再按 CandidateRow 解析：ResearchReviewItem 写快照时存的就是这个形状。
+	//
+	// 没有这一支时它会掉到下面的「本地候选」分支——那个分支只认
+	// badges/action/title/artist/album 五个字段，于是用户改搜出来的候选
+	// 一旦经过一次队列重载，置信度、年份、时长、厂牌等列全部变成占位短横线。
+	var stored []CandidateRow
+	if err := json.Unmarshal([]byte(raw), &stored); err == nil &&
+		len(stored) > 0 && stored[0].MatchRef != "" {
+		// 本地判定不随快照持久化：入库/合并状态可能在存快照之后变了
+		for i := range stored {
+			c := provider.Candidate{
+				Provider:     provider.ProviderID(stored[i].Provider),
+				MatchRef:     stored[i].MatchRef,
+				RecordingRef: stored[i].RecordingRef, ReleaseRef: stored[i].ReleaseRef,
+				ReleaseGroupRef: stored[i].ReleaseGroupRef, ISRC: stored[i].ISRC,
+			}
+			stored[i].Badges = a.badgesFor(c)
+			stored[i].Action = a.actionFor(c)
+			stored[i].Note = a.noteFor(c)
+		}
+		return stored
+	}
+
+	// 最后按本地疑似重复的简化快照解析
 	var local []struct {
 		Local   bool     `json:"local"`
 		TrackID int64    `json:"trackId"`
