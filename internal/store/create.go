@@ -2,7 +2,9 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -230,4 +232,97 @@ type TrackMetadata struct {
 	MatchedAt        *time.Time
 	ProvenanceJSON   *string
 	LockedJSON       *string
+}
+
+// metadataColumns 是丰富信息中可由编辑界面写入的字段。
+var metadataColumns = map[string]string{
+	"year":          "year",
+	"trackNumber":   "track_number",
+	"discNumber":    "disc_number",
+	"durationMs":    "duration_ms",
+	"genre":         "genre",
+	"label":         "label",
+	"catalogNumber": "catalog_number",
+	"mediumFormat":  "medium_format",
+	"country":       "country",
+	"primaryType":   "primary_type",
+	"comment":       "comment",
+}
+
+// ApplyMetadataEdits 逐字段写入丰富信息，并更新逐字段来源与用户锁。
+//
+// 来源取值为 provider id、user（用户手动修改）或 import（导入文件原值）。
+// 来源为 user 的字段不被上游结果自动覆盖——该判定在调用方完成。
+func (s *Store) ApplyMetadataEdits(trackID int64, edits map[string]string,
+	provenance map[string]string, locked map[string]bool) error {
+	if len(edits) == 0 && len(provenance) == 0 {
+		return nil
+	}
+
+	return s.withTx(func(tx *sql.Tx) error {
+		sets := []string{}
+		args := []any{}
+		for key, value := range edits {
+			column, ok := metadataColumns[key]
+			if !ok {
+				continue
+			}
+			sets = append(sets, column+" = ?")
+			if isIntColumn(column) {
+				args = append(args, parseIntOrNil(value))
+			} else {
+				args = append(args, nullIfBlank(value))
+			}
+		}
+
+		provJSON, err := json.Marshal(provenance)
+		if err != nil {
+			return err
+		}
+		lockedJSON, err := json.Marshal(locked)
+		if err != nil {
+			return err
+		}
+		sets = append(sets, "provenance_json = ?", "locked_json = ?", "updated_at = ?")
+		args = append(args, string(provJSON), string(lockedJSON), time.Now().UTC())
+
+		// 丰富信息行可能尚不存在（「无需匹配」入库的曲目）
+		if _, err := tx.Exec(
+			`INSERT INTO track_metadata (track_id, updated_at) VALUES (?, ?)
+			 ON CONFLICT(track_id) DO NOTHING`, trackID, time.Now().UTC()); err != nil {
+			return err
+		}
+
+		args = append(args, trackID)
+		_, err = tx.Exec(
+			"UPDATE track_metadata SET "+strings.Join(sets, ", ")+" WHERE track_id = ?", args...)
+		return err
+	})
+}
+
+func isIntColumn(column string) bool {
+	switch column {
+	case "year", "track_number", "disc_number", "duration_ms", "track_total", "disc_total":
+		return true
+	}
+	return false
+}
+
+func parseIntOrNil(s string) any {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return nil
+	}
+	return n
+}
+
+func nullIfBlank(s string) any {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
 }

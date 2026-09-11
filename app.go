@@ -185,8 +185,10 @@ func (a *App) shutdown(ctx context.Context) {
 	}
 }
 
-// CoverAssetHandler 返回供 Wails AssetServer 使用的封面 handler。
-func (a *App) CoverAssetHandler() http.Handler {
+// coverAssetHandler 返回供 Wails AssetServer 使用的封面 handler。
+//
+// 不导出：它返回 http.Handler，不是给前端调用的绑定方法。
+func (a *App) coverAssetHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.mu.RLock()
 		svc := a.coverSvc

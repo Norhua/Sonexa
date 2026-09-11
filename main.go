@@ -28,7 +28,7 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 			// 封面字节经 AssetServer 以本地 URL 供 <img> 加载，不经 IPC 桥回传。
-			Handler: app.CoverAssetHandler(),
+			Handler: app.coverAssetHandler(),
 		},
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
