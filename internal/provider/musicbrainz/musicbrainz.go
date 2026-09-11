@@ -40,6 +40,9 @@ type Config struct {
 	Contact    string
 	ServerURL  string
 	RatePerSec float64
+	// CacheTTL 是响应缓存的有效期；0 表示不过期。
+	// MB 数据为 CC0，默认可长期留存，此值只反映用户在设置中的选择。
+	CacheTTL time.Duration
 }
 
 // Provider 是 MusicBrainz 的 Provider 实现。
@@ -130,8 +133,8 @@ func (p *Provider) SearchTracks(ctx context.Context, q provider.Query) ([]provid
 		BaseURL:    p.cfg.ServerURL,
 		Params:     params,
 		ParamsHash: p.hash(params),
-		// MB 数据为 CC0，可长期留存，不设过期
-		TTL: 0,
+		// MB 数据为 CC0，默认可长期留存；用户在设置中给了上限时按上限
+		TTL: p.cfg.CacheTTL,
 	})
 	if err != nil {
 		return nil, err

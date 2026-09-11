@@ -10,10 +10,12 @@ import { App, display, type Models } from '@/api'
 import CandidateTable from '@/components/CandidateTable.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useLibraryStore } from '@/stores/library'
 import { useTasksStore } from '@/stores/tasks'
 
 const settings = useSettingsStore()
 const tasks = useTasksStore()
+const library = useLibraryStore()
 
 const emit = defineEmits<{ jumpLocal: [trackId: number]; goSettings: [] }>()
 
@@ -158,8 +160,8 @@ function next() {
       v-if="queue && queue.items.length === 0 && !loading"
       title="复核队列是空的"
       description="导入时无法自动判断的条目会出现在这里，逐条处置即可。"
-      :actions="[{ label: '到上游搜索', key: 'upstream' }]"
-      @action="() => {}"
+      :actions="[{ label: '到全部曲目', key: 'all' }, { label: '到上游搜索', key: 'upstream' }]"
+      @action="(key) => key === 'upstream' ? library.goTo('upstream') : library.goTo('all')"
     />
 
     <div v-else-if="current" class="min-h-0 flex-1 overflow-auto">

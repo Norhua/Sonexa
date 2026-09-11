@@ -373,3 +373,89 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// TestOverridesActuallyAffectParsing 覆盖导入手动面板的改写是否真正生效。
+//
+// 这些控件在低置信时才出现、正是用户最需要它们起作用的时候；
+// 若改写不影响解析，面板就只是装饰。
+func TestOverridesActuallyAffectParsing(t *testing.T) {
+	data := fixture(t, "encoding", "semicolon.csv")
+
+	t.Run("改写分隔符", func(t *testing.T) {
+		// 自动探测命中分号
+		base, err := Parse("semicolon.csv", data, "")
+		if err != nil {
+			t.Fatalf("解析失败: %v", err)
+		}
+		if base.Detection.Delimiter != "分号" {
+			t.Fatalf("自动探测 = %q, 期望分号", base.Detection.Delimiter)
+		}
+
+		// 用户改为逗号：解析结果必须随之变化
+		overridden, err := ParseWithOverrides("semicolon.csv", data, "",
+			Overrides{Delimiter: ','})
+		if err != nil {
+			t.Fatalf("改写后解析失败: %v", err)
+		}
+		if overridden.Detection.Delimiter != "逗号" {
+			t.Errorf("改写后分隔符 = %q, 期望逗号——改写没有生效", overridden.Detection.Delimiter)
+		}
+		// 用错分隔符会把整行并成一列，虚高列数
+		if len(overridden.Headers) >= len(base.Headers) {
+			t.Errorf("用错分隔符后列数 = %d, 应少于正确的 %d",
+				len(overridden.Headers), len(base.Headers))
+		}
+	})
+
+	t.Run("改写表头", func(t *testing.T) {
+		// 用一份无表头文件，强制指定「含表头」
+		noHeader := fixture(t, "encoding", "no_header.csv")
+		auto, err := Parse("no_header.csv", noHeader, "")
+		if err != nil {
+			t.Fatalf("解析失败: %v", err)
+		}
+		if auto.Detection.HasHeader {
+			t.Fatal("前置条件不成立：该文件应被自动判定为无表头")
+		}
+
+		yes := true
+		forced, err := ParseWithOverrides("no_header.csv", noHeader, "",
+			Overrides{HasHeader: &yes})
+		if err != nil {
+			t.Fatalf("改写后解析失败: %v", err)
+		}
+		if !forced.Detection.HasHeader {
+			t.Error("强制指定含表头后，结果仍为无表头——改写没有生效")
+		}
+		// 首行被当作表头后，数据行应少一行
+		if len(forced.Rows) != len(auto.Rows)-1 {
+			t.Errorf("强制表头后数据行 = %d, 期望比原来的 %d 少一行",
+				len(forced.Rows), len(auto.Rows))
+		}
+	})
+
+	t.Run("改写编码", func(t *testing.T) {
+		gb := fixture(t, "encoding", "gb18030.csv")
+
+		auto, err := Parse("gb18030.csv", gb, "")
+		if err != nil {
+			t.Fatalf("解析失败: %v", err)
+		}
+		if auto.Detection.Encoding != "GB18030" {
+			t.Fatalf("自动探测 = %q, 期望 GB18030", auto.Detection.Encoding)
+		}
+
+		// 用户误判为 Big5：解析结果应随之改变（且内容变成乱码）
+		forced, err := ParseWithOverrides("gb18030.csv", gb, "",
+			Overrides{Encoding: "Big5"})
+		if err != nil {
+			t.Fatalf("改写后解析失败: %v", err)
+		}
+		if forced.Detection.Encoding != "Big5" {
+			t.Errorf("改写后编码 = %q, 期望 Big5——改写没有生效", forced.Detection.Encoding)
+		}
+		if len(forced.Rows) == 0 || forced.Rows[0][0] == auto.Rows[0][0] {
+			t.Error("用错编码解码后首列内容应发生变化")
+		}
+	})
+}

@@ -74,23 +74,55 @@ type ParseResult struct {
 	ColumnMap []Field `json:"columnMap"`
 }
 
+// Overrides 是用户在手动面板中改写的探测结果。
+//
+// 零值表示「沿用自动探测」。低置信时用户需要能真正改掉结果——
+// 控件若不能影响解析，那它只是装饰。
+type Overrides struct {
+	Encoding  string
+	Delimiter rune
+	HasHeader *bool
+}
+
 // Parse 解析文件并自动探测编码、分隔符、表头与列映射。
 //
 // 选文件后直接进入「映射 + 预览」，不先要求用户逐项配置。
 func Parse(filename string, data []byte, sheetName string) (*ParseResult, error) {
+	return ParseWithOverrides(filename, data, sheetName, Overrides{})
+}
+
+// ParseWithOverrides 与 Parse 相同，但允许用户覆盖探测结果。
+func ParseWithOverrides(filename string, data []byte, sheetName string, ov Overrides) (*ParseResult, error) {
 	kind := DetectFileKind(filename)
 	if kind == KindXLSX {
 		return parseXLSX(filename, data, sheetName)
 	}
-	return parseDelimited(filename, data)
+	return parseDelimitedWithOverrides(filename, data, ov)
 }
 
 // parseDelimited 解析 CSV / TSV。
 func parseDelimited(filename string, data []byte) (*ParseResult, error) {
+	return parseDelimitedWithOverrides(filename, data, Overrides{})
+}
+
+// parseDelimitedWithOverrides 解析 CSV / TSV，并应用用户的改写。
+func parseDelimitedWithOverrides(filename string, data []byte, ov Overrides) (*ParseResult, error) {
 	enc := DetectEncoding(data)
+	// 用户显式指定了编码时按指定解码，而不是沿用探测结果
+	if ov.Encoding != "" && ov.Encoding != enc.Name {
+		text, err := DecodeAs(ov.Encoding, data)
+		if err != nil {
+			return nil, fmt.Errorf("按编码 %s 解码失败: %w", ov.Encoding, err)
+		}
+		enc = EncodingResult{Name: ov.Encoding, Confidence: 1.0, Text: text}
+	}
 	text := StripBOM(enc.Text)
 
 	delim := DetectDelimiter(text, filename)
+	// 用户显式指定了分隔符时以用户的为准
+	if ov.Delimiter != 0 {
+		delim = DelimiterResult{Delimiter: ov.Delimiter, Confidence: 1.0}
+	}
 
 	records, err := readDelimited(text, delim.Delimiter)
 	if err != nil {
@@ -101,6 +133,10 @@ func parseDelimited(filename string, data []byte) (*ParseResult, error) {
 	}
 
 	header := DetectHeader(records)
+	// 用户显式指定了首行是否为表头时以用户的为准
+	if ov.HasHeader != nil {
+		header = HeaderResult{HasHeader: *ov.HasHeader, Confidence: 1.0}
+	}
 
 	res := &ParseResult{
 		Detection: Detection{
@@ -123,7 +159,12 @@ func parseDelimited(filename string, data []byte) (*ParseResult, error) {
 	}
 	res.ColumnMap = MapColumns(res.Headers)
 
-	applyAttention(res, enc.Confidence)
+	// 用户已经手动确认过编码时不再提示「需要关注」
+	conf := enc.Confidence
+	if ov.Encoding != "" {
+		conf = 1.0
+	}
+	applyAttention(res, conf)
 	return res, nil
 }
 

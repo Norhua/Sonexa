@@ -11,7 +11,7 @@ import { App, display, type Models } from '@/api'
 import { useSettingsStore } from '@/stores/settings'
 
 const settings = useSettingsStore()
-const emit = defineEmits<{ close: []; submitted: [batchId: number] }>()
+const emit = defineEmits<{ close: []; submitted: [batchId: number]; goSettings: [] }>()
 
 const path = ref('')
 const preview = ref<Models.main.ImportPreview | null>(null)
@@ -72,7 +72,11 @@ async function submit() {
   loading.value = true
   error.value = ''
   try {
-    const batchID = await App.SubmitImport(path.value, sheetName.value, preview.value.columnMap)
+    const batchID = await App.SubmitImport(
+      path.value, sheetName.value, preview.value.columnMap,
+      preview.value.detection.encoding, preview.value.detection.delimiterRune,
+      preview.value.detection.hasHeader,
+    )
     // 提交后关窗，条目入队并自动开始匹配
     emit('submitted', batchID)
     emit('close')
@@ -100,7 +104,9 @@ async function submit() {
       <div v-if="!settings.outboundAllowed" class="p-6 text-center">
         <AlertTriangle class="mx-auto mb-2 size-8 text-muted-foreground" />
         <p class="text-sm">{{ settings.outboundReason }}</p>
-        <button class="mt-3 rounded border px-3 py-1.5 text-sm hover:bg-accent" @click="emit('close')">
+        <!-- 跳转设置，而不是把窗口关掉 -->
+        <button class="mt-3 rounded border px-3 py-1.5 text-sm hover:bg-accent"
+          @click="emit('goSettings')">
           前往设置
         </button>
       </div>

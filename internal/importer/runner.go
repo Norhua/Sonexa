@@ -39,6 +39,14 @@ type Runner struct {
 	searcher matching.Searcher
 	emit     Emitter
 	retry    provider.RetryPolicy
+	// fetchOnMatch 为真时在匹配阶段就补详情与清单；
+	// 默认关闭（首次打开专辑时懒加载），因为 MB 1 req/s 下
+	// 每行都补一次详情会让导入时间翻倍，而用户实际打开的专辑只是少数。
+	fetchOnMatch bool
+
+	// enricher 在「匹配时拉取」开启时被调用，把详情落到刚入库的曲目上。
+	// 由绑定层注入，避免 importer 反向依赖 main 包。
+	enricher func(trackID int64, providerID, releaseRef string)
 
 	mu      sync.Mutex
 	running map[int64]context.CancelFunc
@@ -49,15 +57,23 @@ type Runner struct {
 // searcher 固定为 MusicBrainz：v1 的导入匹配阶段只用主上游，
 // 且不对同一条目并发查询多个上游。用户如需其他上游可在复核队列中逐条改选。
 func NewRunner(st *store.Store, engine *matching.Engine, searcher matching.Searcher,
-	retry provider.RetryPolicy, emit Emitter) *Runner {
+	retry provider.RetryPolicy, fetchOnMatch bool, emit Emitter) *Runner {
 	return &Runner{
-		store:    st,
-		engine:   engine,
-		searcher: searcher,
-		emit:     emit,
-		retry:    retry,
-		running:  map[int64]context.CancelFunc{},
+		store:        st,
+		engine:       engine,
+		searcher:     searcher,
+		emit:         emit,
+		retry:        retry,
+		fetchOnMatch: fetchOnMatch,
+		running:      map[int64]context.CancelFunc{},
 	}
+}
+
+// SetEnricher 注入详情补全回调。
+//
+// 设置中把清单拉取时机改为「匹配时」后，导入会在每条入库后立即补详情。
+func (r *Runner) SetEnricher(fn func(trackID int64, providerID, releaseRef string)) {
+	r.enricher = fn
 }
 
 // Start 开始（或恢复）处理某批次。
@@ -206,6 +222,11 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 			return matching.ErrorLogLine(err)
 		}
 		r.store.MarkImported(item.ID, trackID)
+		// 设置中选「匹配时」时才在这里补详情与清单；
+		// 默认留给首次打开专辑时懒加载。
+		if r.fetchOnMatch && r.enricher != nil {
+			r.enricher(trackID, string(res.Decision.Selected.Provider), deref(res.Decision.Selected.ReleaseRef))
+		}
 		return matching.LogLine(res.Decision.Outcome, in, sc)
 
 	default:
@@ -249,6 +270,23 @@ func (r *Runner) importCandidate(in matching.Input, c provider.Candidate) (int64
 	album := c.AlbumTitle
 	if album == nil && in.Album != "" {
 		album = &in.Album
+	}
+
+	// 输入行里带的值若未被上游覆盖，其来源应是 import——
+	// 这是「来自导入文件的原始值」这一来源取值的唯一落点。
+	if meta.ProvenanceJSON == nil {
+		prov := map[string]string{}
+		if in.Artist != "" && (c.ArtistName == nil || *c.ArtistName == "") {
+			prov["artist"] = "import"
+		}
+		if in.Album != "" && (c.AlbumTitle == nil || *c.AlbumTitle == "") {
+			prov["album"] = "import"
+		}
+		if len(prov) > 0 {
+			data, _ := json.Marshal(prov)
+			s := string(data)
+			meta.ProvenanceJSON = &s
+		}
 	}
 
 	trackID, err := r.store.CreateTrackWithProvenance(store.NewTrackInput{

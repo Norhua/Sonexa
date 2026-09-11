@@ -95,15 +95,11 @@ func (a *App) initialize() error {
 	a.limiters = provider.NewLimiters()
 	a.rebuildProviders(cur)
 
-	cache, err := covers.NewDiskCache(
-		a.paths.CoverDir,
-		cur.Cache.CoverMaxBytes,
-		coverTTL(cur),
-	)
+	svc, err := newCoverService(a.paths, cur, a.version)
 	if err != nil {
 		return err
 	}
-	a.coverSvc = covers.NewService(cache, cur.Cache.CoverConcurrency, a.userAgent(cur))
+	a.coverSvc = svc
 
 	a.rebuildRunner(cur)
 	return nil
@@ -119,6 +115,10 @@ func (a *App) rebuildProviders(cur config.Settings) {
 		Contact:    cur.MusicBrainz.Contact,
 		ServerURL:  cur.MusicBrainz.ServerURL,
 		RatePerSec: cur.MusicBrainz.RatePerSec,
+		// 上游响应缓存的有效期也是设置项。
+		// MB 数据为 CC0 不受 TTL 约束，但用户可以在缓存分组里为自己
+		// 保留的响应设置一个上限；为 0 时按不过期处理。
+		CacheTTL: time.Duration(cur.Cache.ProviderCacheTTLh) * time.Hour,
 	}, store.ParamsHash)
 
 	it := itunes.New(a.client, itunes.Config{
@@ -150,12 +150,27 @@ func (a *App) rebuildRunner(cur config.Settings) {
 	}
 	engine := matching.NewEngine(cur.Matching)
 	retry := provider.DefaultRetryPolicy()
+	// 最大重试次数与退避基数都是设置项，改动即时生效
 	if cur.Matching.MaxRetries > 0 {
 		retry.MaxAttempts = cur.Matching.MaxRetries
 	}
+	if cur.Matching.BackoffBaseSeconds > 0 {
+		retry.BaseDelay = time.Duration(cur.Matching.BackoffBaseSeconds * float64(time.Second))
+	}
+
+	// 清单拉取时机是设置项：默认「首次打开专辑时」懒加载，
+	// 改为「匹配时」则在导入入库后立即补详情与清单。
+	fetchOnMatch := cur.Matching.TracklistTiming == config.TracklistOnMatch
 
 	// 导入阶段只用 MusicBrainz
-	a.runner = importer.NewRunner(a.store, engine, mb, retry, a.emitProgress)
+	a.runner = importer.NewRunner(a.store, engine, mb, retry, fetchOnMatch, a.emitProgress)
+	if fetchOnMatch {
+		a.runner.SetEnricher(func(trackID int64, providerID, releaseRef string) {
+			if err := a.RefreshTrackDetail(trackID, providerID, releaseRef); err != nil {
+				_ = a.store.RecordEnrichFailure(trackID, err.Error())
+			}
+		})
+	}
 }
 
 // emitProgress 把匹配进度推送给前端。
@@ -207,6 +222,19 @@ func (a *App) coverAssetHandler() http.Handler {
 // userAgent 构造 MusicBrainz 要求的规范 User-Agent。
 func (a *App) userAgent(cur config.Settings) string {
 	return provider.UserAgentFor(a.version, cur.MusicBrainz.Contact)
+}
+
+// newCoverService 按给定路径与设置建立封面缓存与工作池。
+//
+// 抽成函数是有意的：改动封面缓存目录时要重建一套新的，
+// 与启动时用的是同一条构造路径，避免两处参数不一致。
+func newCoverService(paths config.Paths, cur config.Settings, version string) (*covers.Service, error) {
+	cache, err := covers.NewDiskCache(paths.CoverDir, cur.Cache.CoverMaxBytes, coverTTL(cur))
+	if err != nil {
+		return nil, err
+	}
+	return covers.NewService(cache, cur.Cache.CoverConcurrency,
+		provider.UserAgentFor(version, cur.MusicBrainz.Contact)), nil
 }
 
 func coverTTL(cur config.Settings) time.Duration {

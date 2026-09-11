@@ -51,6 +51,16 @@ const creditParts = computed(() => {
   return parts
 })
 
+/** 逐字段来源：把有值的字段按来源分组显示徽标。 */
+const sourceBadges = computed(() => props.detail?.sources ?? [])
+
+/** 来源的中文名；provider id 直接显示。 */
+function sourceLabel(src: string): string {
+  if (src === 'user') return '用户'
+  if (src === 'import') return '导入'
+  return src
+}
+
 /** 发行信息：缺失字段显示占位短横线。 */
 const releaseInfo = computed(() => [
   { label: '类型', value: display(meta.value?.primaryType) },
@@ -162,6 +172,21 @@ const releaseInfo = computed(() => [
             <dd>{{ display(meta?.catalogNumber) }}</dd>
           </div>
         </dl>
+      </section>
+
+      <!-- 逐字段来源徽标 -->
+      <section v-if="sourceBadges.length > 0">
+        <h3 class="mb-2 text-xs font-medium text-muted-foreground">字段来源</h3>
+        <div class="flex flex-wrap gap-1">
+          <span
+            v-for="s in sourceBadges"
+            :key="s.key"
+            class="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+            :title="`${s.label} 来自 ${sourceLabel(s.source)}`"
+          >
+            {{ s.label }}·{{ sourceLabel(s.source) }}
+          </span>
+        </div>
       </section>
 
       <!-- 标签 chips。歌单不在抽屉显示 -->

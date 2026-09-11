@@ -115,7 +115,7 @@ func newRunner(st *store.Store, s matching.Searcher) *Runner {
 	engine := matching.NewEngine(config.Defaults().Matching)
 	retry := provider.DefaultRetryPolicy()
 	retry.BaseDelay = time.Millisecond
-	return NewRunner(st, engine, s, retry, nil)
+	return NewRunner(st, engine, s, retry, false, nil)
 }
 
 // TestRunnerImportsHighConfidence 覆盖 11.6 的直接入库分支。

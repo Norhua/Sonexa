@@ -101,7 +101,13 @@ func (a *App) RemapImportColumns(path, sheetName string, columnMap []string,
 	if err != nil {
 		return nil, err
 	}
-	res, err := importer.Parse(path, data, sheetName)
+
+	// 用户的改写必须真正影响解析，否则手动面板只是装饰
+	ov := importer.Overrides{Encoding: encoding, HasHeader: &hasHeader}
+	if r := []rune(delimiter); len(r) > 0 {
+		ov.Delimiter = r[0]
+	}
+	res, err := importer.ParseWithOverrides(path, data, sheetName, ov)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +141,8 @@ func (a *App) RemapImportColumns(path, sheetName string, columnMap []string,
 // SubmitImport 提交导入：条目入队并自动开始匹配。
 //
 // 提交后窗口关闭，侧栏任务区出现进度条，匹配立即开始，无需用户再次触发。
-func (a *App) SubmitImport(path, sheetName string, columnMap []string) (int64, error) {
+func (a *App) SubmitImport(path, sheetName string, columnMap []string,
+	encoding, delimiter string, hasHeader bool) (int64, error) {
 	if err := a.ready(); err != nil {
 		return 0, err
 	}
@@ -147,7 +154,12 @@ func (a *App) SubmitImport(path, sheetName string, columnMap []string) (int64, e
 	if err != nil {
 		return 0, err
 	}
-	res, err := importer.Parse(path, data, sheetName)
+	// 提交时用与预览时相同的改写，使「所见即所导」
+	ov := importer.Overrides{Encoding: encoding, HasHeader: &hasHeader}
+	if r := []rune(delimiter); len(r) > 0 {
+		ov.Delimiter = r[0]
+	}
+	res, err := importer.ParseWithOverrides(path, data, sheetName, ov)
 	if err != nil {
 		return 0, err
 	}

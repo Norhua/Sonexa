@@ -36,6 +36,8 @@ const detail = ref<Models.main.TrackDetail | null>(null)
 const editing = ref<number | null>(null)
 const importOpen = ref(false)
 const notice = ref('')
+/** 离线态：在统一的全局提示位显示，页面内不重复弹出相同错误。 */
+const offline = ref(false)
 const upstreamPrefill = ref<{ title: string; artist: string; album: string } | undefined>()
 const selectedIds = ref<number[]>([])
 
@@ -51,6 +53,14 @@ onMounted(async () => {
     await library.loadCollections()
     await library.loadTracks()
   })
+
+  // 启动时探一次连通性，之后只在出网请求失败时置位——
+  // 不做后台轮询，离线提示靠请求结果驱动。
+  try {
+    offline.value = !(await Api.CheckReachable())
+  } catch {
+    offline.value = false
+  }
 })
 
 onUnmounted(() => {
@@ -123,8 +133,17 @@ async function openDetail(row: Row) {
     detail.value = await Api.GetTrackDetail(row.id)
     drawerOpen.value = true
   } catch (e) {
-    notice.value = String(e)
+    markFailure(e)
   }
+}
+
+/** 出网失败的统一归口：失败即在全局提示位显示，不各页各弹一份。 */
+function markFailure(e: unknown) {
+  const msg = String(e)
+  if (/dial|timeout|no such host|connection refused|network|离线/i.test(msg)) {
+    offline.value = true
+  }
+  notice.value = msg
 }
 
 async function openTrackById(trackId: number) {
@@ -172,6 +191,16 @@ async function removeTracks(targets: Row[]) {
   } catch (e) {
     notice.value = String(e)
   }
+}
+
+/** 「查看上游」：以该曲的字段跳到上游搜索页。 */
+async function viewUpstream(row: Row) {
+  upstreamPrefill.value = {
+    title: row.title,
+    artist: row.artist ?? '',
+    album: row.album ?? '',
+  }
+  await library.goTo('upstream')
 }
 
 async function viewArtist(row: Row) {
@@ -294,7 +323,8 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
 
     <!-- 全局提示位置：出网禁用、离线、出网失败统一在这里 -->
     <GlobalNotice
-      :message="notice"
+      :message="offline ? '' : notice"
+      :offline="offline"
       @dismiss="notice = ''"
       @open-settings="library.goTo('settings')"
     />
@@ -358,6 +388,13 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
           v-else-if="library.view === 'albums' || library.view === 'album'"
           @open-track="openTrackById"
           @edit-track="(id) => (editing = id)"
+          @add-to-collection="addToCollection"
+          @view-artist="viewArtist"
+          @copy-info="copyInfo"
+          @remove-tracks="removeTracks"
+          @selection-change="(ids) => (selectedIds = ids)"
+          @export-scope="exportScope"
+          @view-upstream="viewUpstream"
         />
 
         <UpstreamSearchView
@@ -388,6 +425,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
       v-if="importOpen"
       @close="importOpen = false"
       @submitted="tasks.refresh()"
+      @go-settings="importOpen = false; library.goTo('settings')"
     />
 
     <EditDialog

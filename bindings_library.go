@@ -56,11 +56,22 @@ type Participant struct {
 	Attribute *string `json:"attribute"`
 }
 
+// FieldSource 是某个字段的来源。
+//
+// 详情页要「逐字段显示来源徽标」：来源为 provider id、user 或 import。
+type FieldSource struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	Source string `json:"source"`
+}
+
 // TrackDetail 是详情抽屉的完整内容。
 type TrackDetail struct {
 	Track    store.TrackView      `json:"track"`
 	Metadata *store.TrackMetadata `json:"metadata"`
-	Tags     []store.Collection   `json:"tags"`
+	/** Sources 是逐字段来源，供渲染来源徽标。 */
+	Sources []FieldSource      `json:"sources"`
+	Tags    []store.Collection `json:"tags"`
 	// CreditText 是曲目级署名原串，演唱区优先渲染它。
 	CreditText string `json:"creditText"`
 	// CreditSpans 是原串中可点击的片段；对不上的片段不在其中，渲染为纯文本。
@@ -112,6 +123,7 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 		return nil, err
 	}
 	detail.Participants = groups
+	detail.Sources = sourcesOf(meta, track)
 
 	// 封面键必须与注册降级链时用的尺寸一致，否则 key 对不上、handler 取不到图。
 	// BuildCoverRefs 一律按缩略图尺寸注册，详情也用同一尺寸取图，
@@ -120,6 +132,78 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 		detail.CoverKey = coverKeyFor(*meta.MatchSource, *meta.ReleaseMBID, coverThumbSize)
 	}
 	return detail, nil
+}
+
+// fieldLabels 是逐字段来源徽标用的字段中文名。
+var fieldLabels = map[string]string{
+	"title": "曲名", "artist": "艺术家", "album": "专辑名",
+	"year": "年份", "trackNumber": "音轨号", "discNumber": "碟号",
+	"durationMs": "时长", "genre": "风格", "label": "厂牌",
+	"catalogNumber": "目录号", "mediumFormat": "载体",
+	"country": "国家", "primaryType": "类型", "comment": "注释",
+}
+
+// sourcesOf 汇总某曲目的逐字段来源，供详情抽屉显示来源徽标。
+//
+// 只列出有值的字段：给缺失字段标来源没有意义。
+func sourcesOf(meta *store.TrackMetadata, track *store.TrackView) []FieldSource {
+	provenance := map[string]string{}
+	if meta != nil && meta.ProvenanceJSON != nil {
+		json.Unmarshal([]byte(*meta.ProvenanceJSON), &provenance)
+	}
+
+	var out []FieldSource
+	add := func(key, source string) {
+		if source == "" {
+			return
+		}
+		out = append(out, FieldSource{Key: key, Label: fieldLabels[key], Source: source})
+	}
+
+	if track != nil {
+		// 基本信息用三个布尔锁：加锁即用户设定
+		add("title", basicSource(provenance, "title", track.TitleLocked))
+		add("artist", basicSource(provenance, "artist", track.ArtistLocked))
+		add("album", basicSource(provenance, "album", track.AlbumLocked))
+	}
+	if meta != nil {
+		type rich struct {
+			key    string
+			absent bool
+		}
+		fields := []rich{
+			{"year", meta.Year == nil}, {"trackNumber", meta.TrackNumber == nil},
+			{"discNumber", meta.DiscNumber == nil}, {"durationMs", meta.DurationMS == nil},
+			{"genre", meta.Genre == nil}, {"label", meta.Label == nil},
+			{"catalogNumber", meta.CatalogNumber == nil}, {"mediumFormat", meta.MediumFormat == nil},
+			{"country", meta.Country == nil}, {"primaryType", meta.PrimaryType == nil},
+		}
+		for _, f := range fields {
+			if f.absent {
+				continue
+			}
+			src := provenance[f.key]
+			if src == "" {
+				// 有值但没有来源记录：按匹配来源归属
+				if meta.MatchSource != nil {
+					src = *meta.MatchSource
+				}
+			}
+			add(f.key, src)
+		}
+	}
+	return out
+}
+
+// basicSource 返回基本信息字段的来源。
+func basicSource(provenance map[string]string, key string, locked bool) string {
+	if s := provenance[key]; s != "" {
+		return s
+	}
+	if locked {
+		return "user"
+	}
+	return ""
 }
 
 // parseSpans 解析 credit_spans_json。

@@ -396,7 +396,7 @@ func TestF9_ImportSummaryListsFailures(t *testing.T) {
 	var mu sync.Mutex
 	var lastLine string
 	done := make(chan struct{})
-	runner := importer.NewRunner(s, engine, searcher, retry, func(p importer.Progress) {
+	runner := importer.NewRunner(s, engine, searcher, retry, false, func(p importer.Progress) {
 		mu.Lock()
 		if p.Line != "" {
 			lastLine = p.Line

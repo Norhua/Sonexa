@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/norhua/sonexa/internal/config"
 	"github.com/norhua/sonexa/internal/provider"
@@ -96,11 +99,31 @@ func (a *App) SaveSettings(next config.Settings) error {
 	// 上游配置改动后重建注册表与令牌桶
 	a.rebuildProviders(next)
 	a.rebuildRunner(next)
-	// 封面并发数改动后调整工作池
+	// 封面并发数改动后就地调整工作池
 	if a.coverSvc != nil {
 		a.coverSvc.Pool().SetConcurrency(next.Cache.CoverConcurrency)
 	}
 	a.mu.Unlock()
+
+	// 封面缓存目录改动后重建缓存与工作池——
+	// 此前只在启动时建一次，改目录要重启才生效
+	a.mu.RLock()
+	oldDir := a.paths.CoverDir
+	a.mu.RUnlock()
+	newPaths := a.paths.WithCoverDir(next.Cache.CoverDir)
+	if newPaths.CoverDir != oldDir {
+		if err := newPaths.Ensure(); err != nil {
+			return fmt.Errorf("创建新的封面缓存目录失败: %w", err)
+		}
+		svc, err := newCoverService(newPaths, next, a.version)
+		if err != nil {
+			return fmt.Errorf("重建封面缓存失败: %w", err)
+		}
+		a.mu.Lock()
+		a.paths = newPaths
+		a.coverSvc = svc
+		a.mu.Unlock()
+	}
 
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, EventSettingsSaved, next)
@@ -208,4 +231,34 @@ func (a *App) CompleteOnboarding() error {
 	cur := a.settings.Get()
 	cur.OnboardingDone = true
 	return a.SaveSettings(cur)
+}
+
+// CheckReachable 探测上游是否可达。
+//
+// 用于离线态提示。探测本身走一次 HEAD，失败即认为处于离线；
+// 但只在用户触发或应用启动时调用，不做后台轮询。
+func (a *App) CheckReachable() bool {
+	if err := a.ready(); err != nil {
+		return true // 后端未就绪不是离线
+	}
+	if !a.CheckOutbound().Allowed {
+		return true // 未配置时不出网，不算离线
+	}
+	base := "https://musicbrainz.org"
+	if cur := a.settings.Get(); cur.MusicBrainz.ServerURL != "" {
+		base = cur.MusicBrainz.ServerURL
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, base, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return true
 }

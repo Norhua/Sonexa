@@ -23,6 +23,13 @@ const onlyOwned = ref(localStorage.getItem('sonexa.onlyOwned') === '1')
 const emit = defineEmits<{
   openTrack: [trackId: number]
   editTrack: [trackId: number]
+  addToCollection: [rows: Row[], kind: 'playlist' | 'tag']
+  viewArtist: [row: Row]
+  copyInfo: [rows: Row[]]
+  removeTracks: [rows: Row[]]
+  viewUpstream: [row: Row]
+  exportScope: [scope: 'playlist' | 'filtered' | 'selection' | 'all']
+  selectionChange: [ids: number[]]
 }>()
 
 onMounted(load)
@@ -178,6 +185,13 @@ async function addGhost(row: Row) {
         @open="(r) => emit('openTrack', r.id)"
         @edit="(r) => emit('editTrack', r.id)"
         @add-ghost-to-library="addGhost"
+        @add-to-collection="(rows, kind) => emit('addToCollection', rows, kind)"
+        @view-artist="(r) => emit('viewArtist', r)"
+        @copy-info="(rows) => emit('copyInfo', rows)"
+        @remove="(rows) => emit('removeTracks', rows)"
+        @view-upstream="(r) => emit('viewUpstream', r)"
+        @export-scope="(scope) => emit('exportScope', scope)"
+        @selection-change="(ids) => emit('selectionChange', ids)"
       />
 
       <!-- 清单不完整时不伪装完整：末尾一行提示与补全动作 -->
