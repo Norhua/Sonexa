@@ -70,13 +70,13 @@
 
 ## 7. iTunes Provider
 
-- [ ] 7.1 实现 search 端点（`media=music&entity=song&term&country&limit`），验证只传 `country` 不传 `lang`
-- [ ] 7.2 实现 lookup 清单端点并令 `limit > trackCount`，验证 120 首的专辑清单不被截断、`results[0]` 被解析为 collection 自身而非曲目
-- [ ] 7.3 让 search 与 lookup 共用同一个令牌桶（默认 20 req/min，可配置），验证两端点合计速率不超上限
-- [ ] 7.4 实现文字系统探测（假名→jp、谚文→kr、简体特有字→cn、繁体特有字→tw、西里尔→ru、其余→默认地区），验证各文字系统的金样例
-- [ ] 7.5 实现地区取值优先级（手动选择 > 探测建议 > 设置默认，默认跟随系统 locale），验证手动选择不被建议覆盖
-- [ ] 7.6 声明 iTunes 的 `Capabilities`（如实标出不支持的字段）与其时长补分，验证不支持的列在 UI 中填 `—`
-- [ ] 7.7 实现 iTunes 数据的 TTL 标记（缓存与 `release` 清单按 `fetched_at`，默认 30 天），验证过期清单被判为 `none`
+- [x] 7.1 实现 search 端点（`media=music&entity=song&term&country&limit`），验证只传 `country` 不传 `lang`
+- [x] 7.2 实现 lookup 清单端点并令 `limit > trackCount`，验证 120 首的专辑清单不被截断、`results[0]` 被解析为 collection 自身而非曲目
+- [x] 7.3 让 search 与 lookup 共用同一个令牌桶（默认 20 req/min，可配置），验证两端点合计速率不超上限
+- [x] 7.4 实现文字系统探测（假名→jp、谚文→kr、简体特有字→cn、繁体特有字→tw、西里尔→ru、其余→默认地区），验证各文字系统的金样例
+- [x] 7.5 实现地区取值优先级（手动选择 > 探测建议 > 设置默认，默认跟随系统 locale），验证手动选择不被建议覆盖
+- [x] 7.6 声明 iTunes 的 `Capabilities`（如实标出不支持的字段）与其时长补分，验证不支持的列在 UI 中填 `—`
+- [x] 7.7 实现 iTunes 数据的 TTL 标记（缓存与 `release` 清单按 `fetched_at`，默认 30 天），验证过期清单被判为 `none`
 
 ## 8. 匹配溯源与去重
 
@@ -171,7 +171,7 @@
 - [ ] 15.10 实现「仅显示已有」开关及其状态记忆，验证切走再回来仍保持
 - [ ] 15.11 实现清单懒加载（首次打开且 `state != complete` 时补拉，不阻塞已入库曲目渲染）与手动「补全清单」，验证灰色行随后补入
 - [ ] 15.12 实现 `tracklist_state` 为 `none/partial` 时的「清单不完整」行与 `failed` 时的错误 + 重试，验证不伪装完整
-- [ ] 15.13 实现 iTunes 清单 TTL 判定收口为单一 `isStale(release)` 函数，验证所有读取清单的路径都经过它
+- [x] 15.13 实现 iTunes 清单 TTL 判定收口为单一 `isStale(release)` 函数，验证所有读取清单的路径都经过它
 
 ## 16. 上游搜索页
 
