@@ -1,1 +1,14 @@
 .claude/settings.local.json
+
+# 构建产物
+/build/bin/
+/frontend/dist/*
+!/frontend/dist/gitkeep
+
+# 依赖
+/frontend/node_modules/
+
+# 运行时
+*.db
+*.db-shm
+*.db-wal
