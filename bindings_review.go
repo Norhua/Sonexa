@@ -186,13 +186,17 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 		return nil, err
 	}
 
-	q := provider.Query{Title: title, Artist: artist, Album: album, Country: country, Limit: 25}
+	// 与手动检索、导入匹配共用同一套文本处理：复核队列里「改搜」时填的
+	// 往往正是从表格里复制过来的原串，带着译名注释直接查必然落空。
+	q := upstreamQuery(title, artist, album, country)
 	candidates, err := p.SearchTracks(context.Background(), q)
 	if err != nil {
 		return nil, err
 	}
 
-	rows := a.toRows(candidates, q, "接受")
+	// 评分用原始输入而不是剥离后的主干，理由同 SearchUpstream
+	scoreQ := provider.Query{Title: title, Artist: artist, Album: album, Country: country}
+	rows := a.toRows(candidates, scoreQ, "接受")
 	// 结果按置信度排序
 	sortRowsByConfidence(rows)
 

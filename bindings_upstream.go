@@ -93,7 +93,14 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 		return nil, fmt.Errorf("请至少勾选一个上游")
 	}
 
-	q := provider.Query{Title: title, Artist: artist, Album: album, Country: country, Limit: 25}
+	// 检索与评分用的是**两份不同的输入**：
+	//   q      —— 剥掉导出噪音的主干，拿去查上游（查得到）
+	//   scoreQ —— 用户原样给的串，拿去判分（查对了没有）
+	//
+	// 不能拿剥离后的串去判分：`原田瞳（原田ひとみ）` 剥成 `原田瞳` 之后，
+	// 让署名对上的恰恰是被剥掉的那个括号（见 CompareCredit）。
+	q := upstreamQuery(title, artist, album, country)
+	scoreQ := provider.Query{Title: title, Artist: artist, Album: album, Country: country}
 
 	type task struct {
 		p    provider.Provider
@@ -123,7 +130,7 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 				t.err = err
 				return
 			}
-			t.rows = a.toRows(candidates, q, "加入曲库")
+			t.rows = a.toRows(candidates, scoreQ, "加入曲库")
 
 			// 该上游一完成就推给前端：先返回的先显示，不被慢的上游阻塞。
 			// 仍等到 wg.Wait() 是为了让本次调用的返回值完整，
@@ -166,6 +173,27 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 		resp.Aggregate = []CandidateRow{}
 	}
 	return resp, nil
+}
+
+// upstreamQuery 由用户输入构造**检索**用的上游查询。
+//
+// 手动检索与导入匹配走同一套文本处理：把导出噪音（截断省略号、译名/读音注释）
+// 剥成检索主干，并把括号里那种写法作为艺术家的备选写法带上。
+//
+// 不这样做的话两条路径会不一致——同一个 `原田瞳（原田ひとみ）`，
+// 导入能查到而手动检索查不到，而用户在复核队列里「改搜」时填的往往正是
+// 从表格里复制过来的原串。
+//
+// 版本标记不剥：它是这条录音身份的一部分（见 matching.SearchCore）。
+func upstreamQuery(title, artist, album, country string) provider.Query {
+	return provider.Query{
+		Title:            matching.SearchCore(title),
+		Artist:           matching.SearchCore(artist),
+		Album:            matching.SearchCore(album),
+		ArtistAlternates: matching.Alternates(artist),
+		Country:          country,
+		Limit:            25,
+	}
 }
 
 // toRows 把候选转为表格行，并预查本地决定动作按钮。
