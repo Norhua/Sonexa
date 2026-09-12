@@ -37,10 +37,13 @@ func testEngine() *Engine {
 }
 
 // TestProgressiveStopsAtFirstHighConfidence 覆盖 11.4：
-// 首个变体产出高置信即停，多数行只消耗 1 次请求。
+// 首个阶梯产出可用候选即停，多数行只消耗 1 次请求。
+//
+// 第一级查的是**主干**（`夕立`）而不是原串：上游的引号短语是子短语匹配，
+// 主干的结果集是原串结果集的超集，多发一次原串只是浪费一个 1 req/s 的名额。
 func TestProgressiveStopsAtFirstHighConfidence(t *testing.T) {
 	s := &stubSearcher{byTitle: map[string][]provider.Candidate{
-		"夕立（驟雨）": {highConfCandidate("trk-1", "夕立（驟雨）", "3L", "专辑", sptr("rg-1"))},
+		"夕立": {highConfCandidate("trk-1", "夕立", "3L", "专辑", sptr("rg-1"))},
 	}}
 
 	e := testEngine()
@@ -63,11 +66,11 @@ func TestProgressiveStopsAtFirstHighConfidence(t *testing.T) {
 }
 
 // TestProgressiveFallsThroughVariants 覆盖 11.4：
-// 首个变体无结果时依次查询后续变体。
+// 首个阶梯无结果时依次查询后续阶梯。
 func TestProgressiveFallsThroughVariants(t *testing.T) {
 	s := &stubSearcher{byTitle: map[string][]provider.Candidate{
-		// 原串无结果，剥离后才命中
-		"夕立": {highConfCandidate("trk-1", "夕立", "3L", "专辑", sptr("rg-1"))},
+		// 主干那一级无结果，取内层（译名）那一级才命中
+		"驟雨": {highConfCandidate("trk-1", "驟雨", "3L", "专辑", sptr("rg-1"))},
 	}}
 
 	e := testEngine()

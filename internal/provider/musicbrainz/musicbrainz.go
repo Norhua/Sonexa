@@ -147,19 +147,81 @@ func (p *Provider) SearchTracks(ctx context.Context, q provider.Query) ([]provid
 	return expandToTrackCandidates(resp.Recordings), nil
 }
 
-// buildLuceneQuery 构造 MB 的 Lucene 查询串。留空的条件不参与查询。
+// maxArtistAlternates 是最多带几种艺术家备选写法进查询。
+//
+// 它们都挂在同一个 OR 组里，而每多一个分支就多一段没有上限的用户输入被拼进 URL。
+const maxArtistAlternates = 2
+
+// buildLuceneQuery 构造 MB 的 Lucene 查询串。
+//
+// 形态是「曲名必须命中，锚点任一命中即可」：
+//
+//	recording:"曲名" AND (release:"歌集" OR artist:"歌手" OR artist:"备选写法")
+//
+// 曲名是唯一的必须项，歌集与歌手是**并联**的锚点，不是叠加的过滤条件。
+// 这一条是实测逼出来的——三字段 AND 在真实导出表格上几乎必然落空：
+//
+//   - `artist:` 只匹配 recording **自己的** artist credit，而导出表格的歌手列
+//     时而是碟的署名、时而是唱的人。`綿雪の夢` 那行写 Crest，录音署名却是
+//     ハトリアヤ；`夕立` 那行写 3L，录音署名却是社团 CROW'SCLAW。
+//     把歌手当成必须满足的条件，这两行都被挡在外面——而它们的歌集列两次都对得上
+//   - recording 索引里没有任何字段代表「所属 release 的署名」，换字段名绕不开
+//
+// 实测同一批输入：三字段 AND 命中 0 条，并联后各命中 1 条且就是正确那条。
+//
+// TitleOnly 为真时只发曲名一级（阶梯的兜底），锚点全空时同理。
 func buildLuceneQuery(q provider.Query) string {
-	var parts []string
-	if t := strings.TrimSpace(q.Title); t != "" {
-		parts = append(parts, `recording:"`+escapeLucene(t)+`"`)
+	title := strings.TrimSpace(q.Title)
+	if title == "" {
+		// 没有曲名时退回旧形态：此时锚点就是仅有的条件，并联没有意义
+		var parts []string
+		if a := strings.TrimSpace(q.Artist); a != "" {
+			parts = append(parts, `artist:"`+escapeLucene(a)+`"`)
+		}
+		if al := strings.TrimSpace(q.Album); al != "" {
+			parts = append(parts, `release:"`+escapeLucene(al)+`"`)
+		}
+		return strings.Join(parts, " AND ")
 	}
-	if a := strings.TrimSpace(q.Artist); a != "" {
-		parts = append(parts, `artist:"`+escapeLucene(a)+`"`)
+
+	recording := `recording:"` + escapeLucene(title) + `"`
+	if q.TitleOnly {
+		return recording
 	}
-	if al := strings.TrimSpace(q.Album); al != "" {
-		parts = append(parts, `release:"`+escapeLucene(al)+`"`)
+
+	var anchors []string
+	seen := map[string]bool{}
+	add := func(field, value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		clause := field + `:"` + escapeLucene(value) + `"`
+		if seen[clause] {
+			return
+		}
+		seen[clause] = true
+		anchors = append(anchors, clause)
 	}
-	return strings.Join(parts, " AND ")
+	// 歌集排在最前：实测它比歌手列可靠——歌手列常常是碟的署名而非录音的署名
+	add("release", q.Album)
+	add("artist", q.Artist)
+	for i, alt := range q.ArtistAlternates {
+		if i >= maxArtistAlternates {
+			break
+		}
+		add("artist", alt)
+	}
+
+	switch len(anchors) {
+	case 0:
+		return recording
+	case 1:
+		// 只有一个锚点时不加括号：`A AND (B)` 与 `A AND B` 是同一个查询
+		return recording + " AND " + anchors[0]
+	default:
+		return recording + " AND (" + strings.Join(anchors, " OR ") + ")"
+	}
 }
 
 // escapeLucene 转义 Lucene 的特殊字符，避免用户输入被当作查询语法。

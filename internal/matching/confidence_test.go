@@ -138,11 +138,15 @@ func TestHighConfidenceIsStructural(t *testing.T) {
 	w := DefaultWeights()
 
 	// 79 分：曲名匹配 + 署名模糊(12) + 歌集模糊(12)，两处都只是模糊
+	//
+	// 署名这一侧不能用 `X` vs `X feat Y` 当模糊样例——那是同一个主署名的两种写法，
+	// CompareCredit 判它精确（见 TestCompareCreditFormsOfSameArtist）。
+	// 这里要的是「像但说不准是不是同一个」，因此用多一个词的乐队写法。
 	q1 := provider.Query{Title: "God knows", Artist: "Suzumiya Haruhi", Album: "TV animation"}
 	c1 := provider.Candidate{
 		Title:      sptr("God knows"),
-		ArtistName: sptr("Suzumiya Haruhi feat Aya"), // 词元包含 → 模糊
-		AlbumTitle: sptr("TV animation soundtrack"),  // 词元包含 → 模糊
+		ArtistName: sptr("Suzumiya Haruhi Band"),    // 词元包含 → 模糊
+		AlbumTitle: sptr("TV animation soundtrack"), // 词元包含 → 模糊
 	}
 	got1 := w.ScoreCandidate(q1, c1)
 	if got1.CreditMatch != MatchFuzzy || got1.AlbumMatch != MatchFuzzy {
@@ -188,5 +192,38 @@ func TestJaroWinkler(t *testing.T) {
 	}
 	if jaroWinkler("abc", "xyz") > 0.5 {
 		t.Error("完全不同的串相似度应很低")
+	}
+}
+
+// TestCompareCreditFormsOfSameArtist 覆盖署名的三种常见异写。
+//
+// 导出表格里署名的写法差异几乎总是这三种之一，而它们说的都是同一位艺术家。
+// 判成不匹配会让一批本该直接入库的行白白落进复核队列——实测用户那份 CSV 里
+// 有三条正是卡在这里（Tetra. / you / By the Seaside）。
+func TestCompareCreditFormsOfSameArtist(t *testing.T) {
+	w := DefaultWeights()
+	cases := []struct {
+		name             string
+		query, candidate string
+		want             MatchDegree
+	}{
+		{"括号里是另一种写法", "原田瞳（原田ひとみ）", "原田ひとみ", MatchExact},
+		{"括号里是另一种写法（反向）", "原田ひとみ", "原田瞳（原田ひとみ）", MatchExact},
+		{"读音注释", "3L（スリーエル）", "3L", MatchExact},
+		{"括号里是声优", "茅野愛衣", "霞ヶ丘詩羽(CV.茅野愛衣)", MatchExact},
+		{"末尾 feat. 从句", "Kirara Magic", "Kirara Magic feat. Kitsui Akira", MatchExact},
+		{"末尾 feat. 从句（反向）", "Kirara Magic feat. Kitsui Akira", "Kirara Magic", MatchExact},
+		{"完全相同", "reche", "reche", MatchExact},
+
+		// 放宽只针对「同一位艺术家的不同写法」，不是把署名判定整体变松
+		{"不同艺术家", "Kirara Magic", "Lone Alpha", MatchNone},
+		{"多一个词的乐队写法仍只算模糊", "Suzumiya Haruhi", "Suzumiya Haruhi Band", MatchFuzzy},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := w.CompareCredit(c.query, c.candidate); got != c.want {
+				t.Errorf("CompareCredit(%q, %q) = %v, 期望 %v", c.query, c.candidate, got, c.want)
+			}
+		})
 	}
 }

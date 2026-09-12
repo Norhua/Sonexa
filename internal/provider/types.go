@@ -11,6 +11,11 @@ type Query struct {
 	Limit   int
 	// DurationMS 是导入输入的时长，用于 iTunes 的时长接近度补分；无时长时为 nil。
 	DurationMS *int
+	// ArtistAlternates 是艺术家的备选写法（括号里那种），作为并联锚点之一。
+	// 平台习惯把另一种写法装在括号里，而上游用的往往正是括号里那个。
+	ArtistAlternates []string
+	// TitleOnly 为真时只以曲名检索，不带任何锚点——阶梯的兜底一级。
+	TitleOnly bool
 }
 
 // Ref 定位一条可拉取详情的上游对象。

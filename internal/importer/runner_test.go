@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,7 +31,23 @@ func (s *recordingSearcher) SearchTracks(_ context.Context, q provider.Query) ([
 	if err, ok := s.failFor[q.Title]; ok {
 		return nil, err
 	}
-	return s.byTitle[q.Title], nil
+	if hit, ok := s.byTitle[q.Title]; ok {
+		return hit, nil
+	}
+	// 模拟上游的**子短语**匹配：MusicBrainz 的引号短语只要求查询词元序列是
+	// 被索引字段的一段连续子序列，因此 `recording:"God knows"` 会返回
+	// `God knows...`。按精确相等查表会让检索侧任何合理的规范化
+	// （去截断省略号、剥译名注释）都在桩件这里凭空落空。
+	nq := matching.Normalize(q.Title)
+	if nq == "" {
+		return nil, nil
+	}
+	for title, candidates := range s.byTitle {
+		if strings.Contains(matching.Normalize(title), nq) {
+			return candidates, nil
+		}
+	}
+	return nil, nil
 }
 
 func (s *recordingSearcher) queryCount() int {

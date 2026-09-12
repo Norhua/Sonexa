@@ -125,3 +125,102 @@ func TestLadderFromSettings(t *testing.T) {
 		t.Errorf("选中 %q, 期望 vinyl-de（设置把 Vinyl 与 DE 排在前）", got.MatchRef)
 	}
 }
+
+// TestCrossGroupYieldsToSameRecording 覆盖跨发行组的例外 [A]：
+// 全部高置信候选是同一条录音时，分歧只是「收录在哪张碟」，交优选阶梯裁决。
+func TestCrossGroupYieldsToSameRecording(t *testing.T) {
+	cfg := DefaultLadderConfig()
+	rec := "2283ceda-0000-0000-0000-000000000000"
+	scored := []ScoredCandidate{
+		{
+			Candidate: provider.Candidate{
+				MatchRef: "a", RecordingRef: &rec,
+				ReleaseGroupRef: sptr("rg-1"), ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
+			},
+			Score: Score{HighConf: true, AlbumMatch: MatchFuzzy},
+		},
+		{
+			Candidate: provider.Candidate{
+				MatchRef: "b", RecordingRef: &rec,
+				ReleaseGroupRef: sptr("rg-2"), ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
+			},
+			Score: Score{HighConf: true, AlbumMatch: MatchNone},
+		},
+	}
+
+	got := cfg.Decide(scored)
+	if got.Outcome != OutcomeImportLadder {
+		t.Errorf("分流 = %q, 期望 import_ladder（同一条录音不是「哪首歌」的分歧）", got.Outcome)
+	}
+	if got.Selected == nil {
+		t.Fatal("应选出一条")
+	}
+}
+
+// TestCrossGroupYieldsToSoleAlbumExact 覆盖跨发行组的例外 [B]：
+// 恰好一条歌集精确时，用户在导入行里写的歌集就是客观依据。
+func TestCrossGroupYieldsToSoleAlbumExact(t *testing.T) {
+	cfg := DefaultLadderConfig()
+	scored := []ScoredCandidate{
+		{
+			Candidate: provider.Candidate{
+				MatchRef: "single", RecordingRef: sptr("rec-1"),
+				ReleaseGroupRef: sptr("rg-1"), AlbumTitle: sptr("3253212"),
+			},
+			Score: Score{HighConf: true, AlbumMatch: MatchExact},
+		},
+		{
+			Candidate: provider.Candidate{
+				MatchRef: "live", RecordingRef: sptr("rec-2"),
+				ReleaseGroupRef: sptr("rg-2"), AlbumTitle: sptr("GaLLERy on live"),
+			},
+			Score: Score{HighConf: true, AlbumMatch: MatchNone},
+		},
+	}
+
+	got := cfg.Decide(scored)
+	if got.Outcome != OutcomeImportLadder {
+		t.Errorf("分流 = %q, 期望 import_ladder", got.Outcome)
+	}
+	if got.Selected == nil || got.Selected.MatchRef != "single" {
+		t.Errorf("选中 = %v, 期望歌集精确的那一条", got.Selected)
+	}
+}
+
+// TestCrossGroupStillReviewsWhenAmbiguous 确保两个例外都没有把规则整体放松：
+// 不同录音、且歌集无法唯一裁决时，仍须交用户判断。
+func TestCrossGroupStillReviewsWhenAmbiguous(t *testing.T) {
+	cfg := DefaultLadderConfig()
+
+	t.Run("都不精确", func(t *testing.T) {
+		scored := []ScoredCandidate{
+			{
+				Candidate: provider.Candidate{MatchRef: "a", RecordingRef: sptr("rec-1"), ReleaseGroupRef: sptr("rg-1")},
+				Score:     Score{HighConf: true, AlbumMatch: MatchFuzzy},
+			},
+			{
+				Candidate: provider.Candidate{MatchRef: "b", RecordingRef: sptr("rec-2"), ReleaseGroupRef: sptr("rg-2")},
+				Score:     Score{HighConf: true, AlbumMatch: MatchFuzzy},
+			},
+		}
+		if got := cfg.Decide(scored); got.Outcome != OutcomeReviewCrossGroup {
+			t.Errorf("分流 = %q, 期望 review_cross_group", got.Outcome)
+		}
+	})
+
+	t.Run("两条都精确", func(t *testing.T) {
+		scored := []ScoredCandidate{
+			{
+				Candidate: provider.Candidate{MatchRef: "a", RecordingRef: sptr("rec-1"), ReleaseGroupRef: sptr("rg-1")},
+				Score:     Score{HighConf: true, AlbumMatch: MatchExact},
+			},
+			{
+				Candidate: provider.Candidate{MatchRef: "b", RecordingRef: sptr("rec-2"), ReleaseGroupRef: sptr("rg-2")},
+				Score:     Score{HighConf: true, AlbumMatch: MatchExact},
+			},
+		}
+		if got := cfg.Decide(scored); got.Outcome != OutcomeReviewCrossGroup {
+			t.Errorf("分流 = %q, 期望 review_cross_group（歌集没能唯一裁决）", got.Outcome)
+		}
+	})
+}

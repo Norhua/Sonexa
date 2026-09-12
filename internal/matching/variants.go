@@ -5,16 +5,20 @@ import "strings"
 // MaxVariants 是查询变体组合的数量上限。
 //
 // MB 限速 1 req/s：总是查全部变体会把 1000 行的导入从约 17 分钟拖到约 67 分钟。
-const MaxVariants = 4
+const MaxVariants = 3
 
 // Variant 是一个查询变体组合。
 type Variant struct {
 	Title  string
 	Artist string
 	Album  string
-	// Penalty 是该变体的得分惩罚。
-	// 兜底分支的剥离变体扣分，防止误剥离时压过正确结果。
+	// Penalty 是该变体的得分惩罚。保留字段以免绑定层与测试同时改动；
+	// 现在恒为 0——曲名是否对得上改由 CompareTitle 判定，不再靠扣分压制误剥离。
 	Penalty float64
+	// TitleOnly 为真时只以曲名检索，不带锚点——阶梯的兜底一级。
+	TitleOnly bool
+	// ArtistAlternates 是艺术家的备选写法，作为并联锚点之一。
+	ArtistAlternates []string
 	// ExtraArtists 是从曲名中剥离出的附加艺术家（feat. X），并入艺术家条件。
 	ExtraArtists []string
 	// Label 供界面展示「已尝试变体」。
@@ -79,37 +83,42 @@ func (r *Rules) fieldVariantsFor(s string) fieldVariants {
 	}
 }
 
-// GenerateVariants 由曲名与艺术家的括号处理结果生成查询变体组合。
+// GenerateVariants 生成检索阶梯，精度从高到低。调用方按顺序发、有候选过闸即止。
 //
-// 组合按固定优先级排列并截断为最多 4 个：
+//	L1 锚定并联  曲名主干 AND（歌集 OR 歌手 OR 歌手备选写法）   <- 绝大多数只花这一次
+//	L2 取内层    译名那一层作曲名，锚点不变（`驟雨` / `繁雪之梦`）
+//	L3 曲名独行  连歌集带歌手都对不上时，只用曲名，交本地闸门判
 //
-//	V1 原串        ("夕立（驟雨）", "3L（スリーエル）")
-//	V2 双剥离      ("夕立",        "3L")              <- 通常命中这个
-//	V3 取内层      ("驟雨",        "3L")
-//	V4 混合        ("夕立",        "スリーエル")
-func (r *Rules) GenerateVariants(title, artist string) []Variant {
+// **没有「原串」那一级**：上游的引号短语是子短语匹配，主干的结果集是原串结果集的
+// 超集（`recording:"That Girl"` 会返回 `That Girl (DJLIU Remix)`），
+// 原串那一级只可能命中同一批或更少——它在十条输入上白花 9 次请求。
+//
+// 剥离不再扣分：曲名是否对得上由 CompareTitle 判定，那里版本标记不一致直接不匹配，
+// 不需要再用分数去压制误剥离。
+func (r *Rules) GenerateVariants(title, artist, album string) []Variant {
 	tv := r.fieldVariantsFor(title)
 	av := r.fieldVariantsFor(artist)
 
 	extra := append(append([]string{}, tv.Extra...), av.Extra...)
-	penalty := tv.Penalty + av.Penalty
+	// 艺术家的备选写法：括号里那种写法，上游用的往往正是它
+	alternates := append(append([]string{}, r.Alternates(artist)...), extra...)
 
-	// 候选组合按优先级排列，随后去重并截断
+	coreTitle := r.SearchCore(title)
+	coreArtist := r.SearchCore(artist)
+	coreAlbum := r.SearchCore(album)
+
 	type combo struct {
-		title, artist string
-		penalty       float64
-		label         string
+		title, artist, album string
+		titleOnly            bool
+		label                string
 	}
 	combos := []combo{
-		{tv.Original, av.Original, 0, "原串"},
-		{tv.Stripped, av.Stripped, penalty, "双剥离"},
+		{coreTitle, coreArtist, coreAlbum, false, "锚定"},
 	}
-	if tv.Inner != "" {
-		combos = append(combos, combo{tv.Inner, av.Stripped, penalty, "取内层"})
+	if tv.Inner != "" && !strings.EqualFold(tv.Inner, coreTitle) {
+		combos = append(combos, combo{tv.Inner, coreArtist, coreAlbum, false, "取内层"})
 	}
-	if av.Inner != "" {
-		combos = append(combos, combo{tv.Stripped, av.Inner, penalty, "混合"})
-	}
+	combos = append(combos, combo{coreTitle, "", "", true, "仅曲名"})
 
 	seen := map[string]bool{}
 	out := make([]Variant, 0, MaxVariants)
@@ -117,23 +126,32 @@ func (r *Rules) GenerateVariants(title, artist string) []Variant {
 		if len(out) >= MaxVariants {
 			break
 		}
-		if strings.TrimSpace(c.title) == "" && strings.TrimSpace(c.artist) == "" {
+		if strings.TrimSpace(c.title) == "" {
 			continue
 		}
-		key := c.title + "\x00" + c.artist
+		key := c.title + "\x00" + c.artist + "\x00" + c.album + "\x00" + boolKey(c.titleOnly)
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
 		out = append(out, Variant{
-			Title:        c.title,
-			Artist:       c.artist,
-			Penalty:      c.penalty,
-			ExtraArtists: extra,
-			Label:        c.label,
+			Title:            c.title,
+			Artist:           c.artist,
+			Album:            c.album,
+			TitleOnly:        c.titleOnly,
+			ArtistAlternates: alternates,
+			ExtraArtists:     extra,
+			Label:            c.label,
 		})
 	}
 	return out
+}
+
+func boolKey(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
 }
 
 // VariantLabels 返回变体的展示串，供复核队列的「已尝试变体」提示使用。

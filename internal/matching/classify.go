@@ -41,6 +41,12 @@ type Rules struct {
 	disambigRe    *regexp.Regexp
 }
 
+// defaultRules 是包级共享的默认规则表。
+//
+// 括号分类是纯函数式的查表，没有每次重建的理由；而 Weights 那边的判定
+// 需要用到它，又不适合为此在每个值类型上挂一份规则表。
+var defaultRules = DefaultRules()
+
 // DefaultRules 返回默认的模式表。
 func DefaultRules() *Rules {
 	r := &Rules{

@@ -62,9 +62,9 @@ func NewEngine(m config.MatchingSettings) *Engine {
 func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Input) (*Result, error) {
 	res := &Result{}
 
-	variants := e.Rules.GenerateVariants(in.Title, in.Artist)
+	variants := e.Rules.GenerateVariants(in.Title, in.Artist, in.Album)
 	if len(variants) == 0 {
-		variants = []Variant{{Title: in.Title, Artist: in.Artist, Label: "原串"}}
+		variants = []Variant{{Title: in.Title, Artist: in.Artist, Album: in.Album, Label: "原串"}}
 	}
 
 	// 候选池按 match_ref 去重，每条取跨变体的最高分
@@ -72,10 +72,12 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 
 	for _, v := range variants {
 		q := provider.Query{
-			Title:      v.Title,
-			Artist:     v.Artist,
-			Album:      in.Album,
-			DurationMS: in.DurationMS,
+			Title:            v.Title,
+			Artist:           v.Artist,
+			Album:            v.Album,
+			ArtistAlternates: v.ArtistAlternates,
+			TitleOnly:        v.TitleOnly,
+			DurationMS:       in.DurationMS,
 		}
 		// 附加艺术家（feat. X）并入艺术家条件
 		if len(v.ExtraArtists) > 0 && q.Artist == "" {
@@ -89,14 +91,14 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 		}
 
 		for _, c := range candidates {
-			score := e.Weights.ScoreCandidate(q, c)
+			// 评分用**原始输入**而不是剥离后的变体：变体是为了查得到，
+			// 判定「查对了没有」要拿用户给的那一行去比。
+			score := e.Weights.ScoreCandidate(provider.Query{
+				Title: in.Title, Artist: in.Artist, Album: in.Album, DurationMS: in.DurationMS,
+			}, c)
 			if score.Rejected {
 				continue // 曲名不匹配即丢弃，不进候选池
 			}
-			// 兜底剥离变体扣分，防止误剥离时压过正确结果
-			score.Total -= v.Penalty
-			// 扣分可能使其跌破高置信，但高置信是结构性条件，与分数无关
-			score.HighConf = e.Weights.IsHighConfidence(score)
 
 			key := string(c.Provider) + "|" + c.MatchRef
 			if existing, ok := pool[key]; ok && existing.Score.Total >= score.Total {
@@ -109,9 +111,15 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 			}
 		}
 
-		// 渐进式：首个变体产出高置信即停，不再查其余变体
-		if e.Strategy != config.VariantExhaustive && hasHighConfidence(pool) {
-			break
+		// 阶梯的推进条件是「这一级有没有过得了闸的候选」，而不是「上游返回了几条」。
+		//
+		// 这个区别是实测逼出来的：`That Girl (DJLIU Remix)` 的锚定级会返回几百条
+		// 同名的 `That Girl`，一条都不是那个 remix。按「返回了就停」，
+		// 阶梯会停在一堆用不上的候选上，更宽的一级永远不会被试到。
+		if len(pool) > 0 {
+			if e.Strategy != config.VariantExhaustive || v.TitleOnly {
+				break
+			}
 		}
 	}
 

@@ -1,6 +1,9 @@
 package matching
 
 import (
+	"regexp"
+	"strings"
+
 	"github.com/norhua/sonexa/internal/provider"
 )
 
@@ -72,6 +75,128 @@ func (w Weights) CompareText(a, b string) MatchDegree {
 	return MatchNone
 }
 
+// CompareTitle 判定查询曲名与候选曲名是否是**同一条录音的名字**。
+//
+// 它比 CompareText 严：曲名是准入门槛，宽了就会把 `Tetra. (off vocal)` 当成
+// `Tetra.` 收下——那是两条不同的录音，替用户定成同一条正是要根除的错误。
+//
+//	[1] 版本标记不一致 ⟹ 不匹配。无论其余部分多像
+//	[2] 剥掉非版本注释后相等 ⟹ 精确（`綿雪の夢（繁雪之梦）` == `綿雪の夢`）
+//	[3] 字符串相似度达标 ⟹ 模糊
+//
+// 与 CompareText 的关键差别是**不用词元包含**：`{tetra}` ⊆ `{tetra, offvocal}`
+// 正是上面那个错误的来源。署名与歌集仍走 CompareText——那两处宽一点是合适的，
+// 它们是旁证而不是准入。
+func (w Weights) CompareTitle(query, candidate string) MatchDegree {
+	if !sameMarkers(VersionMarkers(query), VersionMarkers(candidate)) {
+		return MatchNone
+	}
+
+	nq, nc := Normalize(query), Normalize(candidate)
+	if nq == "" || nc == "" {
+		return MatchNone
+	}
+	if nq == nc {
+		return MatchExact
+	}
+
+	// 剥掉译名/读音这类平台附加的注释后再比一次
+	sq := Normalize(StripNonVersionAnnotations(query))
+	sc := Normalize(StripNonVersionAnnotations(candidate))
+	if sq != "" && sc != "" && sq == sc {
+		return MatchExact
+	}
+	if (sq != "" && sq == nc) || (sc != "" && nq == sc) {
+		return MatchExact
+	}
+
+	// 括号里装的可能正是上游用的那个写法。中文平台常写成「译名（原名）」，
+	// 此时主干是译名、上游用的是括号里的原名——不比这一层，
+	// 取内层那一级就算查到了也会被自己判成不匹配。
+	//
+	// 版本标记不在 Alternates 里（它是曲名的一部分，不是另一种写法），
+	// 且标记集合的判定在最前面已经拦过一道，因此这里不会放宽版本的区分。
+	for _, alt := range Alternates(query) {
+		if n := Normalize(alt); n != "" && n == nc {
+			return MatchExact
+		}
+	}
+	for _, alt := range Alternates(candidate) {
+		if n := Normalize(alt); n != "" && n == nq {
+			return MatchExact
+		}
+	}
+
+	if jaroWinkler(nq, nc) >= w.JaroWinklerMin {
+		return MatchFuzzy
+	}
+	return MatchNone
+}
+
+// CompareCredit 判定查询署名与候选署名是否指同一位（或同一组）艺术家。
+//
+// 比 CompareText 宽一档，因为导出表格里署名的写法差异极大，而差异几乎总是
+// 三种固定形态之一：
+//
+//	括号里装着另一种写法   `原田瞳（原田ひとみ）` ↔ `原田ひとみ`
+//	括号里装着声优         `茅野愛衣` ↔ `霞ヶ丘詩羽(CV.茅野愛衣)`
+//	末尾挂着 feat. 谁      `Kirara Magic` ↔ `Kirara Magic feat. Kitsui Akira`
+//
+// 这三种都是同一位艺术家的不同写法，判成不匹配会让一批本该直接入库的行
+// 白白落进复核队列——署名从来不单独决定入库，它是曲名之外的**旁证**，
+// 宽一点是合适的。曲名那一侧仍然很严（见 CompareTitle）。
+func (w Weights) CompareCredit(query, candidate string) MatchDegree {
+	nq, nc := Normalize(query), Normalize(candidate)
+	if nq == "" || nc == "" {
+		return MatchNone
+	}
+	if nq == nc {
+		return MatchExact
+	}
+
+	// 主要署名：去掉括号注释与末尾的 feat. 从句
+	pq := Normalize(primaryCredit(query))
+	pc := Normalize(primaryCredit(candidate))
+	if pq != "" && pc != "" && pq == pc {
+		return MatchExact
+	}
+	if (pq != "" && pq == nc) || (pc != "" && nq == pc) {
+		return MatchExact
+	}
+
+	// 括号里的另一种写法（含 CV 的声优名）：逐段比一遍
+	for _, alt := range Alternates(query) {
+		n := Normalize(alt)
+		if n != "" && (n == nc || n == pc) {
+			return MatchExact
+		}
+	}
+	for _, alt := range Alternates(candidate) {
+		n := Normalize(alt)
+		if n != "" && (n == nq || n == pq) {
+			return MatchExact
+		}
+	}
+
+	return w.CompareText(query, candidate)
+}
+
+// featureSuffixRe 匹配署名末尾的 feat. 从句。
+//
+// 被 feat 的人是这条录音的附加参与者，不是另一位主署名——
+// `Kirara Magic` 与 `Kirara Magic feat. Kitsui Akira` 是同一个主署名。
+var featureSuffixRe = regexp.MustCompile(`(?i)\s*[\(（]?\s*(?:feat\.?|ft\.?|featuring|with)\s+.*$`)
+
+// primaryCredit 返回署名的主干：剥掉括号注释与末尾的 feat. 从句。
+func primaryCredit(s string) string {
+	out := featureSuffixRe.ReplaceAllString(StripBrackets(s), "")
+	out = collapseSpaces(out)
+	if strings.TrimSpace(out) == "" {
+		return s
+	}
+	return out
+}
+
 // Score 是一条候选的评分结果。
 type Score struct {
 	Total       float64
@@ -86,7 +211,7 @@ type Score struct {
 //
 // 曲名不匹配即丢弃是所有上游共同的准入门槛。
 func (w Weights) ScoreCandidate(q provider.Query, c provider.Candidate) Score {
-	titleMatch := w.CompareText(q.Title, deref(c.Title))
+	titleMatch := w.CompareTitle(q.Title, deref(c.Title))
 	if titleMatch == MatchNone {
 		return Score{Rejected: true, TitleMatch: MatchNone}
 	}
@@ -95,7 +220,7 @@ func (w Weights) ScoreCandidate(q provider.Query, c provider.Candidate) Score {
 	s.Total += w.Title // 曲名匹配即得满额（准入已保证匹配）
 
 	// 署名
-	s.CreditMatch = w.CompareText(q.Artist, deref(c.ArtistName))
+	s.CreditMatch = w.CompareCredit(q.Artist, deref(c.ArtistName))
 	switch s.CreditMatch {
 	case MatchExact:
 		s.Total += w.CreditExact

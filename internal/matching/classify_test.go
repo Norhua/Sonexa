@@ -74,20 +74,24 @@ func TestVersionKeywordBeatsScriptDifference(t *testing.T) {
 
 // TestThatGirlNotStripped 是 spec 反复强调的反例：
 // 盲目剥离会把 That Girl (DJLIU Remix) 搜成 That Girl，匹配到完全不相关的歌。
+//
+// 检索阶梯改成锚定并联之后，「不剥离」的落点从**变体**移到了**判定**：
+// 变体仍带着版本标识去查（上游的子短语匹配保证它能召回），
+// 而 CompareTitle 保证裸的 `That Girl` 不会被当成它收下。
 func TestThatGirlNotStripped(t *testing.T) {
 	r := DefaultRules()
-	variants := r.GenerateVariants("That Girl (DJLIU Remix)", "Liu")
+	variants := r.GenerateVariants("That Girl (DJLIU Remix)", "Liu", "That Girl")
 
 	for _, v := range variants {
-		if v.Title == "That Girl" {
-			t.Fatalf("版本标识被剥离，产生了裸曲名变体: %+v", variants)
+		if v.Title != "That Girl (DJLIU Remix)" {
+			t.Errorf("变体曲名 = %q, 版本标识不该被剥掉", v.Title)
 		}
 	}
-	if len(variants) != 1 {
-		t.Errorf("版本标识不应生成变体, 得到 %d 个: %+v", len(variants), variants)
-	}
-	if variants[0].Title != "That Girl (DJLIU Remix)" {
-		t.Errorf("曲名 = %q, 期望保留括号", variants[0].Title)
+
+	// 真正的保护在判定这一侧：裸曲名绝不能被判成同一条录音
+	w := DefaultWeights()
+	if got := w.CompareTitle("That Girl (DJLIU Remix)", "That Girl"); got != MatchNone {
+		t.Errorf("CompareTitle(remix, 裸曲名) = %v, 期望 MatchNone", got)
 	}
 }
 
@@ -95,16 +99,21 @@ func TestThatGirlNotStripped(t *testing.T) {
 // 夕立（驟雨）生成含 夕立 与 驟雨 的查询变体。
 func TestTranslationGeneratesVariants(t *testing.T) {
 	r := DefaultRules()
-	variants := r.GenerateVariants("夕立（驟雨）", "")
+	variants := r.GenerateVariants("夕立（驟雨）", "", "")
 
 	titles := map[string]bool{}
 	for _, v := range variants {
 		titles[v.Title] = true
 	}
-	for _, want := range []string{"夕立（驟雨）", "夕立", "驟雨"} {
+	// 主干与译名两层都要被查到。原串那一级已删——上游的引号短语是子短语匹配，
+	// 主干的结果集是原串结果集的超集，多发一次只是浪费一个 1 req/s 的名额。
+	for _, want := range []string{"夕立", "驟雨"} {
 		if !titles[want] {
 			t.Errorf("变体中缺少 %q, 实际为 %v", want, titles)
 		}
+	}
+	if titles["夕立（驟雨）"] {
+		t.Errorf("不应再有原串变体（主干是它的超集）, 实际为 %v", titles)
 	}
 }
 

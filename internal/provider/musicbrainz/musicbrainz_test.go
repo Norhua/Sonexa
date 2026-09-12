@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/norhua/sonexa/internal/provider"
@@ -485,5 +486,78 @@ func TestSearchCandidateCarriesLabel(t *testing.T) {
 	}
 	if d.CatalogNumber == nil || *d.CatalogNumber != "LACA-15113" {
 		t.Errorf("详情目录号 = %v, 期望 LACA-15113", d.CatalogNumber)
+	}
+}
+
+// TestAnchoredQueryIsDisjunction 锁定检索式的形态：曲名必须命中，锚点并联。
+//
+// 这是用户报告「导入 10 条只成功 2 条」的首要根因。三字段 AND 在真实导出表格上
+// 几乎必然落空，因为 `artist:` 只匹配 recording **自己的** artist credit，
+// 而表格的歌手列时而是碟的署名、时而是唱的人。实测（真实 MB）：
+//
+//	recording:"綿雪の夢" AND artist:"Crest" AND release:"狼と巫女とお菓子の家"  → 0 条
+//	recording:"綿雪の夢" AND (release:"狼と巫女とお菓子の家" OR artist:"Crest") → 1 条（正确那条）
+func TestAnchoredQueryIsDisjunction(t *testing.T) {
+	got := buildLuceneQuery(provider.Query{
+		Title: "綿雪の夢", Artist: "Crest", Album: "狼と巫女とお菓子の家",
+	})
+	want := `recording:"綿雪の夢" AND (release:"狼と巫女とお菓子の家" OR artist:"Crest")`
+	if got != want {
+		t.Errorf("查询串 =\n  %s\n期望 =\n  %s", got, want)
+	}
+	if strings.Contains(got, `" AND artist:`) {
+		t.Error("歌手不得作为叠加的 AND 条件——它常常不是录音的署名")
+	}
+}
+
+// TestAnchoredQueryIncludesArtistAlternates 覆盖「括号里那种写法要进查询」。
+//
+// 平台习惯把另一种写法装在括号里（`3L（スリーエル）`），而上游用的往往正是它。
+func TestAnchoredQueryIncludesArtistAlternates(t *testing.T) {
+	got := buildLuceneQuery(provider.Query{
+		Title: "夕立", Artist: "3L", Album: "アコースティック・エピソード",
+		ArtistAlternates: []string{"スリーエル"},
+	})
+	for _, want := range []string{
+		`recording:"夕立"`, `release:"アコースティック・エピソード"`,
+		`artist:"3L"`, `artist:"スリーエル"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("查询串缺少 %s:\n  %s", want, got)
+		}
+	}
+	if !strings.Contains(got, " OR ") {
+		t.Errorf("锚点之间应为 OR:\n  %s", got)
+	}
+}
+
+// TestAnchoredQueryCapsAlternates 确保备选写法有上限：
+// 它们都挂在同一个 OR 组里，每多一个分支就多一段没有上限的用户输入被拼进 URL。
+func TestAnchoredQueryCapsAlternates(t *testing.T) {
+	got := buildLuceneQuery(provider.Query{
+		Title: "T", Artist: "A",
+		ArtistAlternates: []string{"x1", "x2", "x3", "x4", "x5"},
+	})
+	if n := strings.Count(got, `artist:"`); n > 1+maxArtistAlternates {
+		t.Errorf("艺术家分支 = %d 个, 上限应为 %d:\n  %s", n, 1+maxArtistAlternates, got)
+	}
+}
+
+// TestTitleOnlyQueryDropsAnchors 覆盖阶梯的兜底一级：连歌集带歌手都对不上时，
+// 只用曲名检索，把「哪一条才是」交给本地闸门判。
+func TestTitleOnlyQueryDropsAnchors(t *testing.T) {
+	got := buildLuceneQuery(provider.Query{
+		Title: "ツバサ", Artist: "4円", Album: "side-c", TitleOnly: true,
+	})
+	if got != `recording:"ツバサ"` {
+		t.Errorf("查询串 = %s, 期望只有曲名", got)
+	}
+}
+
+// TestSingleAnchorOmitsParens：一个锚点时不加括号，`A AND (B)` 与 `A AND B` 等价。
+func TestSingleAnchorOmitsParens(t *testing.T) {
+	got := buildLuceneQuery(provider.Query{Title: "T", Album: "Al"})
+	if got != `recording:"T" AND release:"Al"` {
+		t.Errorf("查询串 = %s", got)
 	}
 }
