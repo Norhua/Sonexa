@@ -475,3 +475,67 @@ func TestPauseEmitsSummary(t *testing.T) {
 		t.Errorf("暂停时应输出统计而非空行, 实际收到: %v", lines)
 	}
 }
+
+// TestRunnerImportsAnchoredRowWhereArtistIsReleaseCredit 覆盖导入全链路上的
+// 「歌手列不是录音署名」这一形态。
+//
+// 用户那份导出表格里有两行是这样：歌手列写的是碟的署名，而录音署名是别人
+// （`綿雪の夢` 写 Crest、录音署名 ハトリアヤ）。此前三字段 AND 让这两行在
+// 上游一条也查不到；改成锚定并联后靠歌集这一支命中。
+//
+// 这里验证的是**驱动器这一层**确实把歌集传了下去并最终入了库——
+// 匹配引擎自己的判定另有 acceptance/csv_import_test.go 覆盖。
+func TestRunnerImportsAnchoredRowWhereArtistIsReleaseCredit(t *testing.T) {
+	st := openStore(t)
+	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{
+		// 上游返回的署名与表格里的歌手列对不上，但歌集对得上
+		"綿雪の夢": {mbCandidate("trk-1", "綿雪の夢", "ハトリアヤ", "狼と巫女とお菓子の家")},
+	}}
+	batchID := enqueueOne(t, st, "綿雪の夢（繁雪之梦）", "Crest", "狼と巫女とお菓子の家")
+
+	runToCompletion(t, newRunner(st, searcher), batchID)
+
+	stats, _ := st.Stats(batchID)
+	if stats.Imported != 1 {
+		t.Errorf("已入库 = %d, 期望 1（歌集锚点应能命中）", stats.Imported)
+	}
+	if stats.Review != 0 {
+		t.Errorf("待复核 = %d, 期望 0", stats.Review)
+	}
+
+	// 歌集必须真的被传进查询——否则并联锚点少一支，这一行又会查不到
+	var sawAlbum bool
+	for _, q := range searcher.queries {
+		if q.Album != "" {
+			sawAlbum = true
+		}
+	}
+	if !sawAlbum {
+		t.Error("查询里没有歌集条件：驱动器没把 InAlbum 传给匹配引擎")
+	}
+}
+
+// TestRunnerRejectsVersionVariant 覆盖导入全链路上的「不得选错版本」。
+//
+// 用户报告 Tetra. 被匹配到了 off vocal 那一版。上游对同一张碟会一并返回
+// 正片与 off vocal / movie ver.，驱动器必须只收下版本标记一致的那条。
+func TestRunnerRejectsVersionVariant(t *testing.T) {
+	st := openStore(t)
+	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{
+		"Tetra.": {
+			mbCandidate("trk-off", "Tetra. (off vocal)", "原田ひとみ", "LINES"),
+			mbCandidate("trk-movie", "Tetra. -movie ver.-", "原田ひとみ", "LINES"),
+		},
+	}}
+	batchID := enqueueOne(t, st, "Tetra.", "原田ひとみ", "LINES")
+
+	runToCompletion(t, newRunner(st, searcher), batchID)
+
+	stats, _ := st.Stats(batchID)
+	if stats.Imported != 0 {
+		t.Errorf("已入库 = %d, 期望 0——只有版本变体时不得自动入库", stats.Imported)
+	}
+	if stats.Review != 1 {
+		t.Errorf("待复核 = %d, 期望 1", stats.Review)
+	}
+}
