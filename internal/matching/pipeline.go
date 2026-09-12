@@ -144,15 +144,6 @@ func (e *Engine) CheckLocalDuplicate(lookup LocalLookup, in Input) (int64, error
 	return lookup.FindUnmatchedByText(normTitle, normArtist, in.DurationMS)
 }
 
-func hasHighConfidence(pool map[string]ScoredCandidate) bool {
-	for _, sc := range pool {
-		if sc.Score.HighConf {
-			return true
-		}
-	}
-	return false
-}
-
 // sortedPool 把候选池按分值降序排列；同分时以标识字典序保证稳定。
 func sortedPool(pool map[string]ScoredCandidate) []ScoredCandidate {
 	out := make([]ScoredCandidate, 0, len(pool))

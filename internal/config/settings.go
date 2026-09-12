@@ -45,13 +45,19 @@ type ITunesSettings struct {
 
 // MatchingSettings 对应设置页的「匹配」分组。
 type MatchingSettings struct {
-	TitleWeight        float64              `json:"titleWeight"`
-	CreditExactWeight  float64              `json:"creditExactWeight"`
-	CreditFuzzyWeight  float64              `json:"creditFuzzyWeight"`
-	AlbumExactWeight   float64              `json:"albumExactWeight"`
-	AlbumFuzzyWeight   float64              `json:"albumFuzzyWeight"`
-	UpstreamScoreScale float64              `json:"upstreamScoreScale"`
-	UpstreamScoreCap   float64              `json:"upstreamScoreCap"`
+	TitleWeight        float64 `json:"titleWeight"`
+	CreditExactWeight  float64 `json:"creditExactWeight"`
+	CreditFuzzyWeight  float64 `json:"creditFuzzyWeight"`
+	AlbumExactWeight   float64 `json:"albumExactWeight"`
+	AlbumFuzzyWeight   float64 `json:"albumFuzzyWeight"`
+	UpstreamScoreScale float64 `json:"upstreamScoreScale"`
+	UpstreamScoreCap   float64 `json:"upstreamScoreCap"`
+	// StripPenalty 已不再被读取，保留字段只为不让既有 settings.json 在
+	// 反序列化时丢字段。剥离变体曾经靠扣分压制误剥离，现在曲名是否对得上
+	// 由 matching.CompareTitle 判定（版本标记不一致直接不匹配），
+	// 不需要也不该再用一个说不清阈值的分数去压。
+	//
+	// Deprecated: 无效果。
 	StripPenalty       float64              `json:"stripPenalty"`
 	JaroWinklerMin     float64              `json:"jaroWinklerMin"`
 	ReviewThreshold    float64              `json:"reviewThreshold"`

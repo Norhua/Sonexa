@@ -176,11 +176,3 @@ func LadderFromSettings(m config.MatchingSettings) LadderConfig {
 	}
 	return cfg
 }
-
-// StripPenaltyFromSettings 返回兜底剥离变体的惩罚分。
-func StripPenaltyFromSettings(m config.MatchingSettings) float64 {
-	if m.StripPenalty > 0 {
-		return m.StripPenalty
-	}
-	return StripPenalty
-}

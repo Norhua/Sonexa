@@ -12,9 +12,6 @@ type Variant struct {
 	Title  string
 	Artist string
 	Album  string
-	// Penalty 是该变体的得分惩罚。保留字段以免绑定层与测试同时改动；
-	// 现在恒为 0——曲名是否对得上改由 CompareTitle 判定，不再靠扣分压制误剥离。
-	Penalty float64
 	// TitleOnly 为真时只以曲名检索，不带锚点——阶梯的兜底一级。
 	TitleOnly bool
 	// ArtistAlternates 是艺术家的备选写法，作为并联锚点之一。
@@ -30,12 +27,8 @@ type fieldVariants struct {
 	Original string   // 原串
 	Stripped string   // 剥离括号后的串；与原串相同时表示不可剥离
 	Inner    string   // 括号内层内容；空表示无内层变体
-	Penalty  float64  // 剥离变体的惩罚分
 	Extra    []string // 附加艺术家
 }
-
-// StripPenalty 是兜底分支中剥离变体的固定惩罚分。
-const StripPenalty = 3.0
 
 // fieldVariantsFor 按分类结果计算单个字段的变体取值。
 func (r *Rules) fieldVariantsFor(s string) fieldVariants {
@@ -76,9 +69,10 @@ func (r *Rules) fieldVariantsFor(s string) fieldVariants {
 		return fv
 
 	default: // KindFallback
-		// 保守处理：保留原串，同时生成一个剥离变体，剥离变体扣分
+		// 保守处理：剥出主干作为检索形态。
+		// 不再扣分——曲名是否对得上由 CompareTitle 判定（版本标记不一致直接
+		// 不匹配），用分数去压制误剥离既不可靠也说不清阈值该取多少。
 		fv.Stripped = strings.TrimSpace(c.Segment.Outer)
-		fv.Penalty = StripPenalty
 		return fv
 	}
 }
