@@ -149,8 +149,8 @@ function next() {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <!-- 顶部：待处置总数与分项计数 -->
-    <header class="flex shrink-0 items-center gap-3 border-b px-4 py-2">
-      <h2 class="text-base font-semibold">复核队列</h2>
+    <header class="flex h-12 shrink-0 items-center gap-3 px-4" style="--wails-draggable: drag">
+      <h2 class="text-xl font-bold">复核队列</h2>
       <span v-if="queue" class="text-sm text-muted-foreground">
         {{ queue.total }} 条待处置 · 待选 {{ queue.pending }} · 失败 {{ queue.failed }}
       </span>

@@ -7,11 +7,15 @@
  * 不是上游目录浏览器。
  */
 import { computed, onMounted, ref } from 'vue'
-import { Search } from 'lucide-vue-next'
 import { App, display, type Models } from '@/api'
 import type { Row } from '@/components/TrackTable.vue'
+import PaneHeader from '@/components/PaneHeader.vue'
+import SortMenu, { type SortOption } from '@/components/SortMenu.vue'
 import TrackTable from '@/components/TrackTable.vue'
+import ViewSearchBox from '@/components/ViewSearchBox.vue'
+import { useLibraryStore } from '@/stores/library'
 
+const library = useLibraryStore()
 const albums = ref<Models.store.AlbumListItem[]>([])
 const detail = ref<Models.main.AlbumDetail | null>(null)
 const loading = ref(false)
@@ -23,12 +27,35 @@ const onlyOwned = ref(localStorage.getItem('sonexa.onlyOwned') === '1')
 /** 中列的就地过滤：这一列是专辑名单，不是曲目，因此不走曲目筛选。 */
 const filter = ref('')
 
+/** 中间栏的排序维度。 */
+const sortOptions: SortOption[] = [
+  { key: 'title', label: '专辑名' },
+  { key: 'credit', label: '艺术家' },
+  { key: 'owned', label: '已有曲目数' },
+]
+const sortKey = ref('title')
+const sortDesc = ref(false)
+
 const visibleAlbums = computed(() => {
   const q = filter.value.trim().toLowerCase()
-  if (!q) return albums.value
-  return albums.value.filter(
-    (a) => (a.title ?? '').toLowerCase().includes(q) || (a.credit ?? '').toLowerCase().includes(q),
-  )
+  const list = q
+    ? albums.value.filter(
+        (a) =>
+          (a.title ?? '').toLowerCase().includes(q) || (a.credit ?? '').toLowerCase().includes(q),
+      )
+    : [...albums.value]
+
+  const dir = sortDesc.value ? -1 : 1
+  return list.sort((a, b) => {
+    switch (sortKey.value) {
+      case 'owned':
+        return dir * (a.ownedCount - b.ownedCount)
+      case 'credit':
+        return dir * (a.credit ?? '').localeCompare(b.credit ?? '', 'zh-Hans-CN')
+      default:
+        return dir * (a.title ?? '').localeCompare(b.title ?? '', 'zh-Hans-CN')
+    }
+  })
 })
 
 const emit = defineEmits<{
@@ -139,17 +166,11 @@ async function addGhost(row: Row) {
 
 <template>
   <div class="flex min-h-0 flex-1">
-    <!-- 中列：专辑列表 -->
+    <!-- 中列：左上角是大标题（三栏页面的标题归这一栏） -->
     <div class="flex w-72 shrink-0 flex-col border-r">
-      <div class="relative shrink-0 border-b p-2">
-        <Search class="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <input
-          v-model="filter"
-          type="search"
-          placeholder="在专辑中查找"
-          class="w-full rounded-md border bg-background py-1 pl-7 pr-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-        />
-      </div>
+      <PaneHeader>
+        <h2 class="truncate text-xl font-bold">{{ library.contextTitle }}</h2>
+      </PaneHeader>
       <div class="min-h-0 flex-1 overflow-auto">
       <button
         v-for="a in visibleAlbums"
@@ -172,11 +193,17 @@ async function addGhost(row: Row) {
       </div>
     </div>
 
-    <!-- 主区：专辑详情 -->
+    <!-- 主区：操作区在右上角，与中间栏标题同一水平线 -->
     <div class="flex min-w-0 flex-1 flex-col">
-      <div v-if="detail" class="shrink-0 border-b px-4 py-2">
+      <PaneHeader>
+        <div class="flex-1" />
+        <SortMenu v-model:sort-key="sortKey" v-model:desc="sortDesc" :options="sortOptions" />
+        <ViewSearchBox v-model="filter" placeholder="在专辑中查找" />
+      </PaneHeader>
+
+      <div v-if="detail" class="shrink-0 px-4 pb-2">
         <div class="flex items-baseline gap-3">
-          <h2 class="text-base font-semibold">{{ detail.title }}</h2>
+          <h3 class="text-base font-semibold">{{ detail.title }}</h3>
           <span class="text-sm text-muted-foreground">
             {{ detail.ownedCount }}<template v-if="detail.totalCount">/{{ detail.totalCount }}</template
             ><template v-else>/-</template> 首

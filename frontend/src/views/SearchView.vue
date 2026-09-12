@@ -133,7 +133,7 @@ async function addToLibrary(row: Models.main.CandidateRow) {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <!-- 页头：搜索框居中，范围下拉在右上角 -->
-    <header class="shrink-0 border-b px-4 py-3">
+    <header class="shrink-0 px-4 py-2.5">
       <div class="flex items-center gap-3">
         <div class="relative mx-auto w-full max-w-xl">
           <SearchIcon

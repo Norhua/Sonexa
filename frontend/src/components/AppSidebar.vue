@@ -76,8 +76,9 @@ onUnmounted(() => window.removeEventListener('pointerdown', closeMenu))
 
 <template>
   <nav class="flex w-60 shrink-0 flex-col border-r bg-card text-sm">
-    <!-- 红绿灯安全区：同时是窗口拖拽区 -->
-    <div class="h-10 shrink-0" style="--wails-draggable: drag" />
+    <!-- 红绿灯安全区：与主区页头（PaneHeader）同高，
+         使红绿灯与右侧的大标题落在同一条水平线上 -->
+    <div class="h-12 shrink-0" style="--wails-draggable: drag" />
 
     <div class="min-h-0 flex-1 overflow-auto pb-2">
       <!-- 搜索：顶层入口，不属于任何分组 -->

@@ -14,6 +14,7 @@ import AppSidebar from '@/components/AppSidebar.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
 import TrackTable, { type Row } from '@/components/TrackTable.vue'
+import type { SortOption } from '@/components/SortMenu.vue'
 import ViewHeader from '@/components/ViewHeader.vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -47,6 +48,18 @@ const notice = ref('')
 /** 离线态：在统一的全局提示位显示，页面内不重复弹出相同错误。 */
 const offline = ref(false)
 const selectedIds = ref<number[]>([])
+
+/** 两栏页面的排序状态。就地排序，不为换个顺序再往返一次后端。 */
+const sortOptions: SortOption[] = [
+  { key: 'default', label: '默认顺序' },
+  { key: 'title', label: '标题' },
+  { key: 'artist', label: '艺术家' },
+  { key: 'album', label: '专辑' },
+  { key: 'year', label: '年份' },
+  { key: 'duration', label: '时长' },
+]
+const sortKey = ref('default')
+const sortDesc = ref(false)
 
 let offLibrary: (() => void) | null = null
 
@@ -96,6 +109,25 @@ const rows = computed<Row[]>(() =>
 const showTrackTable = computed(() =>
   ['all', 'recent', 'playlist', 'tag'].includes(library.view),
 )
+
+/** 排序后的行。'default' 保持后端给的顺序（歌单的人工排序就在里面）。 */
+const sortedRows = computed<Row[]>(() => {
+  if (sortKey.value === 'default') return rows.value
+  const dir = sortDesc.value ? -1 : 1
+  const text = (v?: string | null) => v ?? ''
+  return [...rows.value].sort((a, b) => {
+    switch (sortKey.value) {
+      case 'artist': return dir * text(a.artist).localeCompare(text(b.artist), 'zh-Hans-CN')
+      case 'album': return dir * text(a.album).localeCompare(text(b.album), 'zh-Hans-CN')
+      case 'year': return dir * ((a.year ?? 0) - (b.year ?? 0))
+      case 'duration': return dir * ((a.durationMs ?? 0) - (b.durationMs ?? 0))
+      default: return dir * a.title.localeCompare(b.title, 'zh-Hans-CN')
+    }
+  })
+})
+
+/** 歌单的拖拽重排只在默认顺序下可用——在排序视图里拖动，落点是没有意义的。 */
+const canReorder = computed(() => library.view === 'playlist' && sortKey.value === 'default')
 
 /** 空态文案各不相同，不复用同一句通用提示。 */
 const emptyState = computed(() => {
@@ -350,9 +382,6 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
     />
 
     <div class="flex min-w-0 flex-1 flex-col">
-      <!-- 红绿灯不在这一侧，但窗口仍需一条可拖拽的区域 -->
-      <div class="h-2 shrink-0" style="--wails-draggable: drag" />
-
       <!-- 全局提示位置：出网禁用、离线、出网失败统一在这里 -->
       <GlobalNotice
         :message="offline ? '' : notice"
@@ -364,12 +393,16 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
       <main class="flex min-h-0 min-w-0 flex-1 flex-col">
         <!-- 标准曲目表格：全部曲目 / 最近添加 / 歌单 / 标签 -->
         <template v-if="showTrackTable">
-          <ViewHeader />
+          <ViewHeader
+            v-model:sort-key="sortKey"
+            v-model:sort-desc="sortDesc"
+            :sort-options="sortOptions"
+          />
           <TrackTable
             v-if="rows.length > 0"
-            :rows="rows"
+            :rows="sortedRows"
             :collection-id="library.view === 'playlist' ? library.contextId : 0"
-            :reorderable="library.view === 'playlist'"
+            :reorderable="canReorder"
             :loading="library.loading"
             @open="openDetail"
             @edit="(r) => (editing = r.id)"
@@ -407,7 +440,6 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
 
         <!-- 艺术家视图：中列 + 按 artist_id 过滤的标准曲目表格 -->
         <ArtistsView v-else-if="library.view === 'artists' || library.view === 'artist'">
-          <template #header><ViewHeader /></template>
           <TrackTable
             :rows="rows"
             :loading="library.loading"

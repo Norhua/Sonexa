@@ -110,11 +110,12 @@ function basename(path: string): string {
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <header class="flex shrink-0 items-center gap-3 border-b px-4 py-2">
-      <h2 class="text-base font-semibold">导入队列</h2>
+    <header class="flex h-12 shrink-0 items-center gap-3 px-4" style="--wails-draggable: drag">
+      <h2 class="text-xl font-bold">导入队列</h2>
       <div class="flex-1" />
       <button
         class="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        style="--wails-draggable: no-drag"
         :disabled="!settings.outboundAllowed"
         :title="!settings.outboundAllowed ? settings.outboundReason : '从表格文件导入'"
         @click="ui.importOpen = true"

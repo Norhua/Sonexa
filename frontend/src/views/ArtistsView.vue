@@ -5,8 +5,10 @@
  * 艺术家视图是按 artist_id 过滤的标准曲目表格，不是结构不同的独立页面。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { Search } from 'lucide-vue-next'
 import { App, type Models } from '@/api'
+import PaneHeader from '@/components/PaneHeader.vue'
+import SortMenu, { type SortOption } from '@/components/SortMenu.vue'
+import ViewSearchBox from '@/components/ViewSearchBox.vue'
 import { useLibraryStore } from '@/stores/library'
 
 const library = useLibraryStore()
@@ -46,10 +48,26 @@ watch(
   },
 )
 
+/** 中间栏的排序维度。 */
+const sortOptions: SortOption[] = [
+  { key: 'name', label: '名称' },
+  { key: 'count', label: '曲目数' },
+]
+const sortKey = ref('name')
+const sortDesc = ref(false)
+
 const visibleArtists = computed(() => {
   const q = filter.value.trim().toLowerCase()
-  if (!q) return artists.value
-  return artists.value.filter((a) => titleOf(a).toLowerCase().includes(q))
+  const list = q
+    ? artists.value.filter((a) => titleOf(a).toLowerCase().includes(q))
+    : [...artists.value]
+
+  const dir = sortDesc.value ? -1 : 1
+  return list.sort((a, b) =>
+    sortKey.value === 'count'
+      ? dir * (a.trackCount - b.trackCount)
+      : dir * titleOf(a).localeCompare(titleOf(b), 'zh-Hans-CN'),
+  )
 })
 
 async function select(a: Models.store.ArtistListItem) {
@@ -70,17 +88,11 @@ defineExpose({ header, activeRole, pickFacet })
 
 <template>
   <div class="flex min-h-0 flex-1">
-    <!-- 中列：艺术家列表 -->
+    <!-- 中列：左上角是大标题（三栏页面的标题归这一栏） -->
     <div class="flex w-64 shrink-0 flex-col border-r">
-      <div class="relative shrink-0 border-b p-2">
-        <Search class="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <input
-          v-model="filter"
-          type="search"
-          placeholder="在艺术家中查找"
-          class="w-full rounded-md border bg-background py-1 pl-7 pr-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-        />
-      </div>
+      <PaneHeader>
+        <h2 class="truncate text-xl font-bold">{{ library.contextTitle }}</h2>
+      </PaneHeader>
       <div class="min-h-0 flex-1 overflow-auto">
       <button
         v-for="a in visibleArtists"
@@ -100,10 +112,15 @@ defineExpose({ header, activeRole, pickFacet })
       </div>
     </div>
 
-    <!-- 主区：页头 + 分面 + 标准曲目表格（表格由父组件经默认插槽渲染） -->
+    <!-- 主区：操作区在右上角，与中间栏标题同一水平线 -->
     <div class="flex min-w-0 flex-1 flex-col">
-      <slot name="header" />
-      <div v-if="header" class="shrink-0 border-b px-4 py-1.5">
+      <PaneHeader>
+        <div class="flex-1" />
+        <SortMenu v-model:sort-key="sortKey" v-model:desc="sortDesc" :options="sortOptions" />
+        <ViewSearchBox v-model="filter" placeholder="在艺术家中查找" />
+      </PaneHeader>
+
+      <div v-if="header" class="shrink-0 px-4 pb-2">
         <div class="flex flex-wrap gap-1">
           <button
             v-for="f in header.facets"
