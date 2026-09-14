@@ -24,6 +24,15 @@ const manualRef = ref('')
 const loading = ref(false)
 const error = ref('')
 
+/**
+ * 改歌集名的二次确认。
+ *
+ * 歌集是共享实体：改名默认影响该歌集下的全部曲目。只有一首时没有歧义，
+ * 直接改；不止一首时必须让用户先看见影响范围再选处置方式。
+ */
+const renamePlan = ref<Models.main.AlbumRenamePlan | null>(null)
+const pendingAlbumTitle = ref('')
+
 const basicFields = computed(() => session.value?.fields.filter((f) => f.group === 'basic') ?? [])
 const richFields = computed(() => session.value?.fields.filter((f) => f.group === 'rich') ?? [])
 
@@ -80,7 +89,7 @@ function fillAll() {
 }
 
 /** 保存：填充勾选在确认后才写入。 */
-async function save() {
+async function save(albumRenameMode = '') {
   if (!session.value) return
   loading.value = true
   error.value = ''
@@ -109,7 +118,18 @@ async function save() {
       matchRef = manualRef.value
     }
 
-    await App.ApplyEdits(props.trackId, edits, sources, matchSource, matchRef)
+    // 歌集名改动会波及同专辑的其他曲目，先问清影响范围
+    if (edits.album !== undefined && !albumRenameMode) {
+      const plan = await App.PlanAlbumRename(props.trackId, edits.album)
+      if (plan.needsConfirm) {
+        renamePlan.value = plan
+        pendingAlbumTitle.value = edits.album
+        loading.value = false
+        return
+      }
+    }
+
+    await App.ApplyEdits(props.trackId, edits, sources, matchSource, matchRef, albumRenameMode)
     emit('saved')
     emit('close')
   } catch (e) {
@@ -117,6 +137,12 @@ async function save() {
   } finally {
     loading.value = false
   }
+}
+
+/** 用户选定处置方式后继续保存。 */
+async function confirmRename(mode: string) {
+  renamePlan.value = null
+  await save(mode)
 }
 
 async function clearProvenance() {
@@ -137,7 +163,7 @@ function cancel() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-8">
-    <div class="flex max-h-full w-[760px] flex-col rounded-lg border bg-card shadow-xl">
+    <div class="relative flex max-h-full w-[760px] flex-col rounded-lg border bg-card shadow-xl">
       <header class="flex shrink-0 items-center justify-between border-b px-4 py-2">
         <h2 class="text-sm font-semibold">编辑 / 重新匹配</h2>
         <button class="rounded p-1 hover:bg-accent" @click="cancel">
@@ -193,7 +219,16 @@ function cancel() {
             </thead>
             <tbody>
               <tr v-for="f in group.fields" :key="f.key" class="border-b">
-                <td class="px-2 py-1.5 text-xs">{{ f.label }}</td>
+                <td class="px-2 py-1.5 text-xs">
+                  {{ f.label }}
+                  <!-- 发行级字段改一次对整张歌集生效，标出来免得用户以为只动这一首 -->
+                  <span
+                    v-if="f.releaseScoped"
+                    class="ml-1 cursor-help text-[10px] text-muted-foreground"
+                    title="属于歌集：改动对该歌集的全部曲目生效"
+                    >歌集</span
+                  >
+                </td>
                 <td class="px-2 py-1.5">
                   <input
                     :value="manual[f.key] ?? f.current ?? ''"
@@ -224,7 +259,58 @@ function cancel() {
 
         <p class="text-xs text-muted-foreground">
           带「用户」徽标的字段默认不填充，需逐项勾选；也可手动直接改写值。
+          标「歌集」的字段属于歌集，改动对该歌集的全部曲目生效。
         </p>
+      </div>
+
+      <!-- 改歌集名的二次确认：歌集是共享实体，先让用户看见影响范围 -->
+      <div
+        v-if="renamePlan"
+        class="absolute inset-0 z-10 flex items-center justify-center bg-background/80 p-6"
+      >
+        <div class="w-full max-w-md rounded-lg border bg-background p-4 shadow-lg">
+          <h3 class="text-sm font-semibold">这张歌集下有 {{ renamePlan.trackCount }} 首曲目</h3>
+          <p class="mt-1 text-xs text-muted-foreground">
+            把「{{ renamePlan.currentTitle || '未命名专辑' }}」改为「{{ pendingAlbumTitle }}」，
+            请选择这次改动的影响范围。
+          </p>
+          <div class="mt-3 flex flex-col gap-2">
+            <button
+              class="rounded border px-3 py-2 text-left text-sm hover:bg-accent"
+              @click="confirmRename('release')"
+            >
+              改这张歌集
+              <span class="block text-xs text-muted-foreground">
+                该歌集下的 {{ renamePlan.trackCount }} 首曲目一起改名
+              </span>
+            </button>
+            <button
+              v-if="renamePlan.existingReleaseId"
+              class="rounded border px-3 py-2 text-left text-sm hover:bg-accent"
+              @click="confirmRename('link')"
+            >
+              关联到已有的「{{ pendingAlbumTitle }}」
+              <span class="block text-xs text-muted-foreground">
+                只把这一首挪到库中已有的那张歌集下
+              </span>
+            </button>
+            <button
+              class="rounded border px-3 py-2 text-left text-sm hover:bg-accent"
+              @click="confirmRename('move')"
+            >
+              只把这一首挪走
+              <span class="block text-xs text-muted-foreground">
+                新建一张歌集，原歌集及其余曲目不变
+              </span>
+            </button>
+          </div>
+          <button
+            class="mt-3 w-full rounded border px-3 py-1.5 text-sm hover:bg-accent"
+            @click="renamePlan = null"
+          >
+            取消
+          </button>
+        </div>
       </div>
 
       <footer class="flex shrink-0 items-center gap-2 border-t px-4 py-2">
@@ -237,7 +323,7 @@ function cancel() {
         <button
           class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           :disabled="loading"
-          @click="save"
+          @click="save()"
         >
           保存
         </button>

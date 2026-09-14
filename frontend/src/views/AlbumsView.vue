@@ -7,8 +7,9 @@
  * 不是上游目录浏览器。
  */
 import { computed, onMounted, ref } from 'vue'
-import { App, display, type Models } from '@/api'
+import { App, COVER_THUMB_SIZE, display, type Models } from '@/api'
 import type { Row } from '@/components/TrackTable.vue'
+import CoverArt from '@/components/CoverArt.vue'
 import PaneHeader from '@/components/PaneHeader.vue'
 import SortMenu, { type SortOption } from '@/components/SortMenu.vue'
 import TrackTable from '@/components/TrackTable.vue'
@@ -92,13 +93,17 @@ function countLabel(a: Models.store.AlbumListItem): string {
 
 async function open(a: Models.store.AlbumListItem) {
   error.value = ''
-  detail.value = await App.GetAlbumDetail(a.key, a.level)
+  detail.value = await App.GetAlbumDetail(a.releaseId)
+  library.goTo('album', {
+    id: a.releaseId,
+    groupId: a.groupId,
+    title: a.title || '未命名专辑',
+  })
 
   // 首次打开且清单状态不是完整时补拉一次——不阻塞渲染：
   // 已入库曲目已经显示，灰色行随后补入。
   if (
     detail.value &&
-    detail.value.level !== 'derived' &&
     detail.value.tracklistState !== 'complete' &&
     detail.value.provider &&
     detail.value.releaseRef
@@ -107,12 +112,38 @@ async function open(a: Models.store.AlbumListItem) {
   }
 }
 
+/**
+ * 一条专辑的封面来源。
+ *
+ * 封面是**歌集**的属性：同一张专辑的每一行、中列那一项、详情头部
+ * 用的是同一张图。本地歌集没有上游标识，返回 null 由 CoverArt 呈现缺省态。
+ */
+function coverSourceOf(a: {
+  provider?: string
+  releaseGroupRef?: string
+  representativeRef?: string
+  releaseRef?: string
+}): { provider?: string | null; ref?: string | null; rg?: string | null } | null {
+  const ref = a.representativeRef ?? a.releaseRef
+  if (!a.provider || !ref) return null
+  return { provider: a.provider, ref, rg: a.releaseGroupRef ?? null }
+}
+
+/** 歌集类型的中文呈现。 */
+function albumTypeLabel(t: string | null | undefined): string | null {
+  if (!t) return null
+  const labels: Record<string, string> = {
+    album: '专辑', ep: 'EP', single: '单曲', broadcast: 'Broadcast', other: 'Other',
+  }
+  return labels[t] ?? t
+}
+
 async function completeTracklist(force: boolean) {
   if (!detail.value?.provider || !detail.value?.releaseRef) return
   fetching.value = true
   try {
     await App.FetchTracklist(detail.value.provider, detail.value.releaseRef, force)
-    detail.value = await App.GetAlbumDetail(detail.value.key, detail.value.level)
+    detail.value = await App.GetAlbumDetail(detail.value.releaseId)
     await load()
   } catch (e) {
     error.value = String(e)
@@ -145,6 +176,9 @@ function toRows(): Row[] {
       otherVersion: r.state === 'other_version',
       trackRef: r.trackRef,
       recordingRef: r.recordingRef,
+      // 同一张专辑的每一行共用歌集封面——封面是歌集的属性
+      coverSource: detail.value ? coverSourceOf(detail.value) : null,
+      adoptedCoverPath: detail.value?.coverPath ?? null,
     }))
 }
 
@@ -156,7 +190,7 @@ async function addGhost(row: Row) {
       detail.value.provider, row.trackRef, row.title,
       row.artist ?? undefined, row.durationMs ?? undefined, row.recordingRef ?? undefined,
     )
-    detail.value = await App.GetAlbumDetail(detail.value.key, detail.value.level)
+    detail.value = await App.GetAlbumDetail(detail.value.releaseId)
     await load()
   } catch (e) {
     error.value = String(e)
@@ -174,13 +208,20 @@ async function addGhost(row: Row) {
       <div class="min-h-0 flex-1 overflow-auto">
       <button
         v-for="a in visibleAlbums"
-        :key="`${a.level}-${a.key}`"
+        :key="a.releaseId"
         :class="[
           'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent',
-          detail?.key === a.key ? 'bg-accent' : '',
+          detail?.releaseId === a.releaseId ? 'bg-accent' : '',
         ]"
         @click="open(a)"
       >
+        <CoverArt
+          :source="coverSourceOf(a)"
+          :adopted-path="a.coverPath"
+          :size="COVER_THUMB_SIZE"
+          class="size-10 shrink-0 rounded"
+          icon-class="size-4"
+        />
         <div class="min-w-0 flex-1">
           <p class="truncate font-medium">{{ a.title || '未命名专辑' }}</p>
           <p class="truncate text-xs text-muted-foreground">{{ display(a.credit) }}</p>
@@ -201,7 +242,15 @@ async function addGhost(row: Row) {
         <ViewSearchBox v-model="filter" placeholder="在专辑中查找" />
       </PaneHeader>
 
-      <div v-if="detail" class="shrink-0 px-4 pb-2">
+      <div v-if="detail" class="flex shrink-0 gap-3 px-4 pb-2">
+        <CoverArt
+          :source="coverSourceOf(detail)"
+          :adopted-path="detail.coverPath"
+          :size="COVER_THUMB_SIZE"
+          class="size-20 shrink-0 rounded"
+          icon-class="size-6"
+        />
+        <div class="min-w-0 flex-1">
         <div class="flex items-baseline gap-3">
           <h3 class="text-base font-semibold">{{ detail.title }}</h3>
           <span class="text-sm text-muted-foreground">
@@ -217,9 +266,17 @@ async function addGhost(row: Row) {
             仅显示已有
           </button>
         </div>
+        <p class="truncate text-xs text-muted-foreground">{{ display(detail.credit) }}</p>
         <p class="mt-0.5 text-xs text-muted-foreground">
-          {{ display(detail.primaryType) }} · {{ display(detail.year) }} ·
+          {{ display(albumTypeLabel(detail.primaryType)) }} · {{ display(detail.year) }} ·
           {{ display(detail.mediumFormat) }} · {{ display(detail.country) }}
+          <template v-if="detail.discTotal"> · {{ detail.discTotal }} 碟</template>
+          <template v-if="detail.releaseCount && detail.releaseCount > 1">
+            · 共 {{ detail.releaseCount }} 个版本
+          </template>
+        </p>
+        <p v-if="detail.label || detail.catalogNumber" class="mt-0.5 text-xs text-muted-foreground">
+          {{ display(detail.label) }} · {{ display(detail.catalogNumber) }}
         </p>
         <p v-if="detail.fetchedAt" class="mt-0.5 text-xs text-muted-foreground">
           清单更新于 {{ new Date(detail.fetchedAt).toLocaleDateString() }}
@@ -227,6 +284,7 @@ async function addGhost(row: Row) {
             {{ fetching ? '获取中…' : '重新获取' }}
           </button>
         </p>
+        </div>
       </div>
 
       <TrackTable
@@ -255,7 +313,7 @@ async function addGhost(row: Row) {
         </span>
         <span v-else>清单不完整</span>
         <button
-          v-if="detail.level !== 'derived'"
+          v-if="detail.releaseRef"
           class="ml-2 rounded border px-2 py-0.5 hover:bg-accent"
           :disabled="fetching"
           @click="completeTracklist(true)"

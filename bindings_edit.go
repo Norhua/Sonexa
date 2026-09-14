@@ -30,6 +30,18 @@ type FieldRow struct {
 	Same bool `json:"same"`
 	// FillByDefault 是填充勾选的默认状态。
 	FillByDefault bool `json:"fillByDefault"`
+	// ReleaseScoped 为真时该字段属于歌集，改一次对该歌集的全部曲目生效。
+	// 界面据此加一行说明，并对「歌集名」走二次确认（见 PlanAlbumRename）。
+	ReleaseScoped bool `json:"releaseScoped"`
+}
+
+// releaseScopedFields 是属于歌集而非曲目的字段。
+//
+// 它们只存在歌集上一份：同一张专辑的十二首曲目没有理由各存一份载体与国家，
+// 而此前它们逐曲目复制，改其中一首另外十一首不动。
+var releaseScopedFields = map[string]bool{
+	"album": true, "label": true, "catalogNumber": true,
+	"mediumFormat": true, "country": true, "primaryType": true, "year": true,
 }
 
 // EditSession 是编辑界面的内容。
@@ -123,6 +135,8 @@ func (a *App) buildEditSession(trackID int64, upstream *provider.Candidate) (*Ed
 			Key: key, Label: label, Group: group,
 			Current: current, Upstream: up,
 			Source: source, UserLocked: lockedByUser,
+			// 发行级字段改一次对该歌集的全部曲目生效，界面要说明这一点
+			ReleaseScoped: releaseScopedFields[key],
 		}
 		row.Same = current != nil && up != nil && *current == *up
 		// source = user 的字段默认不勾选填充，需用户逐项点击；
@@ -131,14 +145,14 @@ func (a *App) buildEditSession(trackID int64, upstream *provider.Candidate) (*Ed
 		session.Fields = append(session.Fields, row)
 	}
 
-	// 基本信息三个字段：布尔锁即用户锁
+	// 曲名、署名、歌集名
 	var upTitle, upArtist, upAlbum *string
 	if upstream != nil {
 		upTitle, upArtist, upAlbum = upstream.Title, upstream.ArtistName, upstream.AlbumTitle
 	}
 	add("title", "曲名", "basic", &track.Title, upTitle, track.TitleLocked, sourceOrDefault(provenance["title"], track.TitleLocked))
-	add("artist", "艺术家", "basic", track.Artist, upArtist, track.ArtistLocked, sourceOrDefault(provenance["artist"], track.ArtistLocked))
-	add("album", "专辑", "basic", track.Album, upAlbum, track.AlbumLocked, sourceOrDefault(provenance["album"], track.AlbumLocked))
+	add("artist", "艺术家", "basic", track.Artist, upArtist, track.ArtistLocked, sourceOrDefault(provenance["credit"], track.ArtistLocked))
+	add("album", "歌集", "basic", track.Album, upAlbum, track.AlbumLocked, sourceOrDefault(provenance["album"], track.AlbumLocked))
 
 	// 丰富信息：逐字段来源与用户锁
 	type richField struct {
@@ -154,6 +168,7 @@ func (a *App) buildEditSession(trackID int64, upstream *provider.Candidate) (*Ed
 			{"discNumber", "碟号", intToStr(meta.DiscNumber), intToStr(candidateDiscNo(upstream))},
 			{"durationMs", "时长", intToStr(meta.DurationMS), intToStr(candidateDuration(upstream))},
 			{"genre", "风格", meta.Genre, nil},
+			{"comment", "注释", meta.Comment, nil},
 			{"label", "厂牌", meta.Label, nil},
 			{"catalogNumber", "目录号", meta.CatalogNumber, nil},
 			{"mediumFormat", "载体", meta.MediumFormat, candidateMedium(upstream)},
@@ -212,8 +227,11 @@ func matchLabel(m *store.TrackMetadata) string {
 // 填充勾选在用户确认保存后才写入；取消则丢弃全部未保存改动（前端不调用本方法）。
 // 填充后该字段来源改为对应上游并清除用户锁；
 // 用户手动修改后来源置为 user 并加锁。
+// albumRenameMode 为空时，若 edits 含「歌集名」且该歌集下不止一首曲目，
+// 本方法拒绝保存并要求界面先走 PlanAlbumRename——歌集是共享实体，
+// 改名会波及同专辑的其他曲目，不该在用户没看见影响范围时发生。
 func (a *App) ApplyEdits(trackID int64, edits map[string]string, sources map[string]string,
-	matchSource, matchRef *string) error {
+	matchSource, matchRef *string, albumRenameMode string) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
@@ -266,8 +284,29 @@ func (a *App) ApplyEdits(trackID int64, edits map[string]string, sources map[str
 		return err
 	}
 
-	// 发行级字段落在歌集上：一处改动对该歌集的全部曲目生效。
-	// 「歌集名」不走这里——它要先让用户确认影响范围（见 ApplyAlbumRename）。
+	// 歌集名：共享实体，改名要先确认影响范围
+	if newAlbum, ok := edits["album"]; ok {
+		plan, err := a.PlanAlbumRename(trackID, newAlbum)
+		if err != nil {
+			return err
+		}
+		mode := albumRenameMode
+		if mode == "" {
+			if plan.NeedsConfirm {
+				return fmt.Errorf("这张歌集下有 %d 首曲目，请先选择改动的影响范围", plan.TrackCount)
+			}
+			mode = AlbumRenameThisRelease
+		}
+		if err := a.ApplyAlbumRename(trackID, newAlbum, mode); err != nil {
+			return err
+		}
+		// 归属可能已经变了，后面的发行级字段要写到新的那一条上
+		if meta, err = a.store.GetMetadata(trackID); err != nil {
+			return err
+		}
+	}
+
+	// 其余发行级字段落在歌集上：一处改动对该歌集的全部曲目生效。
 	if meta != nil && meta.ReleaseID != nil {
 		releaseEdits := map[string]string{}
 		for key, value := range edits {

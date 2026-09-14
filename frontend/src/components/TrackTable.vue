@@ -32,7 +32,8 @@ export interface Row {
   mediumFormat?: string | null
   country?: string | null
   coverSource?: CoverSource | null
-  coverPath?: string | null
+  /** 已采用封面的落盘路径，优先于临时缩略图。 */
+  adoptedCoverPath?: string | null
   /** 灰色行：未入库的清单曲目。 */
   ghost?: boolean
   /** 「其他版本」徽章：标识未命中但录音标识命中某曲目。 */
@@ -362,7 +363,7 @@ defineExpose({ selectedCount, trackCount, selectedRows })
               <!-- 取图失败（CAA 404 是常态）只影响该行：显示状态图标，其余列照常 -->
               <CoverArt
                 :source="row.coverSource"
-                :adopted-path="row.coverPath"
+                :adopted-path="row.adoptedCoverPath"
                 class="size-8 rounded"
               />
             </td>

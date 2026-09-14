@@ -111,7 +111,8 @@ const rows = computed<Row[]>(() =>
     mediumFormat: t.mediumFormat,
     country: t.country,
     coverSource: { provider: t.matchSource, ref: t.releaseRef, rg: t.releaseGroupRef },
-    coverPath: t.coverPath,
+    // 封面挂在歌集上：已采用的那张优先于临时缩略图
+    adoptedCoverPath: t.coverPath,
   })),
 )
 

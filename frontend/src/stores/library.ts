@@ -26,8 +26,8 @@ export const useLibraryStore = defineStore('library', () => {
   const view = ref<ViewKind>('all')
   /** 当前歌单/标签/艺术家/专辑的标识。 */
   const contextId = ref<number>(0)
-  const contextKey = ref<string>('')
-  const contextLevel = ref<string>('')
+  /** 专辑视图：非零时当前专辑代表一个发行组，曲目取整组的。 */
+  const contextGroupId = ref<number>(0)
   const contextTitle = ref<string>('全部曲目')
 
   const playlists = ref<Models.store.Collection[]>([])
@@ -64,9 +64,10 @@ export const useLibraryStore = defineStore('library', () => {
         f.recentOnly = true
         break
       case 'album':
-        if (contextLevel.value === 'release_group') f.releaseGroupRef = contextKey.value
-        else if (contextLevel.value === 'release') f.releaseRef = contextKey.value
-        else f.derivedAlbumKey = contextKey.value
+        // 歌集升格为实体后专辑就是一条 release；有发行组时取整组的曲目，
+        // 因为列表里同组的多个版本合为一条。
+        if (contextGroupId.value) f.releaseGroupId = contextGroupId.value
+        else f.releaseId = contextId.value
         break
     }
     return f
@@ -93,11 +94,13 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   /** 切换视图。切换时清空筛选，避免上一视图的条件泄漏过来。 */
-  async function goTo(kind: ViewKind, opts?: { id?: number; key?: string; level?: string; title?: string }) {
+  async function goTo(
+    kind: ViewKind,
+    opts?: { id?: number; groupId?: number; title?: string },
+  ) {
     view.value = kind
     contextId.value = opts?.id ?? 0
-    contextKey.value = opts?.key ?? ''
-    contextLevel.value = opts?.level ?? ''
+    contextGroupId.value = opts?.groupId ?? 0
     contextTitle.value = opts?.title ?? defaultTitle(kind)
     clearFilter()
     if (needsTracks(kind)) await loadTracks()
@@ -136,13 +139,7 @@ export const useLibraryStore = defineStore('library', () => {
 
   async function removeChip(key: string) {
     const next = { ...filter.value }
-    // 年份是区间条件，一个 chip 对应两个字段
-    if (key === 'year') {
-      next.yearFrom = undefined
-      next.yearTo = undefined
-    } else {
-      delete next[key as keyof Models.store.TrackFilter]
-    }
+    delete next[key as keyof Models.store.TrackFilter]
     filter.value = next
     chips.value = chips.value.filter((c) => c.key !== key)
     await loadTracks()
@@ -159,7 +156,7 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   return {
-    view, contextId, contextKey, contextLevel, contextTitle,
+    view, contextId, contextGroupId, contextTitle,
     playlists, tags, tracks, total, loading, error,
     filter, chips, searchPlaceholder, hasViewSearch,
     baseFilter, loadTracks, loadCollections, goTo,
