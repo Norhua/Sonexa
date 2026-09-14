@@ -20,14 +20,14 @@ var ErrTitleRequired = errors.New("曲名是必填项")
 //
 // Album 由所属歌集带出，不是本表的列。
 type Track struct {
-	ID        int64     `json:"id"`
-	ReleaseID *int64    `json:"releaseId"`
-	Title     string    `json:"title"`
-	Credit    *string   `json:"credit"`
-	Album     *string   `json:"album"`
+	ID        int64           `json:"id"`
+	ReleaseID *int64          `json:"releaseId"`
+	Title     string          `json:"title"`
+	Credit    *string         `json:"credit"`
+	Album     *string         `json:"album"`
 	Locked    map[string]bool `json:"locked"`
-	CreatedAt time.Time `json:"-"`
-	UpdatedAt time.Time `json:"-"`
+	CreatedAt time.Time       `json:"-"`
+	UpdatedAt time.Time       `json:"-"`
 }
 
 // CreateTrack 创建一首曲目并同步 FTS 索引。

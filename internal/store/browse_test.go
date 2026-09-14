@@ -703,3 +703,77 @@ func TestRepresentativeReleaseHonoursUserLadder(t *testing.T) {
 			matchStage, *albums[0].RepresentativeRef)
 	}
 }
+
+// TestRepresentativeSurvivesUnownedPick 守 mergeOneGroup 的一处回退。
+//
+// 代表 release 由优选阶梯在**整个发行组**里选（偏好实体载体），而列表的
+// 成员只包含「用户有曲目的」那几条。当阶梯选中的那一条上一首都不剩时，
+// 合并逻辑此前静默退回 members[0]——于是列表上的 RepresentativeRef
+// 与 RepresentativeRelease 给出的不是同一条，而前者正是清单读取的依据。
+//
+// 触发它只需要普通操作：CD 版与数字版各入库一首，再把 CD 版那首删掉。
+// CD 的 release 行作为清单缓存保留，阶梯仍然选它。
+func TestRepresentativeSurvivesUnownedPick(t *testing.T) {
+	s := openTestStore(t)
+
+	groupID, err := s.UpsertReleaseGroup(&ReleaseGroup{
+		Provider: ptr("musicbrainz"), ProviderRef: ptr("rg-x"), Title: "某专辑",
+	})
+	if err != nil {
+		t.Fatalf("建发行组失败: %v", err)
+	}
+
+	mk := func(ref, format string, total int) int64 {
+		id, err := s.UpsertRelease(&Release{
+			ReleaseGroupID: &groupID,
+			Provider:       ptr("musicbrainz"), ProviderRef: ptr(ref),
+			Title:         "某专辑",
+			MediumFormat:  ptr(format),
+			ReleaseStatus: ptr("Official"),
+			TrackTotal:    ptr(total),
+		})
+		if err != nil {
+			t.Fatalf("建歌集 %s 失败: %v", ref, err)
+		}
+		return id
+	}
+	cdID := mk("rel-cd", "CD", 12)
+	digitalID := mk("rel-digital", "Digital Media", 12)
+
+	// 阶梯应当偏好实体载体
+	rep, err := s.RepresentativeRelease(groupID)
+	if err != nil || rep == nil {
+		t.Fatalf("选代表失败: %v", err)
+	}
+	if rep.ID != cdID {
+		t.Fatalf("阶梯应选 CD 版, 得到 release %d", rep.ID)
+	}
+
+	// 用户只有数字版那一首（CD 版那首已被删，release 行作为清单缓存保留）
+	if _, err := s.CreateTrackWithProvenance(NewTrackInput{
+		Title: "第一首", Album: ptr("某专辑"),
+		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-d1"),
+		Release: &ReleaseInput{
+			Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-digital"),
+			ReleaseGroupRef: ptr("rg-x"),
+		},
+	}); err != nil {
+		t.Fatalf("入库失败: %v", err)
+	}
+	_ = digitalID
+
+	albums, err := s.ListAlbums()
+	if err != nil {
+		t.Fatalf("查询专辑失败: %v", err)
+	}
+	if len(albums) != 1 {
+		t.Fatalf("专辑条目 = %d, 期望 1（同组合为一条）", len(albums))
+	}
+	if albums[0].RepresentativeRef == nil || *albums[0].RepresentativeRef != "rel-cd" {
+		t.Errorf("代表 release = %v, 期望 rel-cd（与 RepresentativeRelease 一致）",
+			albums[0].RepresentativeRef)
+	}
+	if albums[0].OwnedCount != 1 {
+		t.Errorf("已入库 = %d, 期望 1", albums[0].OwnedCount)
+	}
+}

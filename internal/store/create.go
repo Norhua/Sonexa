@@ -173,19 +173,19 @@ func resolveReleaseTx(tx *sql.Tx, in NewTrackInput) (int64, error) {
 		title = *in.Album
 	}
 	return upsertReleaseTx(tx, &Release{
-		ReleaseGroupID: groupID,
-		Provider:       rel.Provider,
-		ProviderRef:    rel.ProviderRef,
-		Title:          title,
-		Credit:         in.AlbumCredit,
-		PrimaryType:    normalizeTypePtr(rel.PrimaryType),
-		SecondaryTypes: rel.SecondaryTypes,
-		DiscTotal:      rel.DiscTotal,
-		TrackTotal:     rel.TrackTotal,
-		ReleaseStatus:  rel.ReleaseStatus,
-		MediumFormat:   rel.MediumFormat,
-		Country:        rel.Country,
-		ReleaseDate:    rel.ReleaseDate,
+		ReleaseGroupID:   groupID,
+		Provider:         rel.Provider,
+		ProviderRef:      rel.ProviderRef,
+		Title:            title,
+		Credit:           in.AlbumCredit,
+		PrimaryType:      normalizeTypePtr(rel.PrimaryType),
+		SecondaryTypes:   rel.SecondaryTypes,
+		DiscTotal:        rel.DiscTotal,
+		TrackTotal:       rel.TrackTotal,
+		ReleaseStatus:    rel.ReleaseStatus,
+		MediumFormat:     rel.MediumFormat,
+		Country:          rel.Country,
+		ReleaseDate:      rel.ReleaseDate,
 		FirstReleaseDate: rel.FirstReleaseDate,
 		Label:            rel.Label,
 		CatalogNumber:    rel.CatalogNumber,
@@ -246,25 +246,25 @@ type TrackMetadata struct {
 	LockedJSON     *string `json:"lockedJson"`
 
 	// 歌集侧（join 带出）
-	ReleaseID       *int64  `json:"releaseId"`
-	Album           *string `json:"album"`
-	AlbumCredit     *string `json:"albumCredit"`
-	PrimaryType     *string `json:"primaryType"`
-	SecondaryTypes  *string `json:"secondaryTypes"`
-	ReleaseStatus   *string `json:"releaseStatus"`
-	MediumFormat    *string `json:"mediumFormat"`
-	Country         *string `json:"country"`
-	ReleaseDate     *string `json:"releaseDate"`
+	ReleaseID        *int64  `json:"releaseId"`
+	Album            *string `json:"album"`
+	AlbumCredit      *string `json:"albumCredit"`
+	PrimaryType      *string `json:"primaryType"`
+	SecondaryTypes   *string `json:"secondaryTypes"`
+	ReleaseStatus    *string `json:"releaseStatus"`
+	MediumFormat     *string `json:"mediumFormat"`
+	Country          *string `json:"country"`
+	ReleaseDate      *string `json:"releaseDate"`
 	FirstReleaseDate *string `json:"firstReleaseDate"`
-	Year            *int    `json:"year"`
-	DiscTotal       *int    `json:"discTotal"`
-	TrackTotal      *int    `json:"trackTotal"`
-	Label           *string `json:"label"`
-	CatalogNumber   *string `json:"catalogNumber"`
-	CoverPath       *string `json:"coverPath"`
-	CoverSourceURL  *string `json:"coverSourceUrl"`
-	ReleaseRef      *string `json:"releaseRef"`
-	ReleaseGroupRef *string `json:"releaseGroupRef"`
+	Year             *int    `json:"year"`
+	DiscTotal        *int    `json:"discTotal"`
+	TrackTotal       *int    `json:"trackTotal"`
+	Label            *string `json:"label"`
+	CatalogNumber    *string `json:"catalogNumber"`
+	CoverPath        *string `json:"coverPath"`
+	CoverSourceURL   *string `json:"coverSourceUrl"`
+	ReleaseRef       *string `json:"releaseRef"`
+	ReleaseGroupRef  *string `json:"releaseGroupRef"`
 }
 
 // GetMetadata 读取某曲目的详情；不存在时返回 nil。

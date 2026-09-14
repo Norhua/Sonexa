@@ -228,8 +228,8 @@ func (s *Store) ListAlbums() ([]AlbumListItem, error) {
 	var flat []AlbumListItem
 	for rows.Next() {
 		var (
-			it                           AlbumListItem
-			groupID                      *int64
+			it                            AlbumListItem
+			groupID                       *int64
 			releaseDate, firstReleaseDate *string
 		)
 		if err := rows.Scan(&it.ReleaseID, &groupID, &it.Title, &it.Credit,
@@ -279,14 +279,25 @@ func (s *Store) mergeAlbumGroups(flat []AlbumListItem) []AlbumListItem {
 }
 
 // mergeOneGroup 合并一个发行组内的多条 release。
+//
+// 代表 release 由优选阶梯在**整个发行组**里选，而列表成员只有「用户有曲目的」
+// 那几条。两者不一定重合：用户可能只从数字版入库，而阶梯偏好实体载体。
+// 此时仍以阶梯选的那一条为代表——RepresentativeRef 是清单读取的依据，
+// 它必须与 RepresentativeRelease 给出的一致，否则专辑视图会去读另一个版本的清单。
+//
+// 已入库数是全组求和；封面与清单总数取代表的，缺失时退到组内任一非空值——
+// 同一张专辑的 CD 版与数字版在列表里是一条，不该因为用户恰好从数字版入库
+// 而丢掉 CD 版已有的封面。
 func (s *Store) mergeOneGroup(groupID int64, members []AlbumListItem) AlbumListItem {
 	merged := members[0]
 	if rep, err := s.RepresentativeRelease(groupID); err == nil && rep != nil {
-		for _, m := range members {
-			if m.ReleaseID == rep.ID {
-				merged = m
-				break
-			}
+		if owned := findByReleaseID(members, rep.ID); owned != nil {
+			merged = *owned
+		} else {
+			// 阶梯选中的那一条上一首都不剩（例如用户删光了 CD 版那几首，
+			// 而 release 行作为清单缓存保留）。它仍是代表，但本身没有
+			// 已入库曲目，因此只取它的身份与发行事实。
+			merged = albumItemFromRelease(rep, members[0].GroupID)
 		}
 	}
 
@@ -302,7 +313,36 @@ func (s *Store) mergeOneGroup(groupID int64, members []AlbumListItem) AlbumListI
 		if merged.TotalCount == nil {
 			merged.TotalCount = m.TotalCount
 		}
+		if merged.Credit == nil {
+			merged.Credit = m.Credit
+		}
+		if merged.Year == nil {
+			merged.Year = m.Year
+		}
 	}
 	merged.OwnedCount = owned
 	return merged
+}
+
+func findByReleaseID(items []AlbumListItem, id int64) *AlbumListItem {
+	for i := range items {
+		if items[i].ReleaseID == id {
+			return &items[i]
+		}
+	}
+	return nil
+}
+
+// albumItemFromRelease 由一条 release 构造列表项（不含已入库数）。
+func albumItemFromRelease(r *Release, groupID int64) AlbumListItem {
+	return AlbumListItem{
+		ReleaseID: r.ID, GroupID: groupID,
+		Title: r.Title, Credit: r.Credit, Year: r.Year(),
+		TotalCount:        r.TrackTotal,
+		RepresentativeRef: r.ProviderRef,
+		Provider:          r.Provider,
+		ReleaseGroupRef:   r.ReleaseGroupRef,
+		CoverPath:         r.CoverPath,
+		CoverSourceURL:    r.CoverSourceURL,
+	}
 }
