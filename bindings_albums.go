@@ -358,23 +358,11 @@ func (a *App) AddGhostRowToLibrary(providerID, trackRef, title string,
 		return 0, fmt.Errorf("缺少上游标识")
 	}
 
-	trackID, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: title, Artist: credit,
-		MatchSource: &providerID, MatchRef: &trackRef,
-		Metadata: &store.MetadataInput{
-			TrackCredit: credit, DurationMS: durationMS, RecordingMBID: recordingRef,
-		},
+	// 与其他三条入库路径共用同一个落点（见 admitCandidate）
+	return a.admitCandidate(provider.Candidate{
+		Provider: provider.ProviderID(providerID), MatchRef: trackRef,
+		Title: &title, ArtistName: credit, DurationMS: durationMS, RecordingRef: recordingRef,
 	})
-	var exists *store.ErrAlreadyExists
-	if err != nil && asAlreadyExistsErr(err, &exists) {
-		// 并发加入同一结果：静默跳转到已有曲目
-		return exists.TrackID, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	a.notifyLibraryChanged()
-	return trackID, nil
 }
 
 func (a *App) staleConfig() store.StaleConfig {

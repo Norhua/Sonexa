@@ -69,30 +69,21 @@ func (a *App) RematchTrack(trackID int64, providerID, title, artist, album, coun
 		return nil, err
 	}
 
-	candidates, err := p.SearchTracks(context.Background(), provider.Query{
-		Title: title, Artist: artist, Album: album, Country: country, Limit: 25,
+	// 与导入、搜索页、复核改搜同一条检索路径；用户在等，走交互式优先级
+	done := a.beginInteractive()
+	defer done()
+	ctx := provider.WithPriority(context.Background(), provider.PriorityInteractive)
+	scored, _, err := a.matchUpstream(ctx, p, matching.Input{
+		Title: title, Artist: artist, Album: album, Country: country,
 	})
 	if err != nil {
 		return nil, err
 	}
-	if len(candidates) == 0 {
+	if len(scored) == 0 {
 		return a.buildEditSession(trackID, nil)
 	}
-
-	weights := matching.WeightsFromSettings(a.settings.Get().Matching)
-	q := provider.Query{Title: title, Artist: artist, Album: album}
-	best := candidates[0]
-	bestScore := -1.0
-	for _, c := range candidates {
-		s := weights.ScoreCandidate(q, c)
-		if s.Rejected {
-			continue
-		}
-		if s.Total > bestScore {
-			best, bestScore = c, s.Total
-		}
-	}
-	return a.buildEditSession(trackID, &best)
+	// 候选池已按置信度降序
+	return a.buildEditSession(trackID, &scored[0].Candidate)
 }
 
 // buildEditSession 组装编辑界面的字段行。

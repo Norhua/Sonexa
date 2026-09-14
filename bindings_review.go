@@ -96,29 +96,9 @@ func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 	// 先按管线的评分候选解析
 	var scored []matching.ScoredCandidate
 	if err := json.Unmarshal([]byte(raw), &scored); err == nil && len(scored) > 0 && scored[0].Candidate.MatchRef != "" {
-		out := make([]CandidateRow, 0, len(scored))
-		for _, sc := range scored {
-			c := sc.Candidate
-			out = append(out, CandidateRow{
-				Provider: string(c.Provider), MatchRef: c.MatchRef,
-				// 复核队列的候选必须与上游搜索一样做本地判定，
-				// 否则库里已有的那首不会显示双徽章、动作也不会变成「合并」。
-				Title: c.Title, Artist: c.ArtistName, Album: c.AlbumTitle,
-				PrimaryType: c.PrimaryType, DurationMS: c.DurationMS,
-				TrackNumber: c.TrackNumber, TrackTotal: c.TrackTotal,
-				Year: c.Year, MediumFormat: c.MediumFormat, Country: c.Country,
-				Confidence: sc.Score.Total, MatchedVariant: sc.MatchedVariant,
-				ReleaseRef: c.ReleaseRef, ReleaseGroupRef: c.ReleaseGroupRef,
-				RecordingRef: c.RecordingRef, ISRC: c.ISRC,
-				// 封面来源：MB 用 release 标识，iTunes 只有基准图地址。
-				// 不带出来的话复核队列里 iTunes 候选的缩略图列永远是空的。
-				ArtworkURL: c.ThumbURL,
-			})
-			// 复核队列的候选必须与上游搜索一样做本地判定，
-			// 否则库里已有的那首不会显示双徽章、动作也不会变成「合并」。
-			a.applyLocalMatch(&out[len(out)-1], c)
-		}
-		return out
+		// 复核队列的候选必须与上游搜索一样做本地判定，
+		// 否则库里已有的那首不会显示双徽章、动作也不会变成「合并」。
+		return a.rowsFrom(scored, "接受")
 	}
 
 	// 再按 CandidateRow 解析：ResearchReviewItem 写快照时存的就是这个形状。
@@ -131,16 +111,7 @@ func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 		len(stored) > 0 && stored[0].MatchRef != "" {
 		// 本地判定不随快照持久化：入库/合并状态可能在存快照之后变了
 		for i := range stored {
-			c := provider.Candidate{
-				Provider: provider.ProviderID(stored[i].Provider),
-				MatchRef: stored[i].MatchRef,
-				// 曲名/署名/时长是 ResolveLocal 第三步（文本模糊比对）的输入，
-				// 漏掉它们的话「本地?」这个疑似徽章永远不会出现
-				Title: stored[i].Title, ArtistName: stored[i].Artist,
-				AlbumTitle: stored[i].Album, DurationMS: stored[i].DurationMS,
-				RecordingRef: stored[i].RecordingRef, ReleaseRef: stored[i].ReleaseRef,
-				ReleaseGroupRef: stored[i].ReleaseGroupRef, ISRC: stored[i].ISRC,
-			}
+			c := stored[i].toCandidate()
 			a.applyLocalMatch(&stored[i], c)
 		}
 		return stored
@@ -189,32 +160,26 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 		return nil, err
 	}
 
-	// 与手动检索、导入匹配共用同一套文本处理：复核队列里「改搜」时填的
-	// 往往正是从表格里复制过来的原串，带着译名注释直接查必然落空。
-	q := upstreamQuery(title, artist, album, country)
-
 	// 用户在等这次结果：交互式优先级，插到后台补全的队列之前
 	done := a.beginInteractive()
 	defer done()
 	ctx := provider.WithPriority(context.Background(), provider.PriorityInteractive)
 
-	candidates, err := p.SearchTracks(ctx, q)
+	// 与导入匹配、搜索页同一条检索路径（见 matchUpstream）
+	scored, variants, err := a.matchUpstream(ctx, p, matching.Input{
+		Title: title, Artist: artist, Album: album, Country: country,
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	// 评分用原始输入而不是剥离后的主干，理由同 SearchUpstream
-	scoreQ := provider.Query{Title: title, Artist: artist, Album: album, Country: country}
-	rows := a.toRows(candidates, scoreQ, "接受")
-	// 结果按置信度排序
-	sortRowsByConfidence(rows)
+	rows := a.rowsFrom(scored, "接受")
 
 	// 把本次候选写入快照，但不动原始导入值
 	snapshot, _ := json.Marshal(rows)
 	item, err := a.store.GetItem(itemID)
 	if err == nil && item != nil {
-		variants, _ := json.Marshal([]string{title})
-		a.store.MarkReview(itemID, store.ReviewReasonUnchanged, string(snapshot), string(variants))
+		tried, _ := json.Marshal(variants)
+		a.store.MarkReview(itemID, store.ReviewReasonUnchanged, string(snapshot), string(tried))
 	}
 	return rows, nil
 }
@@ -272,8 +237,6 @@ func (a *App) AcceptCandidate(itemID int64, row CandidateRow) (int64, error) {
 	if err := a.store.MarkImported(itemID, trackID); err != nil {
 		return 0, err
 	}
-	// 刚出现一条待补的曲目：空闲时立刻接着补，用户不必去点「开始」
-	a.autoStartEnrich()
 	return trackID, nil
 }
 

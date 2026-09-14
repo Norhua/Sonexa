@@ -51,6 +51,28 @@ type CandidateRow struct {
 	ReleaseGroupRef *string `json:"releaseGroupRef"`
 	RecordingRef    *string `json:"recordingRef"`
 	ISRC            *string `json:"isrc"`
+
+	// 以下三个字段界面不显示，但入库要写。行必须能**无损**还原成候选，
+	// 否则「搜索页加入」与「导入自动入库」写出的曲目会差这几列。
+	DiscNumber       *int    `json:"discNumber"`
+	ReleaseStatus    *string `json:"releaseStatus"`
+	FirstReleaseDate *string `json:"firstReleaseDate"`
+}
+
+// toCandidate 把行还原成候选，供入库。与 rowFrom 互为逆运算。
+func (r CandidateRow) toCandidate() provider.Candidate {
+	return provider.Candidate{
+		Provider: provider.ProviderID(r.Provider), MatchRef: r.MatchRef,
+		Title: r.Title, ArtistName: r.Artist, AlbumTitle: r.Album,
+		PrimaryType: r.PrimaryType, DurationMS: r.DurationMS,
+		TrackNumber: r.TrackNumber, TrackTotal: r.TrackTotal, DiscNumber: r.DiscNumber,
+		Year: r.Year, MediumFormat: r.MediumFormat, Country: r.Country,
+		Label: r.Label, CatalogNumber: r.CatalogNumber,
+		ReleaseRef: r.ReleaseRef, ReleaseGroupRef: r.ReleaseGroupRef,
+		RecordingRef: r.RecordingRef, ISRC: r.ISRC,
+		ReleaseStatus: r.ReleaseStatus, FirstReleaseDate: r.FirstReleaseDate,
+		ThumbURL: r.ArtworkURL,
+	}
 }
 
 // ProviderResults 是一个上游的搜索结果。
@@ -92,20 +114,12 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 		return nil, fmt.Errorf("请至少勾选一个上游")
 	}
 
-	// 检索与评分用的是**两份不同的输入**：
-	//   q      —— 剥掉导出噪音的主干，拿去查上游（查得到）
-	//   scoreQ —— 用户原样给的串，拿去判分（查对了没有）
-	//
-	// 不能拿剥离后的串去判分：`原田瞳（原田ひとみ）` 剥成 `原田瞳` 之后，
-	// 让署名对上的恰恰是被剥掉的那个括号（见 CompareCredit）。
-	q := upstreamQuery(title, artist, album, country)
-	scoreQ := provider.Query{Title: title, Artist: artist, Album: album, Country: country}
-
 	// 用户在等这次结果：交互式优先级插到后台补全之前，且补全整体让路。
 	// 只靠插队不够——后台任务仍会占掉这一秒的配额，用户那次搜索还是要多等一轮。
 	done := a.beginInteractive()
 	defer done()
 	searchCtx := provider.WithPriority(context.Background(), provider.PriorityInteractive)
+	in := matching.Input{Title: title, Artist: artist, Album: album, Country: country}
 
 	type task struct {
 		p    provider.Provider
@@ -130,12 +144,12 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 				t.err = err
 				return
 			}
-			candidates, err := t.p.SearchTracks(searchCtx, q)
+			scored, _, err := a.matchUpstream(searchCtx, t.p, in)
 			if err != nil {
 				t.err = err
 				return
 			}
-			t.rows = a.toRows(candidates, scoreQ, "加入曲库")
+			t.rows = a.rowsFrom(scored, "加入曲库")
 
 			// 该上游一完成就推给前端：先返回的先显示，不被慢的上游阻塞。
 			// 仍等到 wg.Wait() 是为了让本次调用的返回值完整，
@@ -178,112 +192,90 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 	return resp, nil
 }
 
-// upstreamQuery 由用户输入构造**检索**用的上游查询。
+// matchUpstream 在一个上游里为一条输入找候选。
 //
-// 手动检索与导入匹配走同一套文本处理：把导出噪音（截断省略号、译名/读音注释）
-// 剥成检索主干，并把括号里那种写法作为艺术家的备选写法带上。
+// 这是绑定层里**唯一**的检索入口：搜索页、复核队列的「改搜」、编辑页的
+// 「重新匹配」都经由它，而它做的事与导入匹配完全相同——同一条变体阶梯、
+// 同一套剥离规则、同一对闸门、同一份评分（见 matching.Engine.Run）。
+// 用户留空的字段不参与闸门，因此「只填曲名」时它退化为曲名闸。
 //
-// 不这样做的话两条路径会不一致——同一个 `原田瞳（原田ひとみ）`，
-// 导入能查到而手动检索查不到，而用户在复核队列里「改搜」时填的往往正是
-// 从表格里复制过来的原串。
-//
-// 版本标记不剥：它是这条录音身份的一部分（见 matching.SearchCore）。
-func upstreamQuery(title, artist, album, country string) provider.Query {
-	return provider.Query{
-		Title:            matching.SearchCore(title),
-		Artist:           matching.SearchCore(artist),
-		Album:            matching.SearchCore(album),
-		ArtistAlternates: matching.Alternates(artist),
-		Country:          country,
-		Limit:            25,
+// 返回按置信度降序的候选池与已尝试的变体。
+func (a *App) matchUpstream(ctx context.Context, p provider.Provider, in matching.Input,
+) ([]matching.ScoredCandidate, []string, error) {
+	if err := p.IsConfigured(); err != nil {
+		return nil, nil, err
 	}
+	engine := matching.NewEngine(a.settings.Get().Matching)
+	res, err := engine.Run(ctx, p, a.store, in)
+	if err != nil {
+		return nil, nil, err
+	}
+	return res.Scored, res.TriedVariants, nil
 }
 
-// toRows 把候选转为表格行，并预查本地决定动作按钮。
+// rowsFrom 把评分后的候选转为表格行，并预查本地决定动作按钮。
 //
-// 渲染每行时预先查询本地是否已存在：
-// 已存在则显示为禁用的「已在库中」且点击可跳转；不存在则显示可用的「加入曲库」。
-func (a *App) toRows(candidates []provider.Candidate, q provider.Query, defaultAction string) []CandidateRow {
-	weights := matching.WeightsFromSettings(a.settings.Get().Matching)
-	rows := make([]CandidateRow, 0, len(candidates))
-
-	for _, c := range candidates {
-		score := weights.ScoreCandidate(q, c)
-		if score.Rejected {
-			continue
-		}
-
-		local, err := matching.ResolveLocal(a.store, c)
-		if err != nil {
-			local = matching.LocalMatch{Kind: matching.LocalNone}
-		}
-
-		row := CandidateRow{
-			Provider: string(c.Provider), MatchRef: c.MatchRef,
-			Badges: local.Badges(c.Provider), Note: local.Note(),
-			LocalTrackID: local.TrackID,
-			Title:        c.Title, Artist: c.ArtistName, Album: c.AlbumTitle,
-			PrimaryType: c.PrimaryType, DurationMS: c.DurationMS,
-			TrackNumber: c.TrackNumber, TrackTotal: c.TrackTotal,
-			Year: c.Year, MediumFormat: c.MediumFormat, Country: c.Country,
-			Label: c.Label, CatalogNumber: c.CatalogNumber,
-			Confidence: score.Total,
-			ReleaseRef: c.ReleaseRef, ReleaseGroupRef: c.ReleaseGroupRef,
-			RecordingRef: c.RecordingRef, ISRC: c.ISRC,
-		}
-
-		switch {
-		case local.Kind == matching.LocalNone:
+// 已存在则显示为禁用的「已在库中」（或复核队列里的「合并」）且点击可跳转；
+// 不存在则显示 defaultAction。
+func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction string) []CandidateRow {
+	rows := make([]CandidateRow, 0, len(scored))
+	for _, sc := range scored {
+		row := rowFrom(sc)
+		a.applyLocalMatch(&row, sc.Candidate)
+		if row.LocalTrackID == 0 {
 			row.Action = defaultAction
-		case defaultAction == "加入曲库":
+		} else if defaultAction == "加入曲库" {
 			row.Action = "已在库中"
-		default:
-			row.Action = "合并"
-		}
-
-		// iTunes 没有 release 级标识，只给一个基准图地址；不把它带出来
-		// 就等于把 iTunes 结果的缩略图整片丢掉——降级链的构造逻辑
-		// （coverLadder / BuildCoverRefs）本来就为这条路径准备好了，
-		// 缺的只是这里的一次赋值。
-		row.ArtworkURL = c.ThumbURL
-		switch {
-		case c.ReleaseRef != nil && *c.ReleaseRef != "":
-			row.ThumbKey = covers.CacheKey(string(c.Provider)+":"+*c.ReleaseRef, coverThumbSize)
-		case c.ThumbURL != nil && *c.ThumbURL != "":
-			row.ThumbKey = covers.CacheKey(string(c.Provider)+":"+*c.ThumbURL, coverThumbSize)
 		}
 		rows = append(rows, row)
 	}
 	return rows
 }
 
+// rowFrom 把一条评分候选映射为行，不查库。与 CandidateRow.toCandidate 互为逆运算。
+func rowFrom(sc matching.ScoredCandidate) CandidateRow {
+	c := sc.Candidate
+	row := CandidateRow{
+		Provider: string(c.Provider), MatchRef: c.MatchRef,
+		Title: c.Title, Artist: c.ArtistName, Album: c.AlbumTitle,
+		PrimaryType: c.PrimaryType, DurationMS: c.DurationMS,
+		TrackNumber: c.TrackNumber, TrackTotal: c.TrackTotal, DiscNumber: c.DiscNumber,
+		Year: c.Year, MediumFormat: c.MediumFormat, Country: c.Country,
+		Label: c.Label, CatalogNumber: c.CatalogNumber,
+		Confidence: sc.Score.Total, MatchedVariant: sc.MatchedVariant,
+		ReleaseRef: c.ReleaseRef, ReleaseGroupRef: c.ReleaseGroupRef,
+		RecordingRef: c.RecordingRef, ISRC: c.ISRC,
+		ReleaseStatus: c.ReleaseStatus, FirstReleaseDate: c.FirstReleaseDate,
+		// iTunes 没有 release 级标识，只给一个基准图地址；不把它带出来
+		// 就等于把 iTunes 结果的缩略图整片丢掉。
+		ArtworkURL: c.ThumbURL,
+	}
+	switch {
+	case c.ReleaseRef != nil && *c.ReleaseRef != "":
+		row.ThumbKey = covers.CacheKey(string(c.Provider)+":"+*c.ReleaseRef, coverThumbSize)
+	case c.ThumbURL != nil && *c.ThumbURL != "":
+		row.ThumbKey = covers.CacheKey(string(c.Provider)+":"+*c.ThumbURL, coverThumbSize)
+	}
+	return row
+}
+
 // AddToLibrary 把一条上游候选加入曲库。
 //
-// 写入匹配来源与标识；真正写入时若撞上唯一约束（并发/竞态），
-// 静默转为跳转到已有曲目，不向用户报错。
+// 真正写入时若撞上唯一约束（并发/竞态），静默转为跳转到已有曲目，不向用户报错。
 func (a *App) AddToLibrary(row CandidateRow) (int64, error) {
 	if err := a.ready(); err != nil {
 		return 0, err
 	}
-	if row.Title == nil || *row.Title == "" {
+	return a.admitCandidate(row.toCandidate())
+}
+
+// admitCandidate 是绑定层里候选入库的唯一落点：搜索页、复核「接受」、
+// 专辑视图灰色行都经由它，与导入的自动入库共用 store.AdmitCandidate。
+func (a *App) admitCandidate(c provider.Candidate) (int64, error) {
+	if c.Title == nil || *c.Title == "" {
 		return 0, fmt.Errorf("候选缺少曲名")
 	}
-
-	source := row.Provider
-	trackID, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: *row.Title, Artist: row.Artist, Album: row.Album,
-		MatchSource: &source, MatchRef: &row.MatchRef,
-		Metadata: &store.MetadataInput{
-			Title: row.Title, Album: row.Album, TrackCredit: row.Artist,
-			PrimaryType: row.PrimaryType, MediumFormat: row.MediumFormat,
-			Country: row.Country, Year: row.Year,
-			TrackNumber: row.TrackNumber, TrackTotal: row.TrackTotal,
-			DurationMS: row.DurationMS, RecordingMBID: row.RecordingRef,
-			ReleaseMBID: row.ReleaseRef, ReleaseGroupMBID: row.ReleaseGroupRef,
-			ISRC: row.ISRC,
-		},
-	})
-
+	trackID, err := a.store.AdmitCandidate(c)
 	var exists *store.ErrAlreadyExists
 	if err != nil && asAlreadyExistsErr(err, &exists) {
 		return exists.TrackID, nil
@@ -291,18 +283,6 @@ func (a *App) AddToLibrary(row CandidateRow) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	// 顺带登记发行，清单状态为 none——搜索响应不含完整清单
-	if row.ReleaseRef != nil && *row.ReleaseRef != "" && row.Album != nil {
-		a.store.UpsertRelease(&store.Release{
-			Provider: source, ProviderRef: *row.ReleaseRef,
-			ReleaseGroupRef: row.ReleaseGroupRef, Title: *row.Album,
-			AlbumCredit: row.Artist, PrimaryType: row.PrimaryType,
-			MediumFormat: row.MediumFormat, Country: row.Country,
-			TrackTotal: row.TrackTotal, TracklistState: store.TracklistNone,
-		})
-	}
-
 	a.notifyLibraryChanged()
 	// 刚出现一条待补的曲目：空闲时接着补，用户不必去点「开始」
 	a.autoStartEnrich()

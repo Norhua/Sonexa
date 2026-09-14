@@ -206,8 +206,8 @@ type Score struct {
 	HighConf    bool
 	Rejected    bool // 曲名不匹配即丢弃
 	// Plausible 表示这条候选**值得摆到用户面前**：曲名过闸，且可比的旁证里
-	// 至少有一处对得上。导入路径据它筛一遍候选（见 Engine.Run），
-	// 手动检索不筛——那条路径是人在看、查询词也是人自己写的。
+	// 至少有一处对得上。Engine.Run 据它筛候选池——导入、搜索、改搜、重新匹配
+	// 都经由那里，因此同一个上游在四处的筛法完全一致。
 	//
 	// 它与 HighConf 是两道不同的闸，不是同一判断的两个档位：
 	// 前者管「给不给人看」，后者管「要不要经人手」。
@@ -218,13 +218,16 @@ type Score struct {
 //
 // 曲名不匹配即丢弃是所有上游共同的准入门槛。
 func (w Weights) ScoreCandidate(q provider.Query, c provider.Candidate) Score {
-	titleMatch := w.CompareTitle(q.Title, deref(c.Title))
-	if titleMatch == MatchNone {
-		return Score{Rejected: true, TitleMatch: MatchNone}
+	s := Score{TitleMatch: MatchNone}
+	// 曲名留空时（搜索页只按艺术家或歌集找）曲名闸不参与：没填的字段不是
+	// 「对不上」而是「没这个信息」。此时它也拿不到曲名分，且永远不会高置信。
+	if Normalize(q.Title) != "" {
+		s.TitleMatch = w.CompareTitle(q.Title, deref(c.Title))
+		if s.TitleMatch == MatchNone {
+			return Score{Rejected: true, TitleMatch: MatchNone}
+		}
+		s.Total += w.Title // 曲名匹配即得满额（准入已保证匹配）
 	}
-
-	s := Score{TitleMatch: titleMatch}
-	s.Total += w.Title // 曲名匹配即得满额（准入已保证匹配）
 
 	// 署名
 	s.CreditMatch = w.CompareCredit(q.Artist, deref(c.ArtistName))
@@ -307,10 +310,11 @@ func (w Weights) IsHighConfidence(s Score) bool {
 // 缺一个歌集名而毙掉一条曲名精确相符的候选。两侧一处可比的都没有时（例如
 // 表格只有曲名一列），曲名自己就够。
 //
-// 它不决定入库（那是 IsHighConfidence），也不用在手动检索上：
-// 那条路径是人在看、查询词是人自己写的，替他筛掉只会让他以为上游没有这首歌。
+// 它不决定入库（那是 IsHighConfidence）。手动检索同样按它筛：用户留空的字段
+// 不可比、不参与，因此只填曲名时它退化为曲名闸，填了署名或歌集就必须对得上——
+// 「验证署名和歌集名，除非传入的是空值」。
 func (w Weights) IsPlausible(q provider.Query, c provider.Candidate, s Score) bool {
-	if s.TitleMatch == MatchNone {
+	if Normalize(q.Title) != "" && s.TitleMatch == MatchNone {
 		return false
 	}
 	comparable, agreed := 0, 0

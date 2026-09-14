@@ -227,7 +227,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	switch res.Decision.Outcome {
 	case matching.OutcomeImportUnique, matching.OutcomeImportLadder:
 		sc := findScored(res.Scored, res.Decision.Selected.MatchRef)
-		trackID, err := r.importCandidate(in, *res.Decision.Selected)
+		trackID, err := r.importCandidate(*res.Decision.Selected)
 		if err != nil {
 			backoff := r.retry.Backoff(item.AttemptCount+1, err)
 			r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts)
@@ -261,91 +261,20 @@ func reviewReasonOf(outcome matching.Outcome) store.ReviewReason {
 }
 
 // importCandidate 把一条候选入库并写入溯源。
-func (r *Runner) importCandidate(in matching.Input, c provider.Candidate) (int64, error) {
-	source := string(c.Provider)
-	meta := &store.MetadataInput{
-		Title:            c.Title,
-		Album:            c.AlbumTitle,
-		TrackCredit:      c.ArtistName,
-		PrimaryType:      c.PrimaryType,
-		ReleaseStatus:    c.ReleaseStatus,
-		MediumFormat:     c.MediumFormat,
-		Country:          c.Country,
-		Year:             c.Year,
-		FirstReleaseDate: c.FirstReleaseDate,
-		TrackNumber:      c.TrackNumber,
-		TrackTotal:       c.TrackTotal,
-		DiscNumber:       c.DiscNumber,
-		DurationMS:       c.DurationMS,
-		RecordingMBID:    c.RecordingRef,
-		ReleaseMBID:      c.ReleaseRef,
-		ReleaseGroupMBID: c.ReleaseGroupRef,
-		ISRC:             c.ISRC,
-	}
-
-	title := in.Title
-	if c.Title != nil && *c.Title != "" {
-		title = *c.Title
-	}
-	artist := c.ArtistName
-	if artist == nil && in.Artist != "" {
-		artist = &in.Artist
-	}
-	album := c.AlbumTitle
-	if album == nil && in.Album != "" {
-		album = &in.Album
-	}
-
-	// 输入行里带的值若未被上游覆盖，其来源应是 import——
-	// 这是「来自导入文件的原始值」这一来源取值的唯一落点。
-	if meta.ProvenanceJSON == nil {
-		prov := map[string]string{}
-		if in.Artist != "" && (c.ArtistName == nil || *c.ArtistName == "") {
-			prov["artist"] = "import"
-		}
-		if in.Album != "" && (c.AlbumTitle == nil || *c.AlbumTitle == "") {
-			prov["album"] = "import"
-		}
-		if len(prov) > 0 {
-			data, _ := json.Marshal(prov)
-			s := string(data)
-			meta.ProvenanceJSON = &s
-		}
-	}
-
-	trackID, err := r.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: title, Artist: artist, Album: album,
-		MatchSource: &source, MatchRef: &c.MatchRef,
-		Metadata: meta,
-	})
+//
+// 只写候选自己带的字段，**不用表格里的原始输入去补**上游没给的署名或歌集——
+// 曲目记录的是「上游怎么说」，表格那一行是「用户当时怎么写」。
+// 补了会让一首曲目的字段一半来自上游、一半来自表格，且看不出哪一半是哪一半。
+// 因此这里与复核队列的「接受」、搜索页的「加入曲库」走同一个落点，
+// 三条路径入库的曲目没有任何区别。
+func (r *Runner) importCandidate(c provider.Candidate) (int64, error) {
+	trackID, err := r.store.AdmitCandidate(c)
 	// 撞唯一键说明另一路径抢先入库了，静默转为已有曲目
 	var exists *store.ErrAlreadyExists
 	if err != nil && asAlreadyExists(err, &exists) {
 		return exists.TrackID, nil
 	}
-	if err != nil {
-		return 0, err
-	}
-
-	// 导入自动入库只写 release 行，清单状态为 none——
-	// search 响应不含完整清单，清单在首次打开该专辑时懒加载。
-	if c.ReleaseRef != nil && *c.ReleaseRef != "" && c.AlbumTitle != nil {
-		r.store.UpsertRelease(&store.Release{
-			Provider:         source,
-			ProviderRef:      *c.ReleaseRef,
-			ReleaseGroupRef:  c.ReleaseGroupRef,
-			Title:            *c.AlbumTitle,
-			AlbumCredit:      c.ArtistName,
-			PrimaryType:      c.PrimaryType,
-			ReleaseStatus:    c.ReleaseStatus,
-			MediumFormat:     c.MediumFormat,
-			Country:          c.Country,
-			FirstReleaseDate: c.FirstReleaseDate,
-			TrackTotal:       c.TrackTotal,
-			TracklistState:   store.TracklistNone,
-		})
-	}
-	return trackID, nil
+	return trackID, err
 }
 
 // summaryFor 生成完成统计文案，并逐行列出失败条目的原始输入。

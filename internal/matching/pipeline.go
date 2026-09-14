@@ -22,6 +22,8 @@ type Input struct {
 	Artist     string
 	Album      string
 	DurationMS *int
+	// Country 供需要地区参数的上游（iTunes）使用；MusicBrainz 忽略。
+	Country string
 }
 
 // Result 是一条目的匹配结果。
@@ -34,6 +36,9 @@ type Result struct {
 	// LocalDuplicate 非零时表示本地去重检查判定为疑似重复。
 	LocalDuplicate int64
 }
+
+// SearchLimit 是每级阶梯向上游要的候选条数上限。
+const SearchLimit = 25
 
 // Engine 把文本处理、评分、优选阶梯串成一条管线。
 type Engine struct {
@@ -59,6 +64,12 @@ func NewEngine(m config.MatchingSettings) *Engine {
 //	[2] 上游查询 —— 按变体策略执行（默认渐进式）
 //	[3] 置信度评分
 //	[4] 分流
+//
+// 同一个上游只有这一条检索路径：导入匹配、搜索页、复核队列的「改搜」、
+// 编辑页的「重新匹配」全部经由它。变体阶梯、剥离规则、两道闸门与评分
+// 因此在四处完全一致——各写各的时候，同一个 `原田瞳（原田ひとみ）`
+// 导入查得到而手动检索查不到，搜索页还把 43 条曲名相符的噪音摆给用户。
+// 手动检索只是不看 [4] 的分流结果。
 func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Input) (*Result, error) {
 	res := &Result{}
 
@@ -78,6 +89,8 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 			ArtistAlternates: v.ArtistAlternates,
 			TitleOnly:        v.TitleOnly,
 			DurationMS:       in.DurationMS,
+			Country:          in.Country,
+			Limit:            SearchLimit,
 		}
 		// 附加艺术家（feat. X）并入艺术家条件
 		if len(v.ExtraArtists) > 0 && q.Artist == "" {
@@ -103,11 +116,9 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 			//
 			// `ツバサ（羽翼）· 4円 · side-c` 那一行在 MusicBrainz 上并不存在，
 			// 而同名录音有 43 条。少了这道闸，43 条曲名相符、署名与歌集全不相干的
-			// 候选会被摆进复核队列，让用户手工否掉 43 次；而正确的结论是
+			// 候选会被摆到用户面前，让他手工否掉 43 次；而正确的结论是
 			// 「上游没有这首歌」——筛掉之后这一条走的正是「无结果」那条出口。
-			//
-			// 手动检索（SearchUpstream / ResearchReviewItem）刻意不筛：
-			// 那条路径是人在看、查询词也是人自己写的。
+			// 用户没填的字段不参与判定（见 IsPlausible 的「可比」）。
 			if !score.Plausible {
 				continue
 			}
