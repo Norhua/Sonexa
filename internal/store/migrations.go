@@ -3,100 +3,144 @@ package store
 // migration0001Init 建立 v1 的全部表与索引。
 //
 // 从第一天起就走迁移路径，而不是在代码里 CREATE TABLE IF NOT EXISTS——
-// 否则迁移机制会因为"暂时用不上"而迟迟不落地，而 track_metadata 被明确
-// 设计为可演进，没有迁移机制该设计就不成立。
+// 否则迁移机制会因为「暂时用不上」而迟迟不落地。
+//
+// # 本版结构的三条主线
+//
+// 一、**发行（歌集）是实体，曲目通过外键指向它。** 此前发行级事实
+// （专辑名、类型、载体、国家、年份、碟数、音轨数、厂牌、目录号、封面）
+// 逐曲目复制一份存在 track_metadata 上，一张 12 首的专辑要存 12 份，
+// 改其中一份另外 11 份不动。现在它们只存在 release 上，曲目只保留
+// 自己那一份事实（碟号、音轨号、时长、风格、注释）。
+//
+// 二、**「署名」与「参与角色」是两件事。** track_credit 记录「谁出现在这条
+// 署名里」，track_artist 记录「谁在这首歌上担任什么角色」。此前只有后者，
+// 于是未署名的作词作曲与署名艺术家在库里长得一模一样，艺术家列表无从区分。
+//
+// 三、**曲目是单表。** 此前 track 与 track_metadata 各存一份曲名、专辑名、
+// 署名，三对近似重复，写入路径两边都写而「哪一份为准」没有定论。
+// 「基本信息必存在」由 title NOT NULL 表达，「丰富信息可整体为空」由
+// 其余列可空表达——语义不丢，漂移的可能消失。
 const migration0001Init = `
--- ========== 基本信息：结构稳定，字段永不增删，每首曲目必有 ==========
+-- ========== 发行组：同一专辑的不同版本合为一条 ==========
+CREATE TABLE release_group (
+  id                 INTEGER PRIMARY KEY,
+  provider           TEXT,
+  provider_ref       TEXT,
+  title              TEXT NOT NULL,
+  primary_type       TEXT,
+  secondary_types    TEXT,
+  first_release_date TEXT,
+
+  -- 该组下共有几个 release。取自上游 browse 请求（本地只见过其中几个，
+  -- 数本地行数得到的是「我见过几个」而不是「上游共有几个」），可手动改。
+  release_count            INTEGER,
+  release_count_fetched_at DATETIME,
+
+  created_at         DATETIME NOT NULL,
+  updated_at         DATETIME NOT NULL
+);
+CREATE UNIQUE INDEX idx_release_group_ref ON release_group(provider, provider_ref)
+  WHERE provider_ref IS NOT NULL;
+
+-- ========== 歌集：专辑 / EP / 单曲 / Broadcast / Other ==========
+-- provider 与 provider_ref 可空：本地新建的歌集（用户改歌集名新建、
+-- 无上游标识的曲目归拢）两者都为 NULL。
+CREATE TABLE release (
+  id                INTEGER PRIMARY KEY,
+  release_group_id  INTEGER REFERENCES release_group(id) ON DELETE SET NULL,
+  provider          TEXT,
+  provider_ref      TEXT,
+
+  title             TEXT NOT NULL,
+  credit            TEXT,
+  primary_type      TEXT,
+  secondary_types   TEXT,
+  disc_total        INTEGER,
+  track_total       INTEGER,
+
+  -- 封面：文件不入库，只记落盘路径与取图来源。
+  -- 挂在歌集上而不是曲目上——采用一次即对该歌集全部曲目生效。
+  cover_path        TEXT,
+  cover_source_url  TEXT,
+  cover_width       INTEGER,
+  cover_height      INTEGER,
+  cover_fetched_at  DATETIME,
+
+  -- 上游事实，不进编辑界面
+  release_status    TEXT,
+  medium_format     TEXT,
+  country           TEXT,
+  release_date      TEXT,
+  first_release_date TEXT,
+  label             TEXT,
+  catalog_number    TEXT,
+
+  tracklist_state   TEXT NOT NULL DEFAULT 'none',
+  fetched_at        DATETIME,
+
+  provenance_json   TEXT,
+  locked_json       TEXT,
+  created_at        DATETIME NOT NULL,
+  updated_at        DATETIME NOT NULL
+);
+-- 唯一性只对有上游标识的歌集成立。title 上没有唯一约束：
+-- 不同版次、不同艺术家的同名歌集是常态。
+CREATE UNIQUE INDEX idx_release_ref ON release(provider, provider_ref)
+  WHERE provider_ref IS NOT NULL;
+CREATE INDEX idx_release_group_of ON release(release_group_id)
+  WHERE release_group_id IS NOT NULL;
+CREATE INDEX idx_release_title ON release(title);
+
+-- ========== 曲目：单表，基本信息与丰富信息合并 ==========
 CREATE TABLE track (
   id            INTEGER PRIMARY KEY,
+  -- 删歌集不删曲目：曲目是用户的收藏，歌集是它的归属。
+  release_id    INTEGER REFERENCES release(id) ON DELETE SET NULL,
+
   title         TEXT NOT NULL,
-  artist        TEXT,
-  album         TEXT,
-  title_locked  INTEGER NOT NULL DEFAULT 0,
-  artist_locked INTEGER NOT NULL DEFAULT 0,
-  album_locked  INTEGER NOT NULL DEFAULT 0,
+  -- 曲目级署名原串：原样保真，不由 track_credit 拼接推导。
+  credit        TEXT,
+
+  disc_number       INTEGER,
+  track_number      INTEGER,
+  track_number_text TEXT,
+  duration_ms       INTEGER,
+  genre             TEXT,
+  comment           TEXT,
+
+  -- 匹配溯源与上游标识
+  match_source  TEXT,
+  match_ref     TEXT,
+  matched_at    DATETIME,
+  recording_ref TEXT,
+  work_ref      TEXT,
+  isrc          TEXT,
+
+  -- 补全信息匹配的状态机
+  enrich_state    TEXT NOT NULL DEFAULT 'skipped',
+  enrich_attempts INTEGER NOT NULL DEFAULT 0,
+  enrich_error    TEXT,
+
+  -- 逐字段来源与用户锁：整体读写的结构，新增字段无需改动它们的存储形状。
+  -- 基本信息的三个布尔锁并入 locked_json——合表后没有理由留两套锁机制。
+  provenance_json TEXT,
+  locked_json     TEXT,
+
   created_at    DATETIME NOT NULL,
   updated_at    DATETIME NOT NULL
 );
 CREATE INDEX idx_track_created ON track(created_at DESC);
 CREATE INDEX idx_track_title ON track(title);
-
--- ========== 丰富信息：可演进，可整体为空 ==========
-CREATE TABLE track_metadata (
-  track_id           INTEGER PRIMARY KEY REFERENCES track(id) ON DELETE CASCADE,
-
-  title              TEXT,
-  album              TEXT,
-
-  -- 署名原串：原样保真，不由关系表推导
-  track_credit       TEXT,
-  album_credit       TEXT,
-  credit_spans_json  TEXT,
-
-  -- 发行信息
-  primary_type       TEXT,
-  secondary_types    TEXT,
-  release_status     TEXT,
-  medium_format      TEXT,
-  country            TEXT,
-  year               INTEGER,
-  release_date       TEXT,
-  first_release_date TEXT,
-
-  -- 位置与时长
-  track_number       INTEGER,
-  track_number_text  TEXT,
-  track_total        INTEGER,
-  disc_number        INTEGER,
-  disc_total         INTEGER,
-  duration_ms        INTEGER,
-
-  -- 描述
-  genre              TEXT,
-  label              TEXT,
-  catalog_number     TEXT,
-  comment            TEXT,
-
-  -- 封面：文件不入库
-  cover_path         TEXT,
-  cover_source       TEXT,
-  cover_source_url   TEXT,
-  cover_width        INTEGER,
-  cover_height       INTEGER,
-  cover_fetched_at   DATETIME,
-
-  -- 上游标识（冗余存储，供跨上游桥接使用）
-  recording_mbid       TEXT,
-  release_mbid         TEXT,
-  release_group_mbid   TEXT,
-  work_mbid            TEXT,
-  isrc                 TEXT,
-  itunes_track_id      TEXT,
-  itunes_collection_id TEXT,
-
-  -- 匹配溯源
-  match_source       TEXT,
-  match_ref          TEXT,
-  matched_at         DATETIME,
-
-  -- 逐字段来源与用户锁
-  provenance_json    TEXT,
-  locked_json        TEXT,
-
-  updated_at         DATETIME NOT NULL
-);
-
+CREATE INDEX idx_track_release ON track(release_id) WHERE release_id IS NOT NULL;
 -- 部分唯一索引：未匹配的曲目（match_source IS NULL）不受唯一约束
-CREATE UNIQUE INDEX idx_match_ref ON track_metadata(match_source, match_ref)
+CREATE UNIQUE INDEX idx_match_ref ON track(match_source, match_ref)
   WHERE match_source IS NOT NULL;
-CREATE INDEX idx_track_metadata_recording ON track_metadata(recording_mbid)
-  WHERE recording_mbid IS NOT NULL;
-CREATE INDEX idx_track_metadata_isrc ON track_metadata(isrc)
-  WHERE isrc IS NOT NULL;
-CREATE INDEX idx_track_metadata_rg ON track_metadata(release_group_mbid)
-  WHERE release_group_mbid IS NOT NULL;
+CREATE INDEX idx_track_recording ON track(recording_ref) WHERE recording_ref IS NOT NULL;
+CREATE INDEX idx_track_isrc ON track(isrc) WHERE isrc IS NOT NULL;
+CREATE INDEX idx_track_enrich ON track(enrich_state);
 
--- ========== 艺术家与角色关系 ==========
+-- ========== 艺术家与关系 ==========
 CREATE TABLE artist (
   id             INTEGER PRIMARY KEY,
   name           TEXT NOT NULL,
@@ -118,14 +162,46 @@ CREATE TABLE artist_link (
 );
 CREATE INDEX idx_artist_link_to ON artist_link(to_artist_id, type);
 
-CREATE TABLE track_artist (
+-- ========== 署名的分解：谁出现在这条署名串里 ==========
+--
+-- 它替代了此前的 credit_spans_json。区间本身仍是渲染辅助数据，
+-- 但「这位艺术家是否被署名」必须可查询——艺术家列表的成员判定要用它，
+-- 而 JSON 列做不到。
+--
+-- position 进主键：同一位艺术家可能在一条署名里出现两次
+-- （形如 A feat. B & A），各自有各自的区间。
+CREATE TABLE track_credit (
   track_id      INTEGER NOT NULL REFERENCES track(id) ON DELETE CASCADE,
   artist_id     INTEGER NOT NULL REFERENCES artist(id) ON DELETE CASCADE,
-  role          TEXT NOT NULL,
+  position      INTEGER NOT NULL DEFAULT 0,
   credited_name TEXT,
-  attribute     TEXT,
-  position      INTEGER,
-  source        TEXT,
+  span_start    INTEGER,
+  span_end      INTEGER,
+  PRIMARY KEY (track_id, artist_id, position)
+);
+CREATE INDEX idx_track_credit_artist ON track_credit(artist_id);
+
+-- 歌集署名的分解，与 track_credit 同构
+CREATE TABLE release_credit (
+  release_id    INTEGER NOT NULL REFERENCES release(id) ON DELETE CASCADE,
+  artist_id     INTEGER NOT NULL REFERENCES artist(id) ON DELETE CASCADE,
+  position      INTEGER NOT NULL DEFAULT 0,
+  credited_name TEXT,
+  span_start    INTEGER,
+  span_end      INTEGER,
+  PRIMARY KEY (release_id, artist_id, position)
+);
+CREATE INDEX idx_release_credit_artist ON release_credit(artist_id);
+
+-- ========== 参与角色：完整艺术家 ==========
+-- credited_name 不在这里——它归 track_credit。
+CREATE TABLE track_artist (
+  track_id  INTEGER NOT NULL REFERENCES track(id) ON DELETE CASCADE,
+  artist_id INTEGER NOT NULL REFERENCES artist(id) ON DELETE CASCADE,
+  role      TEXT NOT NULL,
+  attribute TEXT,
+  position  INTEGER,
+  source    TEXT,
   PRIMARY KEY (track_id, artist_id, role)
 );
 CREATE INDEX idx_track_artist_lookup ON track_artist(artist_id, role);
@@ -151,33 +227,9 @@ CREATE TABLE collection_item (
 );
 CREATE INDEX idx_collection_item_track ON collection_item(track_id);
 
--- ========== 发行清单：上游事实的镜像，与 track 之间无外键 ==========
-CREATE TABLE release (
-  id                 INTEGER PRIMARY KEY,
-  provider           TEXT NOT NULL,
-  provider_ref       TEXT NOT NULL,
-  release_group_ref  TEXT,
-  title              TEXT NOT NULL,
-  album_credit       TEXT,
-  primary_type       TEXT,
-  secondary_types    TEXT,
-  release_status     TEXT,
-  medium_format      TEXT,
-  country            TEXT,
-  release_date       TEXT,
-  first_release_date TEXT,
-  track_total        INTEGER,
-  disc_total         INTEGER,
-  cover_path         TEXT,
-  cover_source_url   TEXT,
-  tracklist_state    TEXT NOT NULL,
-  fetched_at         DATETIME,
-  updated_at         DATETIME NOT NULL
-);
-CREATE UNIQUE INDEX idx_release_ref ON release(provider, provider_ref);
-CREATE INDEX idx_release_group ON release(release_group_ref)
-  WHERE release_group_ref IS NOT NULL;
-
+-- ========== 发行清单：上游事实的镜像 ==========
+-- 与 track 之间仍无外键：清单位置与曲目的对应靠上游标识等值比对，
+-- 删曲目不破坏清单，清单位置自然回落为灰色行。
 CREATE TABLE release_track (
   release_id        INTEGER NOT NULL REFERENCES release(id) ON DELETE CASCADE,
   disc_number       INTEGER NOT NULL DEFAULT 1,
@@ -220,6 +272,7 @@ CREATE TABLE import_item (
   in_track_no    INTEGER,
   in_duration_ms INTEGER,
   status         TEXT NOT NULL,
+  review_reason  TEXT,
   attempt_count  INTEGER NOT NULL DEFAULT 0,
   last_error     TEXT,
   last_error_at  DATETIME,
@@ -247,22 +300,27 @@ CREATE INDEX idx_provider_cache_fetched ON provider_cache(fetched_at);
 
 -- ========== 全文检索 ==========
 -- 灰色行（未入库的清单曲目）不进索引：搜索的是用户的收藏，不是上游目录。
--- FTS 的内容来源视图：把三处来源拼成索引行，使刷新逻辑只有一份。
 -- artist_names 是该曲目全部关联艺术家名的拼接——它让「搜索 平野綾」与
--- 「搜索 涼宮ハルヒ」都能命中同一首歌。
+-- 「搜索 涼宮ハルヒ」都能命中同一首歌。两张关系表都要进：被署名的与
+-- 担任角色的都应当能搜到。
 CREATE VIEW track_fts_source AS
 SELECT
   t.id AS rowid,
   t.title AS title,
-  COALESCE(t.artist, '') AS artist,
-  COALESCE(t.album, '') AS album,
-  COALESCE(m.track_credit, '') AS track_credit,
+  COALESCE(t.credit, '') AS artist,
+  COALESCE(r.title, '') AS album,
+  COALESCE(t.credit, '') AS track_credit,
   COALESCE((
     SELECT group_concat(x.nm, ' ') FROM (
-      SELECT DISTINCT COALESCE(ta.credited_name, a.name) AS nm
-      FROM track_artist ta
-      JOIN artist a ON a.id = ta.artist_id
-      WHERE ta.track_id = t.id
+      SELECT DISTINCT COALESCE(tc.credited_name, a.name) AS nm
+      FROM track_credit tc
+      JOIN artist a ON a.id = tc.artist_id
+      WHERE tc.track_id = t.id
+      UNION
+      SELECT DISTINCT a.name
+      FROM track_credit tc
+      JOIN artist a ON a.id = tc.artist_id
+      WHERE tc.track_id = t.id
       UNION
       SELECT DISTINCT a.name
       FROM track_artist ta
@@ -271,7 +329,7 @@ SELECT
     ) x
   ), '') AS artist_names
 FROM track t
-LEFT JOIN track_metadata m ON m.track_id = t.id;
+LEFT JOIN release r ON r.id = t.release_id;
 
 -- contentless 表：不存原文，只存倒排索引，省空间。
 -- 删除索引行时 FTS5 要求提供「当初索引进去的那份值」，而数据随时会被改写，
@@ -294,47 +352,4 @@ CREATE TABLE track_fts_shadow (
   track_credit TEXT NOT NULL,
   artist_names TEXT NOT NULL
 );
-
-`
-
-// migration0002ReviewReason 为待复核条目记录成因。
-//
-// 复核队列里停着三种成因不同的条目：疑似重复、多义（跨发行组或同组多份发行）、
-// 无结果。它们在导入统计里是两个互不重叠的数——「进入复核」与「未匹配」——
-// 而仅凭 status='review' 分不出来，此前两个数因此永远相同。
-const migration0002ReviewReason = `
-ALTER TABLE import_item ADD COLUMN review_reason TEXT;
-`
-
-// migration0003EnrichState 为曲目记录「补全信息匹配」的状态。
-//
-// 复核队列里点「接受」时同步补一次详情，在 1 req/s 之下就是 1–2 秒的卡顿，
-// 而那次请求的产出与「这条曲目能不能进库」无关。把它移到后台任务之后，
-// 「哪些曲目还没补」必须能查得出来——三种状态因此要落在库里，
-// 而不是每次去推导（推导不出「上游确实没有可补的东西」这一种）。
-//
-//	pending  未匹配：有上游身份、详情还没取
-//	fetched  已匹配：详情已落库
-//	absent   已匹配（无可补）：没有发行标识，无从取起
-//	skipped  无需匹配：用户明确要求收录且不追求外部身份
-//
-// attempts / error 让「一直取不到的那一条」不至于永远堵在队首：
-// 达到上限的条目退出工作集，用户点「开始」时清零重试。
-const migration0003EnrichState = `
--- 默认 skipped 而不是 NULL：没有上游身份就是「无需匹配」。
--- 留 NULL 的话「这一行算不算待补」要在每个查询里各判一次，而三个计数必须
--- 刚好把全部行分完——分不完的那一刻，界面上的分母就永远到不了头。
-ALTER TABLE track_metadata ADD COLUMN enrich_state TEXT NOT NULL DEFAULT 'skipped';
-ALTER TABLE track_metadata ADD COLUMN enrich_attempts INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE track_metadata ADD COLUMN enrich_error TEXT;
-
-CREATE INDEX idx_track_metadata_enrich ON track_metadata(enrich_state)
-  WHERE enrich_state IS NOT NULL;
-
--- 既有曲目按同一套规则回填，否则它们永远不会被后台任务看到
-UPDATE track_metadata SET enrich_state = CASE
-  WHEN match_source IS NULL OR match_source = '' THEN 'skipped'
-  WHEN COALESCE(release_mbid, '') <> '' THEN 'pending'
-  ELSE 'absent'
-END;
 `

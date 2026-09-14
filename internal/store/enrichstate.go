@@ -62,7 +62,7 @@ func InitialEnrichState(in NewTrackInput) EnrichState {
 		// 没有上游身份：这是「无需匹配」入库的那一种
 		return EnrichSkipped
 	}
-	if in.Metadata != nil && in.Metadata.ReleaseMBID != nil && *in.Metadata.ReleaseMBID != "" {
+	if in.Release != nil && in.Release.ProviderRef != nil && *in.Release.ProviderRef != "" {
 		return EnrichPending
 	}
 	// 有身份但没有发行标识：详情无从取起
@@ -75,15 +75,15 @@ func InitialEnrichState(in NewTrackInput) EnrichState {
 // 「有没有要做的事」，而不是静默地跑一个空循环。这是一次本地查询，值这个代价。
 func (s *Store) TracksNeedingEnrichment(limit int) ([]EnrichTarget, error) {
 	query := `
-		SELECT m.track_id, COALESCE(m.match_source, ''), COALESCE(m.release_mbid, ''),
-		       m.enrich_attempts
-		FROM track_metadata m
-		JOIN track t ON t.id = m.track_id
-		WHERE m.enrich_state = ?
-		  AND COALESCE(m.match_source, '') <> ''
-		  AND COALESCE(m.release_mbid, '') <> ''
-		  AND m.enrich_attempts < ?
-		ORDER BY m.track_id`
+		SELECT t.id, COALESCE(t.match_source, ''), COALESCE(r.provider_ref, ''),
+		       t.enrich_attempts
+		FROM track t
+		LEFT JOIN release r ON r.id = t.release_id
+		WHERE t.enrich_state = ?
+		  AND COALESCE(t.match_source, '') <> ''
+		  AND COALESCE(r.provider_ref, '') <> ''
+		  AND t.enrich_attempts < ?
+		ORDER BY t.id`
 	args := []any{string(EnrichPending), MaxEnrichAttempts}
 	if limit > 0 {
 		query += " LIMIT ?"
@@ -119,7 +119,7 @@ func (s *Store) EnrichStats() (EnrichCounts, error) {
 			SUM(CASE WHEN enrich_state IN ('fetched','absent') THEN 1 ELSE 0 END),
 			SUM(CASE WHEN enrich_state = 'pending' THEN 1 ELSE 0 END),
 			SUM(CASE WHEN enrich_state NOT IN ('fetched','absent','pending') THEN 1 ELSE 0 END)
-		FROM track_metadata`).Scan(&nullInt{&c.Matched}, &nullInt{&c.Pending}, &nullInt{&c.Skipped})
+		FROM track`).Scan(&nullInt{&c.Matched}, &nullInt{&c.Pending}, &nullInt{&c.Skipped})
 	if err != nil {
 		return c, fmt.Errorf("统计补全状态失败: %w", err)
 	}
@@ -132,7 +132,7 @@ func (s *Store) EnrichStats() (EnrichCounts, error) {
 func (s *Store) EnrichStateOf(trackID int64) (EnrichState, error) {
 	var state sql.NullString
 	err := s.db.QueryRow(
-		`SELECT enrich_state FROM track_metadata WHERE track_id = ?`, trackID).Scan(&state)
+		`SELECT enrich_state FROM track WHERE id = ?`, trackID).Scan(&state)
 	if errors.Is(err, sql.ErrNoRows) {
 		return EnrichSkipped, nil
 	}
@@ -148,13 +148,10 @@ func (s *Store) EnrichStateOf(trackID int64) (EnrichState, error) {
 // SetEnrichState 写入某曲目的补全状态并清掉错误与重试计数。
 func (s *Store) SetEnrichState(trackID int64, state EnrichState) error {
 	return s.withTx(func(tx *sql.Tx) error {
-		if err := ensureMetadataRow(tx, trackID); err != nil {
-			return err
-		}
 		_, err := tx.Exec(`
-			UPDATE track_metadata
+			UPDATE track
 			SET enrich_state = ?, enrich_attempts = 0, enrich_error = NULL, updated_at = ?
-			WHERE track_id = ?`, string(state), time.Now().UTC(), trackID)
+			WHERE id = ?`, string(state), time.Now().UTC(), trackID)
 		return err
 	})
 }
@@ -166,16 +163,13 @@ func (s *Store) SetEnrichState(trackID int64, state EnrichState) error {
 // 往里塞 `[丰富失败] …` 会把他写的备注冲掉。
 func (s *Store) RecordEnrichFailure(trackID int64, reason string) error {
 	return s.withTx(func(tx *sql.Tx) error {
-		if err := ensureMetadataRow(tx, trackID); err != nil {
-			return err
-		}
 		_, err := tx.Exec(`
-			UPDATE track_metadata
+			UPDATE track
 			SET enrich_state    = ?,
 			    enrich_attempts = enrich_attempts + 1,
 			    enrich_error    = ?,
 			    updated_at      = ?
-			WHERE track_id = ?`, string(EnrichPending), reason, time.Now().UTC(), trackID)
+			WHERE id = ?`, string(EnrichPending), reason, time.Now().UTC(), trackID)
 		return err
 	})
 }
@@ -187,22 +181,11 @@ func (s *Store) RecordEnrichFailure(trackID int64, reason string) error {
 func (s *Store) ResetEnrichAttempts() error {
 	return s.withTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`
-			UPDATE track_metadata
+			UPDATE track
 			SET enrich_attempts = 0
 			WHERE enrich_state = ? AND enrich_attempts > 0`, string(EnrichPending))
 		return err
 	})
-}
-
-// ensureMetadataRow 保证丰富信息行存在。
-//
-// 「无需匹配」入库的曲目也有这一行（创建时就写了），但编辑与补全两条路径
-// 都不该依赖那个前提——缺行时静默补一行比报错更符合调用方的预期。
-func ensureMetadataRow(tx *sql.Tx, trackID int64) error {
-	_, err := tx.Exec(
-		`INSERT INTO track_metadata (track_id, updated_at) VALUES (?, ?)
-		 ON CONFLICT(track_id) DO NOTHING`, trackID, time.Now().UTC())
-	return err
 }
 
 // nullInt 把 SQL 的 NULL（空表时的 SUM）读成 0。

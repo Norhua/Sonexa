@@ -11,55 +11,64 @@ import (
 
 // NewTrackInput 是创建曲目的输入。
 type NewTrackInput struct {
-	Title  string
-	Artist *string
-	Album  *string
+	Title string
+	// Credit 是曲目级署名原串。
+	Credit *string
+	// Album 是歌集名。非空时曲目会被挂到一条歌集上——
+	// 有上游标识时用它 upsert，否则按 (歌集名, 歌集署名) 归拢一条本地歌集。
+	Album *string
+	// AlbumCredit 是歌集级署名。
+	AlbumCredit *string
 
 	// 溯源：来自上游结果时填入；「无需匹配」入库时留空。
 	MatchSource *string
 	MatchRef    *string
 
-	// 丰富信息（可选，整体可为空）
+	// Metadata 是曲目自己的丰富信息（可选，整体可为空）。
 	Metadata *MetadataInput
+	// Release 是歌集侧的信息（可选）。给出时与 Album 一起决定曲目的归属。
+	Release *ReleaseInput
 }
 
-// MetadataInput 是丰富信息的写入输入。全部字段可空。
+// MetadataInput 是曲目级丰富信息的写入输入。全部字段可空。
+//
+// 发行级字段（类型、载体、国家、厂牌、目录号、碟数、音轨数、封面）
+// 不在这里——它们归 ReleaseInput，只存在歌集上一份。
 type MetadataInput struct {
-	Title            *string
-	Album            *string
-	TrackCredit      *string
-	AlbumCredit      *string
-	CreditSpansJSON  *string
+	DiscNumber      *int
+	TrackNumber     *int
+	TrackNumberText *string
+	DurationMS      *int
+	Genre           *string
+	Comment         *string
+
+	RecordingRef *string
+	WorkRef      *string
+	ISRC         *string
+
+	ProvenanceJSON *string
+	LockedJSON     *string
+}
+
+// ReleaseInput 是歌集侧的写入输入。
+type ReleaseInput struct {
+	Provider         *string
+	ProviderRef      *string
+	ReleaseGroupRef  *string
 	PrimaryType      *string
 	SecondaryTypes   *string
 	ReleaseStatus    *string
 	MediumFormat     *string
 	Country          *string
-	Year             *int
 	ReleaseDate      *string
 	FirstReleaseDate *string
-	TrackNumber      *int
-	TrackNumberText  *string
-	TrackTotal       *int
-	DiscNumber       *int
 	DiscTotal        *int
-	DurationMS       *int
-	Genre            *string
+	TrackTotal       *int
 	Label            *string
 	CatalogNumber    *string
-	Comment          *string
-	RecordingMBID    *string
-	ReleaseMBID      *string
-	ReleaseGroupMBID *string
-	WorkMBID         *string
-	ISRC             *string
-	ITunesTrackID    *string
-	ITunesCollection *string
-	ProvenanceJSON   *string
-	LockedJSON       *string
 }
 
-// CreateTrackWithProvenance 创建曲目并写入溯源与丰富信息。
+// CreateTrackWithProvenance 创建曲目、登记它的歌集并写入溯源。
 //
 // 若溯源撞上唯一约束（并发/竞态：两个路径几乎同时加入同一条上游结果），
 // 返回 *ErrAlreadyExists 并带上已有曲目的 id——
@@ -80,19 +89,37 @@ func (s *Store) CreateTrackWithProvenance(in NewTrackInput) (int64, error) {
 
 	var trackID int64
 	err := s.withTx(func(tx *sql.Tx) error {
+		releaseID, err := resolveReleaseTx(tx, in)
+		if err != nil {
+			return err
+		}
+
 		now := time.Now().UTC()
+		m := in.Metadata
+		if m == nil {
+			m = &MetadataInput{}
+		}
+		var matchedAt *time.Time
+		if in.MatchSource != nil && in.MatchRef != nil {
+			matchedAt = &now
+		}
+
 		res, err := tx.Exec(`
-			INSERT INTO track (title, artist, album, created_at, updated_at)
-			VALUES (?,?,?,?,?)`, in.Title, in.Artist, in.Album, now, now)
+			INSERT INTO track (
+				release_id, title, credit,
+				disc_number, track_number, track_number_text, duration_ms, genre, comment,
+				match_source, match_ref, matched_at, recording_ref, work_ref, isrc,
+				enrich_state, provenance_json, locked_json, created_at, updated_at
+			) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			nullableID(releaseID), in.Title, in.Credit,
+			m.DiscNumber, m.TrackNumber, m.TrackNumberText, m.DurationMS, m.Genre, m.Comment,
+			in.MatchSource, in.MatchRef, matchedAt, m.RecordingRef, m.WorkRef, m.ISRC,
+			string(InitialEnrichState(in)), m.ProvenanceJSON, m.LockedJSON, now, now)
 		if err != nil {
 			return err
 		}
 		trackID, err = res.LastInsertId()
 		if err != nil {
-			return err
-		}
-
-		if err := insertMetadata(tx, trackID, in, now); err != nil {
 			return err
 		}
 		return syncFTS(tx, trackID)
@@ -110,44 +137,78 @@ func (s *Store) CreateTrackWithProvenance(in NewTrackInput) (int64, error) {
 	return trackID, nil
 }
 
-// insertMetadata 写入丰富信息与溯源。
+// resolveReleaseTx 决定新曲目挂在哪条歌集上。
 //
-// 补全状态在这里一并写下（见 InitialEnrichState）：入库那一刻就要能被后台的
-// 「补全信息匹配」任务看见，否则这条曲目要等到下一次全库回填才会被补。
-func insertMetadata(tx *sql.Tx, trackID int64, in NewTrackInput, now time.Time) error {
-	m := in.Metadata
-	if m == nil {
-		m = &MetadataInput{}
-	}
-	var matchedAt *time.Time
-	if in.MatchSource != nil && in.MatchRef != nil {
-		matchedAt = &now
+// 有上游发行标识时 upsert 该歌集（并顺带登记发行组）；否则按歌集名归拢
+// 一条本地歌集。歌集名也没有时返回 0——曲目可以没有歌集。
+func resolveReleaseTx(tx *sql.Tx, in NewTrackInput) (int64, error) {
+	rel := in.Release
+	hasRef := rel != nil && rel.ProviderRef != nil && *rel.ProviderRef != ""
+	if !hasRef {
+		if in.Album == nil || strings.TrimSpace(*in.Album) == "" {
+			return 0, nil
+		}
+		return findOrCreateLocalReleaseTx(tx, *in.Album, in.AlbumCredit)
 	}
 
-	_, err := tx.Exec(`
-		INSERT INTO track_metadata (
-			enrich_state,
-			track_id, title, album, track_credit, album_credit, credit_spans_json,
-			primary_type, secondary_types, release_status, medium_format, country,
-			year, release_date, first_release_date,
-			track_number, track_number_text, track_total, disc_number, disc_total, duration_ms,
-			genre, label, catalog_number, comment,
-			recording_mbid, release_mbid, release_group_mbid, work_mbid, isrc,
-			itunes_track_id, itunes_collection_id,
-			match_source, match_ref, matched_at,
-			provenance_json, locked_json, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		string(InitialEnrichState(in)),
-		trackID, m.Title, m.Album, m.TrackCredit, m.AlbumCredit, m.CreditSpansJSON,
-		m.PrimaryType, m.SecondaryTypes, m.ReleaseStatus, m.MediumFormat, m.Country,
-		m.Year, m.ReleaseDate, m.FirstReleaseDate,
-		m.TrackNumber, m.TrackNumberText, m.TrackTotal, m.DiscNumber, m.DiscTotal, m.DurationMS,
-		m.Genre, m.Label, m.CatalogNumber, m.Comment,
-		m.RecordingMBID, m.ReleaseMBID, m.ReleaseGroupMBID, m.WorkMBID, m.ISRC,
-		m.ITunesTrackID, m.ITunesCollection,
-		in.MatchSource, in.MatchRef, matchedAt,
-		m.ProvenanceJSON, m.LockedJSON, now)
-	return err
+	var groupID *int64
+	if rel.ReleaseGroupRef != nil && *rel.ReleaseGroupRef != "" {
+		title := ""
+		if in.Album != nil {
+			title = *in.Album
+		}
+		id, err := upsertReleaseGroupTx(tx, &ReleaseGroup{
+			Provider: rel.Provider, ProviderRef: rel.ReleaseGroupRef, Title: title,
+			PrimaryType: normalizeTypePtr(rel.PrimaryType), SecondaryTypes: rel.SecondaryTypes,
+			FirstReleaseDate: rel.FirstReleaseDate,
+		})
+		if err != nil {
+			return 0, err
+		}
+		groupID = &id
+	}
+
+	title := ""
+	if in.Album != nil {
+		title = *in.Album
+	}
+	return upsertReleaseTx(tx, &Release{
+		ReleaseGroupID: groupID,
+		Provider:       rel.Provider,
+		ProviderRef:    rel.ProviderRef,
+		Title:          title,
+		Credit:         in.AlbumCredit,
+		PrimaryType:    normalizeTypePtr(rel.PrimaryType),
+		SecondaryTypes: rel.SecondaryTypes,
+		DiscTotal:      rel.DiscTotal,
+		TrackTotal:     rel.TrackTotal,
+		ReleaseStatus:  rel.ReleaseStatus,
+		MediumFormat:   rel.MediumFormat,
+		Country:        rel.Country,
+		ReleaseDate:    rel.ReleaseDate,
+		FirstReleaseDate: rel.FirstReleaseDate,
+		Label:            rel.Label,
+		CatalogNumber:    rel.CatalogNumber,
+		TracklistState:   TracklistNone,
+	})
+}
+
+func normalizeTypePtr(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	t := NormalizeReleaseType(*s)
+	if t == "" {
+		return nil
+	}
+	return &t
+}
+
+func nullableID(id int64) any {
+	if id == 0 {
+		return nil
+	}
+	return id
 }
 
 // isUniqueViolation 报告错误是否为唯一约束冲突。
@@ -160,109 +221,112 @@ func isUniqueViolation(err error) bool {
 		strings.Contains(msg, "constraint failed: UNIQUE")
 }
 
-// GetMetadata 读取某曲目的丰富信息；不存在时返回 nil。
+// TrackMetadata 是曲目详情的读出结构。全部可空字段用指针——缺失即缺失。
+//
+// 歌集侧的字段由 join 带出，便于详情抽屉一次取齐；它们不存在 track 表上。
+type TrackMetadata struct {
+	TrackID int64   `json:"trackId"`
+	Title   string  `json:"title"`
+	Credit  *string `json:"credit"`
+
+	DiscNumber      *int    `json:"discNumber"`
+	TrackNumber     *int    `json:"trackNumber"`
+	TrackNumberText *string `json:"trackNumberText"`
+	DurationMS      *int    `json:"durationMs"`
+	Genre           *string `json:"genre"`
+	Comment         *string `json:"comment"`
+
+	MatchSource  *string `json:"matchSource"`
+	MatchRef     *string `json:"matchRef"`
+	RecordingRef *string `json:"recordingRef"`
+	WorkRef      *string `json:"workRef"`
+	ISRC         *string `json:"isrc"`
+
+	ProvenanceJSON *string `json:"provenanceJson"`
+	LockedJSON     *string `json:"lockedJson"`
+
+	// 歌集侧（join 带出）
+	ReleaseID       *int64  `json:"releaseId"`
+	Album           *string `json:"album"`
+	AlbumCredit     *string `json:"albumCredit"`
+	PrimaryType     *string `json:"primaryType"`
+	SecondaryTypes  *string `json:"secondaryTypes"`
+	ReleaseStatus   *string `json:"releaseStatus"`
+	MediumFormat    *string `json:"mediumFormat"`
+	Country         *string `json:"country"`
+	ReleaseDate     *string `json:"releaseDate"`
+	FirstReleaseDate *string `json:"firstReleaseDate"`
+	Year            *int    `json:"year"`
+	DiscTotal       *int    `json:"discTotal"`
+	TrackTotal      *int    `json:"trackTotal"`
+	Label           *string `json:"label"`
+	CatalogNumber   *string `json:"catalogNumber"`
+	CoverPath       *string `json:"coverPath"`
+	CoverSourceURL  *string `json:"coverSourceUrl"`
+	ReleaseRef      *string `json:"releaseRef"`
+	ReleaseGroupRef *string `json:"releaseGroupRef"`
+}
+
+// GetMetadata 读取某曲目的详情；不存在时返回 nil。
 func (s *Store) GetMetadata(trackID int64) (*TrackMetadata, error) {
 	var m TrackMetadata
+	var releaseDate, firstReleaseDate *string
 	err := s.db.QueryRow(`
-		SELECT track_id, title, album, track_credit, album_credit, credit_spans_json,
-		       primary_type, secondary_types, release_status, medium_format, country,
-		       year, release_date, first_release_date,
-		       track_number, track_number_text, track_total, disc_number, disc_total, duration_ms,
-		       genre, label, catalog_number, comment,
-		       cover_path, cover_source, cover_source_url, cover_width, cover_height,
-		       recording_mbid, release_mbid, release_group_mbid, work_mbid, isrc,
-		       itunes_track_id, itunes_collection_id,
-		       match_source, match_ref, matched_at,
-		       provenance_json, locked_json
-		FROM track_metadata WHERE track_id = ?`, trackID).Scan(
-		&m.TrackID, &m.Title, &m.Album, &m.TrackCredit, &m.AlbumCredit, &m.CreditSpansJSON,
-		&m.PrimaryType, &m.SecondaryTypes, &m.ReleaseStatus, &m.MediumFormat, &m.Country,
-		&m.Year, &m.ReleaseDate, &m.FirstReleaseDate,
-		&m.TrackNumber, &m.TrackNumberText, &m.TrackTotal, &m.DiscNumber, &m.DiscTotal, &m.DurationMS,
-		&m.Genre, &m.Label, &m.CatalogNumber, &m.Comment,
-		&m.CoverPath, &m.CoverSource, &m.CoverSourceURL, &m.CoverWidth, &m.CoverHeight,
-		&m.RecordingMBID, &m.ReleaseMBID, &m.ReleaseGroupMBID, &m.WorkMBID, &m.ISRC,
-		&m.ITunesTrackID, &m.ITunesCollection,
-		&m.MatchSource, &m.MatchRef, &m.MatchedAt,
-		&m.ProvenanceJSON, &m.LockedJSON)
+		SELECT t.id, t.title, t.credit,
+		       t.disc_number, t.track_number, t.track_number_text, t.duration_ms,
+		       t.genre, t.comment,
+		       t.match_source, t.match_ref, t.recording_ref, t.work_ref, t.isrc,
+		       t.provenance_json, t.locked_json,
+		       t.release_id, r.title, r.credit, r.primary_type, r.secondary_types,
+		       r.release_status, r.medium_format, r.country,
+		       r.release_date, r.first_release_date,
+		       r.disc_total, r.track_total, r.label, r.catalog_number,
+		       r.cover_path, r.cover_source_url, r.provider_ref,
+		       (SELECT rg.provider_ref FROM release_group rg WHERE rg.id = r.release_group_id)
+		FROM track t LEFT JOIN release r ON r.id = t.release_id
+		WHERE t.id = ?`, trackID).Scan(
+		&m.TrackID, &m.Title, &m.Credit,
+		&m.DiscNumber, &m.TrackNumber, &m.TrackNumberText, &m.DurationMS,
+		&m.Genre, &m.Comment,
+		&m.MatchSource, &m.MatchRef, &m.RecordingRef, &m.WorkRef, &m.ISRC,
+		&m.ProvenanceJSON, &m.LockedJSON,
+		&m.ReleaseID, &m.Album, &m.AlbumCredit, &m.PrimaryType, &m.SecondaryTypes,
+		&m.ReleaseStatus, &m.MediumFormat, &m.Country,
+		&releaseDate, &firstReleaseDate,
+		&m.DiscTotal, &m.TrackTotal, &m.Label, &m.CatalogNumber,
+		&m.CoverPath, &m.CoverSourceURL, &m.ReleaseRef, &m.ReleaseGroupRef)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	m.ReleaseDate, m.FirstReleaseDate = releaseDate, firstReleaseDate
+	m.Year = (&Release{ReleaseDate: releaseDate, FirstReleaseDate: firstReleaseDate}).Year()
 	return &m, nil
 }
 
-// TrackMetadata 是丰富信息的读出结构。全部字段可空——缺失即缺失。
-type TrackMetadata struct {
-	TrackID          int64   `json:"trackId"`
-	Title            *string `json:"title"`
-	Album            *string `json:"album"`
-	TrackCredit      *string `json:"trackCredit"`
-	AlbumCredit      *string `json:"albumCredit"`
-	CreditSpansJSON  *string `json:"creditSpansJson"`
-	PrimaryType      *string `json:"primaryType"`
-	SecondaryTypes   *string `json:"secondaryTypes"`
-	ReleaseStatus    *string `json:"releaseStatus"`
-	MediumFormat     *string `json:"mediumFormat"`
-	Country          *string `json:"country"`
-	Year             *int    `json:"year"`
-	ReleaseDate      *string `json:"releaseDate"`
-	FirstReleaseDate *string `json:"firstReleaseDate"`
-	TrackNumber      *int    `json:"trackNumber"`
-	TrackNumberText  *string `json:"trackNumberText"`
-	TrackTotal       *int    `json:"trackTotal"`
-	DiscNumber       *int    `json:"discNumber"`
-	DiscTotal        *int    `json:"discTotal"`
-	DurationMS       *int    `json:"durationMs"`
-	Genre            *string `json:"genre"`
-	Label            *string `json:"label"`
-	CatalogNumber    *string `json:"catalogNumber"`
-	Comment          *string `json:"comment"`
-	CoverPath        *string `json:"coverPath"`
-	CoverSource      *string `json:"coverSource"`
-	CoverSourceURL   *string `json:"coverSourceUrl"`
-	CoverWidth       *int    `json:"coverWidth"`
-	CoverHeight      *int    `json:"coverHeight"`
-	RecordingMBID    *string `json:"recordingMbid"`
-	ReleaseMBID      *string `json:"releaseMbid"`
-	ReleaseGroupMBID *string `json:"releaseGroupMbid"`
-	WorkMBID         *string `json:"workMbid"`
-	ISRC             *string `json:"isrc"`
-	ITunesTrackID    *string `json:"itunesTrackId"`
-	ITunesCollection *string `json:"itunesCollectionId"`
-	MatchSource      *string `json:"matchSource"`
-	MatchRef         *string `json:"matchRef"`
-	// MatchedAt 不导出给前端：界面上没有用到它，而 Wails 的 TS 模型生成器
-	// 不认识 time.Time，留着每次构建都会打印 `Not found: time.Time`。
-	MatchedAt      *time.Time `json:"-"`
-	ProvenanceJSON *string    `json:"provenanceJson"`
-	LockedJSON     *string    `json:"lockedJson"`
-}
-
-// metadataColumns 是丰富信息中可由编辑界面写入的字段。
-var metadataColumns = map[string]string{
-	"year":          "year",
-	"trackNumber":   "track_number",
-	"discNumber":    "disc_number",
-	"durationMs":    "duration_ms",
-	"genre":         "genre",
-	"label":         "label",
-	"catalogNumber": "catalog_number",
-	"mediumFormat":  "medium_format",
-	"country":       "country",
-	"primaryType":   "primary_type",
-	"comment":       "comment",
-}
-
-// ApplyMetadataEdits 逐字段写入丰富信息，并更新逐字段来源与用户锁。
+// trackEditColumns 是编辑界面可写入的曲目字段。
 //
-// 来源取值为 provider id、user（用户手动修改）或 import（导入文件原值）。
-// 来源为 user 的字段不被上游结果自动覆盖——该判定在调用方完成。
+// 发行级字段不在这里——改它们走 UpdateReleaseFields，因为一处改动
+// 对该歌集的全部曲目生效。
+var trackEditColumns = map[string]string{
+	"title":       "title",
+	"credit":      "credit",
+	"trackNumber": "track_number",
+	"discNumber":  "disc_number",
+	"durationMs":  "duration_ms",
+	"genre":       "genre",
+	"comment":     "comment",
+}
+
+// ApplyMetadataEdits 逐字段写入曲目信息，并更新逐字段来源与用户锁。
+//
+// 来源取值为 provider id 或 user（用户手动修改）。来源为 user 的字段
+// 不被上游结果自动覆盖——该判定在调用方完成。
 func (s *Store) ApplyMetadataEdits(trackID int64, edits map[string]string,
 	provenance map[string]string, locked map[string]bool) error {
-	if len(edits) == 0 && len(provenance) == 0 {
+	if len(edits) == 0 && len(provenance) == 0 && len(locked) == 0 {
 		return nil
 	}
 
@@ -270,9 +334,12 @@ func (s *Store) ApplyMetadataEdits(trackID int64, edits map[string]string,
 		sets := []string{}
 		args := []any{}
 		for key, value := range edits {
-			column, ok := metadataColumns[key]
+			column, ok := trackEditColumns[key]
 			if !ok {
 				continue
+			}
+			if column == "title" && strings.TrimSpace(value) == "" {
+				return ErrTitleRequired
 			}
 			sets = append(sets, column+" = ?")
 			if isIntColumn(column) {
@@ -281,35 +348,43 @@ func (s *Store) ApplyMetadataEdits(trackID int64, edits map[string]string,
 				args = append(args, nullIfBlank(value))
 			}
 		}
-
-		provJSON, err := json.Marshal(provenance)
-		if err != nil {
-			return err
+		if len(provenance) > 0 || len(locked) > 0 {
+			provJSON, lockedJSON, err := marshalProvLock(provenance, locked)
+			if err != nil {
+				return err
+			}
+			sets = append(sets, "provenance_json = ?", "locked_json = ?")
+			args = append(args, provJSON, lockedJSON)
 		}
-		lockedJSON, err := json.Marshal(locked)
-		if err != nil {
-			return err
+		if len(sets) == 0 {
+			return nil
 		}
-		sets = append(sets, "provenance_json = ?", "locked_json = ?", "updated_at = ?")
-		args = append(args, string(provJSON), string(lockedJSON), time.Now().UTC())
+		sets = append(sets, "updated_at = ?")
+		args = append(args, time.Now().UTC(), trackID)
 
-		// 丰富信息行可能尚不存在（「无需匹配」入库的曲目）
 		if _, err := tx.Exec(
-			`INSERT INTO track_metadata (track_id, updated_at) VALUES (?, ?)
-			 ON CONFLICT(track_id) DO NOTHING`, trackID, time.Now().UTC()); err != nil {
+			"UPDATE track SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
 			return err
 		}
-
-		args = append(args, trackID)
-		_, err = tx.Exec(
-			"UPDATE track_metadata SET "+strings.Join(sets, ", ")+" WHERE track_id = ?", args...)
-		return err
+		return syncFTS(tx, trackID)
 	})
+}
+
+func marshalProvLock(provenance map[string]string, locked map[string]bool) (string, string, error) {
+	provJSON, err := json.Marshal(provenance)
+	if err != nil {
+		return "", "", err
+	}
+	lockedJSON, err := json.Marshal(locked)
+	if err != nil {
+		return "", "", err
+	}
+	return string(provJSON), string(lockedJSON), nil
 }
 
 func isIntColumn(column string) bool {
 	switch column {
-	case "year", "track_number", "disc_number", "duration_ms", "track_total", "disc_total":
+	case "track_number", "disc_number", "duration_ms", "track_total", "disc_total":
 		return true
 	}
 	return false

@@ -46,6 +46,36 @@ func syncFTS(tx *sql.Tx, trackID int64) error {
 	return nil
 }
 
+// syncFTSForRelease 刷新某歌集下全部曲目的索引。
+//
+// 歌集名进 FTS 的 album 列，改歌集名要连带刷新它的每一首曲目——
+// 否则搜专辑名会搜到旧名字。
+func syncFTSForRelease(tx *sql.Tx, releaseID int64) error {
+	rows, err := tx.Query(`SELECT id FROM track WHERE release_id = ?`, releaseID)
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := syncFTS(tx, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // deleteFTS 在事务内移除某曲目的索引行。索引中尚无该行时是无操作。
 //
 // contentless 表的 'delete' 命令要求提供的列值与当初索引进去的完全一致，

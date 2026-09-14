@@ -25,6 +25,12 @@ const (
 	RoleAlbumArtist ArtistRole = "album_artist"
 )
 
+// RoleCredited 是「署名」这一伪角色，仅用于艺术家视图的分面筛选。
+//
+// 它不是 track_artist 里的取值——署名存在 track_credit 表上。
+// 放在这里是因为分面的取值域对前端是一个整体。
+const RoleCredited = "credited"
+
 // RoleDisplayOrder 是详情抽屉参与者区的分组显示顺序。
 // character 不在其中——它不单独成组，只出现在署名原串的可点击片段中。
 var RoleDisplayOrder = []ArtistRole{
@@ -70,14 +76,26 @@ type Artist struct {
 	MBID           *string `json:"mbid"`
 }
 
-// TrackArtist 是一条曲目-艺术家关系。
+// TrackArtist 是一条曲目-艺术家的角色关系。
+//
+// 它回答「这个人在这首歌上做了什么」。「这个人是否被署名」是另一件事，
+// 存在 track_credit 上——未署名的作词作曲与署名艺术家必须可区分，
+// 否则艺术家列表里会出现一堆用户从没在署名里见过的名字。
 type TrackArtist struct {
-	ArtistID     int64      `json:"artistID"`
-	Role         ArtistRole `json:"role"`
-	CreditedName *string    `json:"creditedName"`
-	Attribute    *string    // role = instrument 时存乐器名 `json:"attribute"`
-	Position     *int       `json:"position"`
-	Source       *string    `json:"source"`
+	ArtistID  int64      `json:"artistID"`
+	Role      ArtistRole `json:"role"`
+	Attribute *string    `json:"attribute"` // role = instrument 时存乐器名
+	Position  *int       `json:"position"`
+	Source    *string    `json:"source"`
+}
+
+// CreditEntry 是署名串里的一段：谁、以什么写法、在原串的哪个区间。
+type CreditEntry struct {
+	ArtistID     int64   `json:"artistId"`
+	Position     int     `json:"position"`
+	CreditedName *string `json:"creditedName"`
+	SpanStart    *int    `json:"spanStart"`
+	SpanEnd      *int    `json:"spanEnd"`
 }
 
 // UpsertArtist 按 (name, disambiguation) 找到或创建艺术家，返回其 id。
@@ -158,14 +176,13 @@ func (s *Store) SetTrackArtists(trackID int64, relations []TrackArtist) error {
 		}
 		for _, r := range relations {
 			if _, err := tx.Exec(`
-				INSERT INTO track_artist (track_id, artist_id, role, credited_name, attribute, position, source)
-				VALUES (?,?,?,?,?,?,?)
+				INSERT INTO track_artist (track_id, artist_id, role, attribute, position, source)
+				VALUES (?,?,?,?,?,?)
 				ON CONFLICT(track_id, artist_id, role) DO UPDATE SET
-					credited_name = excluded.credited_name,
-					attribute     = excluded.attribute,
-					position      = excluded.position,
-					source        = excluded.source`,
-				trackID, r.ArtistID, string(r.Role), r.CreditedName, r.Attribute, r.Position, r.Source); err != nil {
+					attribute = excluded.attribute,
+					position  = excluded.position,
+					source    = excluded.source`,
+				trackID, r.ArtistID, string(r.Role), r.Attribute, r.Position, r.Source); err != nil {
 				return fmt.Errorf("写入参与者关系失败: %w", err)
 			}
 		}
@@ -180,18 +197,96 @@ func (s *Store) AddTrackArtist(trackID int64, r TrackArtist) error {
 	}
 	return s.withTx(func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`
-			INSERT INTO track_artist (track_id, artist_id, role, credited_name, attribute, position, source)
-			VALUES (?,?,?,?,?,?,?)
+			INSERT INTO track_artist (track_id, artist_id, role, attribute, position, source)
+			VALUES (?,?,?,?,?,?)
 			ON CONFLICT(track_id, artist_id, role) DO UPDATE SET
-				credited_name = excluded.credited_name,
-				attribute     = excluded.attribute,
-				position      = excluded.position,
-				source        = excluded.source`,
-			trackID, r.ArtistID, string(r.Role), r.CreditedName, r.Attribute, r.Position, r.Source); err != nil {
+				attribute = excluded.attribute,
+				position  = excluded.position,
+				source    = excluded.source`,
+			trackID, r.ArtistID, string(r.Role), r.Attribute, r.Position, r.Source); err != nil {
 			return err
 		}
 		return syncFTS(tx, trackID)
 	})
+}
+
+// SetTrackCredits 以整组署名替换某曲目的署名分解。
+//
+// 这张表同时承担两件事：渲染署名原串里的可点击区间，以及回答
+// 「这位艺术家是否被署名」——后者是艺术家列表的成员判定依据，
+// 因此它必须可查询，不能像此前那样躺在一个 JSON 列里。
+func (s *Store) SetTrackCredits(trackID int64, entries []CreditEntry) error {
+	return s.withTx(func(tx *sql.Tx) error { return setTrackCreditsTx(tx, trackID, entries) })
+}
+
+func setTrackCreditsTx(tx *sql.Tx, trackID int64, entries []CreditEntry) error {
+	if _, err := tx.Exec(`DELETE FROM track_credit WHERE track_id = ?`, trackID); err != nil {
+		return err
+	}
+	for i, e := range entries {
+		pos := e.Position
+		if pos == 0 {
+			pos = i
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO track_credit (track_id, artist_id, position, credited_name, span_start, span_end)
+			VALUES (?,?,?,?,?,?)
+			ON CONFLICT(track_id, artist_id, position) DO UPDATE SET
+				credited_name = excluded.credited_name,
+				span_start    = excluded.span_start,
+				span_end      = excluded.span_end`,
+			trackID, e.ArtistID, pos, e.CreditedName, e.SpanStart, e.SpanEnd); err != nil {
+			return fmt.Errorf("写入署名分解失败: %w", err)
+		}
+	}
+	return syncFTS(tx, trackID)
+}
+
+// SetReleaseCredits 以整组署名替换某歌集的署名分解。
+func (s *Store) SetReleaseCredits(releaseID int64, entries []CreditEntry) error {
+	return s.withTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM release_credit WHERE release_id = ?`, releaseID); err != nil {
+			return err
+		}
+		for i, e := range entries {
+			pos := e.Position
+			if pos == 0 {
+				pos = i
+			}
+			if _, err := tx.Exec(`
+				INSERT INTO release_credit (release_id, artist_id, position, credited_name, span_start, span_end)
+				VALUES (?,?,?,?,?,?)
+				ON CONFLICT(release_id, artist_id, position) DO UPDATE SET
+					credited_name = excluded.credited_name,
+					span_start    = excluded.span_start,
+					span_end      = excluded.span_end`,
+				releaseID, e.ArtistID, pos, e.CreditedName, e.SpanStart, e.SpanEnd); err != nil {
+				return fmt.Errorf("写入歌集署名分解失败: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// GetTrackCredits 读取某曲目的署名分解，按位置升序。
+func (s *Store) GetTrackCredits(trackID int64) ([]CreditEntry, error) {
+	rows, err := s.db.Query(`
+		SELECT artist_id, position, credited_name, span_start, span_end
+		FROM track_credit WHERE track_id = ? ORDER BY position`, trackID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []CreditEntry{}
+	for rows.Next() {
+		var e CreditEntry
+		if err := rows.Scan(&e.ArtistID, &e.Position, &e.CreditedName, &e.SpanStart, &e.SpanEnd); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // GetArtist 按 id 读取艺术家。

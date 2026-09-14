@@ -7,12 +7,16 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/norhua/sonexa/internal/matching"
 	_ "modernc.org/sqlite"
 )
 
 // Store 持有数据库连接。
 type Store struct {
 	db *sql.DB
+	// ladder 是发行优选阶梯的配置，由 SetLadderConfig 注入用户设置。
+	// 专辑视图选代表 release 与匹配阶段共用它。
+	ladder *matching.LadderConfig
 }
 
 // Open 打开（或创建）位于 path 的数据库并应用全部未应用的迁移。

@@ -324,7 +324,7 @@ func (r *Runner) describeTrack(trackID int64) string {
 	if err != nil || t == nil {
 		return fmt.Sprintf("曲目 #%d", trackID)
 	}
-	return fmt.Sprintf("%s · %s · %s", t.Title, orDash(t.Artist), orDash(t.Album))
+	return fmt.Sprintf("%s · %s · %s", t.Title, orDash(t.Credit), orDash(t.Album))
 }
 
 // localCandidateSnapshot 把库中曲目作为一条候选写入快照，
@@ -338,7 +338,7 @@ func (r *Runner) localCandidateSnapshot(trackID int64) string {
 		"local":   true,
 		"trackId": trackID,
 		"title":   t.Title,
-		"artist":  t.Artist,
+		"artist":  t.Credit,
 		"album":   t.Album,
 		"action":  "合并",
 		"badges":  []string{"本地?"},

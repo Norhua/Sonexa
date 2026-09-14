@@ -2,9 +2,6 @@ package store
 
 import (
 	"fmt"
-	"strings"
-
-	"github.com/norhua/sonexa/internal/matching"
 )
 
 // ArtistListItem 是艺术家列表（中列）的一项。
@@ -17,15 +14,32 @@ type ArtistListItem struct {
 	VoiceActor *string `json:"voiceActor"`
 }
 
-// ListArtists 列出全部有曲目关联的艺术家，含曲目数。
+// artistListMembers 是艺术家列表的成员判定。
+//
+// 一位艺术家出现在列表里，当且仅当他**在某曲目的署名中出现**，
+// 或**在某曲目上担任演唱**。这正好覆盖用户要的两类：署名艺术家
+// （如只作词作曲但仍署名的 DECO*27）与虚拟歌姬 / 真人主唱
+// （凭 vocal 关系进来，哪怕没有出现在署名串里）。
+//
+// 未署名的作词、作曲、编曲、制作等不满足任一条，因此不进列表——
+// 此前无条件 JOIN track_artist 把这些人也列了出来，正是「艺术家视图
+// 出现未署名的作词作曲」的成因。进入某位艺术家之后，他的曲目列表
+// 仍展示全部角色（见 buildTrackQuery 的 credited 分面），列表成员
+// 与视图内容是两件事。
+const artistListMembers = `
+	SELECT track_id, artist_id FROM track_credit
+	UNION
+	SELECT track_id, artist_id FROM track_artist WHERE role = 'vocal'`
+
+// ListArtists 列出应出现在艺术家列表中的艺术家，含曲目数。
 func (s *Store) ListArtists() ([]ArtistListItem, error) {
 	rows, err := s.db.Query(`
 		SELECT a.id, a.name, a.type,
-		       COUNT(DISTINCT ta.track_id) AS track_count,
+		       COUNT(DISTINCT x.track_id) AS track_count,
 		       (SELECT va.name FROM artist_link l JOIN artist va ON va.id = l.to_artist_id
 		        WHERE l.from_artist_id = a.id AND l.type = 'voice_of' LIMIT 1)
 		FROM artist a
-		JOIN track_artist ta ON ta.artist_id = a.id
+		JOIN (` + artistListMembers + `) x ON x.artist_id = a.id
 		GROUP BY a.id
 		ORDER BY track_count DESC, a.name`)
 	if err != nil {
@@ -63,13 +77,27 @@ type RoleFacet struct {
 
 // RoleFacets 返回某艺术家各参与角色的曲目数。
 //
-// 「全部 14」「演唱 12」「作曲 0」「作词 2」——
+// 「全部 14」「署名 12」「演唱 12」「作曲 0」「作词 2」——
 // 计数为零的分面也要列出，否则用户无法得知该艺术家在此角色上没有作品。
+//
+// 「全部」是该艺术家关联到的全部曲目：署名 ∪ 所有角色。它可能大于任何
+// 单一角色分面之和，因为一首歌里他可能既被署名又担任某角色。「署名」
+// 分面单列——它是列表成员判定的一半，用户应当能只看被署名的那些。
 func (s *Store) RoleFacets(artistID int64) ([]RoleFacet, error) {
 	var total int
+	if err := s.db.QueryRow(`
+		SELECT COUNT(DISTINCT track_id) FROM (
+			SELECT track_id FROM track_credit WHERE artist_id = ?
+			UNION
+			SELECT track_id FROM track_artist WHERE artist_id = ?
+		)`, artistID, artistID).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	var creditedCount int
 	if err := s.db.QueryRow(
-		`SELECT COUNT(DISTINCT track_id) FROM track_artist WHERE artist_id = ?`,
-		artistID).Scan(&total); err != nil {
+		`SELECT COUNT(DISTINCT track_id) FROM track_credit WHERE artist_id = ?`,
+		artistID).Scan(&creditedCount); err != nil {
 		return nil, err
 	}
 
@@ -94,7 +122,10 @@ func (s *Store) RoleFacets(artistID int64) ([]RoleFacet, error) {
 		return nil, err
 	}
 
-	facets := []RoleFacet{{Role: "", Label: "全部", Count: total}}
+	facets := []RoleFacet{
+		{Role: "", Label: "全部", Count: total},
+		{Role: RoleCredited, Label: "署名", Count: creditedCount},
+	}
 	// 按固定顺序列出，使界面顺序稳定
 	for _, role := range RoleDisplayOrder {
 		facets = append(facets, RoleFacet{
@@ -138,40 +169,33 @@ func RoleLabel(role ArtistRole) string {
 	}
 }
 
-// AlbumGroupLevel 是专辑分组键的降级层级。
-type AlbumGroupLevel string
-
-const (
-	// GroupByReleaseGroup 按发行组分组：同一专辑的不同版本合为一条。
-	GroupByReleaseGroup AlbumGroupLevel = "release_group"
-	// GroupByRelease 按单个发行分组：上游无发行组概念时。
-	GroupByRelease AlbumGroupLevel = "release"
-	// GroupDerived 派生分组：没有任何上游标识时的兜底。
-	GroupDerived AlbumGroupLevel = "derived"
-)
-
 // AlbumListItem 是专辑列表（中列）的一项。
+//
+// 专辑升格为实体后，一条列表项就是一条 release（或一个发行组的代表 release），
+// 不再有查询时现场派生的分组。
 type AlbumListItem struct {
-	// Key 是分组键，取决于 Level。
-	Key   string          `json:"key"`
-	Level AlbumGroupLevel `json:"level"`
-	Title string          `json:"title"`
-	// Credit 是发行级署名，缺失时退为艺术家。
+	// ReleaseID 是这条专辑对应的歌集 id。
+	ReleaseID int64 `json:"releaseId"`
+	// GroupID 非零时这条专辑代表一个发行组。
+	GroupID int64  `json:"groupId"`
+	Title   string `json:"title"`
+	// Credit 是发行级署名，缺失时退为空。
 	Credit *string `json:"credit"`
 	Year   *int    `json:"year"`
 	// OwnedCount 是用户已入库的曲目数。
 	OwnedCount int `json:"ownedCount"`
-	// TotalCount 是上游声明的清单总数；派生分组下为 nil，界面呈现为 `3/-`。
+	// TotalCount 是上游声明的清单总数；本地歌集为 nil，界面呈现为 `3/-`。
 	TotalCount *int `json:"totalCount"`
 	// RepresentativeRef 是代表 release 的标识，供清单读取使用。
 	RepresentativeRef *string `json:"representativeRef"`
 	Provider          *string `json:"provider"`
-	CoverPath         *string `json:"coverPath"`
+	ReleaseGroupRef   *string `json:"releaseGroupRef"`
+	// CoverPath / CoverSourceURL 供列表直接渲染封面。
+	CoverPath      *string `json:"coverPath"`
+	CoverSourceURL *string `json:"coverSourceUrl"`
 }
 
 // CountLabel 返回「已入库/清单总数」的呈现。
-//
-// 派生分组没有上游事实，不假装知道这张专辑共有几首。
 func (a AlbumListItem) CountLabel() string {
 	if a.TotalCount == nil {
 		return fmt.Sprintf("%d/-", a.OwnedCount)
@@ -179,189 +203,106 @@ func (a AlbumListItem) CountLabel() string {
 	return fmt.Sprintf("%d/%d", a.OwnedCount, *a.TotalCount)
 }
 
-// ListAlbums 列出专辑，按分组键三级降级。
+// ListAlbums 列出用户至少拥有一首曲目的歌集。
 //
-//  1. release_group_mbid 存在 → 按发行组分组（CD 版与数字版合为一条）
-//  2. 否则 release_mbid     → 按单个发行分组
-//  3. 两者都无              → 派生分组：normalize(专辑名) + 署名
-//
-// 一张专辑仅在用户至少拥有其中一首曲目时出现——
-// 灰色行用于补全已开始的收藏，而不是上游目录浏览。
-//
-// ladder 是发行优选阶梯的配置，用于在一个发行组下选出代表 release。
-// 它来自用户设置，与匹配阶段用的是同一套配置。
-func (s *Store) ListAlbums(ladder matching.LadderConfig) ([]AlbumListItem, error) {
+// 发行组存在时，同组的多条 release 合为一条，代表 release 由优选阶梯选出
+// （偏好实体载体、偏好国家等），封面与总数取自它。发行组不存在时一条
+// release 就是一条专辑。一张专辑仅在用户至少拥有其中一首时出现——
+// 灰色行用于补全已开始的收藏，不是上游目录浏览。
+func (s *Store) ListAlbums() ([]AlbumListItem, error) {
 	rows, err := s.db.Query(`
-		SELECT
-			m.release_group_mbid,
-			m.release_mbid,
-			COALESCE(t.album, ''),
-			COALESCE(m.album_credit, t.artist),
-			m.match_source,
-			MIN(m.year),
-			COUNT(DISTINCT t.id),
-			MAX(m.cover_path)
-		FROM track t
-		LEFT JOIN track_metadata m ON m.track_id = t.id
-		GROUP BY
-			COALESCE(m.release_group_mbid, ''),
-			CASE WHEN m.release_group_mbid IS NULL THEN COALESCE(m.release_mbid, '') ELSE '' END,
-			CASE WHEN m.release_group_mbid IS NULL AND m.release_mbid IS NULL
-			     THEN LOWER(COALESCE(t.album, '')) || '\x1f' || LOWER(COALESCE(m.album_credit, t.artist, ''))
-			     ELSE '' END`)
+		SELECT r.id, r.release_group_id, r.title, r.credit, r.provider, r.provider_ref,
+		       r.release_date, r.first_release_date, r.track_total,
+		       r.cover_path, r.cover_source_url,
+		       (SELECT rg.provider_ref FROM release_group rg WHERE rg.id = r.release_group_id),
+		       COUNT(t.id)
+		FROM release r
+		JOIN track t ON t.release_id = r.id
+		GROUP BY r.id
+		ORDER BY r.title`)
 	if err != nil {
 		return nil, fmt.Errorf("查询专辑失败: %w", err)
 	}
 	defer rows.Close()
 
-	out := []AlbumListItem{}
+	var flat []AlbumListItem
 	for rows.Next() {
 		var (
-			rgRef, relRef, credit, source, coverPath *string
-			title                                    string
-			year                                     *int
-			owned                                    int
+			it                           AlbumListItem
+			groupID                      *int64
+			releaseDate, firstReleaseDate *string
 		)
-		if err := rows.Scan(&rgRef, &relRef, &title, &credit, &source, &year, &owned, &coverPath); err != nil {
+		if err := rows.Scan(&it.ReleaseID, &groupID, &it.Title, &it.Credit,
+			&it.Provider, &it.RepresentativeRef, &releaseDate, &firstReleaseDate,
+			&it.TotalCount, &it.CoverPath, &it.CoverSourceURL,
+			&it.ReleaseGroupRef, &it.OwnedCount); err != nil {
 			return nil, err
 		}
-		if owned == 0 {
-			continue
+		if groupID != nil {
+			it.GroupID = *groupID
 		}
-
-		item := AlbumListItem{
-			Title: title, Credit: credit, Year: year,
-			OwnedCount: owned, Provider: source, CoverPath: coverPath,
-		}
-		switch {
-		case rgRef != nil && *rgRef != "":
-			item.Level = GroupByReleaseGroup
-			item.Key = *rgRef
-		case relRef != nil && *relRef != "":
-			item.Level = GroupByRelease
-			item.Key = *relRef
-			item.RepresentativeRef = relRef
-		default:
-			// 第 3 级：没有上游事实，不显示灰色行也不显示总数
-			item.Level = GroupDerived
-			item.Key = derivedAlbumKey(title, credit)
-		}
-		out = append(out, item)
+		it.Year = (&Release{ReleaseDate: releaseDate, FirstReleaseDate: firstReleaseDate}).Year()
+		flat = append(flat, it)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	return s.mergeAlbumGroups(flat), nil
+}
 
-	// 为前两级补上代表 release 与清单总数
-	for i := range out {
-		if out[i].Level == GroupDerived {
+// mergeAlbumGroups 把同一发行组的多条 release 合并为一条，保持首次出现的顺序。
+//
+// 合并后已入库数求和，代表 release 由优选阶梯选出，封面与清单总数取代表的、
+// 缺失时退到组内任一非空值——同一张专辑的 CD 版与数字版在列表里是一条，
+// 不该因为用户恰好从数字版入库而丢掉 CD 版已有的封面。
+func (s *Store) mergeAlbumGroups(flat []AlbumListItem) []AlbumListItem {
+	out := []AlbumListItem{}
+	slotOfGroup := map[int64]int{}
+	membersOfGroup := map[int64][]AlbumListItem{}
+
+	for _, it := range flat {
+		if it.GroupID == 0 {
+			out = append(out, it)
 			continue
 		}
-		if err := s.fillAlbumTotals(&out[i], ladder); err != nil {
-			return nil, err
+		if _, seen := slotOfGroup[it.GroupID]; !seen {
+			slotOfGroup[it.GroupID] = len(out)
+			out = append(out, it)
 		}
+		membersOfGroup[it.GroupID] = append(membersOfGroup[it.GroupID], it)
 	}
-	return out, nil
+
+	for groupID, members := range membersOfGroup {
+		out[slotOfGroup[groupID]] = s.mergeOneGroup(groupID, members)
+	}
+	return out
 }
 
-// derivedAlbumKey 生成派生分组键：normalize(专辑名) + 署名。
-func derivedAlbumKey(title string, credit *string) string {
-	c := ""
-	if credit != nil {
-		c = *credit
-	}
-	return strings.ToLower(title) + "\x1f" + strings.ToLower(c)
-}
-
-// DerivedAlbumKey 导出派生分组键的构造，供查询该分组的曲目使用。
-func DerivedAlbumKey(title string, credit *string) string { return derivedAlbumKey(title, credit) }
-
-// fillAlbumTotals 为某专辑条目选出代表 release 并取其清单总数。
-func (s *Store) fillAlbumTotals(item *AlbumListItem, ladder matching.LadderConfig) error {
-	if item.Level == GroupByReleaseGroup {
-		rep, err := s.representativeRelease(item.Key, ladder)
-		if err != nil {
-			return err
-		}
-		if rep == nil {
-			return nil
-		}
-		item.RepresentativeRef = &rep.ProviderRef
-		item.Provider = &rep.Provider
-		if rep.TrackTotal != nil {
-			item.TotalCount = rep.TrackTotal
-		}
-		if item.CoverPath == nil {
-			item.CoverPath = rep.CoverPath
-		}
-		return nil
-	}
-
-	if item.RepresentativeRef == nil || item.Provider == nil {
-		return nil
-	}
-	rel, err := s.GetReleaseByRef(*item.Provider, *item.RepresentativeRef)
-	if err != nil || rel == nil {
-		return err
-	}
-	if rel.TrackTotal != nil {
-		item.TotalCount = rel.TrackTotal
-	}
-	return nil
-}
-
-// representativeRelease 在一个发行组下选出代表 release。
-//
-// 复用匹配阶段的优选阶梯（4.6/4.8），不另写一套排序——
-// 两处对「哪个版本更有代表性」的判断没有理由不同，分成两套必然漂移。
-//
-// ladder 由调用方传入而非在此取默认值：阶梯的偏好国家与载体优先级
-// 是用户可配置的，若这里写死默认值，用户把偏好国家改为 DE 后
-// 匹配阶段会照新配置选，而专辑视图仍按默认配置选——
-// 函数共用了，配置却各走一套，漂移照样发生。
-func (s *Store) representativeRelease(releaseGroupRef string, ladder matching.LadderConfig) (*Release, error) {
-	rows, err := s.db.Query(`
-		SELECT provider, provider_ref, release_status, medium_format, country,
-		       first_release_date, cover_path, track_total
-		FROM release WHERE release_group_ref = ?`, releaseGroupRef)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	type row struct {
-		rel       Release
-		candidate matchingCandidate
-	}
-	var rowsOut []row
-	for rows.Next() {
-		var r Release
-		if err := rows.Scan(&r.Provider, &r.ProviderRef, &r.ReleaseStatus, &r.MediumFormat,
-			&r.Country, &r.FirstReleaseDate, &r.CoverPath, &r.TrackTotal); err != nil {
-			return nil, err
-		}
-		r.ReleaseGroupRef = &releaseGroupRef
-		rowsOut = append(rowsOut, row{rel: r, candidate: toLadderCandidate(r)})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if len(rowsOut) == 0 {
-		return nil, nil
-	}
-
-	candidates := make([]matchingCandidate, 0, len(rowsOut))
-	for _, r := range rowsOut {
-		candidates = append(candidates, r.candidate)
-	}
-	best := ladder.SelectRelease(candidates)
-	if best == nil {
-		return &rowsOut[0].rel, nil
-	}
-	for i := range rowsOut {
-		if rowsOut[i].rel.ProviderRef == best.MatchRef {
-			return &rowsOut[i].rel, nil
+// mergeOneGroup 合并一个发行组内的多条 release。
+func (s *Store) mergeOneGroup(groupID int64, members []AlbumListItem) AlbumListItem {
+	merged := members[0]
+	if rep, err := s.RepresentativeRelease(groupID); err == nil && rep != nil {
+		for _, m := range members {
+			if m.ReleaseID == rep.ID {
+				merged = m
+				break
+			}
 		}
 	}
-	return &rowsOut[0].rel, nil
+
+	owned := 0
+	for _, m := range members {
+		owned += m.OwnedCount
+		if merged.CoverPath == nil {
+			merged.CoverPath = m.CoverPath
+		}
+		if merged.CoverSourceURL == nil {
+			merged.CoverSourceURL = m.CoverSourceURL
+		}
+		if merged.TotalCount == nil {
+			merged.TotalCount = m.TotalCount
+		}
+	}
+	merged.OwnedCount = owned
+	return merged
 }

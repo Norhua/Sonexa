@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -35,12 +36,12 @@ type TrackView struct {
 	MatchSource  *string `json:"matchSource"`
 	MatchRef     *string `json:"matchRef"`
 
+	// ReleaseID 是所属歌集，供编辑界面定位要改的那条 release。
+	ReleaseID *int64 `json:"releaseId"`
 	// ReleaseRef / ReleaseGroupRef 是封面的来源标识。
 	//
 	// 列表要显示缩略图就必须把它们带出来：封面地址是
 	// /cover?provider=<matchSource>&ref=<releaseRef>&rg=<releaseGroupRef>。
-	// 此前这里放的是一个 CoverKey 字段，但没有任何地方给它赋过值，
-	// 于是资料库表格的封面列永远走 v-else 分支，一张图都不显示。
 	ReleaseRef      *string `json:"releaseRef"`
 	ReleaseGroupRef *string `json:"releaseGroupRef"`
 
@@ -54,28 +55,22 @@ type TrackView struct {
 type TrackFilter struct {
 	// CollectionID 非零时限定在该歌单/标签内。
 	CollectionID int64 `json:"collectionId"`
-	// ArtistID 非零时限定为该艺术家参与的曲目。
+	// ArtistID 非零时限定为该艺术家关联的曲目（署名 ∪ 全部角色）。
 	ArtistID int64 `json:"artistId"`
-	// Role 非空时进一步限定参与角色（艺术家视图的分面筛选）。
+	// Role 非空时进一步限定：取值为角色名，或 RoleCredited（只看被署名的）。
 	Role string `json:"role"`
-	// ReleaseGroupRef / ReleaseRef 非空时限定为该专辑的曲目。
-	ReleaseGroupRef string `json:"releaseGroupRef"`
-	ReleaseRef      string `json:"releaseRef"`
-	// DerivedAlbumKey 非空时按派生分组键限定。
-	DerivedAlbumKey string `json:"derivedAlbumKey"`
+	// ReleaseID 非零时限定为该歌集的曲目。
+	ReleaseID int64 `json:"releaseId"`
+	// ReleaseGroupID 非零时限定为该发行组下全部歌集的曲目。
+	ReleaseGroupID int64 `json:"releaseGroupId"`
 	// RecentOnly 为真时只取最近添加。
 	RecentOnly bool `json:"recentOnly"`
 
 	// 高级搜索条件
-	Title        string `json:"title"`
-	Artist       string `json:"artist"`
-	Album        string `json:"album"`
-	YearFrom     *int   `json:"yearFrom"`
-	YearTo       *int   `json:"yearTo"`
-	TagID        int64  `json:"tagId"`
-	MediumFormat string `json:"mediumFormat"`
-	Country      string `json:"country"`
-	PrimaryType  string `json:"primaryType"`
+	Title  string `json:"title"`
+	Artist string `json:"artist"`
+	Album  string `json:"album"`
+	TagID  int64  `json:"tagId"`
 	// Query 是快速搜索的关键词，走 FTS。
 	Query string `json:"query"`
 
@@ -84,13 +79,50 @@ type TrackFilter struct {
 }
 
 // trackSelectColumns 是曲目视图的公共列。
+//
+// 发行级字段全部来自 join 出来的歌集——它们只存在歌集上一份。
 const trackSelectColumns = `
-	t.id, t.title, t.artist, t.album,
-	t.title_locked, t.artist_locked, t.album_locked,
-	m.year, m.track_number, m.track_total, m.disc_number, m.duration_ms,
-	m.genre, m.medium_format, m.country, m.primary_type,
-	m.cover_path, m.match_source, m.match_ref,
-	m.release_mbid, m.release_group_mbid, t.created_at`
+	t.id, t.title, t.credit, r.title,
+	t.locked_json,
+	r.release_date, r.first_release_date,
+	t.track_number, r.track_total, t.disc_number, t.duration_ms,
+	t.genre, r.medium_format, r.country, r.primary_type,
+	r.cover_path, t.match_source, t.match_ref,
+	t.release_id, r.provider_ref,
+	(SELECT rg.provider_ref FROM release_group rg WHERE rg.id = r.release_group_id),
+	t.created_at`
+
+func scanTrackView(sc interface{ Scan(...any) error }) (*TrackView, error) {
+	var v TrackView
+	var lockedJSON *string
+	var releaseDate, firstReleaseDate *string
+	if err := sc.Scan(&v.ID, &v.Title, &v.Artist, &v.Album,
+		&lockedJSON,
+		&releaseDate, &firstReleaseDate,
+		&v.TrackNumber, &v.TrackTotal, &v.DiscNumber, &v.DurationMS,
+		&v.Genre, &v.MediumFormat, &v.Country, &v.PrimaryType,
+		&v.CoverPath, &v.MatchSource, &v.MatchRef,
+		&v.ReleaseID, &v.ReleaseRef, &v.ReleaseGroupRef, &v.CreatedAt); err != nil {
+		return nil, err
+	}
+	v.Year = (&Release{ReleaseDate: releaseDate, FirstReleaseDate: firstReleaseDate}).Year()
+	locks := ParseLocks(lockedJSON)
+	v.TitleLocked, v.ArtistLocked, v.AlbumLocked = locks["title"], locks["credit"], locks["album"]
+	return &v, nil
+}
+
+// ParseLocks 解析 locked_json。
+//
+// 基本信息的三个布尔列并入了这个 JSON——合表之后没有理由留两套锁机制，
+// 而逐字段锁本就要求「新增字段无需改动锁的存储结构」。
+func ParseLocks(lockedJSON *string) map[string]bool {
+	out := map[string]bool{}
+	if lockedJSON == nil || *lockedJSON == "" {
+		return out
+	}
+	_ = json.Unmarshal([]byte(*lockedJSON), &out)
+	return out
+}
 
 // ListTracks 按条件查询曲目。
 func (s *Store) ListTracks(f TrackFilter) ([]TrackView, error) {
@@ -106,20 +138,11 @@ func (s *Store) ListTracks(f TrackFilter) ([]TrackView, error) {
 
 	var out []TrackView
 	for rows.Next() {
-		var v TrackView
-		var titleLocked, artistLocked, albumLocked int
-		if err := rows.Scan(&v.ID, &v.Title, &v.Artist, &v.Album,
-			&titleLocked, &artistLocked, &albumLocked,
-			&v.Year, &v.TrackNumber, &v.TrackTotal, &v.DiscNumber, &v.DurationMS,
-			&v.Genre, &v.MediumFormat, &v.Country, &v.PrimaryType,
-			&v.CoverPath, &v.MatchSource, &v.MatchRef,
-			&v.ReleaseRef, &v.ReleaseGroupRef, &v.CreatedAt); err != nil {
+		v, err := scanTrackView(rows)
+		if err != nil {
 			return nil, err
 		}
-		v.TitleLocked = titleLocked != 0
-		v.ArtistLocked = artistLocked != 0
-		v.AlbumLocked = albumLocked != 0
-		out = append(out, v)
+		out = append(out, *v)
 	}
 	return out, rows.Err()
 }
@@ -155,28 +178,35 @@ func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, e
 		wheres = append(wheres, "cti.collection_id = ?")
 		args = append(args, f.TagID)
 	}
+
+	// 艺术家视图：默认取该艺术家关联的全部曲目（署名 ∪ 全部角色）。
+	// 分面筛选时收窄——「署名」是一个分面，其余是具体角色。
 	if f.ArtistID != 0 {
-		joins = append(joins, "JOIN track_artist ta ON ta.track_id = t.id")
-		wheres = append(wheres, "ta.artist_id = ?")
-		args = append(args, f.ArtistID)
-		if f.Role != "" {
-			wheres = append(wheres, "ta.role = ?")
-			args = append(args, f.Role)
+		switch f.Role {
+		case "":
+			wheres = append(wheres, `(EXISTS (SELECT 1 FROM track_credit tc
+				WHERE tc.track_id = t.id AND tc.artist_id = ?)
+				OR EXISTS (SELECT 1 FROM track_artist ta
+				WHERE ta.track_id = t.id AND ta.artist_id = ?))`)
+			args = append(args, f.ArtistID, f.ArtistID)
+		case RoleCredited:
+			wheres = append(wheres, `EXISTS (SELECT 1 FROM track_credit tc
+				WHERE tc.track_id = t.id AND tc.artist_id = ?)`)
+			args = append(args, f.ArtistID)
+		default:
+			wheres = append(wheres, `EXISTS (SELECT 1 FROM track_artist ta
+				WHERE ta.track_id = t.id AND ta.artist_id = ? AND ta.role = ?)`)
+			args = append(args, f.ArtistID, f.Role)
 		}
 	}
-	if f.ReleaseGroupRef != "" {
-		wheres = append(wheres, "m.release_group_mbid = ?")
-		args = append(args, f.ReleaseGroupRef)
+
+	if f.ReleaseID != 0 {
+		wheres = append(wheres, "t.release_id = ?")
+		args = append(args, f.ReleaseID)
 	}
-	if f.ReleaseRef != "" {
-		wheres = append(wheres, "m.release_mbid = ?")
-		args = append(args, f.ReleaseRef)
-	}
-	if f.DerivedAlbumKey != "" {
-		wheres = append(wheres,
-			"m.release_group_mbid IS NULL AND m.release_mbid IS NULL AND "+
-				"LOWER(COALESCE(t.album,'')) || '\x1f' || LOWER(COALESCE(m.album_credit, t.artist, '')) = ?")
-		args = append(args, f.DerivedAlbumKey)
+	if f.ReleaseGroupID != 0 {
+		wheres = append(wheres, "r.release_group_id = ?")
+		args = append(args, f.ReleaseGroupID)
 	}
 
 	// 快速搜索走 FTS
@@ -203,37 +233,19 @@ func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, e
 		args = append(args, "%"+strings.ToLower(v)+"%")
 	}
 	if v := strings.TrimSpace(f.Artist); v != "" {
+		// 署名原串、被署名的艺术家名、担任角色的艺术家名都算
 		wheres = append(wheres,
-			"(LOWER(COALESCE(t.artist,'')) LIKE ? OR EXISTS ("+
+			"(LOWER(COALESCE(t.credit,'')) LIKE ? OR EXISTS ("+
+				"SELECT 1 FROM track_credit tcx JOIN artist acx ON acx.id = tcx.artist_id "+
+				"WHERE tcx.track_id = t.id AND LOWER(acx.name) LIKE ?) OR EXISTS ("+
 				"SELECT 1 FROM track_artist tax JOIN artist ax ON ax.id = tax.artist_id "+
 				"WHERE tax.track_id = t.id AND LOWER(ax.name) LIKE ?))")
 		like := "%" + strings.ToLower(v) + "%"
-		args = append(args, like, like)
+		args = append(args, like, like, like)
 	}
 	if v := strings.TrimSpace(f.Album); v != "" {
-		wheres = append(wheres, "LOWER(COALESCE(t.album,'')) LIKE ?")
+		wheres = append(wheres, "LOWER(COALESCE(r.title,'')) LIKE ?")
 		args = append(args, "%"+strings.ToLower(v)+"%")
-	}
-	if f.YearFrom != nil {
-		wheres = append(wheres, "m.year >= ?")
-		args = append(args, *f.YearFrom)
-	}
-	if f.YearTo != nil {
-		wheres = append(wheres, "m.year <= ?")
-		args = append(args, *f.YearTo)
-	}
-	// 载体、国家、类型仅对本地搜索生效
-	if f.MediumFormat != "" {
-		wheres = append(wheres, "m.medium_format = ?")
-		args = append(args, f.MediumFormat)
-	}
-	if f.Country != "" {
-		wheres = append(wheres, "m.country = ?")
-		args = append(args, f.Country)
-	}
-	if f.PrimaryType != "" {
-		wheres = append(wheres, "m.primary_type = ?")
-		args = append(args, f.PrimaryType)
 	}
 
 	sb := strings.Builder{}
@@ -242,7 +254,7 @@ func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, e
 	} else {
 		sb.WriteString("SELECT DISTINCT " + trackSelectColumns + " FROM track t")
 	}
-	sb.WriteString(" LEFT JOIN track_metadata m ON m.track_id = t.id")
+	sb.WriteString(" LEFT JOIN release r ON r.id = t.release_id")
 	for _, j := range joins {
 		sb.WriteString(" " + j)
 	}
@@ -276,56 +288,37 @@ func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, e
 
 // GetTrackView 读取单条曲目的完整视图。
 func (s *Store) GetTrackView(id int64) (*TrackView, error) {
-	row := s.db.QueryRow(
+	v, err := scanTrackView(s.db.QueryRow(
 		"SELECT "+trackSelectColumns+
-			" FROM track t LEFT JOIN track_metadata m ON m.track_id = t.id WHERE t.id = ?", id)
-
-	var v TrackView
-	var titleLocked, artistLocked, albumLocked int
-	err := row.Scan(&v.ID, &v.Title, &v.Artist, &v.Album,
-		&titleLocked, &artistLocked, &albumLocked,
-		&v.Year, &v.TrackNumber, &v.TrackTotal, &v.DiscNumber, &v.DurationMS,
-		&v.Genre, &v.MediumFormat, &v.Country, &v.PrimaryType,
-		&v.CoverPath, &v.MatchSource, &v.MatchRef,
-		&v.ReleaseRef, &v.ReleaseGroupRef, &v.CreatedAt)
+			" FROM track t LEFT JOIN release r ON r.id = t.release_id WHERE t.id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	v.TitleLocked = titleLocked != 0
-	v.ArtistLocked = artistLocked != 0
-	v.AlbumLocked = albumLocked != 0
-	return &v, nil
+	return v, err
 }
 
-// UpdateBasicOnMatch 在匹配成功时更新基本信息。
+// UpdateBasicOnMatch 在匹配成功时更新曲名与署名。
 //
-// 未加锁的字段用上游规范值覆盖（保持基本与丰富信息一致），
-// 已加锁的字段保持不变。
-func (s *Store) UpdateBasicOnMatch(trackID int64, title, artist, album *string) error {
+// 未加锁的字段用上游规范值覆盖，已加锁的字段保持不变。
+// 歌集名不在这里改——它归歌集，改它对该歌集全部曲目生效，
+// 不该由某一首曲目的一次匹配悄悄触发。
+func (s *Store) UpdateBasicOnMatch(trackID int64, title, credit *string) error {
 	return s.withTx(func(tx *sql.Tx) error {
-		var titleLocked, artistLocked, albumLocked int
-		if err := tx.QueryRow(
-			`SELECT title_locked, artist_locked, album_locked FROM track WHERE id = ?`,
-			trackID).Scan(&titleLocked, &artistLocked, &albumLocked); err != nil {
+		var lockedJSON *string
+		if err := tx.QueryRow(`SELECT locked_json FROM track WHERE id = ?`, trackID).Scan(&lockedJSON); err != nil {
 			return err
 		}
+		locks := ParseLocks(lockedJSON)
 
 		sets := []string{"updated_at = ?"}
 		args := []any{time.Now().UTC()}
-		if title != nil && titleLocked == 0 {
+		if title != nil && !locks["title"] {
 			sets = append(sets, "title = ?")
 			args = append(args, *title)
 		}
-		if artist != nil && artistLocked == 0 {
-			sets = append(sets, "artist = ?")
-			args = append(args, *artist)
-		}
-		if album != nil && albumLocked == 0 {
-			sets = append(sets, "album = ?")
-			args = append(args, *album)
+		if credit != nil && !locks["credit"] {
+			sets = append(sets, "credit = ?")
+			args = append(args, *credit)
 		}
 		args = append(args, trackID)
 
@@ -335,4 +328,58 @@ func (s *Store) UpdateBasicOnMatch(trackID int64, title, artist, album *string) 
 		}
 		return syncFTS(tx, trackID)
 	})
+}
+
+// MoveTrackToRelease 把一首曲目挪到另一条歌集下。
+//
+// 「改歌集名」在实体模型下有三种语义（改这张歌集 / 挪到已有的另一张 /
+// 新建一张），由调用方按用户的选择决定，这里只负责挪。挪走之后原歌集
+// 若是本地歌集且再无曲目引用，顺带删掉——否则侧栏会积一堆空专辑。
+func (s *Store) MoveTrackToRelease(trackID, releaseID int64) error {
+	var oldID *int64
+	if err := s.db.QueryRow(`SELECT release_id FROM track WHERE id = ?`, trackID).Scan(&oldID); err != nil {
+		return err
+	}
+	err := s.withTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(
+			`UPDATE track SET release_id = ?, updated_at = ? WHERE id = ?`,
+			nullableID(releaseID), time.Now().UTC(), trackID); err != nil {
+			return err
+		}
+		return syncFTS(tx, trackID)
+	})
+	if err != nil {
+		return err
+	}
+	if oldID != nil && *oldID != releaseID {
+		return s.DeleteOrphanLocalRelease(*oldID)
+	}
+	return nil
+}
+
+// ReleaseTrackCount 返回某歌集下的曲目数。
+//
+// 「改歌集名」时用它判断这次改动影响几首——只有一首时不必二次确认。
+func (s *Store) ReleaseTrackCount(releaseID int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM track WHERE release_id = ?`, releaseID).Scan(&n)
+	return n, err
+}
+
+// FindReleaseByTitleCredit 按 (标题, 署名) 查找歌集；未命中返回 0。
+//
+// 「改歌集名」时用它判断库中是否已有同名歌集——有则可以关联过去，
+// 没有则只能新建。
+func (s *Store) FindReleaseByTitleCredit(title string, credit *string) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(`
+		SELECT id FROM release
+		WHERE LOWER(title) = LOWER(?)
+		  AND LOWER(COALESCE(credit,'')) = LOWER(COALESCE(?,''))
+		ORDER BY (provider_ref IS NULL), id
+		LIMIT 1`, title, credit).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return id, err
 }

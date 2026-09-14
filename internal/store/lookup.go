@@ -12,7 +12,7 @@ import (
 func (s *Store) FindByMatchRef(source, ref string) (int64, error) {
 	var id int64
 	err := s.db.QueryRow(
-		`SELECT track_id FROM track_metadata WHERE match_source = ? AND match_ref = ?`,
+		`SELECT id FROM track WHERE match_source = ? AND match_ref = ?`,
 		source, ref).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
@@ -27,7 +27,7 @@ func (s *Store) FindByISRC(isrc string) (int64, error) {
 	}
 	var id int64
 	err := s.db.QueryRow(
-		`SELECT track_id FROM track_metadata WHERE isrc = ? LIMIT 1`, isrc).Scan(&id)
+		`SELECT id FROM track WHERE isrc = ? LIMIT 1`, isrc).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
@@ -42,10 +42,9 @@ func (s *Store) FindByISRC(isrc string) (int64, error) {
 // 判据：标准化曲名相等 AND 标准化主艺术家相等 AND |时长差| ≤ 3s。
 func (s *Store) FindUnmatchedByText(normTitle, normArtist string, durationMS *int) (int64, error) {
 	rows, err := s.db.Query(`
-		SELECT t.id, t.title, t.artist, m.duration_ms
+		SELECT t.id, t.title, t.credit, t.duration_ms
 		FROM track t
-		LEFT JOIN track_metadata m ON m.track_id = t.id
-		WHERE m.match_source IS NULL OR m.track_id IS NULL`)
+		WHERE t.match_source IS NULL`)
 	if err != nil {
 		return 0, err
 	}
@@ -105,9 +104,9 @@ type ResolvedPosition struct {
 //
 // 三种状态：
 //
-//	已入库        release_track.track_ref = track_metadata.match_ref
-//	              AND release.provider = track_metadata.match_source
-//	已有其他版本   上面未命中，但 recording_ref 命中某曲目的 recording_mbid
+//	已入库        release_track.track_ref = track.match_ref
+//	              AND release.provider = track.match_source
+//	已有其他版本   上面未命中，但 recording_ref 命中某曲目的 recording_ref
 //	未入库        都未命中 → 灰色行
 //
 // 中间那个状态不能省：用户从 CD 版入库、专辑视图显示的是数字版清单时，
@@ -155,7 +154,7 @@ func (s *Store) ResolveTracklist(releaseID int64, provider string) ([]ResolvedPo
 
 // FindByRecordingRef 按录音标识查找曲目；未命中返回 0。
 //
-// 用于「已有其他版本」判定——recording_mbid 已存在于 track_metadata，
+// 用于「已有其他版本」判定——recording_ref 已存在于 track 上，
 // 这个判定是免费的。
 func (s *Store) FindByRecordingRef(recordingRef string) (int64, error) {
 	if recordingRef == "" {
@@ -163,7 +162,7 @@ func (s *Store) FindByRecordingRef(recordingRef string) (int64, error) {
 	}
 	var id int64
 	err := s.db.QueryRow(
-		`SELECT track_id FROM track_metadata WHERE recording_mbid = ? LIMIT 1`,
+		`SELECT id FROM track WHERE recording_ref = ? LIMIT 1`,
 		recordingRef).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
@@ -179,14 +178,9 @@ func (s *Store) SetProvenance(trackID int64, source, ref string) error {
 	now := time.Now().UTC()
 	return s.withTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`
-			INSERT INTO track_metadata (track_id, match_source, match_ref, matched_at, updated_at)
-			VALUES (?,?,?,?,?)
-			ON CONFLICT(track_id) DO UPDATE SET
-				match_source = excluded.match_source,
-				match_ref    = excluded.match_ref,
-				matched_at   = excluded.matched_at,
-				updated_at   = excluded.updated_at`,
-			trackID, source, ref, now, now)
+			UPDATE track SET
+				match_source = ?, match_ref = ?, matched_at = ?, updated_at = ?
+			WHERE id = ?`, source, ref, now, now, trackID)
 		return err
 	})
 }
@@ -198,14 +192,9 @@ func (s *Store) ClearProvenance(trackID int64) error {
 	now := time.Now().UTC()
 	return s.withTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`
-			INSERT INTO track_metadata (track_id, match_source, match_ref, matched_at, updated_at)
-			VALUES (?, NULL, NULL, NULL, ?)
-			ON CONFLICT(track_id) DO UPDATE SET
-				match_source = NULL,
-				match_ref    = NULL,
-				matched_at   = NULL,
-				updated_at   = excluded.updated_at`,
-			trackID, now)
+			UPDATE track SET
+				match_source = NULL, match_ref = NULL, matched_at = NULL, updated_at = ?
+			WHERE id = ?`, now, trackID)
 		return err
 	})
 }

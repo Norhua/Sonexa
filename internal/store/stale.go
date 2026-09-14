@@ -25,8 +25,8 @@ func (cfg StaleConfig) IsStale(r *Release) bool {
 	if r == nil {
 		return true
 	}
-	// MB 数据为 CC0，不受 TTL 约束
-	if r.Provider != "itunes" {
+	// MB 数据为 CC0，不受 TTL 约束；本地歌集没有上游，也不过期
+	if r.Provider == nil || *r.Provider != "itunes" {
 		return false
 	}
 	if r.FetchedAt == nil {
