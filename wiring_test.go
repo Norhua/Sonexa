@@ -9,9 +9,14 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/norhua/sonexa/internal/covers"
 
 	"github.com/norhua/sonexa/internal/config"
 	"github.com/norhua/sonexa/internal/provider"
@@ -58,7 +63,10 @@ func newTestApp(t *testing.T) (*App, func()) {
 
 	app.limiters = provider.NewLimiters()
 	app.rebuildProviders(settings.Get())
-	app.coverSvc = newTestCoverService(t, paths.CoverDir, settings.Get())
+	// 与生产同一条接线：降级链构造器必须挂上去。
+	// 测试里另建一份不带构造器的服务，正是「封面全都加载不出来」这类 bug
+	// 能在测试全绿的情况下发布的原因。
+	app.coverSvc = app.attachLadderBuilder(newTestCoverService(t, paths.CoverDir, settings.Get()))
 	app.rebuildRunner(settings.Get())
 
 	return app, func() { st.Close() }
@@ -206,3 +214,104 @@ func containsText(s, sub string) bool {
 	}
 	return false
 }
+
+// TestCoverSourceReachesFrontend 守住封面能显示这件事的**前半段**：
+// 前端要拿到来源标识，才拼得出 /cover 地址。
+//
+// 这是用户报告「所有位置的专辑图片都无法加载」的一半成因：
+// 资料库表格读的是 TrackView.CoverKey，而那个字段从声明出来就没有任何地方
+// 给它赋过值，于是封面列永远走空态分支——一张图都不显示。
+func TestCoverSourceReachesFrontend(t *testing.T) {
+	app, cleanup := newTestApp(t)
+	defer cleanup()
+
+	trackID, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{
+		Title:       "God knows...",
+		MatchSource: strPtrOrNil("musicbrainz"),
+		MatchRef:    strPtrOrNil("trk-cd-jp-02"),
+		Metadata: &store.MetadataInput{
+			ReleaseMBID:      strPtrOrNil("rel-cd-jp"),
+			ReleaseGroupMBID: strPtrOrNil("rg-haruhi"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("入库失败: %v", err)
+	}
+
+	// 列表：ListTracks 是曲目表格的真实入口
+	page, err := app.ListTracks(store.TrackFilter{})
+	if err != nil {
+		t.Fatalf("ListTracks 失败: %v", err)
+	}
+	if len(page.Tracks) != 1 {
+		t.Fatalf("曲目数 = %d, 期望 1", len(page.Tracks))
+	}
+	row := page.Tracks[0]
+	if row.MatchSource == nil || row.ReleaseRef == nil {
+		t.Fatalf("列表行缺少封面来源: matchSource=%v releaseRef=%v", row.MatchSource, row.ReleaseRef)
+	}
+	if *row.ReleaseRef != "rel-cd-jp" {
+		t.Errorf("releaseRef = %q, 期望 rel-cd-jp", *row.ReleaseRef)
+	}
+	if row.ReleaseGroupRef == nil || *row.ReleaseGroupRef != "rg-haruhi" {
+		t.Errorf("releaseGroupRef = %v, 期望 rg-haruhi——降级链最后一档要用它", row.ReleaseGroupRef)
+	}
+
+	// 详情抽屉：GetTrackDetail 是抽屉的真实入口
+	detail, err := app.GetTrackDetail(trackID)
+	if err != nil {
+		t.Fatalf("GetTrackDetail 失败: %v", err)
+	}
+	if detail.CoverProvider != "musicbrainz" || detail.CoverRef != "rel-cd-jp" {
+		t.Errorf("详情封面来源 = %q/%q, 期望 musicbrainz/rel-cd-jp",
+			detail.CoverProvider, detail.CoverRef)
+	}
+	if detail.CoverGroupRef != "rg-haruhi" {
+		t.Errorf("详情 releaseGroupRef = %q, 期望 rg-haruhi", detail.CoverGroupRef)
+	}
+}
+
+// TestCoverHandlerNeedsNoRegistration 守住封面能显示这件事的**后半段**：
+// handler 不再依赖「前端先调预取把降级链登记进来」。
+//
+// 这是另一半成因。此前 handler 只认登记过的缓存键，而详情抽屉与复核队列
+// 从来不调预取，搜索页虽然调了却比 <img> 的请求晚到——三处都拿不到图。
+//
+// 断言分两步，都不出网：
+//   - 降级链由 handler 就地构造，且指向该 release 在 Cover Art Archive 上的地址
+//   - 预取暖好的字节能被后来的 <img> 请求命中，即两边算出的缓存键一致
+func TestCoverHandlerNeedsNoRegistration(t *testing.T) {
+	app, cleanup := newTestApp(t)
+	defer cleanup()
+
+	const releaseRef = "rel-cd-jp"
+	urls := app.coverLadder("musicbrainz", releaseRef, "", strPtrOrNil("rg-haruhi"))
+	if len(urls) == 0 {
+		t.Fatal("降级链为空——handler 无处可取图")
+	}
+	if !strings.Contains(urls[0], releaseRef) {
+		t.Errorf("降级链首档 = %q, 应指向该 release 的封面", urls[0])
+	}
+
+	// 预取算键用 BuildCoverRefs，取图算键在 handler 里。两边必须一致，
+	// 否则预取白做：图会为同一行再下一遍。
+	key := covers.CacheKey("musicbrainz:"+releaseRef, coverThumbSize)
+	if err := app.coverSvc.Pool().Cache().Put(key, jpegHeader()); err != nil {
+		t.Fatalf("预置缓存失败: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet,
+		"/cover?provider=musicbrainz&ref="+releaseRef+"&rg=rg-haruhi&size=250", nil)
+	app.coverAssetHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d, 期望 200——handler 没有认出这个来源", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/jpeg" {
+		t.Errorf("Content-Type = %q, 期望 image/jpeg", ct)
+	}
+}
+
+// jpegHeader 是一段足以被识别为 JPEG 的字节。
+func jpegHeader() []byte { return []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10} }

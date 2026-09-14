@@ -121,7 +121,7 @@ func (a *App) SaveSettings(next config.Settings) error {
 		}
 		a.mu.Lock()
 		a.paths = newPaths
-		a.coverSvc = svc
+		a.coverSvc = a.attachLadderBuilder(svc)
 		a.mu.Unlock()
 	}
 

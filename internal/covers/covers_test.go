@@ -237,7 +237,11 @@ func TestAdoptDedupesByContent(t *testing.T) {
 }
 
 // TestHandlerServesBytes 覆盖 9.8：
-// <img src="/cover?key=..."> 可加载且字节不经 IPC 桥。
+// <img src="/cover?provider=…&ref=…"> 可加载且字节不经 IPC 桥。
+//
+// 关键在于**没有预先登记过任何东西**：handler 拿请求参数就地构造降级链。
+// 此前 handler 只认 PrefetchCovers 登记过的缓存键，而资料库表格、详情抽屉、
+// 复核队列都不调预取，搜索页的预取又比 <img> 请求晚到，于是封面全都加载不出来。
 func TestHandlerServesBytes(t *testing.T) {
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write(jpegBytes())
@@ -245,16 +249,14 @@ func TestHandlerServesBytes(t *testing.T) {
 	defer origin.Close()
 
 	svc := NewService(newTestCache(t), 8, "test")
-	svc.Prefetch(context.Background(), []Ref{
-		{Key: "k1", SourceRef: "rel-1", Size: 250, URLs: []string{origin.URL + "/front"}},
+	svc.SetLadderBuilder(func(providerID, ref, rg string) []string {
+		return []string{origin.URL + "/" + providerID + "/" + ref}
 	})
-	// 等预取完成
-	time.Sleep(100 * time.Millisecond)
 
 	handler := httptest.NewServer(svc.Handler())
 	defer handler.Close()
 
-	resp, err := http.Get(handler.URL + "/cover?key=k1&size=250")
+	resp, err := http.Get(handler.URL + "/cover?provider=musicbrainz&ref=rel-1&size=250")
 	if err != nil {
 		t.Fatalf("请求封面失败: %v", err)
 	}
@@ -265,21 +267,91 @@ func TestHandlerServesBytes(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); ct != "image/jpeg" {
 		t.Errorf("Content-Type = %q, 期望 image/jpeg", ct)
 	}
+	if got := svc.Outcomes([]string{CacheKey("musicbrainz:rel-1", 250)}); got[0] != OutcomeOK {
+		t.Errorf("取图结果 = %q, 期望 ok", got[0])
+	}
 }
 
-// TestHandlerMissingReturns404 确保缺图时返回 404，前端显示占位图。
-func TestHandlerMissingReturns404(t *testing.T) {
+// TestHandlerPrefetchedBytesHit 确认预取与 <img> 请求落在同一个缓存键上。
+//
+// 两边各自算键：预取用 BuildCoverRefs 给的 Key，handler 用请求参数现算。
+// 算得不一致时预取就白做了——图会被重下一遍，而这正是预取要省掉的那次。
+func TestHandlerPrefetchedBytesHit(t *testing.T) {
+	var requests int32
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		w.Write(jpegBytes())
+	}))
+	defer origin.Close()
+
+	svc := NewService(newTestCache(t), 8, "test")
+	svc.SetLadderBuilder(func(providerID, ref, rg string) []string {
+		return []string{origin.URL + "/front"}
+	})
+	svc.Prefetch(context.Background(), []Ref{{
+		Key:       CacheKey("musicbrainz:rel-1", 250),
+		SourceRef: "rel-1", Size: 250, URLs: []string{origin.URL + "/front"},
+	}})
+	time.Sleep(100 * time.Millisecond)
+
+	handler := httptest.NewServer(svc.Handler())
+	defer handler.Close()
+
+	resp, err := http.Get(handler.URL + "/cover?provider=musicbrainz&ref=rel-1&size=250")
+	if err != nil {
+		t.Fatalf("请求封面失败: %v", err)
+	}
+	resp.Body.Close()
+	if n := atomic.LoadInt32(&requests); n != 1 {
+		t.Errorf("出网取图 %d 次, 期望 1——预取过的图不该再下一遍", n)
+	}
+}
+
+// TestHandlerDistinguishesEmptyFromError 覆盖两种失败的区分。
+//
+// 「上游没有这张封面」与「取图出错」在界面上是两种不同的呈现（nil 字样 vs
+// 失败图标），因此后端必须把它们分开记下来——<img> 的 error 事件读不到状态码。
+func TestHandlerDistinguishesEmptyFromError(t *testing.T) {
+	var status int32 = http.StatusNotFound
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(int(atomic.LoadInt32(&status)))
+	}))
+	defer origin.Close()
+
+	svc := NewService(newTestCache(t), 8, "test")
+	svc.SetLadderBuilder(func(providerID, ref, rg string) []string {
+		return []string{origin.URL + "/front"}
+	})
+	handler := httptest.NewServer(svc.Handler())
+	defer handler.Close()
+
+	// 降级链走完都是 404：上游确实没有这张封面
+	resp, err := http.Get(handler.URL + "/cover?provider=musicbrainz&ref=no-art&size=250")
+	if err != nil {
+		t.Fatalf("请求失败: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("无封面状态码 = %d, 期望 404", resp.StatusCode)
+	}
+	if got := svc.Outcomes([]string{CacheKey("musicbrainz:no-art", 250)}); got[0] != OutcomeEmpty {
+		t.Errorf("无封面结果 = %q, 期望 empty", got[0])
+	}
+}
+
+// TestHandlerRejectsMissingSource 确保来源缺失时明确报错，而不是当成一张不存在的图。
+func TestHandlerRejectsMissingSource(t *testing.T) {
 	svc := NewService(newTestCache(t), 8, "test")
 	handler := httptest.NewServer(svc.Handler())
 	defer handler.Close()
 
-	resp, err := http.Get(handler.URL + "/cover?key=unknown&size=250")
+	resp, err := http.Get(handler.URL + "/cover?size=250")
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("未知 key 状态码 = %d, 期望 404", resp.StatusCode)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("缺少来源状态码 = %d, 期望 400", resp.StatusCode)
 	}
 }
 

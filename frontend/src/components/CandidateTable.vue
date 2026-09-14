@@ -5,15 +5,25 @@
  * 上游搜索结果与复核队列候选列表共用本组件，列定义完全一致；
  * 动作按上下文不同（加入曲库 / 已在库中 / 接受 / 合并），而列不变。
  */
-import { computed, ref } from 'vue'
-import { display, duration, trackPosition, coverUrl, DASH } from '@/api'
+import { computed } from 'vue'
+import { display, duration, trackPosition, DASH } from '@/api'
+import CoverArt from '@/components/CoverArt.vue'
 import type { Models } from '@/api'
 
-/** 取图失败的行——显示占位而不是破图。 */
-const brokenCovers = ref(new Set<string>())
-
-/** 封面键的尺寸必须与注册降级链时一致。 */
-const coverThumbSize = 250
+/**
+ * 候选行的封面来源。
+ *
+ * MusicBrainz 的候选有 release 级标识，iTunes 没有——它只给一个基准图地址，
+ * 降级链由那个地址构造，因此把它当作来源标识。这与后端 BuildCoverRefs
+ * 算缓存键时的取源必须一致，否则预取暖好的图对不上号、会被重下一遍。
+ */
+function coverSourceOf(row: Models.main.CandidateRow) {
+  return {
+    provider: row.provider,
+    ref: row.releaseRef || row.artworkUrl,
+    rg: row.releaseGroupRef,
+  }
+}
 
 const props = withDefaults(
   defineProps<{
@@ -128,16 +138,8 @@ function onAct(row: Models.main.CandidateRow) {
               </div>
             </td>
             <td class="px-2 py-1.5">
-              <img
-                v-if="row.thumbKey && !brokenCovers.has(row.thumbKey)"
-                :src="coverUrl(row.thumbKey, coverThumbSize)"
-                loading="lazy"
-                class="size-8 rounded object-cover"
-                alt=""
-                @error="brokenCovers.add(row.thumbKey)"
-              />
-              <!-- 取图失败只影响该行：显示占位，标题等其余列照常渲染 -->
-              <div v-else class="size-8 rounded bg-muted" />
+              <!-- 取图失败只影响该行：显示状态图标，标题等其余列照常渲染 -->
+              <CoverArt :source="coverSourceOf(row)" class="size-8 rounded" />
             </td>
             <td class="max-w-0 truncate px-2 py-1.5" :title="row.title ?? ''">
               {{ display(row.title) }}

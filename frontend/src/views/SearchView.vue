@@ -77,7 +77,8 @@ const rows = computed<Row[]>(() =>
     genre: t.genre,
     mediumFormat: t.mediumFormat,
     country: t.country,
-    coverKey: t.coverKey,
+    coverSource: { provider: t.matchSource, ref: t.releaseRef, rg: t.releaseGroupRef },
+    coverPath: t.coverPath,
   })),
 )
 

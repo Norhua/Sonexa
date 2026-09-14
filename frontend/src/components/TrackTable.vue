@@ -9,7 +9,8 @@
  * 列是一样的，分叉会让两边逐渐漂移（加一列时只改了一边）。
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { display, duration, coverUrl } from '@/api'
+import { display, duration, type CoverSource } from '@/api'
+import CoverArt from '@/components/CoverArt.vue'
 
 /** 表格的一行。灰色行与普通行用同一个类型，靠 ghost 区分。 */
 export interface Row {
@@ -24,7 +25,8 @@ export interface Row {
   genre?: string | null
   mediumFormat?: string | null
   country?: string | null
-  coverKey?: string | null
+  coverSource?: CoverSource | null
+  coverPath?: string | null
   /** 灰色行：未入库的清单曲目。 */
   ghost?: boolean
   /** 「其他版本」徽章：标识未命中但录音标识命中某曲目。 */
@@ -33,9 +35,6 @@ export interface Row {
   trackRef?: string | null
   recordingRef?: string | null
 }
-
-/** 封面键的尺寸必须与注册降级链时一致。 */
-const coverThumbSize = 250
 
 const props = withDefaults(
   defineProps<{
@@ -71,8 +70,6 @@ const emit = defineEmits<{
 }>()
 
 const selected = ref<Set<number>>(new Set())
-/** 取图失败的行——显示占位而不是破图。 */
-const brokenCovers = ref<Set<string>>(new Set())
 /** 正在被拖动的行，以及拖动经过的行——仅歌单启用。 */
 const dragId = ref<number | null>(null)
 const dragOverId = ref<number | null>(null)
@@ -307,16 +304,12 @@ defineExpose({ selectedCount, trackCount, selectedRows })
               {{ row.trackNumber ?? '' }}
             </td>
             <td class="px-2 py-1.5">
-              <img
-                v-if="row.coverKey && !brokenCovers.has(row.coverKey)"
-                :src="coverUrl(row.coverKey, coverThumbSize)"
-                loading="lazy"
-                class="size-8 rounded object-cover"
-                alt=""
-                @error="brokenCovers.add(row.coverKey)"
+              <!-- 取图失败（CAA 404 是常态）只影响该行：显示状态图标，其余列照常 -->
+              <CoverArt
+                :source="row.coverSource"
+                :adopted-path="row.coverPath"
+                class="size-8 rounded"
               />
-              <!-- 取图失败（CAA 404 是常态）只影响该行：显示占位，其余列照常 -->
-              <div v-else class="size-8 rounded bg-muted" />
             </td>
             <td class="max-w-0 truncate px-2 py-1.5" :title="row.title">{{ row.title }}</td>
             <td class="max-w-0 truncate px-2 py-1.5" :title="row.artist ?? ''">

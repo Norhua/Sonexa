@@ -99,7 +99,7 @@ func (a *App) initialize() error {
 	if err != nil {
 		return err
 	}
-	a.coverSvc = svc
+	a.coverSvc = a.attachLadderBuilder(svc)
 
 	a.rebuildRunner(cur)
 	return nil
@@ -235,6 +235,27 @@ func newCoverService(paths config.Paths, cur config.Settings, version string) (*
 	}
 	return covers.NewService(cache, cur.Cache.CoverConcurrency,
 		provider.UserAgentFor(version, cur.MusicBrainz.Contact)), nil
+}
+
+// attachLadderBuilder 把降级链构造器接到封面服务上。
+//
+// 封面包不认识任何具体上游，降级链是 provider 特有逻辑，由这一层注入。
+// 建服务的地方有两处（启动、改缓存目录后重建），因此接线必须走同一个函数，
+// 否则重建出来的那份会少一条腿——封面在改过设置之后突然全都加载不出来。
+func (a *App) attachLadderBuilder(svc *covers.Service) *covers.Service {
+	if svc == nil {
+		return nil
+	}
+	svc.SetLadderBuilder(func(providerID, ref, releaseGroupRef string) []string {
+		var rg *string
+		if releaseGroupRef != "" {
+			rg = &releaseGroupRef
+		}
+		// MusicBrainz 用 ref 作 release MBID，iTunes 用它作基准图地址，
+		// 两边各取所需——coverLadder 本就按来源分支。
+		return a.coverLadder(providerID, ref, ref, rg)
+	})
+	return svc
 }
 
 func coverTTL(cur config.Settings) time.Duration {

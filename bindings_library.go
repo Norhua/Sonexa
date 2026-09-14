@@ -79,7 +79,10 @@ type TrackDetail struct {
 	// Participants 是除演唱外的角色分组，按固定顺序排列。
 	// character 不单独成组——它只出现在署名原串的可点击片段中。
 	Participants []ParticipantGroup `json:"participants"`
-	CoverKey     string             `json:"coverKey"`
+	/** CoverProvider / CoverRef / CoverGroupRef 是临时缩略图的来源标识。 */
+	CoverProvider string `json:"coverProvider"`
+	CoverRef      string `json:"coverRef"`
+	CoverGroupRef string `json:"coverGroupRef"`
 	/** AdoptedCoverPath 非空时用已采用的封面，优先于临时缩略图。 */
 	AdoptedCoverPath string `json:"adoptedCoverPath"`
 }
@@ -127,15 +130,19 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 	detail.Participants = groups
 	detail.Sources = sourcesOf(meta, track)
 
-	// 封面键必须与注册降级链时用的尺寸一致，否则 key 对不上、handler 取不到图。
-	// BuildCoverRefs 一律按缩略图尺寸注册，详情也用同一尺寸取图，
-	// 由 <img> 的显示尺寸决定呈现大小。
 	// 已采用的封面优先：它是用户确认过的那张
 	if meta != nil && meta.CoverPath != nil {
 		detail.AdoptedCoverPath = *meta.CoverPath
 	}
+	// 临时缩略图给来源标识，由前端拼成 /cover 地址——handler 据此就地构造降级链。
+	// 详情与列表用同一个尺寸取图，由 <img> 的显示尺寸决定呈现大小：
+	// 换一个尺寸就是另一个缓存键，等于为同一张图再出网取一次。
 	if meta != nil && meta.ReleaseMBID != nil && meta.MatchSource != nil {
-		detail.CoverKey = coverKeyFor(*meta.MatchSource, *meta.ReleaseMBID, coverThumbSize)
+		detail.CoverProvider = *meta.MatchSource
+		detail.CoverRef = *meta.ReleaseMBID
+		if meta.ReleaseGroupMBID != nil {
+			detail.CoverGroupRef = *meta.ReleaseGroupMBID
+		}
 	}
 	return detail, nil
 }
@@ -280,11 +287,6 @@ func (a *App) participantGroups(trackID int64) ([]ParticipantGroup, error) {
 		})
 	}
 	return out, nil
-}
-
-// coverKeyFor 生成封面缓存键。
-func coverKeyFor(provider, ref string, size int) string {
-	return covers_CacheKey(provider+":"+ref, size)
 }
 
 // CreateTrackManual 手动创建一首曲目（仅基本信息）。

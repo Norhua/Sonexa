@@ -139,11 +139,11 @@ func (a *App) ITunesArtworkLadder(artworkURL string) []string {
 	return out
 }
 
-// coverThumbSize 是封面键统一使用的尺寸。
+// coverThumbSize 是封面统一使用的尺寸。
 //
-// 缓存键包含尺寸，因此注册降级链与取图必须用同一个值——
-// 此前详情用 500、注册用 250，两边 key 对不上，详情封面永远取不到。
-const coverThumbSize = 250
+// 缓存键包含尺寸，列表与详情因此必须用同一个值：换一个尺寸就是另一个键，
+// 等于为同一张图再出网取一次。呈现大小交给 <img> 的显示尺寸。
+const coverThumbSize = covers.DefaultThumbSize
 
 // releaseRefOf 安全地取出行上的发行标识；缺失时返回空串。
 func releaseRefOf(r CandidateRow) string {
@@ -151,4 +151,48 @@ func releaseRefOf(r CandidateRow) string {
 		return ""
 	}
 	return *r.ReleaseRef
+}
+
+// CoverSource 是一张封面的来源标识，与 /cover 地址里的参数一一对应。
+type CoverSource struct {
+	Provider string `json:"provider"`
+	Ref      string `json:"ref"`
+	Size     int    `json:"size"`
+}
+
+// CoverOutcomes 返回若干封面最近一次取图的结果。
+//
+// 界面要区分「上游没有这张封面」（显示 nil）与「取图出错」（显示失败图标），
+// 而 <img> 的 error 事件读不到状态码——两种失败在前端看起来一模一样。
+// 因此由后端把结果记下来，前端只在 <img> 失败时来问一次，且整批一起问。
+func (a *App) CoverOutcomes(sources []CoverSource) []string {
+	a.mu.RLock()
+	svc := a.coverSvc
+	a.mu.RUnlock()
+
+	out := make([]string, len(sources))
+	if svc == nil {
+		for i := range out {
+			out[i] = string(covers.OutcomeError)
+		}
+		return out
+	}
+
+	keys := make([]string, len(sources))
+	for i, src := range sources {
+		size := src.Size
+		if size <= 0 {
+			size = coverThumbSize
+		}
+		keys[i] = covers.CacheKey(src.Provider+":"+src.Ref, size)
+	}
+	for i, o := range svc.Outcomes(keys) {
+		// 没记录过就当作出错：这个查询只在 <img> 已经失败之后才发起，
+		// 「失败了但查不到成因」最接近的呈现是失败，而不是「上游没有」。
+		if o == covers.OutcomeUnknown {
+			o = covers.OutcomeError
+		}
+		out[i] = string(o)
+	}
+	return out
 }

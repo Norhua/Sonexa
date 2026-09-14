@@ -10,7 +10,8 @@
  */
 import { computed, ref } from 'vue'
 import { X, Pencil, ImagePlus } from 'lucide-vue-next'
-import { App, display, duration, coverUrl, adoptedCoverUrl, DASH } from '@/api'
+import { App, display, duration, DASH } from '@/api'
+import CoverArt from '@/components/CoverArt.vue'
 import type { Models } from '@/api'
 
 const props = defineProps<{
@@ -73,9 +74,6 @@ async function adopt(provider: string, variant: Models.covers.Variant,
 }
 
 const meta = computed(() => props.detail?.metadata ?? null)
-
-/** 封面键的尺寸必须与注册降级链时一致。 */
-const coverThumbSize = 250
 
 /**
  * 把署名原串切成可点击与纯文本两种片段。
@@ -140,21 +138,17 @@ const releaseInfo = computed(() => [
     <div class="min-h-0 flex-1 space-y-4 overflow-auto p-4">
       <!-- 封面 -->
       <div class="flex justify-center">
-        <img
-          v-if="detail.adoptedCoverPath"
-          :src="adoptedCoverUrl(detail.adoptedCoverPath)"
-          class="aspect-square w-56 rounded-md object-cover shadow"
-          alt=""
+        <CoverArt
+          :source="{
+            provider: detail.coverProvider,
+            ref: detail.coverRef,
+            rg: detail.coverGroupRef,
+          }"
+          :adopted-path="detail.adoptedCoverPath"
+          icon-class="size-10"
+          label-class="text-sm"
+          class="aspect-square w-56 rounded-md shadow"
         />
-        <img
-          v-else-if="detail.coverKey"
-          :src="coverUrl(detail.coverKey, coverThumbSize)"
-          class="aspect-square w-56 rounded-md object-cover shadow"
-          alt=""
-        />
-        <div v-else class="flex aspect-square w-56 items-center justify-center rounded-md bg-muted text-muted-foreground">
-          无封面
-        </div>
       </div>
       <div class="flex justify-center">
         <button

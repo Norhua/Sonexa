@@ -631,17 +631,25 @@ func TestF7_CoverFailuresDoNotBlockList(t *testing.T) {
 		t.Fatalf("建立缓存失败: %v", err)
 	}
 	svc := covers.NewService(cache, 8, "test")
+	// handler 按请求参数就地构造降级链，前端不必先登记
+	svc.SetLadderBuilder(func(providerID, ref, rg string) []string {
+		return []string{
+			fmt.Sprintf("%s/release/%s/front-1200", srv.URL, ref),
+			fmt.Sprintf("%s/release/%s/front-500", srv.URL, ref),
+		}
+	})
 
 	refs := make([]covers.Ref, 25)
 	for i := range refs {
+		ref := fmt.Sprintf("rel-%d", i)
 		refs[i] = covers.Ref{
-			Key:       covers.CacheKey(fmt.Sprintf("rel-%d", i), 250),
-			SourceRef: fmt.Sprintf("rel-%d", i),
+			Key:       covers.CacheKey("musicbrainz:"+ref, 250),
+			SourceRef: ref,
 			Size:      250,
 			// 每行都有完整降级链
 			URLs: []string{
-				fmt.Sprintf("%s/release/rel-%d/front-1200", srv.URL, i),
-				fmt.Sprintf("%s/release/rel-%d/front-500", srv.URL, i),
+				fmt.Sprintf("%s/release/%s/front-1200", srv.URL, ref),
+				fmt.Sprintf("%s/release/%s/front-500", srv.URL, ref),
 			},
 		}
 	}
@@ -661,7 +669,8 @@ func TestF7_CoverFailuresDoNotBlockList(t *testing.T) {
 			t.Fatal("取图耗时过长，列表会长时间空白")
 		default:
 		}
-		resp, err := http.Get(handler.URL + "/cover?key=" + ref.Key)
+		resp, err := http.Get(handler.URL +
+			"/cover?provider=musicbrainz&size=250&ref=" + ref.SourceRef)
 		if err != nil {
 			t.Fatalf("请求失败: %v", err)
 		}

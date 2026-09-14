@@ -110,6 +110,9 @@ func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 				Confidence: sc.Score.Total, MatchedVariant: sc.MatchedVariant,
 				ReleaseRef: c.ReleaseRef, ReleaseGroupRef: c.ReleaseGroupRef,
 				RecordingRef: c.RecordingRef, ISRC: c.ISRC,
+				// 封面来源：MB 用 release 标识，iTunes 只有基准图地址。
+				// 不带出来的话复核队列里 iTunes 候选的缩略图列永远是空的。
+				ArtworkURL: c.ThumbURL,
 			})
 			// 复核队列的候选必须与上游搜索一样做本地判定，
 			// 否则库里已有的那首不会显示双徽章、动作也不会变成「合并」。

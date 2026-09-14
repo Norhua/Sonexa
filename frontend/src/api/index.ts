@@ -15,16 +15,45 @@ export const Events = {
   ProviderResults: 'upstream:providerResults',
 } as const
 
+/** 列表与详情统一使用的缩略图尺寸。 */
+export const COVER_THUMB_SIZE = 250
+
 /**
- * 构造封面的本地地址。
+ * 一张封面的来源标识。
+ *
+ * MusicBrainz 用 ref 装 release MBID，iTunes 用它装基准图地址。
+ */
+export interface CoverSource {
+  provider?: string | null
+  /** release MBID（MusicBrainz）或基准图地址（iTunes）。 */
+  ref?: string | null
+  /** release group MBID，降级链的最后一档要用。 */
+  rg?: string | null
+}
+
+/**
+ * 构造封面的本地地址；来源不全时返回空串。
  *
  * 字节由 Go 取得并写入磁盘缓存，这里只给出本地 URL——
- * 不经 IPC 桥回传字节，因此 <img> 的懒加载、滚出视口自动取消、
- * 解码不占主线程等原生行为全部保留。
+ * 不经 IPC 桥回传字节，因此 <img> 的懒加载与解码不占主线程都保留。
+ *
+ * 地址里带的是**来源**而不是缓存键。键是来源的哈希、不可逆，
+ * 后端拿着键构造不出降级链，只能依赖前端先调预取把链登记进来——
+ * 而资料库表格、详情抽屉、复核队列都不调预取，搜索页的预取又比
+ * <img> 的请求晚到。那正是此前所有位置的封面都加载不出来的成因。
  */
-export function coverUrl(key: string | undefined, size = 250): string {
-  if (!key) return ''
-  return `/cover?key=${encodeURIComponent(key)}&size=${size}`
+export function coverUrl(
+  source: CoverSource | null | undefined,
+  size = COVER_THUMB_SIZE,
+): string {
+  if (!source?.provider || !source.ref) return ''
+  const q = new URLSearchParams({
+    provider: source.provider,
+    ref: source.ref,
+    size: String(size),
+  })
+  if (source.rg) q.set('rg', source.rg)
+  return `/cover?${q.toString()}`
 }
 
 /**

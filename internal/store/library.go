@@ -32,9 +32,17 @@ type TrackView struct {
 	Country      *string `json:"country"`
 	PrimaryType  *string `json:"primaryType"`
 	CoverPath    *string `json:"coverPath"`
-	CoverKey     *string `json:"coverKey"`
 	MatchSource  *string `json:"matchSource"`
 	MatchRef     *string `json:"matchRef"`
+
+	// ReleaseRef / ReleaseGroupRef 是封面的来源标识。
+	//
+	// 列表要显示缩略图就必须把它们带出来：封面地址是
+	// /cover?provider=<matchSource>&ref=<releaseRef>&rg=<releaseGroupRef>。
+	// 此前这里放的是一个 CoverKey 字段，但没有任何地方给它赋过值，
+	// 于是资料库表格的封面列永远走 v-else 分支，一张图都不显示。
+	ReleaseRef      *string `json:"releaseRef"`
+	ReleaseGroupRef *string `json:"releaseGroupRef"`
 
 	// CreatedAt 不导出给前端：界面上没有用到它，而 Wails 的 TS 模型生成器
 	// 不认识 time.Time——留着只会在每次构建时打印 `Not found: time.Time`。
@@ -81,7 +89,8 @@ const trackSelectColumns = `
 	t.title_locked, t.artist_locked, t.album_locked,
 	m.year, m.track_number, m.track_total, m.disc_number, m.duration_ms,
 	m.genre, m.medium_format, m.country, m.primary_type,
-	m.cover_path, m.match_source, m.match_ref, t.created_at`
+	m.cover_path, m.match_source, m.match_ref,
+	m.release_mbid, m.release_group_mbid, t.created_at`
 
 // ListTracks 按条件查询曲目。
 func (s *Store) ListTracks(f TrackFilter) ([]TrackView, error) {
@@ -103,7 +112,8 @@ func (s *Store) ListTracks(f TrackFilter) ([]TrackView, error) {
 			&titleLocked, &artistLocked, &albumLocked,
 			&v.Year, &v.TrackNumber, &v.TrackTotal, &v.DiscNumber, &v.DurationMS,
 			&v.Genre, &v.MediumFormat, &v.Country, &v.PrimaryType,
-			&v.CoverPath, &v.MatchSource, &v.MatchRef, &v.CreatedAt); err != nil {
+			&v.CoverPath, &v.MatchSource, &v.MatchRef,
+			&v.ReleaseRef, &v.ReleaseGroupRef, &v.CreatedAt); err != nil {
 			return nil, err
 		}
 		v.TitleLocked = titleLocked != 0
@@ -266,22 +276,18 @@ func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, e
 
 // GetTrackView 读取单条曲目的完整视图。
 func (s *Store) GetTrackView(id int64) (*TrackView, error) {
-	views, err := s.ListTracks(TrackFilter{Limit: 1})
-	_ = views
-	if err != nil {
-		return nil, err
-	}
 	row := s.db.QueryRow(
 		"SELECT "+trackSelectColumns+
 			" FROM track t LEFT JOIN track_metadata m ON m.track_id = t.id WHERE t.id = ?", id)
 
 	var v TrackView
 	var titleLocked, artistLocked, albumLocked int
-	err = row.Scan(&v.ID, &v.Title, &v.Artist, &v.Album,
+	err := row.Scan(&v.ID, &v.Title, &v.Artist, &v.Album,
 		&titleLocked, &artistLocked, &albumLocked,
 		&v.Year, &v.TrackNumber, &v.TrackTotal, &v.DiscNumber, &v.DurationMS,
 		&v.Genre, &v.MediumFormat, &v.Country, &v.PrimaryType,
-		&v.CoverPath, &v.MatchSource, &v.MatchRef, &v.CreatedAt)
+		&v.CoverPath, &v.MatchSource, &v.MatchRef,
+		&v.ReleaseRef, &v.ReleaseGroupRef, &v.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
