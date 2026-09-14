@@ -37,20 +37,61 @@ func TestDecideUniqueHighConfidence(t *testing.T) {
 	}
 }
 
-// TestDecideSameGroupUsesLadder 覆盖「同组多条高置信」→ 经优选阶梯入库。
-func TestDecideSameGroupUsesLadder(t *testing.T) {
+// TestDecideSameGroupSolePhysical 覆盖规则 3：同组多条高置信，
+// 过滤实体载体后恰好剩一条 → 入库那一条。
+func TestDecideSameGroupSolePhysical(t *testing.T) {
 	cfg := DefaultLadderConfig()
 	rg := sptr("rg-1")
-	a := highConf("aaa", rg)
-	b := highConf("bbb", rg)
-	b.Candidate.MediumFormat = sptr("Digital Media") // 载体更差
+	cd := highConf("aaa", rg)
+	digital := highConf("bbb", rg)
+	digital.Candidate.MediumFormat = sptr("Digital Media")
 
-	got := cfg.Decide([]ScoredCandidate{b, a})
+	got := cfg.Decide([]ScoredCandidate{digital, cd})
 	if got.Outcome != OutcomeImportLadder {
 		t.Errorf("分流 = %q, 期望 import_ladder", got.Outcome)
 	}
 	if got.Selected == nil || got.Selected.MatchRef != "aaa" {
-		t.Errorf("选中 %+v, 期望 aaa（CD 优于 Digital Media）", got.Selected)
+		t.Errorf("选中 %+v, 期望 aaa（唯一的实体发行）", got.Selected)
+	}
+}
+
+// TestDecideSameGroupManyPhysicalGoesToReview 覆盖规则 3 的收尾：
+// 同一发行组内过滤实体载体后仍剩多条时不自动裁决。
+//
+// 这是用户报告的那条 `世界中の雨`：MusicBrainz 里同一条录音挂在 11 张
+// 同名 CD 发行上，载体、国家、发行日、发行状态全同。优选阶梯只能靠 MBID
+// 字典序收尾，那是「随便挑一个」——必须交人工。
+func TestDecideSameGroupManyPhysicalGoesToReview(t *testing.T) {
+	cfg := DefaultLadderConfig()
+	rg := sptr("rg-4")
+	var scored []ScoredCandidate
+	for _, ref := range []string{"t4-a", "t4-b", "t4-c"} {
+		scored = append(scored, highConf(ref, rg))
+	}
+
+	got := cfg.Decide(scored)
+	if got.Outcome != OutcomeReviewManyReleases {
+		t.Errorf("分流 = %q, 期望 review_many_releases", got.Outcome)
+	}
+	if got.Selected != nil {
+		t.Errorf("无客观依据时不应自动选择, 却选中了 %+v", got.Selected)
+	}
+	if len(got.HighConfidence) != 3 {
+		t.Errorf("应把三条高置信都带给复核队列, 得到 %d 条", len(got.HighConfidence))
+	}
+}
+
+// TestDecideSameGroupNoPhysicalGoesToReview 覆盖规则 3 的另一端：
+// 同组多条但一条实体发行都没有时，同样没有裁决依据。
+func TestDecideSameGroupNoPhysicalGoesToReview(t *testing.T) {
+	cfg := DefaultLadderConfig()
+	rg := sptr("rg-5")
+	a, b := highConf("a", rg), highConf("b", rg)
+	a.Candidate.MediumFormat = sptr("Digital Media")
+	b.Candidate.MediumFormat = nil // 上游没给载体信息
+
+	if got := cfg.Decide([]ScoredCandidate{a, b}); got.Outcome != OutcomeReviewManyReleases {
+		t.Errorf("分流 = %q, 期望 review_many_releases", got.Outcome)
 	}
 }
 
@@ -126,101 +167,67 @@ func TestLadderFromSettings(t *testing.T) {
 	}
 }
 
-// TestCrossGroupYieldsToSameRecording 覆盖跨发行组的例外 [A]：
-// 全部高置信候选是同一条录音时，分歧只是「收录在哪张碟」，交优选阶梯裁决。
-func TestCrossGroupYieldsToSameRecording(t *testing.T) {
+// TestCrossGroupNeverAutoSelects 守住规则 4 没有例外。
+//
+// 曾经为跨发行组开过两个就地裁决的口子：全部候选同属一条 recording、
+// 恰好一条候选的歌集精确匹配。它们把 `you`、`3253212` 两行从复核提到了入库，
+// 代价是规则不再可预期——用户读到「多条高置信 → 复核」，实现却替他做了决定。
+// 两个口子都已撤销，这条用例是它们不会被重新打开的守卫。
+func TestCrossGroupNeverAutoSelects(t *testing.T) {
 	cfg := DefaultLadderConfig()
 	rec := "2283ceda-0000-0000-0000-000000000000"
-	scored := []ScoredCandidate{
-		{
-			Candidate: provider.Candidate{
-				MatchRef: "a", RecordingRef: &rec,
-				ReleaseGroupRef: sptr("rg-1"), ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
-			},
-			Score: Score{HighConf: true, AlbumMatch: MatchFuzzy},
-		},
-		{
-			Candidate: provider.Candidate{
-				MatchRef: "b", RecordingRef: &rec,
-				ReleaseGroupRef: sptr("rg-2"), ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
-			},
-			Score: Score{HighConf: true, AlbumMatch: MatchNone},
-		},
-	}
 
-	got := cfg.Decide(scored)
-	if got.Outcome != OutcomeImportLadder {
-		t.Errorf("分流 = %q, 期望 import_ladder（同一条录音不是「哪首歌」的分歧）", got.Outcome)
-	}
-	if got.Selected == nil {
-		t.Fatal("应选出一条")
-	}
-}
-
-// TestCrossGroupYieldsToSoleAlbumExact 覆盖跨发行组的例外 [B]：
-// 恰好一条歌集精确时，用户在导入行里写的歌集就是客观依据。
-func TestCrossGroupYieldsToSoleAlbumExact(t *testing.T) {
-	cfg := DefaultLadderConfig()
-	scored := []ScoredCandidate{
-		{
-			Candidate: provider.Candidate{
-				MatchRef: "single", RecordingRef: sptr("rec-1"),
-				ReleaseGroupRef: sptr("rg-1"), AlbumTitle: sptr("3253212"),
-			},
-			Score: Score{HighConf: true, AlbumMatch: MatchExact},
-		},
-		{
-			Candidate: provider.Candidate{
-				MatchRef: "live", RecordingRef: sptr("rec-2"),
-				ReleaseGroupRef: sptr("rg-2"), AlbumTitle: sptr("GaLLERy on live"),
-			},
-			Score: Score{HighConf: true, AlbumMatch: MatchNone},
-		},
-	}
-
-	got := cfg.Decide(scored)
-	if got.Outcome != OutcomeImportLadder {
-		t.Errorf("分流 = %q, 期望 import_ladder", got.Outcome)
-	}
-	if got.Selected == nil || got.Selected.MatchRef != "single" {
-		t.Errorf("选中 = %v, 期望歌集精确的那一条", got.Selected)
-	}
-}
-
-// TestCrossGroupStillReviewsWhenAmbiguous 确保两个例外都没有把规则整体放松：
-// 不同录音、且歌集无法唯一裁决时，仍须交用户判断。
-func TestCrossGroupStillReviewsWhenAmbiguous(t *testing.T) {
-	cfg := DefaultLadderConfig()
-
-	t.Run("都不精确", func(t *testing.T) {
+	t.Run("全部候选同一条recording", func(t *testing.T) {
 		scored := []ScoredCandidate{
 			{
-				Candidate: provider.Candidate{MatchRef: "a", RecordingRef: sptr("rec-1"), ReleaseGroupRef: sptr("rg-1")},
-				Score:     Score{HighConf: true, AlbumMatch: MatchFuzzy},
+				Candidate: provider.Candidate{
+					MatchRef: "a", RecordingRef: &rec, ReleaseGroupRef: sptr("rg-1"),
+					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
+				},
+				Score: Score{HighConf: true, AlbumMatch: MatchFuzzy},
 			},
 			{
-				Candidate: provider.Candidate{MatchRef: "b", RecordingRef: sptr("rec-2"), ReleaseGroupRef: sptr("rg-2")},
-				Score:     Score{HighConf: true, AlbumMatch: MatchFuzzy},
+				Candidate: provider.Candidate{
+					MatchRef: "b", RecordingRef: &rec, ReleaseGroupRef: sptr("rg-2"),
+					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
+				},
+				Score: Score{HighConf: true, AlbumMatch: MatchNone},
 			},
 		}
-		if got := cfg.Decide(scored); got.Outcome != OutcomeReviewCrossGroup {
+		got := cfg.Decide(scored)
+		if got.Outcome != OutcomeReviewCrossGroup {
 			t.Errorf("分流 = %q, 期望 review_cross_group", got.Outcome)
+		}
+		if got.Selected != nil {
+			t.Errorf("跨发行组不应自动选择, 却选中了 %+v", got.Selected)
 		}
 	})
 
-	t.Run("两条都精确", func(t *testing.T) {
+	t.Run("恰好一条歌集精确", func(t *testing.T) {
 		scored := []ScoredCandidate{
 			{
-				Candidate: provider.Candidate{MatchRef: "a", RecordingRef: sptr("rec-1"), ReleaseGroupRef: sptr("rg-1")},
-				Score:     Score{HighConf: true, AlbumMatch: MatchExact},
+				Candidate: provider.Candidate{
+					MatchRef: "single", RecordingRef: sptr("rec-1"),
+					ReleaseGroupRef: sptr("rg-1"), AlbumTitle: sptr("3253212"),
+					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
+				},
+				Score: Score{HighConf: true, AlbumMatch: MatchExact},
 			},
 			{
-				Candidate: provider.Candidate{MatchRef: "b", RecordingRef: sptr("rec-2"), ReleaseGroupRef: sptr("rg-2")},
-				Score:     Score{HighConf: true, AlbumMatch: MatchExact},
+				Candidate: provider.Candidate{
+					MatchRef: "live", RecordingRef: sptr("rec-2"),
+					ReleaseGroupRef: sptr("rg-2"), AlbumTitle: sptr("GaLLERy on live"),
+					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
+				},
+				Score: Score{HighConf: true, AlbumMatch: MatchNone},
 			},
 		}
-		if got := cfg.Decide(scored); got.Outcome != OutcomeReviewCrossGroup {
-			t.Errorf("分流 = %q, 期望 review_cross_group（歌集没能唯一裁决）", got.Outcome)
+		got := cfg.Decide(scored)
+		if got.Outcome != OutcomeReviewCrossGroup {
+			t.Errorf("分流 = %q, 期望 review_cross_group", got.Outcome)
+		}
+		if got.Selected != nil {
+			t.Errorf("歌集精确不足以替用户裁决, 却选中了 %+v", got.Selected)
 		}
 	})
 }

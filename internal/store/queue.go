@@ -22,6 +22,26 @@ const (
 	StatusDiscarded ItemStatus = "discarded" // 已丢弃
 )
 
+// ReviewReason 是条目进入复核队列的成因。
+//
+// 三种成因在导入统计里落到两个互不重叠的数上：疑似重复与多义计入「进入复核」，
+// 无结果计入「未匹配」。仅凭 status='review' 分不出来，因此单独记一列。
+type ReviewReason string
+
+const (
+	// ReviewDuplicate 本地疑似重复（分流规则 1）。
+	ReviewDuplicate ReviewReason = "duplicate"
+	// ReviewAmbiguous 多条高置信无法唯一裁决（分流规则 3 同组多份发行、规则 4 跨发行组）。
+	ReviewAmbiguous ReviewReason = "ambiguous"
+	// ReviewNoMatch 无结果或全部低置信（分流规则 5）。
+	ReviewNoMatch ReviewReason = "no_match"
+	// ReviewReasonUnchanged 表示沿用条目已有的成因，不改写它。
+	//
+	// 复核队列里的「改搜」与「都不匹配」只是更新候选快照，
+	// 条目为什么落到复核里这件事没有变。
+	ReviewReasonUnchanged ReviewReason = ""
+)
+
 // AllStatuses 返回全部状态，供统计与界面使用。
 func AllStatuses() []ItemStatus {
 	return []ItemStatus{
@@ -82,8 +102,10 @@ type ImportItem struct {
 	NextRetryAt   *time.Time `json:"nextRetryAt"`
 	Candidates    *string    `json:"candidates"`
 	TriedVariants *string    `json:"triedVariants"`
-	TrackID       *int64     `json:"trackId"`
-	MergedInto    *int64     `json:"mergedInto"`
+	// ReviewReason 是进入复核的成因；非复核状态时为空。
+	ReviewReason *string `json:"reviewReason"`
+	TrackID      *int64  `json:"trackId"`
+	MergedInto   *int64  `json:"mergedInto"`
 }
 
 // CreateBatch 建立一个导入批次。
@@ -145,7 +167,7 @@ func (s *Store) ClaimNextItem(batchID int64) (*ImportItem, error) {
 			SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
 			       in_year, in_track_no, in_duration_ms, status, attempt_count,
 			       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-			       track_id, merged_into
+			       review_reason, track_id, merged_into
 			FROM import_item
 			WHERE batch_id = ? AND status = ?
 			  AND (next_retry_at IS NULL OR next_retry_at <= ?)
@@ -179,7 +201,7 @@ func scanItem(row interface{ Scan(...any) error }) (*ImportItem, error) {
 		&it.InTitle, &it.InArtist, &it.InAlbum,
 		&it.InYear, &it.InTrackNo, &it.InDurationMS, &status, &it.AttemptCount,
 		&it.LastError, &it.LastErrorAt, &it.NextRetryAt, &it.Candidates, &it.TriedVariants,
-		&it.TrackID, &it.MergedInto)
+		&it.ReviewReason, &it.TrackID, &it.MergedInto)
 	if err != nil {
 		return nil, err
 	}
@@ -195,12 +217,20 @@ func (s *Store) MarkImported(itemID, trackID int64) error {
 	})
 }
 
-// MarkReview 把条目置为待复核并保存候选快照与已尝试变体。
-func (s *Store) MarkReview(itemID int64, candidatesJSON, variantsJSON string) error {
+// MarkReview 把条目置为待复核，记录成因并保存候选快照与已尝试变体。
+//
+// reason 为 ReviewReasonUnchanged 时不改写已有成因。
+func (s *Store) MarkReview(itemID int64, reason ReviewReason, candidatesJSON, variantsJSON string) error {
 	return s.setStatus(itemID, StatusReview, func(tx *sql.Tx) error {
+		if reason == ReviewReasonUnchanged {
+			_, err := tx.Exec(
+				`UPDATE import_item SET candidates = ?, tried_variants = ? WHERE id = ?`,
+				nullIfEmpty(candidatesJSON), nullIfEmpty(variantsJSON), itemID)
+			return err
+		}
 		_, err := tx.Exec(
-			`UPDATE import_item SET candidates = ?, tried_variants = ? WHERE id = ?`,
-			nullIfEmpty(candidatesJSON), nullIfEmpty(variantsJSON), itemID)
+			`UPDATE import_item SET review_reason = ?, candidates = ?, tried_variants = ? WHERE id = ?`,
+			string(reason), nullIfEmpty(candidatesJSON), nullIfEmpty(variantsJSON), itemID)
 		return err
 	})
 }
@@ -302,11 +332,17 @@ func (s *Store) ResetStaleMatching() error {
 
 // BatchStats 是一次导入的分状态计数。
 type BatchStats struct {
-	Total     int `json:"total"`
-	Queued    int `json:"queued"`
-	Matching  int `json:"matching"`
-	Imported  int `json:"imported"`
-	Review    int `json:"review"`
+	Total    int `json:"total"`
+	Queued   int `json:"queued"`
+	Matching int `json:"matching"`
+	Imported int `json:"imported"`
+	// Review 是待复核总数，三种成因都在里面。
+	Review int `json:"review"`
+	// Unmatched 是 Review 中成因为「无结果 / 全部低置信」的那部分。
+	//
+	// 它是 Review 的子集而不是另一个状态：这些条目同样停在复核队列里等人处置。
+	// 统计行要的「进入复核」是 Review - Unmatched。
+	Unmatched int `json:"unmatched"`
 	Failed    int `json:"failed"`
 	Skipped   int `json:"skipped"`
 	Merged    int `json:"merged"`
@@ -354,7 +390,28 @@ func (s *Store) Stats(batchID int64) (BatchStats, error) {
 			st.Discarded = n
 		}
 	}
-	return st, rows.Err()
+	if err := rows.Err(); err != nil {
+		return BatchStats{}, err
+	}
+
+	// 「未匹配」是待复核里的一个子集，取不到状态分组里，单独数一次
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM import_item WHERE batch_id = ? AND status = ? AND review_reason = ?`,
+		batchID, string(StatusReview), string(ReviewNoMatch)).Scan(&st.Unmatched); err != nil {
+		return BatchStats{}, err
+	}
+	return st, nil
+}
+
+// ReviewOnly 返回「进入复核」的条数：待复核总数减去无结果的那部分。
+//
+// 统计行要的四个数互不重叠，这一个是其中之一。
+func (b BatchStats) ReviewOnly() int {
+	n := b.Review - b.Unmatched
+	if n < 0 {
+		return 0
+	}
+	return n
 }
 
 // FailedItems 返回失败条目，供完成统计逐行列出其原始输入。
@@ -373,7 +430,7 @@ func (s *Store) AllReviewItems() ([]ImportItem, error) {
 		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
 		       in_year, in_track_no, in_duration_ms, status, attempt_count,
 		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       track_id, merged_into
+		       review_reason, track_id, merged_into
 		FROM import_item
 		WHERE status IN (?, ?)
 		ORDER BY batch_id, row_index`, string(StatusReview), string(StatusFailed))
@@ -389,7 +446,7 @@ func (s *Store) itemsByStatus(batchID int64, status ItemStatus) ([]ImportItem, e
 		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
 		       in_year, in_track_no, in_duration_ms, status, attempt_count,
 		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       track_id, merged_into
+		       review_reason, track_id, merged_into
 		FROM import_item WHERE batch_id = ? AND status = ? ORDER BY row_index`,
 		batchID, string(status))
 	if err != nil {
@@ -417,7 +474,7 @@ func (s *Store) GetItem(itemID int64) (*ImportItem, error) {
 		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
 		       in_year, in_track_no, in_duration_ms, status, attempt_count,
 		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       track_id, merged_into
+		       review_reason, track_id, merged_into
 		FROM import_item WHERE id = ?`, itemID)
 	it, err := scanItem(row)
 	if errors.Is(err, sql.ErrNoRows) {

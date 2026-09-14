@@ -323,7 +323,7 @@ func TestLogLinesAreDistinguishable(t *testing.T) {
 
 // TestSummaryLine 覆盖 11.10 的完成统计文案。
 func TestSummaryLine(t *testing.T) {
-	got := SummaryLine(180, 20, 10, 4)
+	got := SummaryLine(180, 20, 10, 4, 5)
 	for _, want := range []string{"本次导入 180 条", "进入复核 20 条", "未匹配 10 条", "失败 4 条"} {
 		if !containsSub(got, want) {
 			t.Errorf("统计文案缺少 %q: %q", want, got)

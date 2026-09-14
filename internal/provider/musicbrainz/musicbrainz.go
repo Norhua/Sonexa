@@ -244,7 +244,7 @@ func expandToTrackCandidates(recordings []recording) []provider.Candidate {
 		credit := joinArtistCredit(rec.ArtistCredit)
 		for _, rel := range rec.Releases {
 			for _, med := range rel.Media {
-				for _, trk := range med.Tracks {
+				for _, trk := range med.TrackList() {
 					out = append(out, buildCandidate(rec, rel, med, trk, credit))
 				}
 			}
@@ -260,7 +260,7 @@ func expandToTrackCandidates(recordings []recording) []provider.Candidate {
 
 func hasTracks(media []medium) bool {
 	for _, m := range media {
-		if len(m.Tracks) > 0 {
+		if len(m.TrackList()) > 0 {
 			return true
 		}
 	}

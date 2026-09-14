@@ -179,7 +179,7 @@ func LogLine(outcome Outcome, in Input, sc *ScoredCandidate) string {
 			describe(sc.Candidate.ArtistName, in.Artist),
 			describe(sc.Candidate.AlbumTitle, in.Album),
 			sc.Score.Total)
-	case OutcomeReviewCrossGroup:
+	case OutcomeReviewCrossGroup, OutcomeReviewManyReleases:
 		return fmt.Sprintf("[进入复核]: %s", inputSummary(in))
 	case OutcomeReviewNoMatch:
 		return fmt.Sprintf("[匹配失败]: %s", inputSummary(in))
@@ -197,12 +197,32 @@ func ErrorLogLine(err error) string {
 	return fmt.Sprintf("[发生错误]: 返回队列，%v", err)
 }
 
+// ExhaustedLogLine 返回连续出错达到上限、不再返回队列时的提示。
+//
+// 它仍属「发生错误」这一支，不能写成 `[匹配失败]`——那是「上游没有这首歌」
+// 的判定（规则 5，计入未匹配），而这里是「一直没问到上游」（规则 6，计入失败）。
+// 两者在统计行里是两个互不重叠的数，提示混用会让用户对不上账。
+func ExhaustedLogLine(in Input, attempts int, err error) string {
+	return fmt.Sprintf("[发生错误]: 已连续 %d 次出错，不再返回队列，%s，%v",
+		attempts, inputSummary(in), err)
+}
+
 // SummaryLine 返回完成或暂停时的统计文案。
-func SummaryLine(imported, review, unmatched, failed int) string {
+//
+// 四个数互不重叠，相加即本批总数——只有这样用户才对得上账：
+//
+//	导入      规则 2、3 直接入库
+//	进入复核  规则 1 疑似重复 + 规则 4 跨发行组 + 规则 3 同组多义
+//	未匹配    规则 5 无结果 / 全部低置信
+//	失败      规则 6 连续出错达上限，不再返回队列
+//
+// 「进入复核」与「未匹配」的条目都停在复核队列里，但成因不同，
+// 因此在统计行里必须分开计数。
+func SummaryLine(imported, review, unmatched, failed, maxAttempts int) string {
 	return fmt.Sprintf(
 		"[导入完成/暂停]: 本次导入 %d 条，进入复核 %d 条，未匹配 %d 条，失败 %d 条\n"+
-			"（连续 5 次匹配均发生错误的条目不再返回队列）",
-		imported, review, unmatched, failed)
+			"（连续 %d 次匹配均发生错误的条目不再返回队列）",
+		imported, review, unmatched, failed, maxAttempts)
 }
 
 func inputSummary(in Input) string {

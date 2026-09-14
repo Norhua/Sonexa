@@ -205,7 +205,7 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 	item, err := a.store.GetItem(itemID)
 	if err == nil && item != nil {
 		variants, _ := json.Marshal([]string{title})
-		a.store.MarkReview(itemID, string(snapshot), string(variants))
+		a.store.MarkReview(itemID, store.ReviewReasonUnchanged, string(snapshot), string(variants))
 	}
 	return rows, nil
 }
@@ -328,7 +328,7 @@ func (a *App) NoneMatched(itemID int64) error {
 		return err
 	}
 	// 保持 review 状态，仅清空候选快照
-	return a.store.MarkReview(itemID, "", derefOr(item.TriedVariants, ""))
+	return a.store.MarkReview(itemID, store.ReviewReasonUnchanged, "", derefOr(item.TriedVariants, ""))
 }
 
 // RetryReviewItem 让失败条目重新进入匹配。

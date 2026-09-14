@@ -55,7 +55,7 @@ func TestRawRowNeverModified(t *testing.T) {
 	original := item.RawRow
 
 	// 模拟用户在复核队列改写搜索条件后重新搜索、并最终进入复核
-	if err := s.MarkReview(item.ID, `[{"ref":"x"}]`, `["改写后的曲名"]`); err != nil {
+	if err := s.MarkReview(item.ID, ReviewAmbiguous, `[{"ref":"x"}]`, `["改写后的曲名"]`); err != nil {
 		t.Fatalf("置为待复核失败: %v", err)
 	}
 
@@ -98,7 +98,7 @@ func TestStateMachineTransitions(t *testing.T) {
 
 	// matching → review
 	item2, _ := s.ClaimNextItem(batchID)
-	s.MarkReview(item2.ID, `[]`, `["变体A"]`)
+	s.MarkReview(item2.ID, ReviewAmbiguous, `[]`, `["变体A"]`)
 	got2, _ := s.GetItem(item2.ID)
 	if got2.Status != StatusReview {
 		t.Errorf("状态 = %q, 期望 review", got2.Status)
@@ -335,7 +335,7 @@ func TestStatsAndFailedItems(t *testing.T) {
 	s.MarkImported(a.ID, trackID)
 
 	b, _ := s.ClaimNextItem(batchID)
-	s.MarkReview(b.ID, `[]`, `[]`)
+	s.MarkReview(b.ID, ReviewAmbiguous, `[]`, `[]`)
 
 	c, _ := s.ClaimNextItem(batchID)
 	s.RecordFailure(c.ID, "503 Service Unavailable", time.Millisecond, 1)
@@ -377,7 +377,7 @@ func TestAllReviewItemsAcrossBatches(t *testing.T) {
 	b2 := seedBatch(t, s, 2)
 
 	i1, _ := s.ClaimNextItem(b1)
-	s.MarkReview(i1.ID, `[]`, `[]`)
+	s.MarkReview(i1.ID, ReviewAmbiguous, `[]`, `[]`)
 	i2, _ := s.ClaimNextItem(b2)
 	s.RecordFailure(i2.ID, "503", time.Millisecond, 1)
 
@@ -415,5 +415,71 @@ func TestClaimRespectsRetryTime(t *testing.T) {
 
 	if next, _ := s.ClaimNextItem(batchID); next != nil {
 		t.Error("退避未到期的条目不应被取出")
+	}
+}
+
+// TestStatsSplitsReviewFromUnmatched 守住统计行的四个数互不重叠。
+//
+// 「进入复核」与「未匹配」的条目都停在复核队列里（status='review'），
+// 只有 review_reason 能把它们分开。此前两个数都取待复核总数，
+// 于是不管导入什么，统计行里这两个数永远相同，用户对不上账。
+func TestStatsSplitsReviewFromUnmatched(t *testing.T) {
+	s := openTestStore(t)
+	batchID := seedBatch(t, s, 5)
+
+	imported, _ := s.ClaimNextItem(batchID)
+	trackID, _ := s.CreateTrack(&Track{Title: "x"})
+	s.MarkImported(imported.ID, trackID)
+
+	dup, _ := s.ClaimNextItem(batchID)
+	s.MarkReview(dup.ID, ReviewDuplicate, `[]`, `[]`)
+
+	ambiguous, _ := s.ClaimNextItem(batchID)
+	s.MarkReview(ambiguous.ID, ReviewAmbiguous, `[]`, `[]`)
+
+	noMatch, _ := s.ClaimNextItem(batchID)
+	s.MarkReview(noMatch.ID, ReviewNoMatch, `[]`, `[]`)
+
+	failed, _ := s.ClaimNextItem(batchID)
+	s.RecordFailure(failed.ID, "503 Service Unavailable", time.Millisecond, 1)
+
+	stats, err := s.Stats(batchID)
+	if err != nil {
+		t.Fatalf("统计失败: %v", err)
+	}
+	if stats.Review != 3 {
+		t.Errorf("待复核总数 = %d, 期望 3（疑似重复 + 多义 + 无结果）", stats.Review)
+	}
+	if stats.Unmatched != 1 {
+		t.Errorf("未匹配 = %d, 期望 1（只有无结果那条）", stats.Unmatched)
+	}
+	if stats.ReviewOnly() != 2 {
+		t.Errorf("进入复核 = %d, 期望 2（疑似重复 + 多义）", stats.ReviewOnly())
+	}
+	// 四个数互不重叠，相加即本批总数
+	if sum := stats.Imported + stats.ReviewOnly() + stats.Unmatched + stats.Failed; sum != 5 {
+		t.Errorf("四类相加 = %d, 期望 5（本批总数）", sum)
+	}
+}
+
+// TestMarkReviewKeepsReasonWhenUnchanged 覆盖复核队列里「改搜」与「都不匹配」：
+// 它们只更新候选快照，不该把条目当初为什么落到复核里这件事改掉。
+func TestMarkReviewKeepsReasonWhenUnchanged(t *testing.T) {
+	s := openTestStore(t)
+	batchID := seedBatch(t, s, 1)
+
+	item, _ := s.ClaimNextItem(batchID)
+	s.MarkReview(item.ID, ReviewNoMatch, `[]`, `[]`)
+	if err := s.MarkReview(item.ID, ReviewReasonUnchanged, `[{"ref":"x"}]`, `["改搜"]`); err != nil {
+		t.Fatalf("更新候选快照失败: %v", err)
+	}
+
+	got, _ := s.GetItem(item.ID)
+	if got.ReviewReason == nil || *got.ReviewReason != string(ReviewNoMatch) {
+		t.Errorf("成因 = %v, 期望仍是 no_match", got.ReviewReason)
+	}
+	stats, _ := s.Stats(batchID)
+	if stats.Unmatched != 1 {
+		t.Errorf("未匹配 = %d, 期望 1——改搜不应把条目挪出未匹配", stats.Unmatched)
 	}
 }

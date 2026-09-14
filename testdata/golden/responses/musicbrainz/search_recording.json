@@ -7,7 +7,9 @@
       "score": 100,
       "title": "God knows...",
       "length": 332000,
-      "isrcs": ["JPPL00600123"],
+      "isrcs": [
+        "JPPL00600123"
+      ],
       "artist-credit": [
         {
           "name": "涼宮ハルヒ(CV:平野綾)",
@@ -27,12 +29,18 @@
           "status": "Official",
           "date": "2006-12-18",
           "country": "JP",
-          "cover-art-archive": { "artwork": true, "front": true, "count": 4 },
+          "cover-art-archive": {
+            "artwork": true,
+            "front": true,
+            "count": 4
+          },
           "release-group": {
             "id": "rg-haruhi",
             "title": "涼宮ハルヒの詰合",
             "primary-type": "Album",
-            "secondary-types": ["Soundtrack"],
+            "secondary-types": [
+              "Soundtrack"
+            ],
             "first-release-date": "2006-12-18"
           },
           "media": [
@@ -40,7 +48,7 @@
               "position": 1,
               "format": "CD",
               "track-count": 12,
-              "tracks": [
+              "track": [
                 {
                   "id": "trk-cd-jp-02",
                   "position": 2,
@@ -58,12 +66,18 @@
           "status": "Official",
           "date": "2009-05-27",
           "country": "JP",
-          "cover-art-archive": { "artwork": false, "front": false, "count": 0 },
+          "cover-art-archive": {
+            "artwork": false,
+            "front": false,
+            "count": 0
+          },
           "release-group": {
             "id": "rg-haruhi",
             "title": "涼宮ハルヒの詰合",
             "primary-type": "Album",
-            "secondary-types": ["Soundtrack"],
+            "secondary-types": [
+              "Soundtrack"
+            ],
             "first-release-date": "2006-12-18"
           },
           "media": [
@@ -71,7 +85,7 @@
               "position": 1,
               "format": "Digital Media",
               "track-count": 12,
-              "tracks": [
+              "track": [
                 {
                   "id": "trk-digital-jp-02",
                   "position": 2,
@@ -89,7 +103,11 @@
           "status": "Official",
           "date": "2011-03-01",
           "country": "US",
-          "cover-art-archive": { "artwork": true, "front": true, "count": 2 },
+          "cover-art-archive": {
+            "artwork": true,
+            "front": true,
+            "count": 2
+          },
           "release-group": {
             "id": "rg-haruhi-us",
             "title": "Haruhi Collection",
@@ -101,7 +119,7 @@
               "position": 1,
               "format": "Vinyl",
               "track-count": 10,
-              "tracks": [
+              "track": [
                 {
                   "id": "trk-vinyl-us-a2",
                   "position": 2,

@@ -561,3 +561,44 @@ func TestSingleAnchorOmitsParens(t *testing.T) {
 		t.Errorf("查询串 = %s", got)
 	}
 }
+
+// TestMediumAcceptsBothTrackKeys 守住两个端点的曲目数组键名差异。
+//
+// MusicBrainz 在搜索响应里把碟上的曲目放在 `track`，在发行详情响应里放在
+// `tracks`。只认 `tracks` 的后果不是「少一个字段」——搜索结果的每条候选都会
+// 退到发行级兜底：match_ref 变成合成串而不是 track MBID，载体格式、曲序、
+// 碟序一并丢失，而载体格式正是分流规则第 3 条赖以过滤实体发行的依据。
+// 实测：修这一处之前，真实搜索返回的每条候选载体都是空的。
+func TestMediumAcceptsBothTrackKeys(t *testing.T) {
+	const searchShape = `{"recordings":[{"id":"rec-1","title":"某曲","releases":[{
+		"id":"rel-1","title":"某碟","status":"Official","country":"JP",
+		"media":[{"position":1,"format":"CD","track-count":4,
+			"track":[{"id":"trk-1","position":2,"title":"某曲"}]}]}]}]}`
+	const detailShape = `{"recordings":[{"id":"rec-1","title":"某曲","releases":[{
+		"id":"rel-1","title":"某碟","status":"Official","country":"JP",
+		"media":[{"position":1,"format":"CD","track-count":4,
+			"tracks":[{"id":"trk-1","position":2,"title":"某曲"}]}]}]}]}`
+
+	for name, body := range map[string]string{"搜索端点(track)": searchShape, "详情端点(tracks)": detailShape} {
+		t.Run(name, func(t *testing.T) {
+			var resp searchResponse
+			if err := json.Unmarshal([]byte(body), &resp); err != nil {
+				t.Fatalf("解析失败: %v", err)
+			}
+			got := expandToTrackCandidates(resp.Recordings)
+			if len(got) != 1 {
+				t.Fatalf("候选数 = %d, 期望 1", len(got))
+			}
+			c := got[0]
+			if c.MatchRef != "trk-1" {
+				t.Errorf("match_ref = %q, 期望 track MBID trk-1（不是发行级合成串）", c.MatchRef)
+			}
+			if c.MediumFormat == nil || *c.MediumFormat != "CD" {
+				t.Errorf("载体 = %v, 期望 CD——分流规则 3 靠它过滤实体发行", c.MediumFormat)
+			}
+			if c.TrackNumber == nil || *c.TrackNumber != 2 {
+				t.Errorf("曲序 = %v, 期望 2", c.TrackNumber)
+			}
+		})
+	}
+}

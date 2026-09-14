@@ -296,3 +296,12 @@ CREATE TABLE track_fts_shadow (
 );
 
 `
+
+// migration0002ReviewReason 为待复核条目记录成因。
+//
+// 复核队列里停着三种成因不同的条目：疑似重复、多义（跨发行组或同组多份发行）、
+// 无结果。它们在导入统计里是两个互不重叠的数——「进入复核」与「未匹配」——
+// 而仅凭 status='review' 分不出来，此前两个数因此永远相同。
+const migration0002ReviewReason = `
+ALTER TABLE import_item ADD COLUMN review_reason TEXT;
+`

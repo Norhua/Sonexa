@@ -87,11 +87,28 @@ type releaseGroup struct {
 
 // medium 是一张碟（CD / Vinyl / Digital Media ...）。
 type medium struct {
-	Position   int     `json:"position"`
-	Format     string  `json:"format"`
-	Title      string  `json:"title"`
-	TrackCount int     `json:"track-count"`
-	Tracks     []track `json:"tracks"`
+	Position   int    `json:"position"`
+	Format     string `json:"format"`
+	Title      string `json:"title"`
+	TrackCount int    `json:"track-count"`
+
+	// Tracks 是详情端点（/ws/2/release/{mbid}?inc=recordings+media）用的键名。
+	Tracks []track `json:"tracks"`
+	// SearchTracks 是搜索端点（/ws/2/recording?query=…）用的键名。
+	//
+	// 同一个 media 对象，两个端点的曲目数组键名不同：详情是 `tracks`，
+	// 搜索是 `track`。只认其中一个的后果不是「少一个字段」——搜索结果里
+	// 每条候选都会走发行级兜底，于是 match_ref 退化成合成串而不是 track MBID，
+	// 载体格式、曲序、碟序一并丢失。载体格式正是分流规则第 3 条的过滤依据。
+	SearchTracks []track `json:"track"`
+}
+
+// TrackList 返回该碟的曲目，抹平两个端点的键名差异。
+func (m medium) TrackList() []track {
+	if len(m.Tracks) > 0 {
+		return m.Tracks
+	}
+	return m.SearchTracks
 }
 
 // track 是碟上的一个位置。

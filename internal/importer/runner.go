@@ -192,7 +192,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	if dupID, err := r.engine.CheckLocalDuplicate(r.store, in); err == nil && dupID != 0 {
 		existing := r.describeTrack(dupID)
 		candidates := r.localCandidateSnapshot(dupID)
-		r.store.MarkReview(item.ID, candidates, "[]")
+		r.store.MarkReview(item.ID, store.ReviewDuplicate, candidates, "[]")
 		return matching.DuplicateLogLine(in, existing)
 	}
 
@@ -202,11 +202,11 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		if ctx.Err() != nil {
 			return ""
 		}
-		// 出错时退避重排；累计达上限则标记失败
+		// 出错时退避重排；累计达上限则标记失败（规则 6）
 		backoff := r.retry.Backoff(item.AttemptCount+1, err)
 		status, _ := r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts)
 		if status == store.StatusFailed {
-			return fmt.Sprintf("[匹配失败]: %s（已达重试上限，不再自动重排）", deref(item.InTitle))
+			return matching.ExhaustedLogLine(in, r.retry.MaxAttempts, err)
 		}
 		return matching.ErrorLogLine(err)
 	}
@@ -233,9 +233,21 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 
 	default:
 		candidatesJSON, _ := json.Marshal(res.Scored)
-		r.store.MarkReview(item.ID, string(candidatesJSON), string(variantsJSON))
+		r.store.MarkReview(item.ID, reviewReasonOf(res.Decision.Outcome),
+			string(candidatesJSON), string(variantsJSON))
 		return matching.LogLine(res.Decision.Outcome, in, nil)
 	}
+}
+
+// reviewReasonOf 把分流结果映射为复核成因。
+//
+// 统计行里「进入复核」与「未匹配」是两个互不重叠的数，这里是它们唯一的分界点：
+// 多义（跨发行组、同组多份发行）算进入复核，无结果算未匹配。
+func reviewReasonOf(outcome matching.Outcome) store.ReviewReason {
+	if outcome == matching.OutcomeReviewNoMatch {
+		return store.ReviewNoMatch
+	}
+	return store.ReviewAmbiguous
 }
 
 // importCandidate 把一条候选入库并写入溯源。
@@ -332,11 +344,10 @@ func (r *Runner) summaryFor(batchID int64) string {
 	if err != nil {
 		return ""
 	}
-	// 「未匹配」是进入复核的两种成因之一（无结果/全低置信），
-	// 与「跨发行组」合起来才是进入复核的总数；此前把 Review 传了两次，
-	// 导致两个计数永远相同。
-	unmatched := stats.Review
-	line := matching.SummaryLine(stats.Imported, stats.Review, unmatched, stats.Failed)
+	// 四个数互不重叠，相加即本批总数。「进入复核」与「未匹配」都停在复核队列里，
+	// 靠 import_item.review_reason 分开——此前两者都取 stats.Review，永远相同。
+	line := matching.SummaryLine(stats.Imported, stats.ReviewOnly(),
+		stats.Unmatched, stats.Failed, r.retry.MaxAttempts)
 
 	failed, err := r.store.FailedItems(batchID)
 	if err != nil || len(failed) == 0 {

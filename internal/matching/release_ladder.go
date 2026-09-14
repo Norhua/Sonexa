@@ -13,6 +13,12 @@ type LadderConfig struct {
 	PreferredCountries []string
 	// MediumPriority 是载体格式优先级，靠前者优先。
 	MediumPriority []string
+	// DigitalFormats 是被视为**非实体**的载体格式。
+	//
+	// 「实体」这一侧不枚举：MusicBrainz 的载体分类有上百个（CD / SACD / Blu-spec CD /
+	// Vinyl / Cassette / MiniDisc / DVD-Audio…），列出来必然漏，而漏掉一个实体格式
+	// 会让本该入库的行落进复核。非实体的那一侧只有寥寥几个，枚举得完。
+	DigitalFormats []string
 }
 
 // DefaultLadderConfig 返回默认阶梯配置。
@@ -20,7 +26,38 @@ func DefaultLadderConfig() LadderConfig {
 	return LadderConfig{
 		PreferredCountries: []string{"JP", "CN", "US", "GB", "XW"},
 		MediumPriority:     []string{"CD", "SACD", "Vinyl", "Cassette", "Digital Media"},
+		DigitalFormats:     []string{"Digital Media"},
 	}
+}
+
+// PhysicalOnly 过滤出载体为实体发行的候选。
+//
+// 这是分流规则第 3 条的「先过滤 release 类型，优先选择为实体光碟的」那一步：
+// 同一发行组内有多条高置信时，先只看实体发行，剩唯一一条才入库。
+//
+// 载体缺失（上游没给 media 信息）**不算实体**：那是「不知道」而不是「是」，
+// 而这一步的产出会直接决定要不要替用户入库，不知道时不该算它通过。
+func (cfg LadderConfig) PhysicalOnly(candidates []provider.Candidate) []provider.Candidate {
+	out := make([]provider.Candidate, 0, len(candidates))
+	for _, c := range candidates {
+		if cfg.IsPhysical(c.MediumFormat) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// IsPhysical 报告某载体格式是否为实体发行。
+func (cfg LadderConfig) IsPhysical(format *string) bool {
+	if format == nil || strings.TrimSpace(*format) == "" {
+		return false
+	}
+	for _, d := range cfg.DigitalFormats {
+		if strings.EqualFold(strings.TrimSpace(*format), d) {
+			return false
+		}
+	}
+	return true
 }
 
 // SelectRelease 从一组候选中按发行优选阶梯选出唯一一个。

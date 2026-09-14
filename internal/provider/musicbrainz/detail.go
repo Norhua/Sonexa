@@ -159,7 +159,7 @@ func parseTracklist(rel *releaseDetail) []provider.TracklistEntry {
 		if disc == 0 {
 			disc = 1
 		}
-		for _, trk := range med.Tracks {
+		for _, trk := range med.TrackList() {
 			entry := provider.TracklistEntry{
 				DiscNumber:  disc,
 				TrackNumber: trk.Position,
@@ -339,7 +339,7 @@ func dedupeArtists(in []provider.DetailArtist) []provider.DetailArtist {
 // findTrack 在 release 中定位指定的曲目位置；trackRef 为空时取第一个。
 func findTrack(rel *releaseDetail, trackRef string) (medium, track, bool) {
 	for _, med := range rel.Media {
-		for _, trk := range med.Tracks {
+		for _, trk := range med.TrackList() {
 			if trackRef == "" || trk.ID == trackRef {
 				return med, trk, true
 			}
