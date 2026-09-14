@@ -321,7 +321,10 @@ ALTER TABLE import_item ADD COLUMN review_reason TEXT;
 // attempts / error 让「一直取不到的那一条」不至于永远堵在队首：
 // 达到上限的条目退出工作集，用户点「开始」时清零重试。
 const migration0003EnrichState = `
-ALTER TABLE track_metadata ADD COLUMN enrich_state TEXT;
+-- 默认 skipped 而不是 NULL：没有上游身份就是「无需匹配」。
+-- 留 NULL 的话「这一行算不算待补」要在每个查询里各判一次，而三个计数必须
+-- 刚好把全部行分完——分不完的那一刻，界面上的分母就永远到不了头。
+ALTER TABLE track_metadata ADD COLUMN enrich_state TEXT NOT NULL DEFAULT 'skipped';
 ALTER TABLE track_metadata ADD COLUMN enrich_attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE track_metadata ADD COLUMN enrich_error TEXT;
 

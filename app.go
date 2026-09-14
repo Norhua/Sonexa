@@ -90,6 +90,12 @@ func (a *App) autoStartEnrich() {
 	if a.enricher == nil {
 		return
 	}
+	// 出网未启用（联系方式没填）时一条也补不了。此时不该起任务：
+	// 每条都会失败一次，重试计数被白白烧掉，最后整个任务转 stalled，
+	// 而真正的原因只是设置里少填了一个字段。
+	if gate := a.CheckOutbound(); !gate.Allowed {
+		return
+	}
 	ctx := a.ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -103,6 +109,11 @@ func (a *App) autoStartEnrich() {
 // 让的是**整个配额**而不只是次序——优先级闸门解决的是谁先发，
 // 而用户等的那一次搜索仍会因为后台占用了这一秒的名额而多等一轮。
 func (a *App) outboundBusy() (bool, string) {
+	// 出网被关掉时整体等着，而不是逐条失败：设置里补上联系方式之后
+	// 任务会自己接着跑，不需要用户再去点一次「开始」。
+	if gate := a.CheckOutbound(); !gate.Allowed {
+		return true, gate.Reason
+	}
 	if a.interactive.Load() > 0 {
 		return true, "用户检索进行中"
 	}

@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -108,36 +109,38 @@ func (s *Store) TracksNeedingEnrichment(limit int) ([]EnrichTarget, error) {
 
 // EnrichStats 返回三种状态的计数。
 //
-// 未记录状态的行（理论上不该有）按 pending 计：宁可让后台任务多看一眼，
-// 也不要把一条没补的曲目算成已补。
+// 三个数**刚好把全部行分完**：待补是 pending，已匹配是 fetched 与 absent，
+// 其余（含意料之外的取值）算无需匹配。分不完的那一刻界面上的分母就永远
+// 到不了头，而用户读到的是「补全卡住了」。
 func (s *Store) EnrichStats() (EnrichCounts, error) {
 	var c EnrichCounts
 	err := s.db.QueryRow(`
 		SELECT
 			SUM(CASE WHEN enrich_state IN ('fetched','absent') THEN 1 ELSE 0 END),
-			SUM(CASE WHEN enrich_state = 'skipped' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN enrich_state = 'pending' OR enrich_state IS NULL THEN 1 ELSE 0 END)
-		FROM track_metadata`).Scan(&nullInt{&c.Matched}, &nullInt{&c.Skipped}, &nullInt{&c.Pending})
+			SUM(CASE WHEN enrich_state = 'pending' THEN 1 ELSE 0 END),
+			SUM(CASE WHEN enrich_state NOT IN ('fetched','absent','pending') THEN 1 ELSE 0 END)
+		FROM track_metadata`).Scan(&nullInt{&c.Matched}, &nullInt{&c.Pending}, &nullInt{&c.Skipped})
 	if err != nil {
 		return c, fmt.Errorf("统计补全状态失败: %w", err)
 	}
 	return c, nil
 }
 
-// EnrichStateOf 读取某曲目的补全状态。没有丰富信息行时按「无需匹配」处理。
+// EnrichStateOf 读取某曲目的补全状态。
+//
+// 没有丰富信息行（或行上没有状态）时按「无需匹配」处理，与列的默认值一致。
 func (s *Store) EnrichStateOf(trackID int64) (EnrichState, error) {
 	var state sql.NullString
 	err := s.db.QueryRow(
 		`SELECT enrich_state FROM track_metadata WHERE track_id = ?`, trackID).Scan(&state)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return EnrichSkipped, nil
 	}
 	if err != nil {
 		return "", err
 	}
 	if !state.Valid || state.String == "" {
-		// 状态缺失按待补处理：宁可多看一眼，也不要把没补的算成已补
-		return EnrichPending, nil
+		return EnrichSkipped, nil
 	}
 	return EnrichState(state.String), nil
 }

@@ -86,6 +86,11 @@ type enrichWorker struct {
 	active    bool
 	lastError string
 	cancel    context.CancelFunc
+	// done 在循环退出时关闭，供 Stop 等它真的停下来。
+	//
+	// 不等的话，退出应用时 store 会在补全还在写库的那一刻被关掉——
+	// 测试里的表现是临时目录清理不掉（WAL 文件在 Close 之后又被建了出来）。
+	done chan struct{}
 }
 
 func newEnrichWorker(st *store.Store) *enrichWorker {
@@ -163,14 +168,16 @@ func (w *enrichWorker) launch(ctx context.Context) error {
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
 	w.mu.Lock()
 	w.cancel = cancel
+	w.done = done
 	w.active = true
 	w.state = enrichRunning
 	w.reason = ""
 	w.mu.Unlock()
 
-	go w.run(runCtx, targets)
+	go w.run(runCtx, targets, done)
 	w.publish()
 	return nil
 }
@@ -187,14 +194,26 @@ func (w *enrichWorker) Pause() {
 	w.publish()
 }
 
-// Stop 停止补全（应用退出时用）。
+// Stop 停止补全并等它真的停下来（应用退出时用）。
+//
+// 必须等：不等就会在补全还在写库的那一刻把 store 关掉。
+// 等待有上限——退出流程不该被一次卡住的取数拖住。
 func (w *enrichWorker) Stop() {
 	w.mu.Lock()
 	cancel := w.cancel
+	done := w.done
 	w.cancel = nil
 	w.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	if cancel == nil {
+		return
+	}
+	cancel()
+	if done == nil {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
 	}
 }
 
@@ -206,7 +225,8 @@ func (w *enrichWorker) collect() ([]store.EnrichTarget, error) {
 }
 
 // run 逐条推进工作集，跑完再取一次——期间用户可能又接受了几条候选。
-func (w *enrichWorker) run(ctx context.Context, targets []store.EnrichTarget) {
+func (w *enrichWorker) run(ctx context.Context, targets []store.EnrichTarget, done chan struct{}) {
+	defer close(done)
 	defer func() {
 		w.mu.Lock()
 		w.active = false
@@ -215,6 +235,7 @@ func (w *enrichWorker) run(ctx context.Context, targets []store.EnrichTarget) {
 			w.reason = ""
 		}
 		w.cancel = nil
+		w.done = nil
 		w.mu.Unlock()
 		w.publish()
 		if w.onRunFinished != nil {

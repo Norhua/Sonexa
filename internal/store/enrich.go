@@ -126,4 +126,3 @@ func (s *Store) TracksNeedingReview() ([]int64, error) {
 	}
 	return out, rows.Err()
 }
-
