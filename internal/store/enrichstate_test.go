@@ -10,10 +10,12 @@ func TestEnrichStateCountsPartitionAllRows(t *testing.T) {
 
 	source, ref := "musicbrainz", "trk-1"
 	release := "rel-1"
-	// 有上游身份 + 有发行标识 → 待补
+	// 有上游身份 + 有发行标识 → 待补。
+	// 发行标识归歌集，因此它走 Release 而不是曲目侧的 Metadata。
 	pendingID, err := s.CreateTrackWithProvenance(NewTrackInput{
 		Title: "待补", MatchSource: &source, MatchRef: &ref,
-		Metadata: &MetadataInput{ReleaseMBID: &release},
+		Album:   ptr("某专辑"),
+		Release: &ReleaseInput{Provider: &source, ProviderRef: &release},
 	})
 	if err != nil {
 		t.Fatalf("建曲目失败: %v", err)

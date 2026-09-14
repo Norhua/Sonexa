@@ -11,43 +11,28 @@ import (
 func TestAlbumGroupingMergesVersions(t *testing.T) {
 	s := openTestStore(t)
 
-	// 两首同专辑曲目，一首匹配 CD 版、一首匹配数字版，同属一个发行组
-	for _, tc := range []struct{ ref, relRef string }{
-		{"trk-cd-01", "rel-cd"},
-		{"trk-digital-02", "rel-digital"},
+	// 两首同专辑曲目，一首匹配 CD 版、一首匹配数字版，同属一个发行组。
+	// 发行级事实（载体、清单总数、类型）随曲目一起写到**歌集**上，
+	// 不再逐曲目复制一份。
+	for _, tc := range []struct{ ref, relRef, format string }{
+		{"trk-cd-01", "rel-cd", "CD"},
+		{"trk-digital-02", "rel-digital", "Digital Media"},
 	} {
 		if _, err := s.CreateTrackWithProvenance(NewTrackInput{
 			Title: "曲目-" + tc.ref, Album: ptr("涼宮ハルヒの詰合"),
 			MatchSource: ptr("musicbrainz"), MatchRef: ptr(tc.ref),
-			Metadata: &MetadataInput{
-				ReleaseMBID:      ptr(tc.relRef),
-				ReleaseGroupMBID: ptr("rg-haruhi"),
-				Album:            ptr("涼宮ハルヒの詰合"),
+			Release: &ReleaseInput{
+				Provider: ptr("musicbrainz"), ProviderRef: ptr(tc.relRef),
+				ReleaseGroupRef: ptr("rg-haruhi"),
+				ReleaseStatus:   ptr("Official"), MediumFormat: ptr(tc.format),
+				TrackTotal: ptr(12),
 			},
 		}); err != nil {
 			t.Fatalf("入库失败: %v", err)
 		}
 	}
 
-	// 两个 release 都登记在同一发行组下
-	for _, tc := range []struct {
-		ref, format string
-		total       int
-	}{
-		{"rel-cd", "CD", 12},
-		{"rel-digital", "Digital Media", 12},
-	} {
-		if _, err := s.UpsertRelease(&Release{
-			Provider: "musicbrainz", ProviderRef: tc.ref,
-			ReleaseGroupRef: ptr("rg-haruhi"), Title: "涼宮ハルヒの詰合",
-			ReleaseStatus: ptr("Official"), MediumFormat: ptr(tc.format),
-			TrackTotal: ptr(tc.total), TracklistState: TracklistComplete,
-		}); err != nil {
-			t.Fatalf("写入发行失败: %v", err)
-		}
-	}
-
-	albums, err := s.ListAlbums(matching.DefaultLadderConfig())
+	albums, err := s.ListAlbums()
 	if err != nil {
 		t.Fatalf("查询专辑失败: %v", err)
 	}
@@ -56,8 +41,9 @@ func TestAlbumGroupingMergesVersions(t *testing.T) {
 	}
 
 	a := albums[0]
-	if a.Level != GroupByReleaseGroup {
-		t.Errorf("分组层级 = %q, 期望 release_group", a.Level)
+	// 合为一条的依据是发行组，而不是查询时现场拼的文本键
+	if a.GroupID == 0 {
+		t.Error("这条专辑应代表一个发行组")
 	}
 	if a.OwnedCount != 2 {
 		t.Errorf("已入库 = %d, 期望 2", a.OwnedCount)
@@ -68,27 +54,39 @@ func TestAlbumGroupingMergesVersions(t *testing.T) {
 	if a.CountLabel() != "2/12" {
 		t.Errorf("计数呈现 = %q, 期望 2/12", a.CountLabel())
 	}
+	if a.ReleaseGroupRef == nil || *a.ReleaseGroupRef != "rg-haruhi" {
+		t.Errorf("发行组标识 = %v, 期望 rg-haruhi", a.ReleaseGroupRef)
+	}
 	// 代表 release 经优选阶梯选出：CD 优于 Digital Media
 	if a.RepresentativeRef == nil || *a.RepresentativeRef != "rel-cd" {
 		t.Errorf("代表 release = %v, 期望 rel-cd（CD 优于数字版）", a.RepresentativeRef)
 	}
 }
 
-// TestDerivedAlbumGroupHasNoTotal 覆盖 15.6：
-// 派生分组不显示总数，呈现为 `3/-`。
-func TestDerivedAlbumGroupHasNoTotal(t *testing.T) {
+// TestLocalAlbumHasNoTotal 覆盖 15.6：
+// 没有上游标识的曲目按 (歌集名, 歌集署名) 归拢到一条**本地歌集**上，
+// 而本地歌集没有上游清单，因此不显示总数，呈现为 `3/-`。
+//
+// 此前这一种靠查询时现场派生的文本键分组，于是专辑视图要为它单独走一条
+// 代码路径，而歌集的字段（碟数、封面、类型）对它根本无处可放。给一条真正的
+// release 行之后两者合流——但「不假装知道这张专辑有几首」这一条不变。
+func TestLocalAlbumHasNoTotal(t *testing.T) {
 	s := openTestStore(t)
 
 	// 三首手动录入/「无需匹配」入库的曲目，没有任何上游标识
+	var trackIDs []int64
 	for i := 0; i < 3; i++ {
-		if _, err := s.CreateTrackWithProvenance(NewTrackInput{
-			Title: "无名曲" + string(rune('A'+i)), Artist: ptr("某艺术家"), Album: ptr("そんな私に"),
-		}); err != nil {
+		id, err := s.CreateTrackWithProvenance(NewTrackInput{
+			Title: "无名曲" + string(rune('A'+i)), Credit: ptr("某艺术家"),
+			Album: ptr("そんな私に"), AlbumCredit: ptr("某艺术家"),
+		})
+		if err != nil {
 			t.Fatalf("入库失败: %v", err)
 		}
+		trackIDs = append(trackIDs, id)
 	}
 
-	albums, err := s.ListAlbums(matching.DefaultLadderConfig())
+	albums, err := s.ListAlbums()
 	if err != nil {
 		t.Fatalf("查询失败: %v", err)
 	}
@@ -97,18 +95,30 @@ func TestDerivedAlbumGroupHasNoTotal(t *testing.T) {
 	}
 
 	a := albums[0]
-	if a.Level != GroupDerived {
-		t.Errorf("分组层级 = %q, 期望 derived", a.Level)
+	// 本地歌集不属于任何发行组，也没有上游标识
+	if a.GroupID != 0 {
+		t.Errorf("本地歌集不应属于发行组, 得到 %d", a.GroupID)
+	}
+	if a.RepresentativeRef != nil {
+		t.Errorf("本地歌集没有上游标识, 得到 %v", a.RepresentativeRef)
 	}
 	if a.OwnedCount != 3 {
 		t.Errorf("已入库 = %d, 期望 3", a.OwnedCount)
 	}
 	// 没有上游事实就不假装知道这张专辑有几首
 	if a.TotalCount != nil {
-		t.Errorf("派生分组不应有清单总数, 得到 %v", a.TotalCount)
+		t.Errorf("本地歌集不应有清单总数, 得到 %v", a.TotalCount)
 	}
 	if a.CountLabel() != "3/-" {
 		t.Errorf("计数呈现 = %q, 期望 3/-", a.CountLabel())
+	}
+
+	// 三首归拢到同一条歌集上，而不是各建一条
+	for _, id := range trackIDs {
+		track, _ := s.GetTrack(id)
+		if track.ReleaseID == nil || *track.ReleaseID != a.ReleaseID {
+			t.Errorf("曲目 %d 的歌集 = %v, 期望都归到 %d", id, track.ReleaseID, a.ReleaseID)
+		}
 	}
 }
 
@@ -117,18 +127,28 @@ func TestDerivedAlbumGroupHasNoTotal(t *testing.T) {
 func TestAlbumDisappearsWhenLastTrackDeleted(t *testing.T) {
 	s := openTestStore(t)
 
-	trackID, _ := s.CreateTrackWithProvenance(NewTrackInput{
+	trackID, err := s.CreateTrackWithProvenance(NewTrackInput{
 		Title: "唯一一首", Album: ptr("某专辑"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-1"),
-		Metadata: &MetadataInput{ReleaseMBID: ptr("rel-1"), ReleaseGroupMBID: ptr("rg-1")},
+		Release: &ReleaseInput{
+			Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-1"),
+			ReleaseGroupRef: ptr("rg-1"), TrackTotal: ptr(10),
+		},
 	})
-	releaseID, _ := s.UpsertRelease(&Release{
-		Provider: "musicbrainz", ProviderRef: "rel-1",
-		ReleaseGroupRef: ptr("rg-1"), Title: "某专辑",
-		TrackTotal: ptr(10), TracklistState: TracklistComplete,
-	})
+	if err != nil {
+		t.Fatalf("入库失败: %v", err)
+	}
+	rel, _ := s.GetReleaseByRef("musicbrainz", "rel-1")
+	if rel == nil {
+		t.Fatal("歌集应已随曲目建立")
+	}
+	if err := s.ReplaceTracklist(rel.ID, []ReleaseTrack{
+		{DiscNumber: 1, TrackNumber: 1, TrackRef: ptr("trk-1"), Title: "唯一一首"},
+	}, TracklistComplete); err != nil {
+		t.Fatalf("写入清单失败: %v", err)
+	}
 
-	if albums, _ := s.ListAlbums(matching.DefaultLadderConfig()); len(albums) != 1 {
+	if albums, _ := s.ListAlbums(); len(albums) != 1 {
 		t.Fatalf("删除前专辑数 = %d, 期望 1", len(albums))
 	}
 
@@ -137,30 +157,64 @@ func TestAlbumDisappearsWhenLastTrackDeleted(t *testing.T) {
 	}
 
 	// 专辑从列表中消失（至少拥有一首才出现）
-	albums, _ := s.ListAlbums(matching.DefaultLadderConfig())
+	albums, _ := s.ListAlbums()
 	if len(albums) != 0 {
 		t.Errorf("删光后专辑数 = %d, 期望 0", len(albums))
 	}
-	// 但 release 行保留作缓存
-	rel, _ := s.GetReleaseByRef("musicbrainz", "rel-1")
-	if rel == nil {
-		t.Error("release 行应保留作缓存")
+	// 但 release 行保留作缓存——它同时是清单缓存
+	kept, _ := s.GetReleaseByRef("musicbrainz", "rel-1")
+	if kept == nil {
+		t.Fatal("release 行应保留作缓存")
 	}
 	var tracklistRows int
-	s.DB().QueryRow(`SELECT COUNT(*) FROM release_track WHERE release_id = ?`, releaseID).Scan(&tracklistRows)
-	_ = tracklistRows
+	s.DB().QueryRow(`SELECT COUNT(*) FROM release_track WHERE release_id = ?`, rel.ID).Scan(&tracklistRows)
+	if tracklistRows != 1 {
+		t.Errorf("清单行数 = %d, 期望 1（删曲目不动清单，该位置回落为灰色行）", tracklistRows)
+	}
+}
+
+// TestLocalAlbumDisappearsWithLastTrack 覆盖本地歌集的另一半：
+// 上游歌集删光曲目后保留作缓存，本地歌集则顺带删除——
+// 它没有清单可缓存，留着只会让侧栏积一堆空专辑。
+func TestLocalAlbumDisappearsWithLastTrack(t *testing.T) {
+	s := openTestStore(t)
+
+	trackID, err := s.CreateTrackWithProvenance(NewTrackInput{
+		Title: "唯一一首", Album: ptr("本地专辑"), AlbumCredit: ptr("某艺术家"),
+	})
+	if err != nil {
+		t.Fatalf("入库失败: %v", err)
+	}
+	track, _ := s.GetTrack(trackID)
+	if track.ReleaseID == nil {
+		t.Fatal("曲目应已挂到本地歌集上")
+	}
+	releaseID := *track.ReleaseID
+
+	if err := s.DeleteTrack(trackID); err != nil {
+		t.Fatalf("删除失败: %v", err)
+	}
+
+	got, err := s.GetRelease(releaseID)
+	if err != nil {
+		t.Fatalf("读取歌集失败: %v", err)
+	}
+	if got != nil {
+		t.Error("再无曲目引用的本地歌集应被顺带删除")
+	}
 }
 
 // TestRoleFacetsIncludeZeroCounts 覆盖 15.2：
-// 「全部 14」「演唱 12」「作曲 0」「作词 2」——计数为零的分面也要列出。
+// 「全部 14」「署名 12」「演唱 12」「作曲 0」「作词 2」——计数为零的分面也要列出。
 func TestRoleFacetsIncludeZeroCounts(t *testing.T) {
 	s := openTestStore(t)
 	artistID, _ := s.UpsertArtist(&Artist{Name: "平野綾"})
 
-	// 12 首演唱、2 首作词、0 首作曲
+	// 12 首演唱且被署名、2 首只作词（未署名）、0 首作曲
 	for i := 0; i < 12; i++ {
-		id, _ := s.CreateTrack(&Track{Title: "演唱曲" + itoa(i)})
+		id, _ := s.CreateTrack(&Track{Title: "演唱曲" + itoa(i), Credit: ptr("平野綾")})
 		s.AddTrackArtist(id, TrackArtist{ArtistID: artistID, Role: RoleVocal})
+		s.SetTrackCredits(id, []CreditEntry{{ArtistID: artistID, CreditedName: ptr("平野綾")}})
 	}
 	for i := 0; i < 2; i++ {
 		id, _ := s.CreateTrack(&Track{Title: "作词曲" + itoa(i)})
@@ -177,8 +231,20 @@ func TestRoleFacetsIncludeZeroCounts(t *testing.T) {
 		byRole[f.Role] = f
 	}
 
+	// 「全部」是署名 ∪ 全部角色，它可能大于任一单独分面
 	if got := byRole[""].Count; got != 14 {
 		t.Errorf("全部 = %d, 期望 14", got)
+	}
+	// 「署名」单列：它是艺术家列表成员判定的一半，用户应当能只看被署名的那些
+	credited, ok := byRole[RoleCredited]
+	if !ok {
+		t.Fatal("署名分面应被列出")
+	}
+	if credited.Count != 12 {
+		t.Errorf("署名 = %d, 期望 12（只作词的两首未署名）", credited.Count)
+	}
+	if credited.Label != "署名" {
+		t.Errorf("署名分面标签 = %q", credited.Label)
 	}
 	if got := byRole["vocal"].Count; got != 12 {
 		t.Errorf("演唱 = %d, 期望 12", got)
@@ -200,16 +266,20 @@ func TestRoleFacetsIncludeZeroCounts(t *testing.T) {
 }
 
 // TestArtistViewFiltersByRole 覆盖 15.2 的「在同一张表内收窄」。
+//
+// 「署名」是分面之一：它查 track_credit，其余分面查 track_artist。
 func TestArtistViewFiltersByRole(t *testing.T) {
 	s := openTestStore(t)
 	artistID, _ := s.UpsertArtist(&Artist{Name: "平野綾"})
 
-	vocalID, _ := s.CreateTrack(&Track{Title: "演唱的歌"})
+	vocalID, _ := s.CreateTrack(&Track{Title: "演唱的歌", Credit: ptr("平野綾")})
 	s.AddTrackArtist(vocalID, TrackArtist{ArtistID: artistID, Role: RoleVocal})
+	s.SetTrackCredits(vocalID, []CreditEntry{{ArtistID: artistID, CreditedName: ptr("平野綾")}})
+
 	lyricID, _ := s.CreateTrack(&Track{Title: "作词的歌"})
 	s.AddTrackArtist(lyricID, TrackArtist{ArtistID: artistID, Role: RoleLyricist})
 
-	// 不带 role：全部
+	// 不带 role：全部（署名 ∪ 全部角色）
 	all, err := s.ListTracks(TrackFilter{ArtistID: artistID})
 	if err != nil {
 		t.Fatalf("查询失败: %v", err)
@@ -223,6 +293,61 @@ func TestArtistViewFiltersByRole(t *testing.T) {
 	if len(vocals) != 1 || vocals[0].ID != vocalID {
 		t.Errorf("演唱分面 = %+v, 期望只有演唱的那首", vocals)
 	}
+
+	// 署名分面：只看被署名的那些，未署名的作词不在其中
+	credited, _ := s.ListTracks(TrackFilter{ArtistID: artistID, Role: RoleCredited})
+	if len(credited) != 1 || credited[0].ID != vocalID {
+		t.Errorf("署名分面 = %+v, 期望只有被署名的那首", credited)
+	}
+}
+
+// TestArtistListExcludesUncreditedContributors 覆盖艺术家列表的成员判定。
+//
+// 一位艺术家出现在列表里，当且仅当他**在某曲目的署名中出现**，
+// 或**在某曲目上担任演唱**。未署名的作词作曲不满足任一条，因此不进列表——
+// 此前无条件 JOIN track_artist 把这些人也列了出来，正是「艺术家视图
+// 出现未署名的作词作曲」的成因。
+func TestArtistListExcludesUncreditedContributors(t *testing.T) {
+	s := openTestStore(t)
+
+	creditedID, _ := s.UpsertArtist(&Artist{Name: "DECO*27"})
+	vocalID, _ := s.UpsertArtist(&Artist{Name: "初音ミク"})
+	ghostID, _ := s.UpsertArtist(&Artist{Name: "未署名的编曲"})
+
+	trackID, _ := s.CreateTrack(&Track{Title: "愛言葉", Credit: ptr("DECO*27")})
+	// 署名艺术家：只作词作曲，但出现在署名串里
+	s.SetTrackCredits(trackID, []CreditEntry{{ArtistID: creditedID, CreditedName: ptr("DECO*27")}})
+	s.SetTrackArtists(trackID, []TrackArtist{
+		{ArtistID: creditedID, Role: RoleComposer},
+		{ArtistID: vocalID, Role: RoleVocal},
+		{ArtistID: ghostID, Role: RoleArranger},
+	})
+
+	artists, err := s.ListArtists()
+	if err != nil {
+		t.Fatalf("查询艺术家失败: %v", err)
+	}
+
+	inList := map[int64]bool{}
+	for _, a := range artists {
+		inList[a.ID] = true
+	}
+	if !inList[creditedID] {
+		t.Error("被署名的艺术家应在列表中——哪怕他只作词作曲")
+	}
+	if !inList[vocalID] {
+		t.Error("担任演唱的艺术家应在列表中——哪怕他没出现在署名串里")
+	}
+	if inList[ghostID] {
+		t.Error("未署名且不演唱的参与者不应进入艺术家列表")
+	}
+
+	// 但进入某位艺术家之后，他的曲目列表仍展示全部角色：
+	// 列表成员判定与视图内容是两件事
+	tracks, _ := s.ListTracks(TrackFilter{ArtistID: ghostID})
+	if len(tracks) != 1 {
+		t.Errorf("按未署名参与者筛选 = %d 首, 期望 1（不在列表中不等于查不到）", len(tracks))
+	}
 }
 
 // TestCharacterArtistTitle 覆盖 15.3：
@@ -234,7 +359,12 @@ func TestCharacterArtistTitle(t *testing.T) {
 	vaID, _ := s.UpsertArtist(&Artist{Name: "平野綾", Type: ptr("person")})
 	s.LinkArtists(charID, vaID, LinkVoiceOf)
 
-	trackID, _ := s.CreateTrack(&Track{Title: "God knows..."})
+	credit := "涼宮ハルヒ(CV:平野綾)"
+	trackID, _ := s.CreateTrack(&Track{Title: "God knows...", Credit: &credit})
+	// 角色出现在署名串里（进列表靠这一条），声优凭 vocal 关系进来
+	s.SetTrackCredits(trackID, []CreditEntry{
+		{ArtistID: charID, CreditedName: ptr("涼宮ハルヒ"), SpanStart: ptr(0), SpanEnd: ptr(6)},
+	})
 	s.SetTrackArtists(trackID, []TrackArtist{
 		{ArtistID: charID, Role: RoleCharacter},
 		{ArtistID: vaID, Role: RoleVocal},
@@ -262,12 +392,17 @@ func TestCharacterArtistTitle(t *testing.T) {
 	}
 
 	// 非角色艺术家的标题就是名字本身
+	var found bool
 	for i := range artists {
 		if artists[i].ID == vaID {
+			found = true
 			if got := artists[i].DisplayTitle(); got != "平野綾" {
 				t.Errorf("人物艺术家标题 = %q", got)
 			}
 		}
+	}
+	if !found {
+		t.Error("担任演唱的声优应在艺术家列表中")
 	}
 }
 
@@ -370,20 +505,23 @@ func TestPlaylistOrderPersists(t *testing.T) {
 
 // TestLockedFieldsSurviveMatch 覆盖 13.2：
 // 匹配时覆盖未锁字段、不动已锁字段。
+//
+// 三个布尔锁并入 locked_json 后判定不变，键为 title / credit / album。
+// 歌集名不在这条路径上：它归歌集，一处改动对该歌集全部曲目生效，
+// 不该由某一首曲目的一次匹配悄悄触发。
 func TestLockedFieldsSurviveMatch(t *testing.T) {
 	s := openTestStore(t)
 	id, _ := s.CreateTrack(&Track{
-		Title: "用户改过的曲名", Artist: ptr("艺术家"), Album: ptr("旧专辑"),
+		Title: "用户改过的曲名", Credit: ptr("艺术家"), Album: ptr("旧专辑"),
 	})
 
 	// 用户手动修改曲名 → 加锁
-	if err := s.UpdateTrackFields(id, ptr("用户设定的曲名"), nil, nil, true); err != nil {
+	if err := s.UpdateTrackFields(id, ptr("用户设定的曲名"), nil, true); err != nil {
 		t.Fatalf("手动修改失败: %v", err)
 	}
 
 	// 匹配成功：未锁字段被上游规范值覆盖，已锁字段保持不变
-	if err := s.UpdateBasicOnMatch(id,
-		ptr("上游的曲名"), ptr("上游的艺术家"), ptr("上游的专辑")); err != nil {
+	if err := s.UpdateBasicOnMatch(id, ptr("上游的曲名"), ptr("上游的艺术家")); err != nil {
 		t.Fatalf("匹配更新失败: %v", err)
 	}
 
@@ -391,14 +529,30 @@ func TestLockedFieldsSurviveMatch(t *testing.T) {
 	if got.Title != "用户设定的曲名" {
 		t.Errorf("曲名 = %q, 期望保持用户设定的值", got.Title)
 	}
-	if got.Artist == nil || *got.Artist != "上游的艺术家" {
-		t.Errorf("艺术家 = %v, 期望被上游值覆盖", got.Artist)
+	if got.Credit == nil || *got.Credit != "上游的艺术家" {
+		t.Errorf("署名 = %v, 期望被上游值覆盖", got.Credit)
 	}
-	if got.Album == nil || *got.Album != "上游的专辑" {
-		t.Errorf("专辑 = %v, 期望被上游值覆盖", got.Album)
-	}
-	if !got.TitleLocked {
+	if !got.Locked["title"] {
 		t.Error("曲名应仍处于加锁状态")
+	}
+	if got.Locked["credit"] {
+		t.Error("未被用户改过的署名不应加锁")
+	}
+	// 歌集名归歌集，一次曲目匹配不该动它
+	if got.Album == nil || *got.Album != "旧专辑" {
+		t.Errorf("歌集名 = %v, 期望不被曲目匹配改动", got.Album)
+	}
+
+	// 加锁的署名同样不被上游覆盖
+	if err := s.UpdateTrackFields(id, nil, ptr("用户设定的署名"), true); err != nil {
+		t.Fatalf("手动修改署名失败: %v", err)
+	}
+	if err := s.UpdateBasicOnMatch(id, nil, ptr("上游的另一个艺术家")); err != nil {
+		t.Fatalf("匹配更新失败: %v", err)
+	}
+	got, _ = s.GetTrack(id)
+	if got.Credit == nil || *got.Credit != "用户设定的署名" {
+		t.Errorf("署名 = %v, 期望保持用户设定的值", got.Credit)
 	}
 }
 
@@ -409,37 +563,36 @@ func TestLockedFieldsSurviveMatch(t *testing.T) {
 // 这是一处真实缺陷的回归测试：此前专辑视图写死了 DefaultLadderConfig()，
 // 用户把偏好国家改为 DE 后，匹配阶段按新配置选、而专辑视图仍按默认配置选，
 // 两处给出不同的代表 release——函数共用了，配置却各走一套，漂移照样发生。
+//
+// 配置现在由 SetLadderConfig 注入 store，两处取的是同一份。
 func TestRepresentativeReleaseHonoursUserLadder(t *testing.T) {
 	s := openTestStore(t)
 
-	// 同一发行组下两个发行：一个 JP 一个 DE，其余判据完全相同
+	// 同一发行组下两个发行：一个 JP 一个 DE，其余判据完全相同。
+	// 两个都各入库一首，使它们都是这张专辑的成员。
 	for _, tc := range []struct{ ref, country string }{
 		{"rel-jp", "JP"},
 		{"rel-de", "DE"},
 	} {
-		if _, err := s.UpsertRelease(&Release{
-			Provider: "musicbrainz", ProviderRef: tc.ref,
-			ReleaseGroupRef: ptr("rg-1"), Title: "同一张专辑",
-			ReleaseStatus: ptr("Official"), MediumFormat: ptr("CD"),
-			Country: ptr(tc.country), FirstReleaseDate: ptr("2006-07-05"),
-			TrackTotal: ptr(10), TracklistState: TracklistComplete,
+		if _, err := s.CreateTrackWithProvenance(NewTrackInput{
+			Title: "一首歌-" + tc.ref, Album: ptr("同一张专辑"),
+			MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-" + tc.ref),
+			Release: &ReleaseInput{
+				Provider: ptr("musicbrainz"), ProviderRef: ptr(tc.ref),
+				ReleaseGroupRef: ptr("rg-1"),
+				ReleaseStatus:   ptr("Official"), MediumFormat: ptr("CD"),
+				Country: ptr(tc.country), FirstReleaseDate: ptr("2006-07-05"),
+				TrackTotal: ptr(10),
+			},
 		}); err != nil {
-			t.Fatalf("写入发行失败: %v", err)
+			t.Fatalf("入库失败: %v", err)
 		}
-	}
-	if _, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "一首歌", Album: ptr("同一张专辑"),
-		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-1"),
-		Metadata: &MetadataInput{
-			ReleaseMBID: ptr("rel-jp"), ReleaseGroupMBID: ptr("rg-1"),
-		},
-	}); err != nil {
-		t.Fatalf("入库失败: %v", err)
 	}
 
 	// 默认配置：JP 排在偏好列表前面 → 选 JP
 	defaults := matching.DefaultLadderConfig()
-	albums, err := s.ListAlbums(defaults)
+	s.SetLadderConfig(defaults)
+	albums, err := s.ListAlbums()
 	if err != nil {
 		t.Fatalf("查询专辑失败: %v", err)
 	}
@@ -454,10 +607,15 @@ func TestRepresentativeReleaseHonoursUserLadder(t *testing.T) {
 	custom := matching.LadderConfig{
 		PreferredCountries: []string{"DE"},
 		MediumPriority:     defaults.MediumPriority,
+		DigitalFormats:     defaults.DigitalFormats,
 	}
-	albums, err = s.ListAlbums(custom)
+	s.SetLadderConfig(custom)
+	albums, err = s.ListAlbums()
 	if err != nil {
 		t.Fatalf("查询专辑失败: %v", err)
+	}
+	if albums[0].RepresentativeRef == nil {
+		t.Fatalf("专辑条目异常: %+v", albums)
 	}
 	if got := *albums[0].RepresentativeRef; got != "rel-de" {
 		t.Errorf("用户偏好 DE 时代表 release = %q, 期望 rel-de——"+
@@ -465,13 +623,10 @@ func TestRepresentativeReleaseHonoursUserLadder(t *testing.T) {
 	}
 
 	// 同一套配置下，两处（匹配阶段与专辑视图）必须选出同一个
-	candidates := []struct {
-		ref, country string
-	}{{"rel-jp", "JP"}, {"rel-de", "DE"}}
 	var forMatching []matchingCandidate
-	for _, c := range candidates {
+	for _, c := range []struct{ ref, country string }{{"rel-jp", "JP"}, {"rel-de", "DE"}} {
 		forMatching = append(forMatching, toLadderCandidate(Release{
-			Provider: "musicbrainz", ProviderRef: c.ref,
+			Provider: ptr("musicbrainz"), ProviderRef: ptr(c.ref),
 			ReleaseGroupRef: ptr("rg-1"), ReleaseStatus: ptr("Official"),
 			MediumFormat: ptr("CD"), Country: ptr(c.country),
 			FirstReleaseDate: ptr("2006-07-05"),

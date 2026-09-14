@@ -99,16 +99,23 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 		t.Fatalf("解析详情失败: %v", err)
 	}
 
+	// 署名原串就存在曲目的 credit 列上（合表后只此一份）；
+	// 发行标识归歌集，因此要连歌集一起建出来——厂牌之类的发行级事实
+	// 没有歌集就无处可写。
 	const credit = "涼宮ハルヒ(CV:平野綾)"
+	providerID := "musicbrainz"
 	trackID, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: "God knows...", Artist: strPtrOrNil(credit),
-		MatchSource: strPtrOrNil("musicbrainz"),
+		Title: "God knows...", Credit: strPtrOrNil(credit),
+		Album: strPtrOrNil("涼宮ハルヒの詰合"), AlbumCredit: strPtrOrNil(credit),
+		MatchSource: &providerID,
 		MatchRef:    strPtrOrNil("aaaaaaaa-1111-2222-3333-444444444444"),
 		Metadata: &store.MetadataInput{
-			TrackCredit:      strPtrOrNil(credit),
-			RecordingMBID:    strPtrOrNil("rec-0001-god-knows"),
-			ReleaseMBID:      strPtrOrNil("rel-cd-jp"),
-			ReleaseGroupMBID: strPtrOrNil("rg-haruhi"),
+			RecordingRef: strPtrOrNil("rec-0001-god-knows"),
+		},
+		Release: &store.ReleaseInput{
+			Provider:        &providerID,
+			ProviderRef:     strPtrOrNil("rel-cd-jp"),
+			ReleaseGroupRef: strPtrOrNil("rg-haruhi"),
 		},
 	})
 	if err != nil {
@@ -125,11 +132,18 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 	if err != nil || meta == nil {
 		t.Fatalf("读取丰富信息失败: %v", err)
 	}
-	if meta.CreditSpansJSON == nil {
-		t.Fatal("credit_spans_json 未写入——可点击区间没有生成")
+	// 署名分解落在 track_credit 表上（此前是 credit_spans_json 一列）：
+	// 它既给出可点击区间，也回答「这位艺术家是否被署名」。
+	entries, err := app.store.GetTrackCredits(trackID)
+	if err != nil {
+		t.Fatalf("读取署名分解失败: %v", err)
 	}
+	if len(entries) == 0 {
+		t.Fatal("track_credit 未写入——可点击区间没有生成")
+	}
+	// 厂牌是发行级事实，存在歌集上，由 GetMetadata 的 join 带出
 	if meta.Label == nil || *meta.Label != "Lantis" {
-		t.Errorf("厂牌 = %v, 期望 Lantis", meta.Label)
+		t.Errorf("厂牌 = %v, 期望 Lantis——发行级字段没有落到歌集上", meta.Label)
 	}
 
 	// 艺术家与关系应已建立，且两个名字都能检索到这首歌
@@ -193,6 +207,16 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListArtists 失败: %v", err)
 	}
+	// 未署名的作词作曲不进列表——这是用户报告「艺术家视图里出现一堆
+	// 从没在署名里见过的名字」的那条。他们仍能被检索到（上面已断言），
+	// 进入某位艺术家之后也仍展示全部角色：列表成员与视图内容是两件事。
+	for _, unlisted := range []string{"田中公平", "森由里子", "須藤賢一"} {
+		for _, a := range artists {
+			if a.Name == unlisted {
+				t.Errorf("艺术家列表出现了未署名的参与者 %q——列表成员判定应只认署名与演唱", unlisted)
+			}
+		}
+	}
 	for _, want := range []string{"涼宮ハルヒ", "平野綾"} {
 		var id int64
 		for _, a := range artists {
@@ -233,13 +257,18 @@ func TestCoverSourceReachesFrontend(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
 
+	// 封面的来源标识（release / release group）现在归歌集：
+	// 封面是歌集的属性，采用一次即对该歌集全部曲目生效。
+	providerID := "musicbrainz"
 	trackID, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{
 		Title:       "God knows...",
-		MatchSource: strPtrOrNil("musicbrainz"),
+		Album:       strPtrOrNil("涼宮ハルヒの詰合"),
+		MatchSource: &providerID,
 		MatchRef:    strPtrOrNil("trk-cd-jp-02"),
-		Metadata: &store.MetadataInput{
-			ReleaseMBID:      strPtrOrNil("rel-cd-jp"),
-			ReleaseGroupMBID: strPtrOrNil("rg-haruhi"),
+		Release: &store.ReleaseInput{
+			Provider:        &providerID,
+			ProviderRef:     strPtrOrNil("rel-cd-jp"),
+			ReleaseGroupRef: strPtrOrNil("rg-haruhi"),
 		},
 	})
 	if err != nil {

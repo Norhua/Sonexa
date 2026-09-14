@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 // TestFuzzyScopeExcludesMatchedTracks 覆盖 8.3：
@@ -12,7 +13,7 @@ func TestFuzzyScopeExcludesMatchedTracks(t *testing.T) {
 
 	// 一首有溯源的曲目
 	matched, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "God knows...", Artist: ptr("平野綾"),
+		Title: "God knows...", Credit: ptr("平野綾"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-1"),
 		Metadata: &MetadataInput{DurationMS: ptr(332000)},
 	})
@@ -22,7 +23,7 @@ func TestFuzzyScopeExcludesMatchedTracks(t *testing.T) {
 
 	// 一首无溯源的曲目（「无需匹配」入库的那种）
 	unmatched, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "ハレ晴レユカイ", Artist: ptr("平野綾"),
+		Title: "ハレ晴レユカイ", Credit: ptr("平野綾"),
 		Metadata: &MetadataInput{DurationMS: ptr(242000)},
 	})
 	if err != nil {
@@ -55,7 +56,7 @@ func TestFuzzyScopeExcludesMatchedTracks(t *testing.T) {
 func TestFuzzyRequiresDurationWithin3s(t *testing.T) {
 	s := openTestStore(t)
 	id, _ := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "That Girl", Artist: ptr("Natalia Lesz"),
+		Title: "That Girl", Credit: ptr("Natalia Lesz"),
 		Metadata: &MetadataInput{DurationMS: ptr(221000)},
 	})
 
@@ -74,7 +75,7 @@ func TestFuzzyRequiresDurationWithin3s(t *testing.T) {
 func TestDuplicateAddIsSilentRedirect(t *testing.T) {
 	s := openTestStore(t)
 	input := NewTrackInput{
-		Title: "God knows...", Artist: ptr("平野綾"),
+		Title: "God knows...", Credit: ptr("平野綾"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-dup"),
 	}
 
@@ -156,7 +157,7 @@ func TestResolveTracklistThreeStates(t *testing.T) {
 	cdTrackID, err := s.CreateTrackWithProvenance(NewTrackInput{
 		Title:       "God knows...",
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-cd-02"),
-		Metadata: &MetadataInput{RecordingMBID: ptr("rec-god-knows")},
+		Metadata: &MetadataInput{RecordingRef: ptr("rec-god-knows")},
 	})
 	if err != nil {
 		t.Fatalf("入库失败: %v", err)
@@ -169,7 +170,7 @@ func TestResolveTracklistThreeStates(t *testing.T) {
 
 	// 当前专辑视图显示的是数字版清单
 	releaseID, _ := s.UpsertRelease(&Release{
-		Provider: "musicbrainz", ProviderRef: "rel-digital", Title: "数字版",
+		Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-digital"), Title: "数字版",
 		TracklistState: TracklistComplete,
 	})
 	if err := s.ReplaceTracklist(releaseID, []ReleaseTrack{
@@ -212,6 +213,16 @@ func TestSetAndClearProvenance(t *testing.T) {
 	s := openTestStore(t)
 	id, _ := s.CreateTrack(&Track{Title: "曲目"})
 
+	// matchedAt 直接读列：它是溯源的一部分，但不进详情读出结构
+	matchedAt := func() *time.Time {
+		t.Helper()
+		var at *time.Time
+		if err := s.DB().QueryRow(`SELECT matched_at FROM track WHERE id = ?`, id).Scan(&at); err != nil {
+			t.Fatalf("读取匹配时间失败: %v", err)
+		}
+		return at
+	}
+
 	// 赋值
 	if err := s.SetProvenance(id, "musicbrainz", "trk-1"); err != nil {
 		t.Fatalf("写入溯源失败: %v", err)
@@ -223,7 +234,7 @@ func TestSetAndClearProvenance(t *testing.T) {
 	if m.MatchRef == nil || *m.MatchRef != "trk-1" {
 		t.Errorf("溯源标识 = %v", m.MatchRef)
 	}
-	if m.MatchedAt == nil {
+	if matchedAt() == nil {
 		t.Error("匹配时间应被写入")
 	}
 
@@ -241,8 +252,8 @@ func TestSetAndClearProvenance(t *testing.T) {
 		t.Fatalf("清空溯源失败: %v", err)
 	}
 	m, _ = s.GetMetadata(id)
-	if m.MatchSource != nil || m.MatchRef != nil || m.MatchedAt != nil {
-		t.Errorf("清空后仍有溯源: source=%v ref=%v at=%v", m.MatchSource, m.MatchRef, m.MatchedAt)
+	if m.MatchSource != nil || m.MatchRef != nil || matchedAt() != nil {
+		t.Errorf("清空后仍有溯源: source=%v ref=%v at=%v", m.MatchSource, m.MatchRef, matchedAt())
 	}
 	// 字段值本身不变
 	track, _ := s.GetTrack(id)
@@ -257,7 +268,7 @@ func TestNoMatchNeededTrack(t *testing.T) {
 	s := openTestStore(t)
 
 	id, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "无名曲", Artist: ptr("未知艺术家"),
+		Title: "无名曲", Credit: ptr("未知艺术家"),
 	})
 	if err != nil {
 		t.Fatalf("无需匹配入库失败: %v", err)

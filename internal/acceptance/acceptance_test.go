@@ -59,25 +59,34 @@ func TestF3_CharacterAndVoiceActor(t *testing.T) {
 
 	// 入库
 	trackID, err := s.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: "God knows...", Artist: ptr(credit),
+		Title: "God knows...", Credit: ptr(credit),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("11111111-2222-3333-4444-555555555555"),
-		Metadata: &store.MetadataInput{TrackCredit: ptr(credit)},
 	})
 	if err != nil {
 		t.Fatalf("入库失败: %v", err)
 	}
 
-	// 建立艺术家与关系
+	// 建立艺术家、署名分解与配音关系
+	//
+	// 署名与参与角色分两张表：track_credit 记「谁出现在署名串里」，
+	// track_artist 记「担任什么角色」。角色艺术家另有一条 character 关系——
+	// 那是它与这首歌的唯一联系（它不担任演唱）。
 	ids := map[string]int64{}
+	var credits []store.CreditEntry
 	var relations []store.TrackArtist
-	for _, a := range parsed.Artists {
+	for i, a := range parsed.Artists {
 		artistID, err := s.UpsertArtist(&store.Artist{Name: a.Name, Type: ptr(a.Type)})
 		if err != nil {
 			t.Fatalf("建立艺术家 %s 失败: %v", a.Name, err)
 		}
 		ids[a.Name] = artistID
+		start, end, name := a.Start, a.End, a.Name
+		credits = append(credits, store.CreditEntry{
+			ArtistID: artistID, Position: i, CreditedName: &name,
+			SpanStart: &start, SpanEnd: &end,
+		})
 		relations = append(relations, store.TrackArtist{
-			ArtistID: artistID, Role: store.ArtistRole(a.Role), CreditedName: ptr(credit),
+			ArtistID: artistID, Role: store.ArtistRole(a.Role),
 		})
 	}
 	for character, actor := range parsed.VoiceOf {
@@ -88,17 +97,8 @@ func TestF3_CharacterAndVoiceActor(t *testing.T) {
 	if err := s.SetTrackArtists(trackID, relations); err != nil {
 		t.Fatalf("写入参与者失败: %v", err)
 	}
-
-	// 生成并写入可点击区间
-	spans := matching.BuildSpans(parsed, ids)
-	spansJSON, _ := json.Marshal(spans)
-	if err := s.ApplyMetadataEdits(trackID, nil, nil, nil); err != nil {
-		t.Fatalf("准备丰富信息失败: %v", err)
-	}
-	if _, err := s.DB().Exec(
-		`UPDATE track_metadata SET credit_spans_json = ? WHERE track_id = ?`,
-		string(spansJSON), trackID); err != nil {
-		t.Fatalf("写入区间失败: %v", err)
+	if err := s.SetTrackCredits(trackID, credits); err != nil {
+		t.Fatalf("写入署名分解失败: %v", err)
 	}
 
 	// [验收 1] 搜索两个名字都命中同一首歌
@@ -113,12 +113,19 @@ func TestF3_CharacterAndVoiceActor(t *testing.T) {
 	}
 
 	// [验收 2] 抽屉的两段分别可点，且括号与 CV: 不在可点区间内
-	if len(spans.Spans) != 2 {
-		t.Fatalf("可点击区间 = %d 段, 期望 2 段", len(spans.Spans))
+	stored, err := s.GetTrackCredits(trackID)
+	if err != nil {
+		t.Fatalf("读取署名分解失败: %v", err)
+	}
+	if len(stored) != 2 {
+		t.Fatalf("可点击区间 = %d 段, 期望 2 段", len(stored))
 	}
 	byID := map[int64]string{}
-	for _, sp := range spans.Spans {
-		byID[sp.ArtistID] = credit[sp.Start:sp.End]
+	for _, sp := range stored {
+		if sp.SpanStart == nil || sp.SpanEnd == nil {
+			t.Fatal("署名分解缺少区间")
+		}
+		byID[sp.ArtistID] = credit[*sp.SpanStart:*sp.SpanEnd]
 	}
 	if byID[ids["涼宮ハルヒ"]] != "涼宮ハルヒ" {
 		t.Errorf("角色区间取出 %q", byID[ids["涼宮ハルヒ"]])
@@ -162,11 +169,18 @@ func TestF3_CharacterAndVoiceActor(t *testing.T) {
 func TestF4_GhostRowsAndCount(t *testing.T) {
 	s := openStore(t)
 
+	groupID, err := s.UpsertReleaseGroup(&store.ReleaseGroup{
+		Provider: ptr("musicbrainz"), ProviderRef: ptr("rg-12"), Title: "十二首专辑",
+	})
+	if err != nil {
+		t.Fatalf("写入发行组失败: %v", err)
+	}
 	releaseID, err := s.UpsertRelease(&store.Release{
-		Provider: "musicbrainz", ProviderRef: "rel-12",
-		ReleaseGroupRef: ptr("rg-12"), Title: "十二首专辑",
+		ReleaseGroupID: &groupID,
+		Provider:       ptr("musicbrainz"), ProviderRef: ptr("rel-12"),
+		Title:         "十二首专辑",
 		ReleaseStatus: ptr("Official"), MediumFormat: ptr("CD"),
-		TrackTotal: ptr(12), TracklistState: store.TracklistComplete,
+		TrackTotal:    ptr(12), TracklistState: store.TracklistComplete,
 	})
 	if err != nil {
 		t.Fatalf("写入发行失败: %v", err)
@@ -192,8 +206,11 @@ func TestF4_GhostRowsAndCount(t *testing.T) {
 			Title: fmt.Sprintf("第 %d 首", i), Album: ptr("十二首专辑"),
 			MatchSource: ptr("musicbrainz"), MatchRef: ptr(fmt.Sprintf("trk-%02d", i)),
 			Metadata: &store.MetadataInput{
-				ReleaseMBID: ptr("rel-12"), ReleaseGroupMBID: ptr("rg-12"),
 				TrackNumber: ptr(i), DiscNumber: ptr(1),
+			},
+			Release: &store.ReleaseInput{
+				Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-12"),
+				ReleaseGroupRef: ptr("rg-12"),
 			},
 		})
 		if err != nil {
@@ -216,7 +233,7 @@ func TestF4_GhostRowsAndCount(t *testing.T) {
 	}
 
 	// 计数 8/12
-	albums, _ := s.ListAlbums(matching.DefaultLadderConfig())
+	albums, _ := s.ListAlbums()
 	if len(albums) != 1 {
 		t.Fatalf("专辑条目 = %d, 期望 1", len(albums))
 	}
@@ -229,7 +246,7 @@ func TestF4_GhostRowsAndCount(t *testing.T) {
 		t.Fatalf("删除失败: %v", err)
 	}
 
-	albums, _ = s.ListAlbums(matching.DefaultLadderConfig())
+	albums, _ = s.ListAlbums()
 	if got := albums[0].CountLabel(); got != "7/12" {
 		t.Errorf("删除后计数 = %q, 期望 7/12", got)
 	}
@@ -495,48 +512,69 @@ func TestF9_ImportSummaryListsFailures(t *testing.T) {
 
 // TestF11_UserEditedYearSurvivesRematch 覆盖 22.6 / F11：
 // 手动修改年份后重新匹配，年份不被覆盖。
+//
+// 年份不再单独存一列：它由歌集的发行日期派生（曲目的年份本来就是发行年份，
+// 存两份必然漂移）。因此「用户改过的年份」落在歌集的 release_date 上，
+// 逐字段来源与锁也随之落在歌集上。被保护的语义不变。
 func TestF11_UserEditedYearSurvivesRematch(t *testing.T) {
 	s := openStore(t)
 
 	trackID, err := s.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: "That Girl", Artist: ptr("Natalia Lesz"),
+		Title: "That Girl", Credit: ptr("Natalia Lesz"),
+		Album:       ptr("That Girl"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
-		Metadata: &store.MetadataInput{Year: ptr(2011)},
+		Release: &store.ReleaseInput{
+			Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-that-girl"),
+			ReleaseDate: ptr("2011-05-01"),
+		},
 	})
 	if err != nil {
 		t.Fatalf("入库失败: %v", err)
 	}
 
+	meta, _ := s.GetMetadata(trackID)
+	if meta.Year == nil || *meta.Year != 2011 {
+		t.Fatalf("入库时年份 = %v, 期望 2011", meta.Year)
+	}
+	if meta.ReleaseID == nil {
+		t.Fatal("曲目应有所属歌集")
+	}
+	releaseID := *meta.ReleaseID
+
 	// 用户手动把年份改为 2010：来源置为 user 并加锁
-	if err := s.ApplyMetadataEdits(trackID,
-		map[string]string{"year": "2010"},
-		map[string]string{"year": "user"},
-		map[string]bool{"year": true},
+	if err := s.UpdateReleaseFields(releaseID,
+		map[string]string{"releaseDate": "2010-01-01"},
+		map[string]string{"releaseDate": "user"},
+		map[string]bool{"releaseDate": true},
 	); err != nil {
 		t.Fatalf("手动修改失败: %v", err)
 	}
 
-	meta, _ := s.GetMetadata(trackID)
+	meta, _ = s.GetMetadata(trackID)
 	if meta.Year == nil || *meta.Year != 2010 {
 		t.Fatalf("手动修改后年份 = %v, 期望 2010", meta.Year)
 	}
 
 	// 重新匹配得到 2011：来源为 user 的字段默认不被填充
+	rel, err := s.GetRelease(releaseID)
+	if err != nil {
+		t.Fatalf("读取歌集失败: %v", err)
+	}
 	var provenance map[string]string
 	var locked map[string]bool
-	json.Unmarshal([]byte(*meta.ProvenanceJSON), &provenance)
-	json.Unmarshal([]byte(*meta.LockedJSON), &locked)
+	json.Unmarshal([]byte(*rel.ProvenanceJSON), &provenance)
+	json.Unmarshal([]byte(*rel.LockedJSON), &locked)
 
-	if provenance["year"] != "user" {
-		t.Errorf("年份来源 = %q, 期望 user", provenance["year"])
+	if provenance["releaseDate"] != "user" {
+		t.Errorf("年份来源 = %q, 期望 user", provenance["releaseDate"])
 	}
-	if !locked["year"] {
+	if !locked["releaseDate"] {
 		t.Error("年份应处于用户锁定状态")
 	}
 
-	// 模拟「未勾选填充」的重新匹配：不传 year 的编辑
-	if err := s.ApplyMetadataEdits(trackID,
-		map[string]string{"genre": "Pop"},
+	// 模拟「未勾选填充」的重新匹配：不传 releaseDate 的编辑
+	if err := s.UpdateReleaseFields(releaseID,
+		map[string]string{"label": "Sony"},
 		provenance, locked,
 	); err != nil {
 		t.Fatalf("重新匹配写入失败: %v", err)
@@ -547,24 +585,8 @@ func TestF11_UserEditedYearSurvivesRematch(t *testing.T) {
 		t.Errorf("重新匹配后年份 = %v, 期望仍为用户设定的 2010", meta.Year)
 	}
 	// 其余未锁字段照常更新
-	if meta.Genre == nil || *meta.Genre != "Pop" {
-		t.Errorf("风格 = %v, 期望被更新", meta.Genre)
-	}
-
-	// 用户显式勾选填充后，年份才被改写，来源转为上游并清除锁
-	delete(locked, "year")
-	provenance["year"] = "musicbrainz"
-	if err := s.ApplyMetadataEdits(trackID,
-		map[string]string{"year": "2011"}, provenance, locked); err != nil {
-		t.Fatalf("填充失败: %v", err)
-	}
-	meta, _ = s.GetMetadata(trackID)
-	if meta.Year == nil || *meta.Year != 2011 {
-		t.Errorf("显式填充后年份 = %v, 期望 2011", meta.Year)
-	}
-	json.Unmarshal([]byte(*meta.LockedJSON), &locked)
-	if locked["year"] {
-		t.Error("填充后用户锁应被清除")
+	if meta.Label == nil || *meta.Label != "Sony" {
+		t.Errorf("厂牌 = %v, 期望被更新", meta.Label)
 	}
 }
 
@@ -573,7 +595,7 @@ func TestF11_UserEditedYearSurvivesRematch(t *testing.T) {
 func TestF14_DuplicateAddIsIdempotent(t *testing.T) {
 	s := openStore(t)
 	input := store.NewTrackInput{
-		Title: "God knows...", Artist: ptr("平野綾"),
+		Title: "God knows...", Credit: ptr("平野綾"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-unique"),
 	}
 
@@ -709,7 +731,7 @@ func TestF1_NoMatchNeededTrackRendersFine(t *testing.T) {
 
 	// 「无需匹配」：按原值入库、丰富信息为空、溯源置空
 	trackID, err := s.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: "某首无名曲", Artist: ptr("未知艺术家"),
+		Title: "某首无名曲", Credit: ptr("未知艺术家"),
 	})
 	if err != nil {
 		t.Fatalf("入库失败: %v", err)

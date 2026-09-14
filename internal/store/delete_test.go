@@ -7,21 +7,20 @@ import (
 )
 
 // TestDeleteTrackKeepsTracklist 覆盖 2.12 与验收 F4：
-// 删除曲目清理丰富信息/歌单标签/艺术家关联，但不动 release_track——
+// 删除曲目清理署名分解/歌单标签/艺术家关联，但不动 release_track——
 // 该位置在专辑视图中自然回落为灰色行。
 func TestDeleteTrackKeepsTracklist(t *testing.T) {
 	s := openTestStore(t)
 	db := s.DB()
 
-	trackID, err := s.CreateTrack(&Track{Title: "さようなら"})
+	// 溯源存在 track 上——曲目是单表，没有第二张表要连带清理
+	ref := "track-mbid-4"
+	trackID, err := s.CreateTrackWithProvenance(NewTrackInput{
+		Title:       "さようなら",
+		MatchSource: ptr("musicbrainz"), MatchRef: &ref,
+	})
 	if err != nil {
 		t.Fatalf("创建曲目失败: %v", err)
-	}
-	ref := "track-mbid-4"
-	if _, err := db.Exec(`
-		INSERT INTO track_metadata (track_id, match_source, match_ref, updated_at)
-		VALUES (?, 'musicbrainz', ?, datetime('now'))`, trackID, ref); err != nil {
-		t.Fatalf("写入溯源失败: %v", err)
 	}
 
 	// 归属：一个歌单、一个标签、一位艺术家
@@ -47,10 +46,15 @@ func TestDeleteTrackKeepsTracklist(t *testing.T) {
 	if err := s.AddTrackArtist(trackID, TrackArtist{ArtistID: artistID, Role: RoleVocal}); err != nil {
 		t.Fatalf("关联艺术家失败: %v", err)
 	}
+	if err := s.SetTrackCredits(trackID, []CreditEntry{
+		{ArtistID: artistID, CreditedName: ptr("後藤邑子")},
+	}); err != nil {
+		t.Fatalf("写入署名分解失败: %v", err)
+	}
 
 	// 该曲目所属专辑的清单（上游事实，与 track 无外键）
 	releaseID, err := s.UpsertRelease(&Release{
-		Provider: "musicbrainz", ProviderRef: "rel-1", Title: "涼宮ハルヒの詰合",
+		Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-1"), Title: "涼宮ハルヒの詰合",
 		TracklistState: TracklistComplete,
 	})
 	if err != nil {
@@ -70,9 +74,9 @@ func TestDeleteTrackKeepsTracklist(t *testing.T) {
 	for _, c := range []struct {
 		table, where string
 	}{
-		{"track_metadata", "track_id"},
 		{"collection_item", "track_id"},
 		{"track_artist", "track_id"},
+		{"track_credit", "track_id"},
 	} {
 		var n int
 		if err := db.QueryRow(

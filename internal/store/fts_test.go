@@ -7,15 +7,11 @@ import "testing"
 func TestFTSMatchesRelatedArtists(t *testing.T) {
 	s := openTestStore(t)
 
+	// 署名原串直接存在 track 上——曲目是单表，不再有第二份署名
 	credit := "涼宮ハルヒ(CV:平野綾)"
-	trackID, err := s.CreateTrack(&Track{Title: "God knows...", Artist: &credit})
+	trackID, err := s.CreateTrack(&Track{Title: "God knows...", Credit: &credit})
 	if err != nil {
 		t.Fatalf("创建曲目失败: %v", err)
-	}
-	if _, err := s.DB().Exec(
-		`INSERT INTO track_metadata (track_id, track_credit, updated_at)
-		 VALUES (?, ?, datetime('now'))`, trackID, credit); err != nil {
-		t.Fatalf("写入丰富信息失败: %v", err)
 	}
 
 	character := ptr("character")
@@ -31,8 +27,15 @@ func TestFTSMatchesRelatedArtists(t *testing.T) {
 	if err := s.LinkArtists(charID, vaID, LinkVoiceOf); err != nil {
 		t.Fatalf("建立配音关系失败: %v", err)
 	}
+	// 署名分解与参与角色分开写：前者回答「谁出现在署名串里」，
+	// 后者回答「谁在这首歌上担任什么」。两张表都进 FTS 索引。
+	if err := s.SetTrackCredits(trackID, []CreditEntry{
+		{ArtistID: charID, CreditedName: ptr("涼宮ハルヒ"), SpanStart: ptr(0), SpanEnd: ptr(6)},
+	}); err != nil {
+		t.Fatalf("写入署名分解失败: %v", err)
+	}
 	if err := s.SetTrackArtists(trackID, []TrackArtist{
-		{ArtistID: charID, Role: RoleCharacter, CreditedName: &credit},
+		{ArtistID: charID, Role: RoleCharacter},
 		{ArtistID: vaID, Role: RoleVocal},
 	}); err != nil {
 		t.Fatalf("写入参与者失败: %v", err)
@@ -108,6 +111,42 @@ func TestRejectsUnknownRole(t *testing.T) {
 	err := s.AddTrackArtist(trackID, TrackArtist{ArtistID: artistID, Role: ArtistRole("mastering")})
 	if err == nil {
 		t.Error("取值域之外的角色应被拒绝")
+	}
+}
+
+// TestFTSRefreshedOnAlbumRename 覆盖歌集改名后的检索。
+//
+// 歌集名进 FTS 的 album 列，而歌集名只存在 release 上一份——改名要连带
+// 刷新该歌集的每一首曲目，否则搜专辑名会搜到旧名字。
+func TestFTSRefreshedOnAlbumRename(t *testing.T) {
+	s := openTestStore(t)
+
+	var trackIDs []int64
+	for _, title := range []string{"第一首", "第二首"} {
+		id, err := s.CreateTrack(&Track{Title: title, Album: ptr("旧专辑名")})
+		if err != nil {
+			t.Fatalf("创建曲目失败: %v", err)
+		}
+		trackIDs = append(trackIDs, id)
+	}
+	if ids, _ := s.SearchTrackIDs("旧专辑名", 10); len(ids) != 2 {
+		t.Fatalf("改名前应命中两首, 得到 %v", ids)
+	}
+
+	track, _ := s.GetTrack(trackIDs[0])
+	if track.ReleaseID == nil {
+		t.Fatal("曲目应已挂到本地歌集上")
+	}
+	if err := s.UpdateReleaseFields(*track.ReleaseID,
+		map[string]string{"title": "新专辑名"}, nil, nil); err != nil {
+		t.Fatalf("改歌集名失败: %v", err)
+	}
+
+	if ids, _ := s.SearchTrackIDs("新专辑名", 10); len(ids) != 2 {
+		t.Errorf("改名后搜新名字得到 %v, 期望两首都命中", ids)
+	}
+	if ids, _ := s.SearchTrackIDs("旧专辑名", 10); len(ids) != 0 {
+		t.Errorf("改名后搜旧名字得到 %v, 期望不再命中", ids)
 	}
 }
 

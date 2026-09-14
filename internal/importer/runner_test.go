@@ -221,7 +221,7 @@ func TestRunnerLocalDuplicateGoesToReview(t *testing.T) {
 
 	// 库中已有一首无溯源的曲目（「无需匹配」入库的那种）
 	existing, err := st.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: "God knows...", Artist: sptr("平野綾"),
+		Title: "God knows...", Credit: sptr("平野綾"),
 	})
 	if err != nil {
 		t.Fatalf("准备库中曲目失败: %v", err)
@@ -379,7 +379,7 @@ func TestRunnerOnlyQueriesMusicBrainz(t *testing.T) {
 	// 没有任何 itunes 来源的溯源
 	var itunesCount int
 	st.DB().QueryRow(
-		`SELECT COUNT(*) FROM track_metadata WHERE match_source = 'itunes'`).Scan(&itunesCount)
+		`SELECT COUNT(*) FROM track WHERE match_source = 'itunes'`).Scan(&itunesCount)
 	if itunesCount != 0 {
 		t.Errorf("导入阶段不应产生 iTunes 溯源, 得到 %d 条", itunesCount)
 	}

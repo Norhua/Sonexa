@@ -89,6 +89,11 @@ type Release struct {
 	// 需要时间就在绑定层转成 RFC3339 字符串。
 	FetchedAt *time.Time `json:"-"`
 
+	// 逐字段来源与用户锁：歌集级字段的来源与锁落在这里，
+	// 与曲目级的那一份同构（整体读写，新增字段无需改动存储形状）。
+	ProvenanceJSON *string `json:"provenanceJson"`
+	LockedJSON     *string `json:"lockedJson"`
+
 	// ReleaseGroupRef 是便利字段，由 join 带出，不对应本表的列。
 	ReleaseGroupRef *string `json:"releaseGroupRef"`
 }
@@ -127,6 +132,7 @@ const releaseColumns = `
 	r.cover_path, r.cover_source_url, r.cover_width, r.cover_height,
 	r.release_status, r.medium_format, r.country, r.release_date, r.first_release_date,
 	r.label, r.catalog_number, r.tracklist_state, r.fetched_at,
+	r.provenance_json, r.locked_json,
 	(SELECT rg.provider_ref FROM release_group rg WHERE rg.id = r.release_group_id)`
 
 func scanRelease(sc interface{ Scan(...any) error }) (*Release, error) {
@@ -136,7 +142,8 @@ func scanRelease(sc interface{ Scan(...any) error }) (*Release, error) {
 		&r.Title, &r.Credit, &r.PrimaryType, &r.SecondaryTypes, &r.DiscTotal, &r.TrackTotal,
 		&r.CoverPath, &r.CoverSourceURL, &r.CoverWidth, &r.CoverHeight,
 		&r.ReleaseStatus, &r.MediumFormat, &r.Country, &r.ReleaseDate, &r.FirstReleaseDate,
-		&r.Label, &r.CatalogNumber, &state, &r.FetchedAt, &r.ReleaseGroupRef)
+		&r.Label, &r.CatalogNumber, &state, &r.FetchedAt,
+		&r.ProvenanceJSON, &r.LockedJSON, &r.ReleaseGroupRef)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +172,7 @@ func upsertReleaseGroupTx(tx *sql.Tx, g *ReleaseGroup) (int64, error) {
 			provider, provider_ref, title, primary_type, secondary_types,
 			first_release_date, release_count, release_count_fetched_at, created_at, updated_at
 		) VALUES (?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(provider, provider_ref) DO UPDATE SET
+		ON CONFLICT(provider, provider_ref) WHERE provider_ref IS NOT NULL DO UPDATE SET
 			title              = COALESCE(NULLIF(excluded.title,''), release_group.title),
 			primary_type       = COALESCE(excluded.primary_type, release_group.primary_type),
 			secondary_types    = COALESCE(excluded.secondary_types, release_group.secondary_types),
@@ -247,7 +254,7 @@ func upsertReleaseTx(tx *sql.Tx, r *Release) (int64, error) {
 			release_status, medium_format, country, release_date, first_release_date,
 			label, catalog_number, tracklist_state, fetched_at, created_at, updated_at
 		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(provider, provider_ref) DO UPDATE SET
+		ON CONFLICT(provider, provider_ref) WHERE provider_ref IS NOT NULL DO UPDATE SET
 			release_group_id   = COALESCE(excluded.release_group_id, release.release_group_id),
 			title              = COALESCE(NULLIF(excluded.title,''), release.title),
 			credit             = COALESCE(excluded.credit, release.credit),

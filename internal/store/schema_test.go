@@ -10,12 +10,12 @@ func TestSchemaTablesExist(t *testing.T) {
 	s := openTestStore(t)
 
 	want := []string{
-		"track", "track_metadata",
-		"artist", "artist_link", "track_artist",
+		"track",
+		"release_group", "release", "release_track",
+		"artist", "artist_link", "track_artist", "track_credit", "release_credit",
 		"collection", "collection_item",
-		"release", "release_track",
 		"import_batch", "import_item",
-		"provider_cache", "track_fts",
+		"provider_cache", "track_fts", "track_fts_shadow",
 		"schema_version",
 	}
 	for _, table := range want {
@@ -27,45 +27,45 @@ func TestSchemaTablesExist(t *testing.T) {
 			t.Errorf("表 %s 不存在: %v", table, err)
 		}
 	}
+
+	// track_metadata 已并入 track：曲目是单表，不再有第二份基本信息
+	var gone string
+	if err := s.DB().QueryRow(
+		`SELECT name FROM sqlite_master WHERE name = 'track_metadata'`,
+	).Scan(&gone); err == nil {
+		t.Error("track_metadata 应已并入 track，不应再存在")
+	}
 }
 
 // TestMatchRefPartialUnique 覆盖 2.4：idx_match_ref 是部分唯一索引——
 // 已匹配的 (来源, 标识) 唯一，而未匹配的曲目（match_source IS NULL）不受约束。
+//
+// 溯源已从 track_metadata 挪到 track 上，判定本身不变。
 func TestMatchRefPartialUnique(t *testing.T) {
 	s := openTestStore(t)
 	db := s.DB()
 
-	newTrack := func(title string) int64 {
-		res, err := db.Exec(
-			`INSERT INTO track (title, created_at, updated_at) VALUES (?, datetime('now'), datetime('now'))`,
-			title)
-		if err != nil {
-			t.Fatalf("插入曲目失败: %v", err)
-		}
-		id, _ := res.LastInsertId()
-		return id
-	}
-	addMeta := func(trackID int64, source, ref any) error {
+	newTrack := func(title string, source, ref any) error {
 		_, err := db.Exec(
-			`INSERT INTO track_metadata (track_id, match_source, match_ref, updated_at)
-			 VALUES (?, ?, ?, datetime('now'))`, trackID, source, ref)
+			`INSERT INTO track (title, match_source, match_ref, created_at, updated_at)
+			 VALUES (?, ?, ?, datetime('now'), datetime('now'))`, title, source, ref)
 		return err
 	}
 
-	if err := addMeta(newTrack("a"), "musicbrainz", "mbid-1"); err != nil {
+	if err := newTrack("a", "musicbrainz", "mbid-1"); err != nil {
 		t.Fatalf("首次写入溯源失败: %v", err)
 	}
 	// 同一 (来源, 标识) 不可重复——「同一上游结果不被重复加入」
-	if err := addMeta(newTrack("b"), "musicbrainz", "mbid-1"); err == nil {
+	if err := newTrack("b", "musicbrainz", "mbid-1"); err == nil {
 		t.Error("重复的 (match_source, match_ref) 应被唯一约束拒绝")
 	}
 	// 不同来源的同一标识互不冲突
-	if err := addMeta(newTrack("c"), "itunes", "mbid-1"); err != nil {
+	if err := newTrack("c", "itunes", "mbid-1"); err != nil {
 		t.Errorf("不同来源的同一标识不应冲突: %v", err)
 	}
 	// 未匹配的曲目不受唯一约束：多条 NULL 溯源可以并存
 	for i := 0; i < 3; i++ {
-		if err := addMeta(newTrack("none"), nil, nil); err != nil {
+		if err := newTrack("none", nil, nil); err != nil {
 			t.Fatalf("未匹配曲目第 %d 条写入失败: %v", i+1, err)
 		}
 	}
@@ -125,14 +125,17 @@ func TestCollectionNameUniquePerKind(t *testing.T) {
 }
 
 // TestReleaseRefUnique 覆盖 2.7：(provider, provider_ref) 唯一。
+//
+// 唯一性只对有上游标识的歌集成立：本地歌集（provider_ref IS NULL）
+// 靠 (标题, 署名) 归拢，不受这个索引约束。
 func TestReleaseRefUnique(t *testing.T) {
 	s := openTestStore(t)
 	db := s.DB()
 
 	add := func(provider, ref, title string) error {
 		_, err := db.Exec(
-			`INSERT INTO release (provider, provider_ref, title, tracklist_state, updated_at)
-			 VALUES (?, ?, ?, 'none', datetime('now'))`, provider, ref, title)
+			`INSERT INTO release (provider, provider_ref, title, tracklist_state, created_at, updated_at)
+			 VALUES (?, ?, ?, 'none', datetime('now'), datetime('now'))`, provider, ref, title)
 		return err
 	}
 
@@ -144,6 +147,66 @@ func TestReleaseRefUnique(t *testing.T) {
 	}
 	if err := add("itunes", "rel-1", "同标识不同来源"); err != nil {
 		t.Errorf("不同来源的同一标识不应冲突: %v", err)
+	}
+	// 本地歌集没有上游标识，索引不约束它们
+	if _, err := db.Exec(
+		`INSERT INTO release (title, tracklist_state, created_at, updated_at)
+		 VALUES ('本地歌集', 'none', datetime('now'), datetime('now'))`); err != nil {
+		t.Fatalf("插入本地歌集失败: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO release (title, tracklist_state, created_at, updated_at)
+		 VALUES ('另一张本地歌集', 'none', datetime('now'), datetime('now'))`); err != nil {
+		t.Errorf("多条无上游标识的歌集应可并存: %v", err)
+	}
+}
+
+// TestReleaseGroupRefUnique 覆盖 2.7 的发行组一侧：
+// (provider, provider_ref) 唯一——同一发行组不被重复登记。
+func TestReleaseGroupRefUnique(t *testing.T) {
+	s := openTestStore(t)
+	db := s.DB()
+
+	add := func(ref, title string) error {
+		_, err := db.Exec(
+			`INSERT INTO release_group (provider, provider_ref, title, created_at, updated_at)
+			 VALUES ('musicbrainz', ?, ?, datetime('now'), datetime('now'))`, ref, title)
+		return err
+	}
+
+	if err := add("rg-1", "涼宮ハルヒの詰合"); err != nil {
+		t.Fatalf("插入发行组失败: %v", err)
+	}
+	if err := add("rg-1", "重复的发行组"); err == nil {
+		t.Error("重复的 (provider, provider_ref) 应被拒绝")
+	}
+}
+
+// TestTrackCreditAllowsSameArtistTwice 覆盖署名分解的主键：
+// 同一位艺术家可能在一条署名里出现两次（形如 A feat. B & A），
+// position 进主键使各自有各自的区间。
+func TestTrackCreditAllowsSameArtistTwice(t *testing.T) {
+	s := openTestStore(t)
+	db := s.DB()
+
+	trackID, _ := s.CreateTrack(&Track{Title: "曲目"})
+	artistID, _ := s.UpsertArtist(&Artist{Name: "A"})
+
+	add := func(position int, span any) error {
+		_, err := db.Exec(
+			`INSERT INTO track_credit (track_id, artist_id, position, span_start, span_end)
+			 VALUES (?, ?, ?, ?, ?)`, trackID, artistID, position, span, span)
+		return err
+	}
+
+	if err := add(0, 0); err != nil {
+		t.Fatalf("首次写入署名失败: %v", err)
+	}
+	if err := add(1, 20); err != nil {
+		t.Errorf("同一位艺术家的第二个位置应可写入: %v", err)
+	}
+	if err := add(0, 0); err == nil {
+		t.Error("同一 (曲目, 艺术家, 位置) 应被拒绝")
 	}
 }
 

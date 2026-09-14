@@ -282,13 +282,17 @@ func enqueueOneItem(t *testing.T, app *App, title, artist, album string) int64 {
 }
 
 // createPendingTrack 造一条「有上游身份、详情待补」的曲目。
+//
+// 发行标识现在落在**歌集**上：待补判定读的是所属 release 的 provider_ref，
+// 因此这里必须连歌集一起建出来，否则状态会是「已匹配（无可补）」。
 func createPendingTrack(t *testing.T, app *App, title string) int64 {
 	t.Helper()
 	source, ref := "musicbrainz", "trk-"+title
 	release := "rel-" + title
+	album := "专辑 " + title
 	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: title, MatchSource: &source, MatchRef: &ref,
-		Metadata: &store.MetadataInput{ReleaseMBID: &release},
+		Title: title, MatchSource: &source, MatchRef: &ref, Album: &album,
+		Release: &store.ReleaseInput{Provider: &source, ProviderRef: &release},
 	})
 	if err != nil {
 		t.Fatalf("建曲目失败: %v", err)

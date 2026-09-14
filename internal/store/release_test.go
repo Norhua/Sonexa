@@ -8,17 +8,16 @@ func TestUpsertReleaseUpdatesNotInserts(t *testing.T) {
 	s := openTestStore(t)
 
 	first, err := s.UpsertRelease(&Release{
-		Provider: "musicbrainz", ProviderRef: "rel-1",
+		Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-1"),
 		Title: "涼宮ハルヒの詰合", TracklistState: TracklistNone,
 	})
 	if err != nil {
 		t.Fatalf("首次写入失败: %v", err)
 	}
 
-	country := "JP"
 	second, err := s.UpsertRelease(&Release{
-		Provider: "musicbrainz", ProviderRef: "rel-1",
-		Title: "涼宮ハルヒの詰合", Country: &country, TracklistState: TracklistComplete,
+		Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-1"),
+		Title: "涼宮ハルヒの詰合", Country: ptr("JP"), TracklistState: TracklistComplete,
 	})
 	if err != nil {
 		t.Fatalf("再次写入失败: %v", err)
@@ -51,12 +50,12 @@ func TestTracklistStateNeverDowngrades(t *testing.T) {
 	s := openTestStore(t)
 
 	id, _ := s.UpsertRelease(&Release{
-		Provider: "musicbrainz", ProviderRef: "rel-2", Title: "专辑",
+		Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-2"), Title: "专辑",
 		TracklistState: TracklistComplete,
 	})
 	// 导入自动入库只写 release 行，状态为 none
 	if _, err := s.UpsertRelease(&Release{
-		Provider: "musicbrainz", ProviderRef: "rel-2", Title: "专辑",
+		Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-2"), Title: "专辑",
 		TracklistState: TracklistNone,
 	}); err != nil {
 		t.Fatalf("写入失败: %v", err)
@@ -75,7 +74,7 @@ func TestTracklistStateNeverDowngrades(t *testing.T) {
 func TestReplaceTracklistOrdersByDiscThenTrack(t *testing.T) {
 	s := openTestStore(t)
 	id, _ := s.UpsertRelease(&Release{
-		Provider: "musicbrainz", ProviderRef: "rel-3", Title: "双碟专辑",
+		Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-3"), Title: "双碟专辑",
 		TracklistState: TracklistNone,
 	})
 

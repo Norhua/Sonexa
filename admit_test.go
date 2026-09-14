@@ -27,10 +27,16 @@ func fullCandidate(ref string) provider.Candidate {
 }
 
 // TestAllAdmissionPathsWriteIdenticalTracks 覆盖用户要求 2：
-// 导入自动入库、复核「接受」、搜索页「加入曲库」写出的曲目没有任何区别。
+// 导入自动入库、复核「接受」、搜索页「加入曲库」、专辑视图灰色行「加入曲库」
+// 写出的曲目没有任何区别。
 //
-// 先前三处各写各的：导入多写了发行状态与碟号，搜索页少写了它们，
-// 厂牌与目录号三处都没写——同一条候选从不同入口进来，库里长得不一样。
+// 先前几处各写各的：导入多写了发行状态与碟号，搜索页少写了它们，
+// 厂牌与目录号处处都没写——同一条候选从不同入口进来，库里长得不一样。
+//
+// 歌集升格为实体之后，比对的口径没变但落点变了：发行级事实
+// （类型、载体、国家、厂牌、目录号、音轨数、封面）存在 release 上一份，
+// 由 GetMetadata 的 join 带出。四条路径写出的曲目相同，
+// 意味着它们挂上的歌集也带着同一组事实。
 func TestAllAdmissionPathsWriteIdenticalTracks(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
@@ -78,9 +84,48 @@ func TestAllAdmissionPathsWriteIdenticalTracks(t *testing.T) {
 	if !reflect.DeepEqual(metaA, metaC) {
 		t.Errorf("搜索页与导入自动入库写出的丰富信息不同:\n A=%+v\n C=%+v", metaA, metaC)
 	}
-	// 齐全的候选进来，齐全的列就该在
+	// 齐全的候选进来，齐全的列就该在。厂牌、发行状态与首次发行日期
+	// 现在存在歌集上——断言它们，就是断言歌集侧真的被写了。
 	if metaA.Label == nil || metaA.DiscNumber == nil || metaA.ReleaseStatus == nil || metaA.FirstReleaseDate == nil {
 		t.Errorf("候选带的字段没写全: %+v", metaA)
+	}
+	// 歌集必须真的建出来：发行级事实只存在 release 上一份，
+	// 曲目没有归属就意味着它们被丢掉了。（metaOf 抹掉了各路径必然不同的
+	// 歌集行 id，所以这里直接读曲目。）
+	for name, id := range map[string]int64{"搜索页": idA, "复核接受": idB, "导入": idC} {
+		track, err := app.store.GetTrack(id)
+		if err != nil || track == nil {
+			t.Fatalf("读取 %s 入库的曲目失败: %v", name, err)
+		}
+		if track.ReleaseID == nil {
+			t.Errorf("%s 入库的曲目没有挂上歌集——发行级事实无处可放", name)
+		}
+		if track.Album == nil || *track.Album != "涼宮ハルヒの詰合" {
+			t.Errorf("%s 入库的曲目歌集名 = %v, 期望候选带的那个", name, track.Album)
+		}
+	}
+
+	// 路径 D：专辑视图灰色行加入曲库。
+	//
+	// 它带不了发行级字段（清单位置上本就只有曲名、署名、时长、录音标识），
+	// 因此不与前三条整体比对；比的是它带得动的那几列——这条路径同样
+	// **只写候选自己带的字段**，既不漏也不借。
+	idD, err := app.AddGhostRowToLibrary("musicbrainz", "d", "God knows...",
+		strPtrOrNil("平野綾"), fullCandidate("d").DurationMS, strPtrOrNil("rec-1"))
+	if err != nil {
+		t.Fatalf("灰色行入库失败: %v", err)
+	}
+	metaD := metaOf(t, app, idD)
+	if metaD.Title != metaA.Title ||
+		!reflect.DeepEqual(metaD.Credit, metaA.Credit) ||
+		!reflect.DeepEqual(metaD.DurationMS, metaA.DurationMS) ||
+		!reflect.DeepEqual(metaD.RecordingRef, metaA.RecordingRef) ||
+		!reflect.DeepEqual(metaD.MatchSource, metaA.MatchSource) {
+		t.Errorf("灰色行入库与搜索页入库在共有字段上不同:\n A=%+v\n D=%+v", metaA, metaD)
+	}
+	// 清单位置没给发行标识，歌集侧就该是空的——不拿别处的值去补
+	if metaD.Label != nil || metaD.ReleaseStatus != nil || metaD.Country != nil {
+		t.Errorf("灰色行入库凭空写出了发行级字段: %+v", metaD)
 	}
 }
 
@@ -102,9 +147,10 @@ func TestAdmissionNeverBorrowsImportValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	track, _ := app.store.GetTrack(id)
-	if track.Artist != nil || track.Album != nil {
+	// 歌集名来自所属歌集：上游没给歌集，曲目就不该挂在任何歌集上
+	if track.Credit != nil || track.Album != nil || track.ReleaseID != nil {
 		t.Errorf("接受候选后署名/歌集 = %v/%v, 期望留空而不是拿表格值去补",
-			deref(track.Artist), deref(track.Album))
+			deref(track.Credit), deref(track.Album))
 	}
 	meta := metaOf(t, app, id)
 	if meta.ProvenanceJSON != nil {
@@ -122,8 +168,8 @@ func TestAdmissionNeverBorrowsImportValues(t *testing.T) {
 	waitFor(t, "导入跑完", func() bool { return !runner.IsRunning(batchID) })
 	if id2, _ := app.store.FindByMatchRef("musicbrainz", "bare2"); id2 != 0 {
 		tr, _ := app.store.GetTrack(id2)
-		if tr.Artist != nil {
-			t.Errorf("导入入库后署名 = %q, 期望留空", *tr.Artist)
+		if tr.Credit != nil {
+			t.Errorf("导入入库后署名 = %q, 期望留空", *tr.Credit)
 		}
 	}
 }
@@ -134,7 +180,8 @@ func metaOf(t *testing.T, app *App, id int64) store.TrackMetadata {
 	if err != nil || m == nil {
 		t.Fatalf("读丰富信息失败: %v", err)
 	}
-	// 三条路径的曲目 id、match_ref 与发行标识必然不同，比对其余列
-	m.TrackID, m.MatchRef, m.ReleaseMBID, m.MatchedAt = 0, nil, nil, nil
+	// 各路径的曲目 id、match_ref 与发行标识必然不同（候选各带各的），
+	// 歌集行 id 随之不同；比对其余列。
+	m.TrackID, m.MatchRef, m.ReleaseRef, m.ReleaseID = 0, nil, nil, nil
 	return *m
 }
