@@ -208,17 +208,33 @@ func TestLocalAlbumDisappearsWithLastTrack(t *testing.T) {
 // 「全部 14」「署名 12」「演唱 12」「作曲 0」「作词 2」——计数为零的分面也要列出。
 func TestRoleFacetsIncludeZeroCounts(t *testing.T) {
 	s := openTestStore(t)
-	artistID, _ := s.UpsertArtist(&Artist{Name: "平野綾"})
+	artistID, err := s.UpsertArtist(&Artist{Name: "平野綾"})
+	if err != nil {
+		t.Fatalf("建艺术家失败: %v", err)
+	}
 
 	// 12 首演唱且被署名、2 首只作词（未署名）、0 首作曲
 	for i := 0; i < 12; i++ {
-		id, _ := s.CreateTrack(&Track{Title: "演唱曲" + itoa(i), Credit: ptr("平野綾")})
-		s.AddTrackArtist(id, TrackArtist{ArtistID: artistID, Role: RoleVocal})
-		s.SetTrackCredits(id, []CreditEntry{{ArtistID: artistID, CreditedName: ptr("平野綾")}})
+		id, err := s.CreateTrack(&Track{Title: "演唱曲" + itoa(i), Credit: ptr("平野綾")})
+		if err != nil {
+			t.Fatalf("建曲目失败: %v", err)
+		}
+		if err := s.AddTrackArtist(id, TrackArtist{ArtistID: artistID, Role: RoleVocal}); err != nil {
+			t.Fatalf("关联演唱失败: %v", err)
+		}
+		if err := s.SetTrackCredits(id,
+			[]CreditEntry{{ArtistID: artistID, CreditedName: ptr("平野綾")}}); err != nil {
+			t.Fatalf("写入署名分解失败: %v", err)
+		}
 	}
 	for i := 0; i < 2; i++ {
-		id, _ := s.CreateTrack(&Track{Title: "作词曲" + itoa(i)})
-		s.AddTrackArtist(id, TrackArtist{ArtistID: artistID, Role: RoleLyricist})
+		id, err := s.CreateTrack(&Track{Title: "作词曲" + itoa(i)})
+		if err != nil {
+			t.Fatalf("建曲目失败: %v", err)
+		}
+		if err := s.AddTrackArtist(id, TrackArtist{ArtistID: artistID, Role: RoleLyricist}); err != nil {
+			t.Fatalf("关联作词失败: %v", err)
+		}
 	}
 
 	facets, err := s.RoleFacets(artistID)
@@ -270,14 +286,30 @@ func TestRoleFacetsIncludeZeroCounts(t *testing.T) {
 // 「署名」是分面之一：它查 track_credit，其余分面查 track_artist。
 func TestArtistViewFiltersByRole(t *testing.T) {
 	s := openTestStore(t)
-	artistID, _ := s.UpsertArtist(&Artist{Name: "平野綾"})
+	artistID, err := s.UpsertArtist(&Artist{Name: "平野綾"})
+	if err != nil {
+		t.Fatalf("建艺术家失败: %v", err)
+	}
 
-	vocalID, _ := s.CreateTrack(&Track{Title: "演唱的歌", Credit: ptr("平野綾")})
-	s.AddTrackArtist(vocalID, TrackArtist{ArtistID: artistID, Role: RoleVocal})
-	s.SetTrackCredits(vocalID, []CreditEntry{{ArtistID: artistID, CreditedName: ptr("平野綾")}})
+	vocalID, err := s.CreateTrack(&Track{Title: "演唱的歌", Credit: ptr("平野綾")})
+	if err != nil {
+		t.Fatalf("建曲目失败: %v", err)
+	}
+	if err := s.AddTrackArtist(vocalID, TrackArtist{ArtistID: artistID, Role: RoleVocal}); err != nil {
+		t.Fatalf("关联演唱失败: %v", err)
+	}
+	if err := s.SetTrackCredits(vocalID,
+		[]CreditEntry{{ArtistID: artistID, CreditedName: ptr("平野綾")}}); err != nil {
+		t.Fatalf("写入署名分解失败: %v", err)
+	}
 
-	lyricID, _ := s.CreateTrack(&Track{Title: "作词的歌"})
-	s.AddTrackArtist(lyricID, TrackArtist{ArtistID: artistID, Role: RoleLyricist})
+	lyricID, err := s.CreateTrack(&Track{Title: "作词的歌"})
+	if err != nil {
+		t.Fatalf("建曲目失败: %v", err)
+	}
+	if err := s.AddTrackArtist(lyricID, TrackArtist{ArtistID: artistID, Role: RoleLyricist}); err != nil {
+		t.Fatalf("关联作词失败: %v", err)
+	}
 
 	// 不带 role：全部（署名 ∪ 全部角色）
 	all, err := s.ListTracks(TrackFilter{ArtistID: artistID})
@@ -373,20 +405,35 @@ func TestArtistListExcludesUncreditedContributors(t *testing.T) {
 func TestCharacterArtistTitle(t *testing.T) {
 	s := openTestStore(t)
 
-	charID, _ := s.UpsertArtist(&Artist{Name: "涼宮ハルヒ", Type: ptr("character")})
-	vaID, _ := s.UpsertArtist(&Artist{Name: "平野綾", Type: ptr("person")})
-	s.LinkArtists(charID, vaID, LinkVoiceOf)
+	charID, err := s.UpsertArtist(&Artist{Name: "涼宮ハルヒ", Type: ptr("character")})
+	if err != nil {
+		t.Fatalf("建角色失败: %v", err)
+	}
+	vaID, err := s.UpsertArtist(&Artist{Name: "平野綾", Type: ptr("person")})
+	if err != nil {
+		t.Fatalf("建声优失败: %v", err)
+	}
+	if err := s.LinkArtists(charID, vaID, LinkVoiceOf); err != nil {
+		t.Fatalf("建立配音关系失败: %v", err)
+	}
 
 	credit := "涼宮ハルヒ(CV:平野綾)"
-	trackID, _ := s.CreateTrack(&Track{Title: "God knows...", Credit: &credit})
+	trackID, err := s.CreateTrack(&Track{Title: "God knows...", Credit: &credit})
+	if err != nil {
+		t.Fatalf("建曲目失败: %v", err)
+	}
 	// 角色出现在署名串里（进列表靠这一条），声优凭 vocal 关系进来
-	s.SetTrackCredits(trackID, []CreditEntry{
+	if err := s.SetTrackCredits(trackID, []CreditEntry{
 		{ArtistID: charID, CreditedName: ptr("涼宮ハルヒ"), SpanStart: ptr(0), SpanEnd: ptr(6)},
-	})
-	s.SetTrackArtists(trackID, []TrackArtist{
+	}); err != nil {
+		t.Fatalf("写入署名分解失败: %v", err)
+	}
+	if err := s.SetTrackArtists(trackID, []TrackArtist{
 		{ArtistID: charID, Role: RoleCharacter},
 		{ArtistID: vaID, Role: RoleVocal},
-	})
+	}); err != nil {
+		t.Fatalf("写入参与者失败: %v", err)
+	}
 
 	artists, err := s.ListArtists()
 	if err != nil {
