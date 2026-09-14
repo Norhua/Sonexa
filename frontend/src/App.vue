@@ -30,6 +30,7 @@ import EditDialog from '@/views/EditDialog.vue'
 import { useLibraryStore } from '@/stores/library'
 import { useSearchStore } from '@/stores/search'
 import { useSettingsStore } from '@/stores/settings'
+import { useEnrichStore } from '@/stores/enrich'
 import { useTasksStore } from '@/stores/tasks'
 import { useThemeStore } from '@/stores/theme'
 import { useUiStore } from '@/stores/ui'
@@ -37,6 +38,7 @@ import { useUiStore } from '@/stores/ui'
 const library = useLibraryStore()
 const settings = useSettingsStore()
 const tasks = useTasksStore()
+const enrich = useEnrichStore()
 const search = useSearchStore()
 const ui = useUiStore()
 useThemeStore()
@@ -69,9 +71,14 @@ onMounted(async () => {
   await library.loadTracks()
   tasks.subscribe()
   await tasks.refresh()
+  // 补全信息匹配的状态：后端推送，这里只订阅并读一次初值
+  enrich.subscribe()
+  await enrich.refresh()
   offLibrary = EventsOn(Events.LibraryChanged, async () => {
     await library.loadCollections()
     await library.loadTracks()
+    // 入库或补全会改变「已匹配/未匹配」的计数，工具栏上那个数字要跟着动
+    await enrich.refresh()
   })
 
   // 启动时探一次连通性，之后只在出网请求失败时置位——
@@ -85,6 +92,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   tasks.unsubscribeAll()
+  enrich.unsubscribeAll()
   offLibrary?.()
 })
 

@@ -10,6 +10,7 @@ export type * as Models from '../../wailsjs/go/models'
 /** 后端推送的事件名。 */
 export const Events = {
   ImportProgress: 'import:progress',
+  EnrichProgress: 'enrich:progress',
   SettingsSaved: 'settings:saved',
   LibraryChanged: 'library:changed',
   ProviderResults: 'upstream:providerResults',
