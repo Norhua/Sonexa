@@ -310,18 +310,36 @@ func TestArtistViewFiltersByRole(t *testing.T) {
 func TestArtistListExcludesUncreditedContributors(t *testing.T) {
 	s := openTestStore(t)
 
-	creditedID, _ := s.UpsertArtist(&Artist{Name: "DECO*27"})
-	vocalID, _ := s.UpsertArtist(&Artist{Name: "初音ミク"})
-	ghostID, _ := s.UpsertArtist(&Artist{Name: "未署名的编曲"})
+	// 建艺术家时逐个查错：写入失败会让回滚掉的 rowid 被下一条复用，
+	// 于是两个变量指向同一位艺术家，而断言失败的位置离成因很远。
+	newArtist := func(name string) int64 {
+		t.Helper()
+		id, err := s.UpsertArtist(&Artist{Name: name})
+		if err != nil {
+			t.Fatalf("建艺术家 %s 失败: %v", name, err)
+		}
+		return id
+	}
+	creditedID := newArtist("DECO*27")
+	vocalID := newArtist("初音ミク")
+	ghostID := newArtist("未署名的编曲")
 
-	trackID, _ := s.CreateTrack(&Track{Title: "愛言葉", Credit: ptr("DECO*27")})
+	trackID, err := s.CreateTrack(&Track{Title: "愛言葉", Credit: ptr("DECO*27")})
+	if err != nil {
+		t.Fatalf("创建曲目失败: %v", err)
+	}
 	// 署名艺术家：只作词作曲，但出现在署名串里
-	s.SetTrackCredits(trackID, []CreditEntry{{ArtistID: creditedID, CreditedName: ptr("DECO*27")}})
-	s.SetTrackArtists(trackID, []TrackArtist{
+	if err := s.SetTrackCredits(trackID,
+		[]CreditEntry{{ArtistID: creditedID, CreditedName: ptr("DECO*27")}}); err != nil {
+		t.Fatalf("写入署名分解失败: %v", err)
+	}
+	if err := s.SetTrackArtists(trackID, []TrackArtist{
 		{ArtistID: creditedID, Role: RoleComposer},
 		{ArtistID: vocalID, Role: RoleVocal},
 		{ArtistID: ghostID, Role: RoleArranger},
-	})
+	}); err != nil {
+		t.Fatalf("写入参与者失败: %v", err)
+	}
 
 	artists, err := s.ListArtists()
 	if err != nil {
