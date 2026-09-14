@@ -98,6 +98,9 @@ func (a *App) SaveSettings(next config.Settings) error {
 	// 上游配置改动后重建注册表与令牌桶
 	a.rebuildProviders(next)
 	a.rebuildRunner(next)
+	// 阶梯配置（偏好国家、载体优先级）改动后同步给 store，
+	// 否则专辑视图仍按旧配置选代表 release
+	a.store.SetLadderConfig(a.ladderConfig())
 	// 封面并发数改动后就地调整工作池
 	if a.coverSvc != nil {
 		a.coverSvc.Pool().SetConcurrency(next.Cache.CoverConcurrency)

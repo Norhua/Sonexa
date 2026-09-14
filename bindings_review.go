@@ -271,7 +271,8 @@ func (a *App) NoMatchNeeded(itemID int64) (int64, error) {
 	}
 
 	trackID, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: *item.InTitle, Artist: item.InArtist, Album: item.InAlbum,
+		Title: *item.InTitle, Credit: item.InArtist,
+		Album: item.InAlbum, AlbumCredit: item.InArtist,
 		// 溯源置空：不写 MatchSource / MatchRef
 	})
 	if err != nil {

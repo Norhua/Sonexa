@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
-	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/store"
 )
 
@@ -115,12 +115,16 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 	detail := &TrackDetail{Track: *track, Metadata: meta, Tags: tags}
 
 	// 演唱区：优先渲染署名原串 + 可点击区间
-	if meta != nil && meta.TrackCredit != nil {
-		detail.CreditText = *meta.TrackCredit
-		detail.CreditSpans = parseSpans(meta.CreditSpansJSON, detail.CreditText)
+	if meta != nil && meta.Credit != nil {
+		detail.CreditText = *meta.Credit
 	} else if track.Artist != nil {
 		detail.CreditText = *track.Artist
 	}
+	spans, err := a.creditSpans(trackID, detail.CreditText)
+	if err != nil {
+		return nil, err
+	}
+	detail.CreditSpans = spans
 
 	groups, err := a.participantGroups(trackID)
 	if err != nil {
@@ -129,18 +133,19 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 	detail.Participants = groups
 	detail.Sources = sourcesOf(meta, track)
 
-	// 已采用的封面优先：它是用户确认过的那张
+	// 已采用的封面优先：它是用户确认过的那张。封面挂在歌集上——
+	// 采用一次即对该歌集全部曲目生效。
 	if meta != nil && meta.CoverPath != nil {
 		detail.AdoptedCoverPath = *meta.CoverPath
 	}
 	// 临时缩略图给来源标识，由前端拼成 /cover 地址——handler 据此就地构造降级链。
 	// 详情与列表用同一个尺寸取图，由 <img> 的显示尺寸决定呈现大小：
 	// 换一个尺寸就是另一个缓存键，等于为同一张图再出网取一次。
-	if meta != nil && meta.ReleaseMBID != nil && meta.MatchSource != nil {
+	if meta != nil && meta.ReleaseRef != nil && meta.MatchSource != nil {
 		detail.CoverProvider = *meta.MatchSource
-		detail.CoverRef = *meta.ReleaseMBID
-		if meta.ReleaseGroupMBID != nil {
-			detail.CoverGroupRef = *meta.ReleaseGroupMBID
+		detail.CoverRef = *meta.ReleaseRef
+		if meta.ReleaseGroupRef != nil {
+			detail.CoverGroupRef = *meta.ReleaseGroupRef
 		}
 	}
 	return detail, nil
@@ -173,9 +178,9 @@ func sourcesOf(meta *store.TrackMetadata, track *store.TrackView) []FieldSource 
 	}
 
 	if track != nil {
-		// 基本信息用三个布尔锁：加锁即用户设定
+		// 曲名与署名的锁并入 locked_json，由 TrackView 解出
 		add("title", basicSource(provenance, "title", track.TitleLocked))
-		add("artist", basicSource(provenance, "artist", track.ArtistLocked))
+		add("artist", basicSource(provenance, "credit", track.ArtistLocked))
 		add("album", basicSource(provenance, "album", track.AlbumLocked))
 	}
 	if meta != nil {
@@ -218,34 +223,36 @@ func basicSource(provenance map[string]string, key string, locked bool) string {
 	return ""
 }
 
-// parseSpans 解析 credit_spans_json。
+// creditSpans 读取署名原串中的可点击片段。
 //
-// 这是解析时一并生成的纯渲染辅助数据，不在这里反向猜测。
-func parseSpans(raw *string, text string) []CreditSpan {
-	if raw == nil || *raw == "" {
-		return nil
+// 区间在解析署名时一并生成并落在 track_credit 表上，这里不反向猜测。
+// 对不上的片段不在其中，由前端渲染为纯文本。
+func (a *App) creditSpans(trackID int64, text string) ([]CreditSpan, error) {
+	entries, err := a.store.GetTrackCredits(trackID)
+	if err != nil {
+		return nil, err
 	}
-	var parsed matching.CreditSpans
-	if err := json.Unmarshal([]byte(*raw), &parsed); err != nil {
-		return nil
-	}
-	out := make([]CreditSpan, 0, len(parsed.Spans))
-	for _, s := range parsed.Spans {
-		if s.Start < 0 || s.End > len(text) || s.Start >= s.End {
+	out := make([]CreditSpan, 0, len(entries))
+	for _, e := range entries {
+		if e.SpanStart == nil || e.SpanEnd == nil {
+			continue
+		}
+		start, end := *e.SpanStart, *e.SpanEnd
+		if start < 0 || end > len(text) || start >= end {
 			continue // 区间越界则跳过，不猜测
 		}
 		out = append(out, CreditSpan{
-			Start: s.Start, End: s.End, ArtistID: s.ArtistID,
-			Text: text[s.Start:s.End],
+			Start: start, End: end, ArtistID: e.ArtistID,
+			Text: text[start:end],
 		})
 	}
-	return out
+	return out, nil
 }
 
 // participantGroups 按 role 分组并按固定顺序排列。
 func (a *App) participantGroups(trackID int64) ([]ParticipantGroup, error) {
 	rows, err := a.store.DB().Query(`
-		SELECT ta.role, ta.artist_id, COALESCE(ta.credited_name, ar.name), ta.attribute, ta.position
+		SELECT ta.role, ta.artist_id, ar.name, ta.attribute, ta.position
 		FROM track_artist ta JOIN artist ar ON ar.id = ta.artist_id
 		WHERE ta.track_id = ?
 		ORDER BY ta.position`, trackID)
@@ -294,7 +301,7 @@ func (a *App) CreateTrackManual(title string, artist, album *string) (int64, err
 		return 0, err
 	}
 	id, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: title, Artist: artist, Album: album,
+		Title: title, Credit: artist, Album: album, AlbumCredit: artist,
 	})
 	if err != nil {
 		return 0, err
@@ -303,16 +310,142 @@ func (a *App) CreateTrackManual(title string, artist, album *string) (int64, err
 	return id, nil
 }
 
-// UpdateTrackBasic 手动修改基本信息。被修改的字段加锁。
-func (a *App) UpdateTrackBasic(trackID int64, title, artist, album *string) error {
+// UpdateTrackBasic 手动修改曲名与署名。被修改的字段加锁。
+//
+// 歌集名不在这里改：歌集升格为实体后，一首曲目的「歌集名」是它所属歌集的
+// 属性，改它对该歌集的全部曲目生效。那需要用户先决定影响范围，
+// 因此走 PlanAlbumRename / ApplyAlbumRename 两步。
+func (a *App) UpdateTrackBasic(trackID int64, title, artist *string) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	if err := a.store.UpdateTrackFields(trackID, title, artist, album, true); err != nil {
+	if err := a.store.UpdateTrackFields(trackID, title, artist, true); err != nil {
 		return err
 	}
 	a.notifyLibraryChanged()
 	return nil
+}
+
+// AlbumRenamePlan 描述一次「改歌集名」会影响什么，供界面二次确认。
+type AlbumRenamePlan struct {
+	// TrackCount 是当前歌集下的曲目数。为 1 时无需二次确认。
+	TrackCount int `json:"trackCount"`
+	// CurrentTitle 是当前歌集名。
+	CurrentTitle string `json:"currentTitle"`
+	// ExistingReleaseID 非零时库中已有叫新名字的歌集，可直接关联过去。
+	ExistingReleaseID int64 `json:"existingReleaseId"`
+	// NeedsConfirm 为真时界面必须让用户选择影响范围。
+	NeedsConfirm bool `json:"needsConfirm"`
+}
+
+// PlanAlbumRename 计算改歌集名的影响范围。
+//
+// 歌集是共享实体，改名默认影响该歌集下的全部曲目。只有一首时没有歧义，
+// 直接改；不止一首时界面要让用户在「改这张歌集 / 只把这首挪走 /
+// 关联到已有的同名歌集」之间选。
+func (a *App) PlanAlbumRename(trackID int64, newTitle string) (*AlbumRenamePlan, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	track, err := a.store.GetTrack(trackID)
+	if err != nil {
+		return nil, err
+	}
+	if track == nil {
+		return nil, fmt.Errorf("曲目不存在")
+	}
+
+	plan := &AlbumRenamePlan{}
+	if track.Album != nil {
+		plan.CurrentTitle = *track.Album
+	}
+	if track.ReleaseID != nil {
+		n, err := a.store.ReleaseTrackCount(*track.ReleaseID)
+		if err != nil {
+			return nil, err
+		}
+		plan.TrackCount = n
+	}
+
+	existing, err := a.store.FindReleaseByTitleCredit(newTitle, track.Credit)
+	if err != nil {
+		return nil, err
+	}
+	if track.ReleaseID == nil || existing != *track.ReleaseID {
+		plan.ExistingReleaseID = existing
+	}
+	plan.NeedsConfirm = plan.TrackCount > 1
+	return plan, nil
+}
+
+// 改歌集名的三种处置。
+const (
+	// AlbumRenameThisRelease 改这张歌集本身，影响它下面的全部曲目。
+	AlbumRenameThisRelease = "release"
+	// AlbumRenameMoveTrack 只把这首曲目挪到新歌集下，原歌集不动。
+	AlbumRenameMoveTrack = "move"
+	// AlbumRenameLinkExisting 把这首曲目关联到库中已有的同名歌集。
+	AlbumRenameLinkExisting = "link"
+)
+
+// ApplyAlbumRename 按用户选定的处置改歌集名。
+func (a *App) ApplyAlbumRename(trackID int64, newTitle, mode string) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(newTitle) == "" && mode != AlbumRenameMoveTrack {
+		return fmt.Errorf("歌集名不能为空")
+	}
+	track, err := a.store.GetTrack(trackID)
+	if err != nil {
+		return err
+	}
+	if track == nil {
+		return fmt.Errorf("曲目不存在")
+	}
+
+	switch mode {
+	case AlbumRenameThisRelease:
+		if track.ReleaseID == nil {
+			// 还没有歌集：等同于挪到一条新的本地歌集
+			return a.moveTrackToNewRelease(trackID, newTitle, track.Credit)
+		}
+		if err := a.store.UpdateReleaseFields(*track.ReleaseID,
+			map[string]string{"title": newTitle},
+			map[string]string{"title": "user"},
+			map[string]bool{"title": true}); err != nil {
+			return err
+		}
+	case AlbumRenameLinkExisting:
+		existing, err := a.store.FindReleaseByTitleCredit(newTitle, track.Credit)
+		if err != nil {
+			return err
+		}
+		if existing == 0 {
+			return fmt.Errorf("库中没有叫「%s」的歌集", newTitle)
+		}
+		if err := a.store.MoveTrackToRelease(trackID, existing); err != nil {
+			return err
+		}
+	case AlbumRenameMoveTrack:
+		if err := a.moveTrackToNewRelease(trackID, newTitle, track.Credit); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("未知的处置方式: %s", mode)
+	}
+
+	a.notifyLibraryChanged()
+	return nil
+}
+
+// moveTrackToNewRelease 新建一条本地歌集并把曲目挪过去。
+func (a *App) moveTrackToNewRelease(trackID int64, title string, credit *string) error {
+	releaseID, err := a.store.FindOrCreateLocalRelease(title, credit)
+	if err != nil {
+		return err
+	}
+	return a.store.MoveTrackToRelease(trackID, releaseID)
 }
 
 // DeleteTracks 删除曲目。
@@ -461,12 +594,15 @@ func (a *App) GetArtistHeader(artistID int64) (*ArtistHeader, error) {
 	return &ArtistHeader{ID: artistID, Title: title, Facets: facets}, nil
 }
 
-// ListAlbums 列出专辑，按分组键三级降级。
+// ListAlbums 列出用户至少拥有一首曲目的歌集。
+//
+// 同一发行组的多条 release 合为一条，代表版本由优选阶梯选出——
+// 阶梯配置在 App 启动与设置保存时注入 store，与匹配阶段共用同一份。
 func (a *App) ListAlbums() ([]store.AlbumListItem, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
-	return a.store.ListAlbums(a.ladderConfig())
+	return a.store.ListAlbums()
 }
 
 // notifyLibraryChanged 通知前端曲库已变更。

@@ -36,16 +36,28 @@ type AlbumRow struct {
 
 // AlbumDetail 是专辑详情视图。
 type AlbumDetail struct {
-	Key   string `json:"key"`
-	Level string `json:"level"`
-	Title string `json:"title"`
+	// ReleaseID 是这张专辑对应的歌集 id，也是前端的选中键。
+	ReleaseID int64 `json:"releaseId"`
+	// GroupID 非零时这条专辑代表一个发行组。
+	GroupID int64  `json:"groupId"`
+	Title   string `json:"title"`
+	Credit  *string `json:"credit"`
 	// 头部发行信息
 	PrimaryType  *string `json:"primaryType"`
 	Year         *int    `json:"year"`
 	MediumFormat *string `json:"mediumFormat"`
 	Country      *string `json:"country"`
+	Label        *string `json:"label"`
+	CatalogNumber *string `json:"catalogNumber"`
+	DiscTotal    *int    `json:"discTotal"`
 	Provider     *string `json:"provider"`
 	ReleaseRef   *string `json:"releaseRef"`
+	// ReleaseGroupRef 与 Provider/ReleaseRef 一起构成封面地址的来源。
+	ReleaseGroupRef *string `json:"releaseGroupRef"`
+	// CoverPath 非空时是已采用封面的落盘路径，优先于临时缩略图。
+	CoverPath *string `json:"coverPath"`
+	// ReleaseCount 是该发行组下共有几个 release。
+	ReleaseCount *int `json:"releaseCount"`
 
 	// TracklistState 为 none | partial | complete | failed。
 	TracklistState string `json:"tracklistState"`
@@ -70,72 +82,57 @@ type AlbumDetail struct {
 //
 // 清单状态不是完整时只列出已入库曲目，并在末尾显示「清单不完整」——
 // 不显示虚假的总数，也不显示灰色行。
-func (a *App) GetAlbumDetail(key, level string) (*AlbumDetail, error) {
+//
+// 参数是歌集 id：专辑升格为实体后不再有查询时现场派生的分组键，
+// 一条列表项就是一条 release。
+func (a *App) GetAlbumDetail(releaseID int64) (*AlbumDetail, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
 
-	albums, err := a.store.ListAlbums(a.ladderConfig())
-	if err != nil {
-		return nil, err
-	}
-	var item *store.AlbumListItem
-	for i := range albums {
-		if albums[i].Key == key && string(albums[i].Level) == level {
-			item = &albums[i]
-			break
-		}
-	}
-	if item == nil {
-		return nil, fmt.Errorf("专辑不存在")
-	}
-
-	detail := &AlbumDetail{
-		Key: key, Level: level, Title: item.Title,
-		Year: item.Year, Provider: item.Provider,
-		ReleaseRef: item.RepresentativeRef,
-		OwnedCount: item.OwnedCount, TotalCount: item.TotalCount,
-		TracklistState: string(store.TracklistNone),
-	}
-
-	// 已入库曲目：立即渲染，不等清单
-	owned, err := a.ownedRowsFor(*item)
-	if err != nil {
-		return nil, err
-	}
-
-	// 派生分组没有上游事实：不显示灰色行也不显示总数
-	if item.Level == store.GroupDerived {
-		detail.Rows = owned
-		detail.Incomplete = false
-		detail.TotalCount = nil
-		return detail, nil
-	}
-
-	if item.RepresentativeRef == nil || item.Provider == nil {
-		detail.Rows = owned
-		detail.Incomplete = true
-		return detail, nil
-	}
-
-	rel, err := a.store.GetReleaseByRef(*item.Provider, *item.RepresentativeRef)
+	rel, err := a.store.GetRelease(releaseID)
 	if err != nil {
 		return nil, err
 	}
 	if rel == nil {
+		return nil, fmt.Errorf("专辑不存在")
+	}
+
+	detail := &AlbumDetail{
+		ReleaseID: rel.ID, Title: rel.Title, Credit: rel.Credit,
+		PrimaryType: rel.PrimaryType, Year: rel.Year(),
+		MediumFormat: rel.MediumFormat, Country: rel.Country,
+		Label: rel.Label, CatalogNumber: rel.CatalogNumber,
+		DiscTotal: rel.DiscTotal,
+		Provider:  rel.Provider, ReleaseRef: rel.ProviderRef,
+		ReleaseGroupRef: rel.ReleaseGroupRef, CoverPath: rel.CoverPath,
+		TotalCount:     rel.TrackTotal,
+		TracklistState: string(store.TracklistNone),
+		FetchedAt:      formatTime(rel.FetchedAt),
+	}
+	if rel.ReleaseGroupID != nil {
+		detail.GroupID = *rel.ReleaseGroupID
+		if g, err := a.store.GetReleaseGroup(*rel.ReleaseGroupID); err == nil && g != nil {
+			detail.ReleaseCount = g.ReleaseCount
+		}
+	}
+
+	// 已入库曲目：立即渲染，不等清单
+	owned, err := a.ownedRowsFor(rel)
+	if err != nil {
+		return nil, err
+	}
+	detail.OwnedCount = len(owned)
+
+	// 本地歌集没有上游事实：不显示灰色行也不显示总数
+	if rel.ProviderRef == nil || rel.Provider == nil {
 		detail.Rows = owned
-		detail.Incomplete = true
+		detail.TotalCount = nil
 		return detail, nil
 	}
 
-	detail.PrimaryType = rel.PrimaryType
-	detail.MediumFormat = rel.MediumFormat
-	detail.Country = rel.Country
-	detail.FetchedAt = formatTime(rel.FetchedAt)
-
-	// 清单过期判定收口在 isStale：所有读取清单的路径都经过它
-	staleCfg := a.staleConfig()
-	effective := staleCfg.EffectiveTracklistState(rel)
+	// 清单过期判定收口在 EffectiveTracklistState：所有读取清单的路径都经过它
+	effective := a.staleConfig().EffectiveTracklistState(rel)
 	detail.TracklistState = string(effective)
 
 	if effective != store.TracklistComplete {
@@ -150,15 +147,13 @@ func (a *App) GetAlbumDetail(key, level string) (*AlbumDetail, error) {
 	}
 
 	// 清单完整：三状态解析
-	positions, err := a.store.ResolveTracklist(rel.ID, rel.Provider)
+	positions, err := a.store.ResolveTracklist(rel.ID, *rel.Provider)
 	if err != nil {
 		return nil, err
 	}
 	detail.Rows = rowsFromPositions(positions)
 	detail.OwnedCount = countOwned(detail.Rows)
-	if rel.TrackTotal != nil {
-		detail.TotalCount = rel.TrackTotal
-	} else {
+	if rel.TrackTotal == nil {
 		total := len(positions)
 		detail.TotalCount = &total
 	}
@@ -200,15 +195,13 @@ func countOwned(rows []AlbumRow) int {
 }
 
 // ownedRowsFor 返回某专辑已入库曲目的行，按碟号与音轨号排序。
-func (a *App) ownedRowsFor(item store.AlbumListItem) ([]AlbumRow, error) {
-	f := store.TrackFilter{}
-	switch item.Level {
-	case store.GroupByReleaseGroup:
-		f.ReleaseGroupRef = item.Key
-	case store.GroupByRelease:
-		f.ReleaseRef = item.Key
-	default:
-		f.DerivedAlbumKey = item.Key
+//
+// 有发行组时取整组的曲目：列表里同组的多条 release 合为一条，
+// 详情也该显示用户在这张专辑上拥有的全部曲目，而不只是代表版本那一条上的。
+func (a *App) ownedRowsFor(rel *store.Release) ([]AlbumRow, error) {
+	f := store.TrackFilter{ReleaseID: rel.ID}
+	if rel.ReleaseGroupID != nil {
+		f = store.TrackFilter{ReleaseGroupID: *rel.ReleaseGroupID}
 	}
 
 	tracks, err := a.store.ListTracks(f)
@@ -334,14 +327,33 @@ func (a *App) upsertReleaseFromDetail(providerID, releaseRef string, d *provider
 		title = *d.AlbumTitle
 	}
 	now := time.Now().UTC()
+
+	// 发行组：详情带着它时一并登记，同一专辑的不同版本才能在列表里合为一条
+	var groupID *int64
+	if d.ReleaseGroupRef != nil && *d.ReleaseGroupRef != "" {
+		id, err := a.store.UpsertReleaseGroup(&store.ReleaseGroup{
+			Provider: &providerID, ProviderRef: d.ReleaseGroupRef, Title: title,
+			PrimaryType:      strPtrOrNil(store.NormalizeReleaseType(deref(d.PrimaryType))),
+			FirstReleaseDate: d.FirstReleaseDate,
+		})
+		if err != nil {
+			return 0, err
+		}
+		groupID = &id
+	}
+
 	return a.store.UpsertRelease(&store.Release{
-		Provider: providerID, ProviderRef: releaseRef,
-		ReleaseGroupRef: d.ReleaseGroupRef, Title: title,
-		AlbumCredit: d.AlbumCredit, PrimaryType: d.PrimaryType,
+		ReleaseGroupID: groupID,
+		Provider:       &providerID, ProviderRef: &releaseRef,
+		Title:       title,
+		Credit:      d.AlbumCredit,
+		PrimaryType: strPtrOrNil(store.NormalizeReleaseType(deref(d.PrimaryType))),
 		ReleaseStatus: d.ReleaseStatus, MediumFormat: d.MediumFormat,
 		Country: d.Country, ReleaseDate: d.ReleaseDate,
 		FirstReleaseDate: d.FirstReleaseDate,
 		TrackTotal:       d.TrackTotal, DiscTotal: d.DiscTotal,
+		Label:          d.Label,
+		CatalogNumber:  d.CatalogNumber,
 		TracklistState: store.TracklistComplete, FetchedAt: &now,
 	})
 }
@@ -436,10 +448,10 @@ func (a *App) enrichOwnedTracksFromDetail(providerID, releaseRef string, d *prov
 			continue // 灰色行没有曲目可丰富
 		}
 		meta, err := a.store.GetMetadata(pos.TrackID)
-		if err != nil || meta == nil || meta.RecordingMBID == nil {
+		if err != nil || meta == nil || meta.RecordingRef == nil {
 			continue
 		}
-		if *meta.RecordingMBID != *d.RecordingRef {
+		if *meta.RecordingRef != *d.RecordingRef {
 			continue // 不是同一条录音，不作丰富
 		}
 		perTrack := detailForPosition(d, deref(pos.Track.TrackRef))

@@ -164,6 +164,9 @@ func (a *App) initialize() error {
 		return err
 	}
 	a.store = st
+	// 专辑视图选代表 release 与匹配阶段共用同一份阶梯配置——
+	// 函数共用了而配置各走一套，漂移照样发生。
+	a.store.SetLadderConfig(a.ladderConfig())
 
 	a.limiters = provider.NewLimiters()
 	a.rebuildProviders(cur)

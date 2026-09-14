@@ -94,18 +94,28 @@ func (a *App) applyDetailMeta(trackID int64, providerID string, d *provider.Deta
 	return a.store.ApplyMetadataEdits(trackID, edits, provenance, locked)
 }
 
-// applyDetailArtists 由详情的参与者写艺术家、关系、参与者关系与可点击区间。
+// applyDetailArtists 由详情写艺术家、配音关系、署名分解与参与角色。
 //
-// 角色↔声优的拆分在这里真正落地：角色艺术家与人物艺术家各一条记录，
-// 中间是一条 voice_of 关系；署名原串保真，并生成渲染用的可点击区间。
+// 「署名」与「参与角色」是两件不同的事，落在两张表上：
+//
+//	track_credit  谁出现在署名串里，以什么写法、在哪个区间
+//	track_artist  谁在这首歌上担任什么角色（演唱、作曲、作词……）
+//
+// 此前只有后者，而署名串解析出的艺术家被一律写成 role='vocal'——
+// 于是只作词作曲的署名艺术家（如 DECO*27）在库里被标成演唱者，
+// 而 MusicBrainz 关系给出的未署名作词作曲与署名艺术家长得一模一样，
+// 艺术家列表因此把所有人都列了出来。
+//
+// 角色只来自上游的**关系**，不从署名串猜：署名串只说明「这条歌署了谁的名」，
+// 说明不了这个人做了什么。
 func (a *App) applyDetailArtists(ctx context.Context, trackID int64, providerID string, d *provider.Detail) error {
 	credit := deref(d.TrackCredit)
 	if credit == "" {
 		credit = deref(d.AlbumCredit)
 	}
 
-	// 有署名原串时先做 CV 解析：拆出角色与声优，并生成区间
 	artistIDs := map[string]int64{}
+	var credits []store.CreditEntry
 	var relations []store.TrackArtist
 
 	if credit != "" {
@@ -113,44 +123,63 @@ func (a *App) applyDetailArtists(ctx context.Context, trackID int64, providerID 
 		parsed := rules.ParseCredit(credit)
 
 		if parsed.Uncertain {
-			// 拆分不确定时不拆：保留原串、标记该条目进复核，
-			// 而不是猜测性地建立艺术家记录。
-			return a.store.MarkTrackForReview(trackID, "署名拆分不确定，需人工确认")
-		}
+			// 拆分不确定时不拆：保留原串、标记该条目待人工确认。
+			// 但**不提前返回**——上游关系给出的作曲作词与这次拆分无关，
+			// 丢掉它们等于因为署名串难解析而连带丢掉整首歌的参与者。
+			if err := a.store.MarkTrackForReview(trackID, "署名拆分不确定，需人工确认"); err != nil {
+				return err
+			}
+		} else {
+			for i, pa := range parsed.Artists {
+				id, err := a.store.UpsertArtist(&store.Artist{
+					Name: pa.Name, Type: strPtrOrNil(pa.Type),
+				})
+				if err != nil {
+					return err
+				}
+				artistIDs[pa.Name] = id
 
-		for _, pa := range parsed.Artists {
-			id, err := a.store.UpsertArtist(&store.Artist{
-				Name: pa.Name, Type: strPtrOrNil(pa.Type),
-			})
-			if err != nil {
-				return err
+				// 署名：记这个人出现在原串的哪一段。credited_name 是**他自己**
+				// 那一段的写法，不是整条署名串——此前这里写的是整串，
+				// 于是参与者区把整条署名当成了某一位艺术家的名字。
+				start, end := pa.Start, pa.End
+				name := pa.Name
+				credits = append(credits, store.CreditEntry{
+					ArtistID: id, Position: i, CreditedName: &name,
+					SpanStart: &start, SpanEnd: &end,
+				})
+
+				// 角色署名里的角色艺术家（「涼宮ハルヒ(CV:平野綾)」的前半）
+				// 仍需要一条 character 关系：它是这位角色与这首歌的唯一联系。
+				if pa.Type == store.ArtistTypeCharacter {
+					relations = append(relations, store.TrackArtist{
+						ArtistID: id, Role: store.RoleCharacter, Source: &providerID,
+					})
+				}
 			}
-			artistIDs[pa.Name] = id
-			relations = append(relations, store.TrackArtist{
-				ArtistID:     id,
-				Role:         store.ArtistRole(pa.Role),
-				CreditedName: &credit,
-				Source:       &providerID,
-			})
-		}
-		// 配音关系：仅角色存在时才发起补充请求
-		for character, actor := range parsed.VoiceOf {
-			charID, actorID := artistIDs[character], artistIDs[actor]
-			if charID == 0 || actorID == 0 {
-				continue
-			}
-			if err := a.store.LinkArtists(charID, actorID, store.LinkVoiceOf); err != nil {
-				return err
+			// 配音关系
+			for character, actor := range parsed.VoiceOf {
+				charID, actorID := artistIDs[character], artistIDs[actor]
+				if charID == 0 || actorID == 0 {
+					continue
+				}
+				if err := a.store.LinkArtists(charID, actorID, store.LinkVoiceOf); err != nil {
+					return err
+				}
 			}
 		}
 	}
 
-	// 详情给出的其余参与者（作曲、作词、器乐演奏等）
+	// 上游关系给出的参与者：角色以它为准
 	seen := map[string]bool{}
 	for _, da := range d.Artists {
-		if da.Name == "" {
+		if da.Name == "" || da.Role == "" {
 			continue
 		}
+		if !store.IsValidRole(store.ArtistRole(da.Role)) {
+			continue // 取值域之外的关系不创建
+		}
+
 		// 角色类型且来源为 MB 时，可补一次配音关系请求
 		if musicbrainzIsCharacter(da.Type) && da.MBID != nil && providerID == string(provider.MusicBrainz) {
 			if actor, err := a.lookupVoiceActor(ctx, *da.MBID); err == nil && actor != nil {
@@ -188,28 +217,23 @@ func (a *App) applyDetailArtists(ctx context.Context, trackID int64, providerID 
 
 		position := da.Position
 		relations = append(relations, store.TrackArtist{
-			ArtistID:     id,
-			Role:         store.ArtistRole(da.Role),
-			CreditedName: da.CreditedName,
-			Attribute:    da.Attribute,
-			Position:     &position,
-			Source:       &providerID,
+			ArtistID:  id,
+			Role:      store.ArtistRole(da.Role),
+			Attribute: da.Attribute,
+			Position:  &position,
+			Source:    &providerID,
 		})
 	}
 
-	if len(relations) == 0 {
-		return nil
+	// 署名分解里此前没对上 id 的名字，可能在关系里出现过（上游两处写法一致时）。
+	// 两处都写完之后再整体落库，顺序无关。
+	if len(credits) > 0 {
+		if err := a.store.SetTrackCredits(trackID, credits); err != nil {
+			return err
+		}
 	}
-	if err := a.store.SetTrackArtists(trackID, relations); err != nil {
-		return err
-	}
-
-	// 可点击区间：解析时一并生成，供渲染使用
-	if credit != "" {
-		rules := matching.DefaultRules()
-		parsed := rules.ParseCredit(credit)
-		spans := matching.BuildSpans(parsed, artistIDs)
-		if err := a.store.WriteCreditSpans(trackID, spans); err != nil {
+	if len(relations) > 0 {
+		if err := a.store.SetTrackArtists(trackID, relations); err != nil {
 			return err
 		}
 	}

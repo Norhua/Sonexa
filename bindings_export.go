@@ -124,7 +124,7 @@ func (a *App) resolveExportScope(req ExportRequest) ([]export.Track, error) {
 		if meta, e := a.store.GetMetadata(v.ID); e == nil && meta != nil {
 			t.Label = meta.Label
 			t.CatalogNumber = meta.CatalogNumber
-			t.TrackCredit = meta.TrackCredit
+			t.TrackCredit = meta.Credit
 			t.AlbumCredit = meta.AlbumCredit
 			t.ISRC = meta.ISRC
 		}

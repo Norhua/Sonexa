@@ -191,8 +191,8 @@ func matchLabel(m *store.TrackMetadata) string {
 		return "未匹配"
 	}
 	label := *m.MatchSource
-	if m.Title != nil {
-		label += " · " + *m.Title
+	if m.Title != "" {
+		label += " · " + m.Title
 	}
 	if m.Year != nil {
 		label += fmt.Sprintf(" (%d", *m.Year)
@@ -233,18 +233,16 @@ func (a *App) ApplyEdits(trackID int64, edits map[string]string, sources map[str
 		}
 	}
 
-	// 基本信息
-	var title, artist, album *string
+	// 曲名与署名
+	var title, credit *string
 	byUser := false
 	for key, value := range edits {
 		v := value
 		switch key {
 		case "title":
 			title = &v
-		case "artist":
-			artist = &v
-		case "album":
-			album = &v
+		case "artist", "credit":
+			credit = &v
 		}
 		src := sources[key]
 		if src == "" || src == "user" {
@@ -257,15 +255,34 @@ func (a *App) ApplyEdits(trackID int64, edits map[string]string, sources map[str
 			delete(locked, key)
 		}
 	}
-	if title != nil || artist != nil || album != nil {
-		if err := a.store.UpdateTrackFields(trackID, title, artist, album, byUser); err != nil {
+	if title != nil || credit != nil {
+		if err := a.store.UpdateTrackFields(trackID, title, credit, byUser); err != nil {
 			return err
 		}
 	}
 
-	// 丰富信息逐字段写入
+	// 曲目级字段逐字段写入
 	if err := a.store.ApplyMetadataEdits(trackID, edits, provenance, locked); err != nil {
 		return err
+	}
+
+	// 发行级字段落在歌集上：一处改动对该歌集的全部曲目生效。
+	// 「歌集名」不走这里——它要先让用户确认影响范围（见 ApplyAlbumRename）。
+	if meta != nil && meta.ReleaseID != nil {
+		releaseEdits := map[string]string{}
+		for key, value := range edits {
+			switch key {
+			case "label", "catalogNumber", "mediumFormat", "country", "primaryType",
+				"discTotal", "trackTotal":
+				releaseEdits[key] = value
+			}
+		}
+		if len(releaseEdits) > 0 {
+			if err := a.store.UpdateReleaseFields(*meta.ReleaseID, releaseEdits,
+				provenance, locked); err != nil {
+				return err
+			}
+		}
 	}
 
 	// 匹配溯源
