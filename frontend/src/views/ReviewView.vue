@@ -35,6 +35,8 @@ const country = ref('')
 const countries = ref<Models.main.CountryOption[]>([])
 const hint = ref<Models.main.CountryHint | null>(null)
 const researching = ref(false)
+/** 本条目是否已经手动搜过一次——决定改选上游要不要自动重搜。 */
+const searched = ref(false)
 
 const current = computed(() => queue.value?.items[index.value] ?? null)
 
@@ -55,6 +57,22 @@ onMounted(async () => {
   await load()
 })
 
+/**
+ * 切换上游即重新检索。
+ *
+ * 此前改选上游不动结果：屏幕上还挂着上一个上游的候选，而「上游」下拉已经指向
+ * 另一家——读起来像是这些候选来自新选的那个上游。
+ *
+ * 只在真的搜过一次之后才自动重搜：刚打开一个条目就因为默认值触发一次出网，
+ * 会把 1 req/s 的配额花在用户还没提出的请求上。
+ */
+watch(researchProvider, async () => {
+  if (!current.value) return
+  if (!settings.outboundAllowed) return
+  if (!searched.value) return
+  await doResearch()
+})
+
 watch(current, (item) => {
   if (!item) return
   // 表单以原始导入值预填，但改写不回写
@@ -64,6 +82,8 @@ watch(current, (item) => {
     album: item.inAlbum ?? '',
   }
   expanded.value = false
+  // 换了条目就还没搜过：此时改选上游不该自动出网
+  searched.value = false
   void updateHint()
 })
 
@@ -100,6 +120,7 @@ async function doResearch() {
       research.value.album, researchProvider.value, country.value,
     )
     current.value.candidates = rows ?? []
+    searched.value = true
   } catch (e) {
     error.value = String(e)
   } finally {
@@ -155,17 +176,6 @@ function next() {
         {{ queue.total }} 条待处置 · 待选 {{ queue.pending }} · 失败 {{ queue.failed }}
       </span>
       <div class="flex-1" />
-      <div v-if="queue && queue.items.length > 0" class="flex items-center gap-2 text-sm">
-        <button class="rounded border px-2 py-0.5 hover:bg-accent disabled:opacity-40"
-          :disabled="index === 0" @click="prev">
-          ← 上一条
-        </button>
-        <span class="tabular-nums">{{ index + 1 }} / {{ queue.items.length }}</span>
-        <button class="rounded border px-2 py-0.5 hover:bg-accent disabled:opacity-40"
-          :disabled="index >= queue.items.length - 1" @click="next">
-          下一条 →
-        </button>
-      </div>
     </header>
 
     <EmptyState
@@ -194,14 +204,36 @@ function next() {
           </span>
         </div>
 
-        <div class="mt-3 flex gap-2">
+        <!--
+          逐条浏览就放在条目动作的上面一行：它此前在窗口右上角，
+          离用户的视线与手都太远——处置一条之后紧接着要用的就是「下一条」。
+        -->
+        <div v-if="queue && queue.items.length > 0" class="mt-3 flex items-center gap-2 text-sm">
+          <button class="rounded border px-2 py-0.5 hover:bg-accent disabled:opacity-40"
+            :disabled="index === 0" @click="prev">
+            ← 上一条
+          </button>
+          <span class="tabular-nums text-muted-foreground">
+            {{ index + 1 }} / {{ queue.items.length }}
+          </span>
+          <button class="rounded border px-2 py-0.5 hover:bg-accent disabled:opacity-40"
+            :disabled="index >= queue.items.length - 1" @click="next">
+            下一条 →
+          </button>
+        </div>
+
+        <div class="mt-2 flex gap-2">
           <button class="rounded border px-3 py-1 text-sm hover:bg-accent"
             @click="act(() => App.NoMatchNeeded(current!.id))">
             无需匹配
           </button>
-          <button class="rounded border px-3 py-1 text-sm text-destructive hover:bg-accent"
+          <!--
+            「移出队列」而不是「删除记录」：它丢弃的是这条**待处置记录**，
+            曲库里什么都不会少。叫「删除」会让人以为动的是曲目。
+          -->
+          <button class="rounded border px-3 py-1 text-sm hover:bg-accent"
             @click="act(() => App.DiscardReviewItem(current!.id))">
-            删除记录
+            移出队列
           </button>
         </div>
       </section>
