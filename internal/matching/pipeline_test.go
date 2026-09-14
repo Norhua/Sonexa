@@ -333,3 +333,37 @@ func TestSummaryLine(t *testing.T) {
 		t.Errorf("应说明失败条目不再自动返回队列: %q", got)
 	}
 }
+
+// TestNoCorroborationNeverEntersPool 覆盖用户报告 1：
+// 曲名相符但署名与歌集全不相干的候选不进候选池，该条目的结论是「无结果」。
+//
+// 阶梯也不能停在这一级：只过曲名那一道闸不算「有候选」，
+// 否则更宽的一级永远试不到。
+func TestNoCorroborationNeverEntersPool(t *testing.T) {
+	// 真实返回的形态：43 条同名录音，没有一条的署名或歌集对得上
+	sameName := []provider.Candidate{
+		{Provider: provider.MusicBrainz, MatchRef: "a",
+			Title: sptr("つばさ"), ArtistName: sptr("熊木杏里"), AlbumTitle: sptr("君の名前")},
+		{Provider: provider.MusicBrainz, MatchRef: "b",
+			Title: sptr("ツバサ"), ArtistName: sptr("アンダーグラフ"), AlbumTitle: sptr("UNDER GRAPH")},
+	}
+	s := &stubSearcher{byTitle: map[string][]provider.Candidate{"ツバサ": sameName}}
+
+	res, err := testEngine().Run(context.Background(), s, nil, Input{
+		Title: "ツバサ（羽翼）", Artist: "4円（ヨエン）", Album: "side-c",
+	})
+	if err != nil {
+		t.Fatalf("匹配失败: %v", err)
+	}
+
+	if len(res.Scored) != 0 {
+		t.Errorf("候选池含 %d 条, 期望一处旁证都没有的候选全部落闸", len(res.Scored))
+	}
+	if res.Decision.Outcome != OutcomeReviewNoMatch {
+		t.Errorf("分流 = %q, 期望 review_no_match", res.Decision.Outcome)
+	}
+	// 阶梯必须走完：锚定级只过曲名那一道，不足以让它停下
+	if len(s.queries) < 2 {
+		t.Errorf("发出 %d 次查询, 期望继续试更宽的一级", len(s.queries))
+	}
+}

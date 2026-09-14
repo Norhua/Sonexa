@@ -205,6 +205,13 @@ type Score struct {
 	AlbumMatch  MatchDegree
 	HighConf    bool
 	Rejected    bool // 曲名不匹配即丢弃
+	// Plausible 表示这条候选**值得摆到用户面前**：曲名过闸，且可比的旁证里
+	// 至少有一处对得上。导入路径据它筛一遍候选（见 Engine.Run），
+	// 手动检索不筛——那条路径是人在看、查询词也是人自己写的。
+	//
+	// 它与 HighConf 是两道不同的闸，不是同一判断的两个档位：
+	// 前者管「给不给人看」，后者管「要不要经人手」。
+	Plausible bool
 }
 
 // ScoreCandidate 按候选来源选择评分算法，返回统一满分 100 的分值。
@@ -249,6 +256,7 @@ func (w Weights) ScoreCandidate(q provider.Query, c provider.Candidate) Score {
 	}
 
 	s.HighConf = w.IsHighConfidence(s)
+	s.Plausible = w.IsPlausible(q, c, s)
 	return s
 }
 
@@ -280,6 +288,48 @@ func (w Weights) IsHighConfidence(s Score) bool {
 		return false
 	}
 	return s.CreditMatch == MatchExact || s.AlbumMatch == MatchExact
+}
+
+// IsPlausible 判定这条候选值得不值得摆到用户面前——两道闸里松的那一道。
+//
+// 判据只有两条：
+//
+//	[1] 曲名过闸（CompareTitle 不为不匹配）
+//	[2] **可比**的旁证里至少一处对得上（精确或模糊都算）
+//
+// 第 2 条挡的是「同名但根本不是这首歌」：`ツバサ（羽翼）· 4円 · side-c` 那一行
+// 在 MusicBrainz 上并不存在，而同名录音有 43 条。它们曲名全都过闸，
+// 于是整整 43 条不相干的候选被摆进复核队列——用户得手工否掉 43 次，
+// 而正确的结论本该是「上游没有这首歌」。
+//
+// 「可比」的定义要紧：一处旁证只有在**两侧都给出了这个字段**时才算可比。
+// 一侧空着是「没有这个信息」，不是「对不上」——把它当反证，就会因为候选
+// 缺一个歌集名而毙掉一条曲名精确相符的候选。两侧一处可比的都没有时（例如
+// 表格只有曲名一列），曲名自己就够。
+//
+// 它不决定入库（那是 IsHighConfidence），也不用在手动检索上：
+// 那条路径是人在看、查询词是人自己写的，替他筛掉只会让他以为上游没有这首歌。
+func (w Weights) IsPlausible(q provider.Query, c provider.Candidate, s Score) bool {
+	if s.TitleMatch == MatchNone {
+		return false
+	}
+	comparable, agreed := 0, 0
+	for _, axis := range []struct {
+		query, candidate string
+		degree           MatchDegree
+	}{
+		{q.Artist, deref(c.ArtistName), s.CreditMatch},
+		{q.Album, deref(c.AlbumTitle), s.AlbumMatch},
+	} {
+		if Normalize(axis.query) == "" || Normalize(axis.candidate) == "" {
+			continue
+		}
+		comparable++
+		if axis.degree != MatchNone {
+			agreed++
+		}
+	}
+	return comparable == 0 || agreed > 0
 }
 
 // --- 辅助 ---

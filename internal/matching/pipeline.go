@@ -99,6 +99,18 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 			if score.Rejected {
 				continue // 曲名不匹配即丢弃，不进候选池
 			}
+			// 曲名过闸还不够：可比的旁证里一处都对不上的候选不进池子。
+			//
+			// `ツバサ（羽翼）· 4円 · side-c` 那一行在 MusicBrainz 上并不存在，
+			// 而同名录音有 43 条。少了这道闸，43 条曲名相符、署名与歌集全不相干的
+			// 候选会被摆进复核队列，让用户手工否掉 43 次；而正确的结论是
+			// 「上游没有这首歌」——筛掉之后这一条走的正是「无结果」那条出口。
+			//
+			// 手动检索（SearchUpstream / ResearchReviewItem）刻意不筛：
+			// 那条路径是人在看、查询词也是人自己写的。
+			if !score.Plausible {
+				continue
+			}
 
 			key := string(c.Provider) + "|" + c.MatchRef
 			if existing, ok := pool[key]; ok && existing.Score.Total >= score.Total {
@@ -116,6 +128,10 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 		// 这个区别是实测逼出来的：`That Girl (DJLIU Remix)` 的锚定级会返回几百条
 		// 同名的 `That Girl`，一条都不是那个 remix。按「返回了就停」，
 		// 阶梯会停在一堆用不上的候选上，更宽的一级永远不会被试到。
+		//
+		// 闸门是两道一起算的（曲名 + 一处旁证，见 Score.Plausible）：只过曲名那一道
+		// 也停不下来。代价是上游确实没有的那些行要多花一两次请求把阶梯走完，
+		// 换来的是「未匹配」这个结论真的成立。
 		if len(pool) > 0 {
 			if e.Strategy != config.VariantExhaustive || v.TitleOnly {
 				break

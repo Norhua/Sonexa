@@ -30,7 +30,9 @@ type csvRow struct {
 	wantOutcome matching.Outcome
 	// wantTitle 是应当被选中的候选曲名（入库时校验）。
 	wantTitle string
-	why       string
+	// wantScored 是应当过闸、进入候选池的条数（复核队列里看到的就是它们）。
+	wantScored int
+	why        string
 }
 
 // mbCand 按真实返回构造一条候选。空串表示上游没给这个字段。
@@ -64,6 +66,7 @@ func csvRows() []csvRow {
 			},
 			wantOutcome: matching.OutcomeImportUnique,
 			wantTitle:   "綿雪の夢",
+			wantScored:  1,
 			why:         "歌手列写的是碟的署名（Crest），录音署名却是唱的人——靠歌集精确命中，全场唯一高置信",
 		},
 		{
@@ -77,6 +80,7 @@ func csvRows() []csvRow {
 			},
 			wantOutcome: matching.OutcomeImportUnique,
 			wantTitle:   "夕立",
+			wantScored:  1, // 罗马字那条被曲名闸挡掉
 			why:         "同上：歌手列是社团名。罗马字那条是 Pseudo-Release 的转写曲名，被曲名闸挡掉",
 		},
 		{
@@ -94,6 +98,7 @@ func csvRows() []csvRow {
 			},
 			wantOutcome: matching.OutcomeImportUnique,
 			wantTitle:   "Tetra.",
+			wantScored:  1, // off vocal / movie ver. 三条被曲名闸挡掉
 			why:         "括号里是另一种写法，署名精确；off vocal / movie ver. 三条必须被曲名闸挡掉",
 		},
 		{
@@ -130,6 +135,7 @@ func csvRows() []csvRow {
 					"6789cb93-5b4d-4156-a29a-921ff32a9281", "9b793f9f-12fd-45f6-9e2e-50ad4ac7389d", "Official", "CD", "JP"),
 			},
 			wantOutcome: matching.OutcomeReviewManyReleases,
+			wantScored:  11, // off vocal 两条被曲名闸挡掉，11 张同名 CD 全部过闸
 			why: "用户报告的那条：同一条录音挂在 11 张同名 CD 发行上，过滤实体载体后仍剩 11 条，" +
 				"没有任何客观依据能分出高下——不能替用户挑一个",
 		},
@@ -138,6 +144,7 @@ func csvRows() []csvRow {
 			album:       "That Girl",
 			candidates:  nil,
 			wantOutcome: matching.OutcomeReviewNoMatch,
+			wantScored:  0,
 			why:         "MusicBrainz 里确实没有这个 remix；裸的 That Girl 不得冒充它",
 		},
 		{
@@ -150,6 +157,7 @@ func csvRows() []csvRow {
 					"2283ceda-78b1-4d20-8f52-bdf73bd53686", "c085f961-892b-4232-bc6f-267e72703ef7", "Official", "CD", "JP"),
 			},
 			wantOutcome: matching.OutcomeReviewCrossGroup,
+			wantScored:  2,
 			why:         "两条候选虽是同一条 recording，却分属两个发行组——规则 4 没有例外，交人工",
 		},
 		{
@@ -164,6 +172,7 @@ func csvRows() []csvRow {
 					"9d2cc5b8-89f2-4c28-a9d3-c2182052893e", "5758dc80-fd8b-4e15-b1ab-7202a21137a1", "Official", "Blu-ray", "JP"),
 			},
 			wantOutcome: matching.OutcomeReviewCrossGroup,
+			wantScored:  3, // 署名都是 reche，三条都有旁证
 			why:         "同名单曲与 live 蓝光跨发行组。只有单曲那条歌集精确，但那也不足以替用户裁决",
 		},
 		{
@@ -171,6 +180,7 @@ func csvRows() []csvRow {
 			album:       "Sacred Play SecretPlace_雨夜",
 			candidates:  nil,
 			wantOutcome: matching.OutcomeReviewNoMatch,
+			wantScored:  0,
 			why:         "MusicBrainz 里确实没有",
 		},
 		{
@@ -190,6 +200,9 @@ func csvRows() []csvRow {
 			},
 			wantOutcome: matching.OutcomeImportUnique,
 			wantTitle:   "By the Seaside",
+			// 4 条：三条歌集同名（松档旁证）＋ 署名对得上那条；
+			// `Moontape 17` 那条署名与歌集都对不上，落闸
+			wantScored: 4,
 			why: "feat. 是参与者不是版本：5 条同名曲都过了曲名闸，但只有这条的署名对得上 →" +
 				"唯一高置信，走规则 2，不经实体载体过滤（它们全是 Digital Media）",
 		},
@@ -212,7 +225,9 @@ func csvRows() []csvRow {
 					"8cd626d6-9a8c-4157-bb26-ce085e223703", "b0eac7b8-d93e-49fa-96dd-71e1bc9a0c62", "Official", "Digital Media", ""),
 			},
 			wantOutcome: matching.OutcomeReviewNoMatch,
-			why:         "同名曲一大把，但没有一条的署名或歌集对得上——一条高置信都没有",
+			wantScored:  0,
+			why: "同名曲一大把，但没有一条的署名或歌集对得上——一条旁证都没有的候选不该摆到" +
+				"用户面前（用户报告：搜 4円 的『羽翼』本该无结果），因此候选池是空的",
 		},
 	}
 }
@@ -258,6 +273,9 @@ func TestCSVImportEndToEnd(t *testing.T) {
 				t.Fatalf("匹配出错: %v", err)
 			}
 
+			if len(res.Scored) != row.wantScored {
+				t.Errorf("过闸候选 %d 条, 期望 %d 条\n  理由: %s", len(res.Scored), row.wantScored, row.why)
+			}
 			if res.Decision.Outcome != row.wantOutcome {
 				t.Fatalf("分流 = %q, 期望 %q\n  理由: %s\n  过闸候选 %d 条，高置信 %d 条",
 					res.Decision.Outcome, row.wantOutcome, row.why,

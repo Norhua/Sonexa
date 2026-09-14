@@ -227,3 +227,69 @@ func TestCompareCreditFormsOfSameArtist(t *testing.T) {
 		})
 	}
 }
+
+// TestPlausibleNeedsOneCorroboration 覆盖「值得摆出来」那道闸。
+//
+// 用户报告：`ツバサ（羽翼）· 4円（ヨエン）· side-c` 在 MusicBrainz 上并不存在，
+// 但同名录音有 43 条，它们曲名全过闸，于是整批被摆进复核队列。
+// 曲名之外必须有一处**可比的**旁证对得上，才算值得摆出来。
+func TestPlausibleNeedsOneCorroboration(t *testing.T) {
+	w := DefaultWeights()
+	cases := []struct {
+		name string
+		q    provider.Query
+		c    provider.Candidate
+		want bool
+	}{
+		{
+			name: "曲名相符但署名歌集全不相干",
+			q:    provider.Query{Title: "ツバサ（羽翼）", Artist: "4円（ヨエン）", Album: "side-c"},
+			c: provider.Candidate{Title: sptr("つばさ"), ArtistName: sptr("熊木杏里"),
+				AlbumTitle: sptr("君の名前")},
+			want: false,
+		},
+		{
+			name: "署名对上即可摆出来",
+			q:    provider.Query{Title: "3253212", Artist: "reche", Album: "3253212"},
+			c: provider.Candidate{Title: sptr("3253212"), ArtistName: sptr("reche"),
+				AlbumTitle: sptr("reche GaLLERy#101 on live")},
+			want: true,
+		},
+		{
+			name: "歌集对上即可摆出来（署名是碟的署名而非录音署名）",
+			q:    provider.Query{Title: "綿雪の夢", Artist: "Crest", Album: "狼と巫女とお菓子の家"},
+			c: provider.Candidate{Title: sptr("綿雪の夢"), ArtistName: sptr("ハトリアヤ"),
+				AlbumTitle: sptr("狼と巫女とお菓子の家")},
+			want: true,
+		},
+		{
+			// 一侧空着是「没有这个信息」，不是「对不上」
+			name: "候选没给歌集时只看署名",
+			q:    provider.Query{Title: "That Girl", Artist: "Natalia Lesz", Album: "That Girl"},
+			c:    provider.Candidate{Title: sptr("That Girl"), ArtistName: sptr("Natalia Lesz")},
+			want: true,
+		},
+		{
+			name: "表格只有曲名一列时曲名自己就够",
+			q:    provider.Query{Title: "夕立"},
+			c: provider.Candidate{Title: sptr("夕立"), ArtistName: sptr("CROW'SCLAW"),
+				AlbumTitle: sptr("アコースティック・エピソード")},
+			want: true,
+		},
+		{
+			name: "曲名不过闸的永远不摆出来",
+			q:    provider.Query{Title: "Tetra.", Artist: "原田ひとみ", Album: "LINES"},
+			c: provider.Candidate{Title: sptr("Tetra. (off vocal)"), ArtistName: sptr("原田ひとみ"),
+				AlbumTitle: sptr("LINES")},
+			want: false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := w.ScoreCandidate(c.q, c.c)
+			if got.Plausible != c.want {
+				t.Errorf("Plausible = %v, 期望 %v（评分 %+v）", got.Plausible, c.want, got)
+			}
+		})
+	}
+}
