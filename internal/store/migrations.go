@@ -305,3 +305,33 @@ CREATE TABLE track_fts_shadow (
 const migration0002ReviewReason = `
 ALTER TABLE import_item ADD COLUMN review_reason TEXT;
 `
+
+// migration0003EnrichState 为曲目记录「补全信息匹配」的状态。
+//
+// 复核队列里点「接受」时同步补一次详情，在 1 req/s 之下就是 1–2 秒的卡顿，
+// 而那次请求的产出与「这条曲目能不能进库」无关。把它移到后台任务之后，
+// 「哪些曲目还没补」必须能查得出来——三种状态因此要落在库里，
+// 而不是每次去推导（推导不出「上游确实没有可补的东西」这一种）。
+//
+//	pending  未匹配：有上游身份、详情还没取
+//	fetched  已匹配：详情已落库
+//	absent   已匹配（无可补）：没有发行标识，无从取起
+//	skipped  无需匹配：用户明确要求收录且不追求外部身份
+//
+// attempts / error 让「一直取不到的那一条」不至于永远堵在队首：
+// 达到上限的条目退出工作集，用户点「开始」时清零重试。
+const migration0003EnrichState = `
+ALTER TABLE track_metadata ADD COLUMN enrich_state TEXT;
+ALTER TABLE track_metadata ADD COLUMN enrich_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE track_metadata ADD COLUMN enrich_error TEXT;
+
+CREATE INDEX idx_track_metadata_enrich ON track_metadata(enrich_state)
+  WHERE enrich_state IS NOT NULL;
+
+-- 既有曲目按同一套规则回填，否则它们永远不会被后台任务看到
+UPDATE track_metadata SET enrich_state = CASE
+  WHEN match_source IS NULL OR match_source = '' THEN 'skipped'
+  WHEN COALESCE(release_mbid, '') <> '' THEN 'pending'
+  ELSE 'absent'
+END;
+`

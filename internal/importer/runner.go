@@ -121,6 +121,16 @@ func (r *Runner) IsRunning(batchID int64) bool {
 	return ok
 }
 
+// AnyRunning 报告是否有任何批次正在处理。
+//
+// 后台的补全任务据它让路：两者打的是同一个 1 req/s 的上游，
+// 同时跑等于把导入的速度砍半。
+func (r *Runner) AnyRunning() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.running) > 0
+}
+
 // ResumeAll 在应用启动时恢复全部未完成的批次。
 func (r *Runner) ResumeAll(ctx context.Context) error {
 	// 中断时停留在「匹配中」的条目退回排队

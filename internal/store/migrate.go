@@ -22,6 +22,7 @@ var ErrDatabaseNewer = errors.New("数据库版本高于当前程序支持的版
 var migrations = []Migration{
 	{Version: 1, Name: "init", SQL: migration0001Init},
 	{Version: 2, Name: "review_reason", SQL: migration0002ReviewReason},
+	{Version: 3, Name: "enrich_state", SQL: migration0003EnrichState},
 }
 
 // LatestVersion 返回本程序支持的最高 schema 版本。

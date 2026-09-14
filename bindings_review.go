@@ -192,7 +192,13 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 	// 与手动检索、导入匹配共用同一套文本处理：复核队列里「改搜」时填的
 	// 往往正是从表格里复制过来的原串，带着译名注释直接查必然落空。
 	q := upstreamQuery(title, artist, album, country)
-	candidates, err := p.SearchTracks(context.Background(), q)
+
+	// 用户在等这次结果：交互式优先级，插到后台补全的队列之前
+	done := a.beginInteractive()
+	defer done()
+	ctx := provider.WithPriority(context.Background(), provider.PriorityInteractive)
+
+	candidates, err := p.SearchTracks(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -246,9 +252,15 @@ func sortRowsByConfidence(rows []CandidateRow) {
 
 // AcceptCandidate 采用某条上游候选入库并写入溯源。
 //
-// 入库后补一次详情：search 的候选只有扁平字段，参与者关系与作曲作词
-// 只有在详情里才有。补详情失败不回滚入库——曲目已经进来了，
-// 缺的丰富信息可以之后在编辑页补。
+// **它不发任何网络请求。** 候选已经带着完整身份（match_ref 与四个标识）
+// 与 track / medium 层的全部字段，够写成曲库里合法的一行。参与者、作曲作词、
+// 厂牌、目录号这些发行层事实由后台的补全信息匹配按 release 补一次
+// （见 enrichWorker）。
+//
+// 先前这里同步发一次详情请求，在 1 req/s 之下就是 1–2 秒的卡顿——
+// 用户点一下「接受」要等着看它转完，而那次请求的产出与
+// 「这条曲目能不能进库」无关。曲目入库时状态即为「未匹配（待补全）」，
+// 那个中间态是如实的，不是丢了信息。
 func (a *App) AcceptCandidate(itemID int64, row CandidateRow) (int64, error) {
 	if err := a.ready(); err != nil {
 		return 0, err
@@ -260,13 +272,8 @@ func (a *App) AcceptCandidate(itemID int64, row CandidateRow) (int64, error) {
 	if err := a.store.MarkImported(itemID, trackID); err != nil {
 		return 0, err
 	}
-	if row.ReleaseRef != nil && *row.ReleaseRef != "" {
-		if err := a.RefreshTrackDetail(trackID, row.Provider, *row.ReleaseRef); err != nil {
-			// 记下失败原因供界面显示，但不当作接受失败
-			msg := err.Error()
-			_ = a.store.RecordEnrichFailure(trackID, msg)
-		}
-	}
+	// 刚出现一条待补的曲目：空闲时立刻接着补，用户不必去点「开始」
+	a.autoStartEnrich()
 	return trackID, nil
 }
 
@@ -281,6 +288,9 @@ func (a *App) MergeCandidate(itemID, targetTrackID int64) error {
 }
 
 // NoMatchNeeded 按原始输入入库，丰富信息为空，溯源置空。
+//
+// 溯源为空即「无需匹配」：这条曲目不进补全任务的工作集
+// （见 store.InitialEnrichState），因此界面上它既不是「未匹配」也不算待办。
 func (a *App) NoMatchNeeded(itemID int64) (int64, error) {
 	if err := a.ready(); err != nil {
 		return 0, err

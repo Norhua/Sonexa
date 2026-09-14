@@ -6,7 +6,6 @@ import (
 
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/store"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // TrackPage 是一页曲目查询结果。
@@ -472,7 +471,5 @@ func (a *App) ListAlbums() ([]store.AlbumListItem, error) {
 
 // notifyLibraryChanged 通知前端曲库已变更。
 func (a *App) notifyLibraryChanged() {
-	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, EventLibraryChanged)
-	}
+	a.emitEvent(EventLibraryChanged)
 }

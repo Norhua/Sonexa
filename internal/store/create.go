@@ -111,6 +111,9 @@ func (s *Store) CreateTrackWithProvenance(in NewTrackInput) (int64, error) {
 }
 
 // insertMetadata 写入丰富信息与溯源。
+//
+// 补全状态在这里一并写下（见 InitialEnrichState）：入库那一刻就要能被后台的
+// 「补全信息匹配」任务看见，否则这条曲目要等到下一次全库回填才会被补。
 func insertMetadata(tx *sql.Tx, trackID int64, in NewTrackInput, now time.Time) error {
 	m := in.Metadata
 	if m == nil {
@@ -123,6 +126,7 @@ func insertMetadata(tx *sql.Tx, trackID int64, in NewTrackInput, now time.Time) 
 
 	_, err := tx.Exec(`
 		INSERT INTO track_metadata (
+			enrich_state,
 			track_id, title, album, track_credit, album_credit, credit_spans_json,
 			primary_type, secondary_types, release_status, medium_format, country,
 			year, release_date, first_release_date,
@@ -132,7 +136,8 @@ func insertMetadata(tx *sql.Tx, trackID int64, in NewTrackInput, now time.Time) 
 			itunes_track_id, itunes_collection_id,
 			match_source, match_ref, matched_at,
 			provenance_json, locked_json, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		string(InitialEnrichState(in)),
 		trackID, m.Title, m.Album, m.TrackCredit, m.AlbumCredit, m.CreditSpansJSON,
 		m.PrimaryType, m.SecondaryTypes, m.ReleaseStatus, m.MediumFormat, m.Country,
 		m.Year, m.ReleaseDate, m.FirstReleaseDate,

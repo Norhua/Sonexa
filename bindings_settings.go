@@ -10,7 +10,6 @@ import (
 	"github.com/norhua/sonexa/internal/config"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/provider/itunes"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // ProviderInfo 描述一个已注册的上游，供界面动态渲染。
@@ -125,9 +124,7 @@ func (a *App) SaveSettings(next config.Settings) error {
 		a.mu.Unlock()
 	}
 
-	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, EventSettingsSaved, next)
-	}
+	a.emitEvent(EventSettingsSaved, next)
 	return nil
 }
 

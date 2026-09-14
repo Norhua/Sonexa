@@ -127,19 +127,3 @@ func (s *Store) TracksNeedingReview() ([]int64, error) {
 	return out, rows.Err()
 }
 
-// RecordEnrichFailure 记录一次丰富失败的原因。
-//
-// 丰富失败不回滚入库：曲目已经在库里，缺的丰富信息之后可以再补，
-// 但原因要留下，便于界面提示与排查。
-func (s *Store) RecordEnrichFailure(trackID int64, reason string) error {
-	now := time.Now().UTC()
-	return s.withTx(func(tx *sql.Tx) error {
-		_, err := tx.Exec(
-			`INSERT INTO track_metadata (track_id, comment, updated_at) VALUES (?,?,?)
-			 ON CONFLICT(track_id) DO UPDATE SET
-				comment    = excluded.comment,
-				updated_at = excluded.updated_at`,
-			trackID, "[丰富失败] "+reason, now)
-		return err
-	})
-}

@@ -32,6 +32,9 @@ func newTestApp(t *testing.T) (*App, func()) {
 	// 直接装配，绕开 os.UserConfigDir —— 测试不应写用户的真实配置目录
 	app := NewApp("test")
 	app.ctx = context.Background()
+	// 事件推送在测试里只记账：Wails 的 EventsEmit 在非生命周期 context 上
+	// 会直接结束进程，任何走到推送的测试都会整包崩掉。
+	app.emit = func(string, ...any) {}
 
 	paths := config.Paths{
 		AppDir:   dir,
@@ -68,8 +71,13 @@ func newTestApp(t *testing.T) (*App, func()) {
 	// 能在测试全绿的情况下发布的原因。
 	app.coverSvc = app.attachLadderBuilder(newTestCoverService(t, paths.CoverDir, settings.Get()))
 	app.rebuildRunner(settings.Get())
+	// 同上：补全任务的四条依赖也走生产那一条接线
+	app.attachEnrichWorker()
 
-	return app, func() { st.Close() }
+	return app, func() {
+		app.enricher.Stop()
+		st.Close()
+	}
 }
 
 // TestApplyDetailToTrackWiresArtistSubsystem 是审计发现的回归测试。

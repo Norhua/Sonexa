@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/norhua/sonexa/internal/config"
@@ -32,6 +33,20 @@ type App struct {
 	client   *provider.Client
 	coverSvc *covers.Service
 	runner   *importer.Runner
+	// enricher 是后台的「补全信息匹配」任务：入库不再同步补详情，
+	// 详情由它在空闲时按条补上（见 enrichWorker）。
+	enricher *enrichWorker
+
+	// interactive 记录此刻有几个**用户触发**的出网请求在飞。
+	// 后台补全据它让路——见 App.outboundBusy。
+	interactive atomic.Int32
+
+	// emit 是事件推送的唯一出口，为空时用 Wails 的运行时。
+	//
+	// 留这个接缝是因为 Wails 的 EventsEmit 在**非生命周期** context 上
+	// 会直接结束进程（不是返回错误），于是任何走到推送的测试都会整包崩掉。
+	// 测试把它换成记账函数。
+	emit func(name string, data ...any)
 
 	mu sync.RWMutex
 	// startupErr 记录启动失败的原因，供前端显示。
@@ -59,6 +74,53 @@ func (a *App) startup(ctx context.Context) {
 	if a.runner != nil {
 		if err := a.runner.ResumeAll(ctx); err != nil {
 			log.Printf("恢复导入任务失败: %v", err)
+		}
+	}
+
+	// 上次退出时没补完的曲目在这里接着补。空闲判断在任务内部做：
+	// 导入正在恢复时它会等，不与导入抢同一个 1 req/s。
+	a.autoStartEnrich()
+}
+
+// autoStartEnrich 在空闲时自动开始补全信息匹配。
+//
+// 调用点是「刚出现新的待补条目」或「刚空闲下来」：启动、导入跑完、
+// 接受一条候选、加入曲库。用户主动按过暂停时它不生效。
+func (a *App) autoStartEnrich() {
+	if a.enricher == nil {
+		return
+	}
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	a.enricher.AutoStart(ctx)
+}
+
+// outboundBusy 报告此刻后台补全该不该让路。
+//
+// 两种情形：导入匹配在跑，或用户触发的检索/详情请求在飞。
+// 让的是**整个配额**而不只是次序——优先级闸门解决的是谁先发，
+// 而用户等的那一次搜索仍会因为后台占用了这一秒的名额而多等一轮。
+func (a *App) outboundBusy() (bool, string) {
+	if a.interactive.Load() > 0 {
+		return true, "用户检索进行中"
+	}
+	if a.runner != nil && a.runner.AnyRunning() {
+		return true, "导入匹配进行中"
+	}
+	return false, ""
+}
+
+// beginInteractive 标记一次用户触发的出网请求开始，返回结束时要调用的函数。
+//
+// 成对使用（`defer a.beginInteractive()()`）：漏掉结束会让后台补全永久让路。
+func (a *App) beginInteractive() func() {
+	a.interactive.Add(1)
+	return func() {
+		if a.interactive.Add(-1) == 0 {
+			// 刚空闲下来：让后台补全接着跑
+			a.autoStartEnrich()
 		}
 	}
 }
@@ -102,7 +164,23 @@ func (a *App) initialize() error {
 	a.coverSvc = a.attachLadderBuilder(svc)
 
 	a.rebuildRunner(cur)
+	a.attachEnrichWorker()
 	return nil
+}
+
+// attachEnrichWorker 建立后台补全任务并接好它的四条外部依赖。
+//
+// 抽成方法是有意的：测试辅助也走这一条接线。测试里另建一份接了一半的任务，
+// 正是「某条依赖忘了接」这类 bug 能在测试全绿的情况下发布的原因
+// （封面的降级链构造器就是这么漏掉过一次，见 attachLadderBuilder）。
+func (a *App) attachEnrichWorker() {
+	a.enricher = newEnrichWorker(a.store)
+	a.enricher.enrich = a.enrichOne
+	a.enricher.busy = a.outboundBusy
+	a.enricher.emit = a.emitEnrichStatus
+	// 整表重载只在一轮结束时做一次：逐条刷新会让 200 条的补全
+	// 触发 200 次全表查询与 200 次重渲染。
+	a.enricher.onRunFinished = a.notifyLibraryChanged
 }
 
 // rebuildProviders 按当前设置重建上游注册表与令牌桶。
@@ -165,12 +243,34 @@ func (a *App) rebuildRunner(cur config.Settings) {
 	// 导入阶段只用 MusicBrainz
 	a.runner = importer.NewRunner(a.store, engine, mb, retry, fetchOnMatch, a.emitProgress)
 	if fetchOnMatch {
+		// 走后台优先级与同一套补全状态机：这是导入循环内部的一次取数，
+		// 不是用户在等的请求，标成交互式会让它抢在用户的搜索之前。
 		a.runner.SetEnricher(func(trackID int64, providerID, releaseRef string) {
-			if err := a.RefreshTrackDetail(trackID, providerID, releaseRef); err != nil {
+			target := store.EnrichTarget{TrackID: trackID, Provider: providerID, ReleaseRef: releaseRef}
+			if err := a.enrichOne(context.Background(), target); err != nil {
 				_ = a.store.RecordEnrichFailure(trackID, err.Error())
+				return
 			}
+			_ = a.store.SetEnrichState(trackID, store.EnrichFetched)
 		})
 	}
+}
+
+// emitEvent 把一个事件推给前端。全部推送都经由它。
+func (a *App) emitEvent(name string, data ...any) {
+	if a.emit != nil {
+		a.emit(name, data...)
+		return
+	}
+	if a.ctx == nil {
+		return
+	}
+	runtime.EventsEmit(a.ctx, name, data...)
+}
+
+// emitEnrichStatus 把补全信息匹配的状态推送给前端。
+func (a *App) emitEnrichStatus(s EnrichStatus) {
+	a.emitEvent(EventEnrichProgress, s)
 }
 
 // emitProgress 把匹配进度推送给前端。
@@ -178,10 +278,11 @@ func (a *App) rebuildRunner(cur config.Settings) {
 // 进度由后端主动推送而非前端轮询——17 分钟的任务上轮询会产生
 // 数千次无谓的 IPC 调用。
 func (a *App) emitProgress(p importer.Progress) {
-	if a.ctx == nil {
-		return
+	a.emitEvent(EventImportProgress, p)
+	// 导入跑完就该轮到补全：这一批入库的曲目全都还等着补详情
+	if p.Done {
+		a.autoStartEnrich()
 	}
-	runtime.EventsEmit(a.ctx, EventImportProgress, p)
 }
 
 // 前端订阅的事件名。
@@ -189,6 +290,8 @@ const (
 	EventImportProgress = "import:progress"
 	EventSettingsSaved  = "settings:saved"
 	EventLibraryChanged = "library:changed"
+	// EventEnrichProgress 是后台「补全信息匹配」的状态。
+	EventEnrichProgress = "enrich:progress"
 	// EventProviderResults 在每个上游完成时单独推送，
 	// 使先返回的先显示，不被慢的上游阻塞。
 	EventProviderResults = "upstream:providerResults"
@@ -196,6 +299,9 @@ const (
 
 // shutdown 在应用退出时释放资源。
 func (a *App) shutdown(ctx context.Context) {
+	if a.enricher != nil {
+		a.enricher.Stop()
+	}
 	if a.store != nil {
 		if err := a.store.Close(); err != nil {
 			log.Printf("关闭数据库失败: %v", err)

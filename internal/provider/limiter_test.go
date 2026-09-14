@@ -116,3 +116,73 @@ func TestSetFromProvider(t *testing.T) {
 		t.Errorf("速率 = %v, 期望 1.0/s", got)
 	}
 }
+
+// TestInteractiveJumpsAheadOfBackground 覆盖优先级闸门：
+// 后台请求已排成一队时，用户触发的请求插到它们之前。
+//
+// 没有这道闸的话，用户在后台补全任务跑着时点一次搜索，要排在几百个后台请求
+// 之后——在 1 req/s 之下就是几分钟。
+func TestInteractiveJumpsAheadOfBackground(t *testing.T) {
+	l := NewLimiters()
+	// 5 req/s：闸门必须真的被占住，队列才排得起来（每个令牌相隔 200ms）
+	l.Configure("test", 5, time.Second)
+
+	// 先占住闸门，让后续请求必须排队
+	if err := l.Wait(context.Background(), "test"); err != nil {
+		t.Fatalf("首个令牌应立即可得: %v", err)
+	}
+
+	var mu sync.Mutex
+	var order []string
+	var wg sync.WaitGroup
+
+	record := func(name string, p Priority) {
+		defer wg.Done()
+		ctx := WithPriority(context.Background(), p)
+		if err := l.Wait(ctx, "test"); err != nil {
+			t.Errorf("取令牌失败: %v", err)
+			return
+		}
+		mu.Lock()
+		order = append(order, name)
+		mu.Unlock()
+	}
+
+	// 三个后台请求先排进队列
+	for _, name := range []string{"bg1", "bg2", "bg3"} {
+		wg.Add(1)
+		go record(name, PriorityBackground)
+		// 让这一个确实进到队列里再排下一个：断言的是队列次序，不是调度巧合
+		time.Sleep(10 * time.Millisecond)
+	}
+	// 交互式请求最后到达
+	wg.Add(1)
+	go record("user", PriorityInteractive)
+	time.Sleep(10 * time.Millisecond)
+
+	wg.Wait()
+
+	if len(order) != 4 {
+		t.Fatalf("放行 %d 个, 期望 4 个: %v", len(order), order)
+	}
+	// 期望 [bg1 user bg2 bg3]：已经握着闸门的那一个不被抢占（它已经在等自己的令牌了），
+	// 但**还在排队**的后台请求全部让位。抢占在途请求只会浪费一个已经预约的令牌。
+	if order[0] != "bg1" {
+		t.Errorf("放行次序 = %v, 期望已在途的后台请求不被抢占", order)
+	}
+	if order[1] != "user" {
+		t.Errorf("放行次序 = %v, 期望交互式请求插到排队中的后台请求之前", order)
+	}
+}
+
+// TestPriorityDefaultsToBackground 钉住默认值：
+// 忘记标注优先级的代价应当是「慢一点」，而不是「悄悄抢在用户前面」。
+func TestPriorityDefaultsToBackground(t *testing.T) {
+	if got := PriorityOf(context.Background()); got != PriorityBackground {
+		t.Errorf("未标注的 ctx 优先级 = %v, 期望后台", got)
+	}
+	ctx := WithPriority(context.Background(), PriorityInteractive)
+	if got := PriorityOf(ctx); got != PriorityInteractive {
+		t.Errorf("标注后的优先级 = %v, 期望交互式", got)
+	}
+}

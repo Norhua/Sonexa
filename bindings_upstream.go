@@ -9,7 +9,6 @@ import (
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // CandidateRow 是候选结果表格的一行。
@@ -102,6 +101,12 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 	q := upstreamQuery(title, artist, album, country)
 	scoreQ := provider.Query{Title: title, Artist: artist, Album: album, Country: country}
 
+	// 用户在等这次结果：交互式优先级插到后台补全之前，且补全整体让路。
+	// 只靠插队不够——后台任务仍会占掉这一秒的配额，用户那次搜索还是要多等一轮。
+	done := a.beginInteractive()
+	defer done()
+	searchCtx := provider.WithPriority(context.Background(), provider.PriorityInteractive)
+
 	type task struct {
 		p    provider.Provider
 		rows []CandidateRow
@@ -125,7 +130,7 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 				t.err = err
 				return
 			}
-			candidates, err := t.p.SearchTracks(context.Background(), q)
+			candidates, err := t.p.SearchTracks(searchCtx, q)
 			if err != nil {
 				t.err = err
 				return
@@ -135,15 +140,13 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 			// 该上游一完成就推给前端：先返回的先显示，不被慢的上游阻塞。
 			// 仍等到 wg.Wait() 是为了让本次调用的返回值完整，
 			// 前端可以只用事件做增量渲染。
-			if a.ctx != nil {
-				runtime.EventsEmit(a.ctx, EventProviderResults, providerResult{
-					Provider:     string(t.p.ID()),
-					DisplayName:  t.p.DisplayName(),
-					Rows:         t.rows,
-					Count:        len(t.rows),
-					Capabilities: t.p.Capabilities().Names(),
-				})
-			}
+			a.emitEvent(EventProviderResults, providerResult{
+				Provider:     string(t.p.ID()),
+				DisplayName:  t.p.DisplayName(),
+				Rows:         t.rows,
+				Count:        len(t.rows),
+				Capabilities: t.p.Capabilities().Names(),
+			})
 		}(t)
 	}
 	wg.Wait()
@@ -301,6 +304,8 @@ func (a *App) AddToLibrary(row CandidateRow) (int64, error) {
 	}
 
 	a.notifyLibraryChanged()
+	// 刚出现一条待补的曲目：空闲时接着补，用户不必去点「开始」
+	a.autoStartEnrich()
 	return trackID, nil
 }
 

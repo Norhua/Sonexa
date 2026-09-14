@@ -236,36 +236,69 @@ func (a *App) lookupVoiceActor(ctx context.Context, artistMBID string) (*provide
 	return v.VoiceActorOf(ctx, artistMBID)
 }
 
-// RefreshTrackDetail 为已入库曲目拉取并落库详情。
+// RefreshTrackDetail 为已入库曲目立即拉取并落库详情。
 //
-// 供复核队列的「接受」与编辑页的「更换」使用：
-// 这两处拿到的是 track 粒度候选，补一次详情才能得到参与者与丰富信息。
+// 供编辑页的「更换」与用户显式的「重新获取」使用：**用户在等**，
+// 因此走交互式优先级，插到后台补全的队列之前。
+//
+// 复核队列的「接受」不再走这里：那一次请求的产出与「这条曲目能不能进库」
+// 无关，而在 1 req/s 之下它就是 1–2 秒的卡顿。接受只入库，
+// 详情交给后台的补全信息匹配（见 enrichWorker）。
 func (a *App) RefreshTrackDetail(trackID int64, providerID, releaseRef string) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	if gate := a.CheckOutbound(); !gate.Allowed {
-		return fmt.Errorf("%s", gate.Reason)
-	}
-	if releaseRef == "" {
-		return fmt.Errorf("缺少发行标识，无法拉取详情")
-	}
+	done := a.beginInteractive()
+	defer done()
 
-	p, err := a.registry.Get(provider.ProviderID(providerID))
-	if err != nil {
+	ctx := provider.WithPriority(context.Background(), provider.PriorityInteractive)
+	if err := a.fetchAndApplyDetail(ctx, store.EnrichTarget{
+		TrackID: trackID, Provider: providerID, ReleaseRef: releaseRef,
+	}); err != nil {
 		return err
 	}
-	d, err := p.FetchDetail(context.Background(), provider.Ref{
-		ID: releaseRef, Country: countryOf(releaseRef),
-	})
-	if err != nil {
-		return fmt.Errorf("拉取详情失败: %w", err)
-	}
-	if err := a.ApplyDetailToTrack(context.Background(), trackID, providerID, d); err != nil {
+	if err := a.store.SetEnrichState(trackID, store.EnrichFetched); err != nil {
 		return err
 	}
 	a.notifyLibraryChanged()
 	return nil
+}
+
+// enrichOne 是后台补全任务处理一条曲目的入口。
+//
+// 与 RefreshTrackDetail 的差别只有两处：优先级为后台，
+// 且不逐条通知界面重载（那由任务在一轮结束时做一次）。
+// 状态由任务写，因为只有它知道失败该记第几次。
+func (a *App) enrichOne(ctx context.Context, target store.EnrichTarget) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	return a.fetchAndApplyDetail(provider.WithPriority(ctx, provider.PriorityBackground), target)
+}
+
+// fetchAndApplyDetail 取一次详情并落到某条曲目上。
+//
+// 两条路径（用户显式刷新、后台补全）共用它：出网前置检查、缺标识的判断、
+// 错误包装都只写一份，否则两边的行为会慢慢漂移。
+func (a *App) fetchAndApplyDetail(ctx context.Context, target store.EnrichTarget) error {
+	if gate := a.CheckOutbound(); !gate.Allowed {
+		return fmt.Errorf("%s", gate.Reason)
+	}
+	if target.ReleaseRef == "" {
+		return fmt.Errorf("缺少发行标识，无法拉取详情")
+	}
+
+	p, err := a.registry.Get(provider.ProviderID(target.Provider))
+	if err != nil {
+		return err
+	}
+	d, err := p.FetchDetail(ctx, provider.Ref{
+		ID: target.ReleaseRef, Country: countryOf(target.ReleaseRef),
+	})
+	if err != nil {
+		return fmt.Errorf("拉取详情失败: %w", err)
+	}
+	return a.ApplyDetailToTrack(ctx, target.TrackID, target.Provider, d)
 }
 
 func musicbrainzIsCharacter(t *string) bool {
