@@ -9,6 +9,7 @@ import { App, type Models } from '@/api'
 import PaneHeader from '@/components/PaneHeader.vue'
 import SortMenu, { type SortOption } from '@/components/SortMenu.vue'
 import ViewSearchBox from '@/components/ViewSearchBox.vue'
+import SecondaryButton from '@/volt/SecondaryButton.vue'
 import { useLibraryStore } from '@/stores/library'
 
 const library = useLibraryStore()
@@ -98,15 +99,17 @@ defineExpose({ header, activeRole, pickFacet })
         v-for="a in visibleArtists"
         :key="a.id"
         :class="[
-          'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent',
-          library.view === 'artist' && library.contextId === a.id ? 'bg-accent font-medium' : '',
+          'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm',
+          library.view === 'artist' && library.contextId === a.id
+            ? 'bg-highlight font-medium'
+            : 'hover:bg-emphasis',
         ]"
         @click="select(a)"
       >
         <span class="flex-1 truncate">{{ titleOf(a) }}</span>
-        <span class="text-xs text-muted-foreground">{{ a.trackCount }}</span>
+        <span class="text-xs text-muted-color">{{ a.trackCount }}</span>
       </button>
-      <p v-if="visibleArtists.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-foreground">
+      <p v-if="visibleArtists.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-color">
         {{ filter ? '没有匹配的艺术家' : '还没有艺术家' }}
       </p>
       </div>
@@ -122,24 +125,24 @@ defineExpose({ header, activeRole, pickFacet })
 
       <div v-if="header" class="shrink-0 px-4 pb-2">
         <div class="flex flex-wrap gap-1">
-          <button
+          <SecondaryButton
             v-for="f in header.facets"
             :key="f.role || 'all'"
-            :class="[
-              'rounded-full border px-2.5 py-0.5 text-xs hover:bg-accent',
-              activeRole === f.role ? 'bg-accent font-medium' : '',
-            ]"
+            variant="outlined"
+            rounded
+            size="small"
+            :class="activeRole === f.role ? 'bg-highlight! font-medium' : ''"
             @click="pickFacet(f.role)"
           >
             {{ f.label }} {{ f.count }}
-          </button>
+          </SecondaryButton>
         </div>
       </div>
 
       <!-- 未选中艺术家时不显示曲目表格：这一屏还没有「该艺术家的曲目」可言，
            沿用上一个视图残留的行会让人以为它们属于某位艺术家 -->
       <slot v-if="library.view === 'artist'" />
-      <div v-else class="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+      <div v-else class="flex flex-1 items-center justify-center text-sm text-muted-color">
         从左侧选择一位艺术家
       </div>
     </div>

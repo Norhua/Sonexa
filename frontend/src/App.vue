@@ -63,6 +63,42 @@ const sortOptions: SortOption[] = [
 const sortKey = ref('default')
 const sortDesc = ref(false)
 
+/**
+ * 排序维度与表格字段的对照。
+ *
+ * 排序菜单说的是「维度」，DataTable 认的是「字段名」，两边差一层：
+ * 「默认顺序」对应没有字段（保持后端给的顺序，歌单的人工排序就在里面），
+ * 「时长」对应的字段名是 durationMs。
+ */
+const SORT_FIELDS: Record<string, string | null> = {
+  default: null,
+  title: 'title',
+  artist: 'artist',
+  album: 'album',
+  year: 'year',
+  duration: 'durationMs',
+}
+
+/**
+ * 双向：排序菜单与点击列头写的是同一份状态。
+ *
+ * 表格的列头本身也可点击排序，两个入口若各存一份状态，
+ * 点完列头再打开菜单会看到一个过期的勾。
+ */
+const sortField = computed<string | null>({
+  get: () => SORT_FIELDS[sortKey.value] ?? null,
+  set: (field) => {
+    const hit = Object.entries(SORT_FIELDS).find(([, f]) => f === field)
+    sortKey.value = hit ? hit[0] : 'default'
+  },
+})
+const sortOrder = computed<number>({
+  get: () => (sortDesc.value ? -1 : 1),
+  set: (order) => {
+    sortDesc.value = order < 0
+  },
+})
+
 let offLibrary: (() => void) | null = null
 
 onMounted(async () => {
@@ -119,22 +155,6 @@ const rows = computed<Row[]>(() =>
 const showTrackTable = computed(() =>
   ['all', 'recent', 'playlist', 'tag'].includes(library.view),
 )
-
-/** 排序后的行。'default' 保持后端给的顺序（歌单的人工排序就在里面）。 */
-const sortedRows = computed<Row[]>(() => {
-  if (sortKey.value === 'default') return rows.value
-  const dir = sortDesc.value ? -1 : 1
-  const text = (v?: string | null) => v ?? ''
-  return [...rows.value].sort((a, b) => {
-    switch (sortKey.value) {
-      case 'artist': return dir * text(a.artist).localeCompare(text(b.artist), 'zh-Hans-CN')
-      case 'album': return dir * text(a.album).localeCompare(text(b.album), 'zh-Hans-CN')
-      case 'year': return dir * ((a.year ?? 0) - (b.year ?? 0))
-      case 'duration': return dir * ((a.durationMs ?? 0) - (b.durationMs ?? 0))
-      default: return dir * a.title.localeCompare(b.title, 'zh-Hans-CN')
-    }
-  })
-})
 
 /** 歌单的拖拽重排只在默认顺序下可用——在排序视图里拖动，落点是没有意义的。 */
 const canReorder = computed(() => library.view === 'playlist' && sortKey.value === 'default')
@@ -384,7 +404,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
 </script>
 
 <template>
-  <div class="flex h-full bg-background text-foreground">
+  <div class="flex h-full bg-app text-color">
     <AppSidebar
       @new-collection="newCollection"
       @rename-collection="renameCollection"
@@ -410,7 +430,9 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
           />
           <TrackTable
             v-if="rows.length > 0"
-            :rows="sortedRows"
+            v-model:sort-field="sortField"
+            v-model:sort-order="sortOrder"
+            :rows="rows"
             :collection-id="library.view === 'playlist' ? library.contextId : 0"
             :reorderable="canReorder"
             :loading="library.loading"

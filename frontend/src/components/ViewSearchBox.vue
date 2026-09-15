@@ -6,6 +6,8 @@
  * 两栏页面搜曲目，三栏页面搜中间那列的名单。
  */
 import { Search, X } from 'lucide-vue-next'
+import InputText from '@/volt/InputText.vue'
+import SecondaryButton from '@/volt/SecondaryButton.vue'
 
 const text = defineModel<string>({ default: '' })
 
@@ -15,6 +17,11 @@ withDefaults(defineProps<{ placeholder?: string; width?: string }>(), {
 })
 
 const emit = defineEmits<{ submit: [] }>()
+
+function clear() {
+  text.value = ''
+  emit('submit')
+}
 </script>
 
 <template>
@@ -22,23 +29,27 @@ const emit = defineEmits<{ submit: [] }>()
        不显式关掉的话点击输入框会变成拖窗口 -->
   <div :class="['relative shrink-0', width]" style="--wails-draggable: no-drag">
     <Search
-      class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+      class="pointer-events-none absolute left-2.5 top-1/2 z-10 size-3.5 -translate-y-1/2 text-muted-color"
     />
-    <input
+    <InputText
       v-model="text"
       type="search"
+      size="small"
       :placeholder="placeholder"
-      class="w-full rounded-md border bg-background py-1.5 pl-8 pr-7 text-sm outline-none focus:ring-1 focus:ring-ring"
+      class="w-full pl-8 pr-7"
       @keyup.enter="emit('submit')"
       @search="emit('submit')"
     />
-    <button
+    <SecondaryButton
       v-if="text"
-      class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent"
+      variant="text"
+      rounded
+      size="small"
+      class="absolute right-0.5 top-1/2 -translate-y-1/2"
       title="清除"
-      @click="text = ''; emit('submit')"
+      @click="clear"
     >
       <X class="size-3" />
-    </button>
+    </SecondaryButton>
   </div>
 </template>
