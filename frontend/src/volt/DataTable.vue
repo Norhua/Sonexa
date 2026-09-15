@@ -47,7 +47,7 @@
 
 <script setup lang="ts">
 /*
- * 本文件由 `npx volt-vue add DataTable` 取自 Volt，之后有三处本地改动：
+ * 本文件由 `npx volt-vue add DataTable` 取自 Volt，之后有四处本地改动：
  *
  *   1. 行密度：headerCell / bodyCell 的 py-3 px-4 收到 py-2 / py-1.5 px-2。
  *      曲目表格是一份长列表，Volt 的默认间距一屏放不下多少行。
@@ -55,8 +55,11 @@
  *      表头是标注不是内容，与下方的曲目文字拉开层级。
  *   3. bodyCell 的下边框在浅色下取 surface-100：逐行都画满 surface-200 的线时，
  *      一屏几十行读起来像格子纸。
+ *   4. 排序图标默认透明，只在该列已排序或鼠标悬在列头上时显形。
+ *      每个可排序列都常驻一个箭头时，一排表头读起来全是箭头，
+ *      反而看不出当前按哪一列排的。
  *
- * 重新从上游拉取这个文件时，以上三处需重新施加。
+ * 重新从上游拉取这个文件时，以上四处需重新施加。
  */
 import AngleDoubleLeftIcon from '@primevue/icons/angledoubleleft';
 import AngleDoubleRightIcon from '@primevue/icons/angledoubleright';
@@ -113,7 +116,8 @@ const theme = ref<DataTablePassThroughOptions>({
         sort: ``,
         sortIcon: `text-surface-500 dark:text-surface-400 transition-colors duration-200
             group-p-sortable:not-group-p-sorted:group-hover:text-surface-600 dark:group-p-sortable:not-group-p-sorted:group-hover:text-surface-300
-            group-p-sorted:bg-highlight`,
+            group-p-sorted:bg-highlight
+            opacity-0 group-hover:opacity-100 group-p-sorted:opacity-100`,
         pcSortBadge: {
             root: `bg-primary text-primary-contrast rounded-full min-w-6 h-6 inline-flex items-center justify-center text-xs font-bold`
         },
