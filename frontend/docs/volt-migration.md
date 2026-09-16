@@ -43,7 +43,15 @@
 - 单元测试：选择模型、排序/更新时锚点、重复 track id、ghost、范围收缩。
 - Playwright 真实组件/应用桩件：Chromium + WebKit，鼠标/键盘、文字选择、拖拽、右键边界/关闭、模态焦点、主题对比、导入/编辑/设置/复核。
 - `npm run build`、`go test ./...`、`wails build`；桩件不替代原生 Wails 人工验收。
-- 分阶段提交：计划 → 控件与主题 → 曲目交互及测试 → 偏差与验证结果。
+- 分阶段提交：计划 → Volt 控件/曲目模型与初始测试 → WebKit 修复/生产回归 → 偏差与验证结果。
+
+## 完成证据
+
+- 10 项选择/顺序模型单测；15 个应用场景在 Chromium/WebKit 共 30 项通过。
+- 同 30 项对生产 dist 重跑通过（`SONEXA_E2E_PREVIEW=1 npm run test:e2e`），未捕获 pageerror 为零。
+- `npm run build`、`go test ./...`、`go vet ./...`、Wails darwin/arm64 构建通过。
+- 仍有 Vite >500 kB 主块警告；未测原生首帧和大曲库性能，不把本地文件等同于无性能代价。
+- 实现范围与剩余偏差见 `tmp/v1-deviations-gpt.md` 第 20 节；原件/spec 均未改。
 
 ## 非目标
 
