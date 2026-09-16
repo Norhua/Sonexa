@@ -9,12 +9,18 @@
  * 范围单选还解决了一个实际问题：多上游并发时结果落进同一个列表，
  * 来源难分、排序也不可比（各家的 relevance 不同源）。
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { ChevronDown, Search as SearchIcon } from 'lucide-vue-next'
+import { computed, onMounted, ref } from 'vue'
+import { Search as SearchIcon } from 'lucide-vue-next'
 import { App, type Models } from '@/api'
 import AdvancedSearchPanel from '@/components/AdvancedSearchPanel.vue'
+import PaneHeader from '@/components/PaneHeader.vue'
 import CandidateTable from '@/components/CandidateTable.vue'
 import TrackTable, { type Row } from '@/components/TrackTable.vue'
+import Button from '@/volt/Button.vue'
+import InputText from '@/volt/InputText.vue'
+import Message from '@/volt/Message.vue'
+import SecondaryButton from '@/volt/SecondaryButton.vue'
+import Select from '@/volt/Select.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { LibraryScope, useSearchStore } from '@/stores/search'
 
@@ -34,13 +40,15 @@ const emit = defineEmits<{
   goSettings: []
 }>()
 
-const scopeOpen = ref(false)
-const scopeRoot = ref<HTMLElement | null>(null)
 const countries = ref<Models.main.CountryOption[]>([])
 const hint = ref<Models.main.CountryHint | null>(null)
 const countryTouched = ref(false)
 
-/** 范围下拉的选项：资料库固定在最前，上游从注册表动态渲染。 */
+/**
+ * 范围下拉的选项：资料库固定在最前，上游从注册表动态渲染。
+ *
+ * 未配置的上游仍然列出但在标签后注明——把它藏起来，用户会以为这个上游不存在。
+ */
 const scopeOptions = computed(() => [
   { id: LibraryScope, label: '资料库', configured: true, reason: '' },
   ...settings.providers.map((p) => ({
@@ -78,7 +86,7 @@ const rows = computed<Row[]>(() =>
     mediumFormat: t.mediumFormat,
     country: t.country,
     coverSource: { provider: t.matchSource, ref: t.releaseRef, rg: t.releaseGroupRef },
-    coverPath: t.coverPath,
+    adoptedCoverPath: t.coverPath,
   })),
 )
 
@@ -89,23 +97,14 @@ const canSearch = computed(() => {
 })
 
 onMounted(async () => {
-  // 先注册再 await：反过来的话，组件在 ListCountries 返回之前就卸载时，
-  // onUnmounted 的 remove 是空操作，随后这个监听器才被加上——漏一个
-  window.addEventListener('pointerdown', onPointerDown)
   countries.value = (await App.ListCountries()) ?? []
 })
-onUnmounted(() => window.removeEventListener('pointerdown', onPointerDown))
 
-function onPointerDown(event: PointerEvent) {
-  if (scopeOpen.value && scopeRoot.value && !scopeRoot.value.contains(event.target as Node)) {
-    scopeOpen.value = false
-  }
-}
-
-function pickScope(id: string) {
-  search.setScope(id)
-  scopeOpen.value = false
-}
+/** 地区下拉的选项：「跟随默认」置顶。 */
+const countryOptions = computed(() => [
+  { code: '', name: '跟随默认' },
+  ...countries.value,
+])
 
 async function updateHint() {
   const text = `${search.query} ${search.valueOf('artist')} ${search.valueOf('album')}`.trim()
@@ -122,7 +121,8 @@ async function run() {
 
 async function addToLibrary(row: Models.main.CandidateRow) {
   try {
-    await App.AddToLibrary(row)
+    const id = await App.AddToLibrary(row)
+    row.localTrackId = id
     row.action = '已在库中'
     if (!row.badges.includes('本地')) row.badges = ['本地', ...row.badges]
   } catch (e) {
@@ -134,17 +134,19 @@ async function addToLibrary(row: Models.main.CandidateRow) {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <!-- 页头：搜索框居中，范围下拉在右上角 -->
-    <header class="shrink-0 px-4 py-2.5">
-      <div class="flex items-center gap-3">
+    <header class="shrink-0">
+      <PaneHeader>
+      <div class="flex w-full items-center gap-3" style="--wails-draggable: no-drag">
         <div class="relative mx-auto w-full max-w-xl">
           <SearchIcon
-            class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            class="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-color"
           />
-          <input
+          <InputText
             v-model="search.query"
             type="search"
+            size="small"
+            pt:root:class="w-full p-small:pl-9"
             :placeholder="search.isLibrary ? '搜索资料库' : `在 ${scopeLabel} 中搜索`"
-            class="w-full rounded-md border bg-background py-1.5 pl-9 pr-3 text-sm outline-none focus:ring-1 focus:ring-ring"
             @keyup.enter="run"
           />
         </div>
@@ -152,72 +154,64 @@ async function addToLibrary(row: Models.main.CandidateRow) {
         <AdvancedSearchPanel @run="run" />
 
         <!-- 范围：单选下拉，上游从注册表渲染 -->
-        <div ref="scopeRoot" class="relative shrink-0">
-          <button
-            class="flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-sm hover:bg-accent"
-            @click="scopeOpen = !scopeOpen"
-          >
-            {{ scopeLabel }}
-            <ChevronDown :class="['size-3.5 transition-transform', scopeOpen ? 'rotate-180' : '']" />
-          </button>
-          <div
-            v-if="scopeOpen"
-            class="absolute right-0 top-full z-30 mt-1 min-w-40 rounded-md border bg-popover py-1 text-sm shadow-md"
-          >
-            <button
-              v-for="o in scopeOptions"
-              :key="o.id"
-              :class="[
-                'block w-full px-3 py-1.5 text-left hover:bg-accent',
-                search.scope === o.id ? 'font-medium' : '',
-              ]"
-              @click="pickScope(o.id)"
-            >
-              {{ o.label }}
-              <span v-if="!o.configured" class="text-xs text-muted-foreground" :title="o.reason">
-                （未配置）
-              </span>
-            </button>
-          </div>
-        </div>
+        <Select
+          :model-value="search.scope"
+          :options="scopeOptions"
+          option-label="label"
+          option-value="id"
+          size="small"
+          class="shrink-0"
+          @update:model-value="search.setScope($event)"
+        >
+          <template #option="{ option }">
+            <span>{{ option.label }}</span>
+            <span v-if="!option.configured" class="text-xs text-muted-color" :title="option.reason">
+              （未配置）
+            </span>
+          </template>
+        </Select>
 
-        <button
-          class="shrink-0 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        <Button
+          size="small"
+          class="shrink-0"
           :disabled="!canSearch"
           :title="!search.isLibrary && !settings.outboundAllowed ? settings.outboundReason : ''"
           @click="run"
         >
           {{ search.loading ? '搜索中…' : '搜索' }}
-        </button>
+        </Button>
       </div>
+      </PaneHeader>
 
       <!-- 地区下拉仅在当前上游需要地区参数时出现 -->
-      <div v-if="showCountry" class="mt-2 flex items-center justify-end gap-2 text-xs">
+      <div v-if="showCountry" class="flex items-center justify-end gap-2 px-4 pb-2 text-xs">
         <label class="flex items-center gap-1">
           地区
-          <select
+          <Select
             v-model="search.country"
-            class="rounded border bg-background px-1.5 py-0.5"
-            @change="countryTouched = true"
-          >
-            <option value="">跟随默认</option>
-            <option v-for="c in countries" :key="c.code" :value="c.code">{{ c.name }}</option>
-          </select>
+            :options="countryOptions"
+            option-label="name"
+            option-value="code"
+            size="small"
+            @update:model-value="countryTouched = true"
+          />
         </label>
-        <span v-if="hint?.detected" class="text-muted-foreground">{{ hint.message }}</span>
+        <span v-if="hint?.detected" class="text-muted-color">{{ hint.message }}</span>
       </div>
     </header>
 
     <!-- 出网禁用时把原因说清楚，而不是让搜索按钮无声地灰着 -->
-    <p
+    <Message
       v-if="!search.isLibrary && !settings.outboundAllowed"
-      class="flex shrink-0 items-center gap-2 border-b bg-secondary px-4 py-2 text-xs"
+      severity="secondary"
+      size="small"
+      class="shrink-0 rounded-none"
     >
       <span class="flex-1">{{ settings.outboundReason }}</span>
-      <button class="rounded border px-2 py-0.5 hover:bg-accent" @click="emit('goSettings')">
+      <SecondaryButton variant="outlined" size="small" @click="emit('goSettings')">
         前往设置
-      </button>
-    </p>
+      </SecondaryButton>
+    </Message>
 
     <div class="min-h-0 flex-1 overflow-auto">
       <!-- 资料库结果：与其他视图共用同一个曲目表格 -->
@@ -249,7 +243,7 @@ async function addToLibrary(row: Models.main.CandidateRow) {
         <template #empty>没有搜到结果</template>
       </CandidateTable>
 
-      <div v-else class="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+      <div v-else class="flex h-full flex-col items-center justify-center gap-2 text-muted-color">
         <SearchIcon class="size-12 opacity-40" />
         <p class="text-base font-semibold">
           {{ search.isLibrary ? '搜索你的资料库' : `在 ${scopeLabel} 中搜索` }}
@@ -258,8 +252,8 @@ async function addToLibrary(row: Models.main.CandidateRow) {
       </div>
     </div>
 
-    <p v-if="search.error" class="shrink-0 border-t bg-destructive/10 px-4 py-2 text-xs text-destructive">
+    <Message v-if="search.error" severity="error" size="small" class="shrink-0 rounded-none">
       {{ search.error }}
-    </p>
+    </Message>
   </div>
 </template>

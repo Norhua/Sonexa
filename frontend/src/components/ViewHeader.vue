@@ -10,7 +10,7 @@ import { ref, watch } from 'vue'
 import PaneHeader from '@/components/PaneHeader.vue'
 import SortMenu, { type SortOption } from '@/components/SortMenu.vue'
 import ViewSearchBox from '@/components/ViewSearchBox.vue'
-import { X } from 'lucide-vue-next'
+import Chip from '@/volt/Chip.vue'
 import { useLibraryStore } from '@/stores/library'
 
 const library = useLibraryStore()
@@ -48,15 +48,14 @@ async function run() {
 
   <!-- 筛选 chip：标明生效的条件，可清除 -->
   <div v-if="library.chips.length > 0" class="flex flex-wrap items-center gap-1 px-4 pb-2">
-    <span class="text-xs text-muted-foreground">筛选:</span>
-    <button
+    <span class="text-xs text-muted-color">筛选:</span>
+    <Chip
       v-for="chip in library.chips"
       :key="chip.key"
-      class="flex items-center gap-1 rounded-full border bg-secondary px-2 py-0.5 text-xs hover:bg-accent"
-      @click="library.removeChip(chip.key)"
-    >
-      {{ chip.label }}
-      <X class="size-3" />
-    </button>
+      :label="chip.label"
+      removable
+      class="cursor-pointer text-xs"
+      @remove="library.removeChip(chip.key)"
+    />
   </div>
 </template>

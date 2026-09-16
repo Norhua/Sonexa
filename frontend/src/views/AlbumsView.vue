@@ -14,6 +14,8 @@ import PaneHeader from '@/components/PaneHeader.vue'
 import SortMenu, { type SortOption } from '@/components/SortMenu.vue'
 import TrackTable from '@/components/TrackTable.vue'
 import ViewSearchBox from '@/components/ViewSearchBox.vue'
+import Message from '@/volt/Message.vue'
+import SecondaryButton from '@/volt/SecondaryButton.vue'
 import { useLibraryStore } from '@/stores/library'
 
 const library = useLibraryStore()
@@ -166,6 +168,7 @@ function toRows(): Row[] {
       // 「其他版本」行的 trackId 就是被命中的那首已有曲目，
       // 因此点击它能直接跳到用户手上的那一首。
       id: r.trackId,
+      rowKey: `release:${detail.value?.releaseId}:${r.discNumber}:${r.trackNumber}:${r.trackRef ?? ''}`,
       title: r.title,
       artist: r.credit,
       album: detail.value?.title,
@@ -210,8 +213,8 @@ async function addGhost(row: Row) {
         v-for="a in visibleAlbums"
         :key="a.releaseId"
         :class="[
-          'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent',
-          detail?.releaseId === a.releaseId ? 'bg-accent' : '',
+          'flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
+          detail?.releaseId === a.releaseId ? 'bg-highlight' : 'hover:bg-emphasis',
         ]"
         @click="open(a)"
       >
@@ -224,11 +227,11 @@ async function addGhost(row: Row) {
         />
         <div class="min-w-0 flex-1">
           <p class="truncate font-medium">{{ a.title || '未命名专辑' }}</p>
-          <p class="truncate text-xs text-muted-foreground">{{ display(a.credit) }}</p>
+          <p class="truncate text-xs text-muted-color">{{ display(a.credit) }}</p>
         </div>
-        <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{{ countLabel(a) }}</span>
+        <span class="shrink-0 text-xs tabular-nums text-muted-color">{{ countLabel(a) }}</span>
       </button>
-      <p v-if="visibleAlbums.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-foreground">
+      <p v-if="visibleAlbums.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-color">
         {{ filter ? '没有匹配的专辑' : '还没有专辑' }}
       </p>
       </div>
@@ -253,21 +256,22 @@ async function addGhost(row: Row) {
         <div class="min-w-0 flex-1">
         <div class="flex items-baseline gap-3">
           <h3 class="text-base font-semibold">{{ detail.title }}</h3>
-          <span class="text-sm text-muted-foreground">
+          <span class="text-sm text-muted-color">
             {{ detail.ownedCount }}<template v-if="detail.totalCount">/{{ detail.totalCount }}</template
             ><template v-else>/-</template> 首
           </span>
           <div class="flex-1" />
-          <button
-            class="rounded border px-2 py-0.5 text-xs hover:bg-accent"
-            :class="onlyOwned ? 'bg-accent' : ''"
+          <SecondaryButton
+            variant="outlined"
+            size="small"
+            :class="onlyOwned ? 'bg-highlight!' : ''"
             @click="toggleOnlyOwned"
           >
             仅显示已有
-          </button>
+          </SecondaryButton>
         </div>
-        <p class="truncate text-xs text-muted-foreground">{{ display(detail.credit) }}</p>
-        <p class="mt-0.5 text-xs text-muted-foreground">
+        <p class="truncate text-xs text-muted-color">{{ display(detail.credit) }}</p>
+        <p class="mt-0.5 text-xs text-muted-color">
           {{ display(albumTypeLabel(detail.primaryType)) }} · {{ display(detail.year) }} ·
           {{ display(detail.mediumFormat) }} · {{ display(detail.country) }}
           <template v-if="detail.discTotal"> · {{ detail.discTotal }} 碟</template>
@@ -275,14 +279,19 @@ async function addGhost(row: Row) {
             · 共 {{ detail.releaseCount }} 个版本
           </template>
         </p>
-        <p v-if="detail.label || detail.catalogNumber" class="mt-0.5 text-xs text-muted-foreground">
+        <p v-if="detail.label || detail.catalogNumber" class="mt-0.5 text-xs text-muted-color">
           {{ display(detail.label) }} · {{ display(detail.catalogNumber) }}
         </p>
-        <p v-if="detail.fetchedAt" class="mt-0.5 text-xs text-muted-foreground">
+        <p v-if="detail.fetchedAt" class="mt-0.5 flex items-center gap-1 text-xs text-muted-color">
           清单更新于 {{ new Date(detail.fetchedAt).toLocaleDateString() }}
-          <button class="ml-1 underline" :disabled="fetching" @click="completeTracklist(true)">
+          <SecondaryButton
+            variant="text"
+            size="small"
+            :disabled="fetching"
+            @click="completeTracklist(true)"
+          >
             {{ fetching ? '获取中…' : '重新获取' }}
-          </button>
+          </SecondaryButton>
         </p>
         </div>
       </div>
@@ -290,6 +299,7 @@ async function addGhost(row: Row) {
       <TrackTable
         v-if="detail"
         :rows="toRows()"
+        :context-key="`album:${detail.releaseId}`"
         fixed-order
         @open="(r) => emit('openTrack', r.id)"
         @edit="(r) => emit('editTrack', r.id)"
@@ -306,28 +316,29 @@ async function addGhost(row: Row) {
       <!-- 清单不完整时不伪装完整：末尾一行提示与补全动作 -->
       <div
         v-if="detail?.incomplete"
-        class="shrink-0 border-t px-4 py-2 text-xs text-muted-foreground"
+        class="flex shrink-0 items-center gap-2 border-t px-4 py-2 text-xs text-muted-color"
       >
-        <span v-if="detail.tracklistState === 'failed'" class="text-destructive">
+        <span v-if="detail.tracklistState === 'failed'" class="text-danger-color">
           清单获取失败{{ detail.tracklistError ? `：${detail.tracklistError}` : '' }}
         </span>
         <span v-else>清单不完整</span>
-        <button
+        <SecondaryButton
           v-if="detail.releaseRef"
-          class="ml-2 rounded border px-2 py-0.5 hover:bg-accent"
+          variant="outlined"
+          size="small"
           :disabled="fetching"
           @click="completeTracklist(true)"
         >
           {{ detail.tracklistState === 'failed' ? '重试' : '补全清单' }}
-        </button>
+        </SecondaryButton>
       </div>
 
-      <div v-if="!detail" class="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+      <div v-if="!detail" class="flex flex-1 items-center justify-center text-sm text-muted-color">
         从左侧选择一张专辑
       </div>
-      <p v-if="error" class="shrink-0 border-t bg-destructive/10 px-4 py-2 text-xs text-destructive">
+      <Message v-if="error" severity="error" size="small" class="shrink-0 rounded-none">
         {{ error }}
-      </p>
+      </Message>
     </div>
   </div>
 </template>

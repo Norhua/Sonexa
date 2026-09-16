@@ -7,7 +7,7 @@
  * 原顶栏上的三个入口各自归位——
  * 搜索去了搜索页与各视图右上角，导入去了导入队列页，主题切换去了设置。
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { App as Api, Events, EventsOn, display } from '@/api'
 import type { Models } from '@/api'
 import AppSidebar from '@/components/AppSidebar.vue'
@@ -120,24 +120,10 @@ const showTrackTable = computed(() =>
   ['all', 'recent', 'playlist', 'tag'].includes(library.view),
 )
 
-/** 排序后的行。'default' 保持后端给的顺序（歌单的人工排序就在里面）。 */
-const sortedRows = computed<Row[]>(() => {
-  if (sortKey.value === 'default') return rows.value
-  const dir = sortDesc.value ? -1 : 1
-  const text = (v?: string | null) => v ?? ''
-  return [...rows.value].sort((a, b) => {
-    switch (sortKey.value) {
-      case 'artist': return dir * text(a.artist).localeCompare(text(b.artist), 'zh-Hans-CN')
-      case 'album': return dir * text(a.album).localeCompare(text(b.album), 'zh-Hans-CN')
-      case 'year': return dir * ((a.year ?? 0) - (b.year ?? 0))
-      case 'duration': return dir * ((a.durationMs ?? 0) - (b.durationMs ?? 0))
-      default: return dir * a.title.localeCompare(b.title, 'zh-Hans-CN')
-    }
-  })
-})
-
-/** 歌单的拖拽重排只在默认顺序下可用——在排序视图里拖动，落点是没有意义的。 */
-const canReorder = computed(() => library.view === 'playlist' && sortKey.value === 'default')
+/** 手工顺序仅在完整歌单的默认排序中可编辑，避免拿筛选子集覆盖整张歌单。 */
+const canReorder = computed(() => library.view === 'playlist' && sortKey.value === 'default' && library.chips.length === 0)
+const tableContext = computed(() => `${library.view}:${library.contextId}`)
+watch(tableContext, () => { selectedIds.value = [] })
 
 /** 空态文案各不相同，不复用同一句通用提示。 */
 const emptyState = computed(() => {
@@ -384,7 +370,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
 </script>
 
 <template>
-  <div class="flex h-full bg-background text-foreground">
+  <div class="flex h-full bg-app text-color">
     <AppSidebar
       @new-collection="newCollection"
       @rename-collection="renameCollection"
@@ -410,7 +396,10 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
           />
           <TrackTable
             v-if="rows.length > 0"
-            :rows="sortedRows"
+            v-model:sort-key="sortKey"
+            v-model:sort-desc="sortDesc"
+            :context-key="tableContext"
+            :rows="rows"
             :collection-id="library.view === 'playlist' ? library.contextId : 0"
             :reorderable="canReorder"
             :loading="library.loading"
@@ -451,6 +440,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
         <!-- 艺术家视图：中列 + 按 artist_id 过滤的标准曲目表格 -->
         <ArtistsView v-else-if="library.view === 'artists' || library.view === 'artist'">
           <TrackTable
+            :context-key="tableContext"
             :rows="rows"
             :loading="library.loading"
             @open="openDetail"

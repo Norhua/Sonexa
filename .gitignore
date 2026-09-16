@@ -6,6 +6,8 @@ build/bin/
 frontend/dist/*
 !/frontend/dist/gitkeep
 frontend/package.json.md5
+frontend/test-results/
+frontend/playwright-report/
 
 # 依赖
 frontend/node_modules/

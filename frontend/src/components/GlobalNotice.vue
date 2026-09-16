@@ -3,9 +3,12 @@
  * 全局提示位置。
  *
  * 出网失败与离线状态在这里统一提示，页面内的局部区域不重复弹出相同错误。
+ * 三种提示共用 Volt 的 Message，靠 severity 区分——各写各的底色必然漂移。
  */
 import { computed } from 'vue'
-import { AlertTriangle, X, WifiOff } from 'lucide-vue-next'
+import { AlertTriangle, WifiOff } from 'lucide-vue-next'
+import Message from '@/volt/Message.vue'
+import SecondaryButton from '@/volt/SecondaryButton.vue'
 import { useSettingsStore } from '@/stores/settings'
 
 const props = defineProps<{ message: string; offline?: boolean }>()
@@ -18,24 +21,28 @@ const gateBlocked = computed(() => !settings.outboundAllowed && settings.setting
 </script>
 
 <template>
-  <div v-if="gateBlocked" class="flex items-center gap-2 border-b bg-secondary px-4 py-2 text-sm">
-    <AlertTriangle class="size-4 shrink-0" />
+  <Message v-if="gateBlocked" severity="secondary" size="small" class="shrink-0 rounded-none">
+    <template #icon><AlertTriangle class="size-4 shrink-0" /></template>
     <span class="flex-1">{{ settings.outboundReason }}</span>
-    <button class="rounded border px-2 py-0.5 text-xs hover:bg-accent" @click="emit('openSettings')">
+    <SecondaryButton variant="outlined" size="small" @click="emit('openSettings')">
       前往设置
-    </button>
-  </div>
+    </SecondaryButton>
+  </Message>
 
-  <div v-else-if="props.offline" class="flex items-center gap-2 border-b bg-secondary px-4 py-2 text-sm">
-    <WifiOff class="size-4 shrink-0" />
+  <Message v-else-if="props.offline" severity="secondary" size="small" class="shrink-0 rounded-none">
+    <template #icon><WifiOff class="size-4 shrink-0" /></template>
     <span class="flex-1">当前无法访问上游，出网功能暂不可用。</span>
-  </div>
+  </Message>
 
-  <div v-else-if="props.message" class="flex items-center gap-2 border-b bg-destructive/10 px-4 py-2 text-sm">
-    <AlertTriangle class="size-4 shrink-0 text-destructive" />
+  <Message
+    v-else-if="props.message"
+    severity="error"
+    size="small"
+    closable
+    class="shrink-0 rounded-none"
+    @close="emit('dismiss')"
+  >
+    <template #icon><AlertTriangle class="size-4 shrink-0" /></template>
     <span class="flex-1">{{ props.message }}</span>
-    <button class="rounded p-0.5 hover:bg-accent" title="关闭" @click="emit('dismiss')">
-      <X class="size-3.5" />
-    </button>
-  </div>
+  </Message>
 </template>

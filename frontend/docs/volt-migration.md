@@ -31,7 +31,8 @@
 
 - Volt DataTable 负责布局、粘性表头、排序和行重排；`TrackTable` 保持唯一业务入口，各视图同列。
 - **唯一的受控选择模型**（独立可测试模块）负责普通点击、Cmd/Ctrl 切换、Shift 连续/收缩、Cmd/Ctrl+Shift 叠加、方向键/Home/End、Enter 打开、Escape 清空。不启用 DataTable 内部 selectionMode，避免互相覆盖。
-- 独立行 key 表示位置；对外曲目 id 去重。锚点/焦点均用稳定 key，范围按 DataTable `value-change` 提供的实际显示顺序计算。
+- 排序采用 `lib/trackRows.ts` 的单一稳定比较器（中文自然排序、缺失值始终末尾）。DataTable `lazy` 仅关闭内部二次排序，保留列头排序事件和图标；并非服务器分页。核对发现 `value-change` 不在每次外部 sortField/value 更新时触发，不能拿它作为显示顺序的唯一真源。
+- 独立行 key 表示位置；对外曲目 id 去重。锚点/焦点均用稳定 key。
 - 快捷键仅在表格行/列表容器获得焦点时生效。灰色行不参与选择、键盘导航和导出。
 - `select-text` 文字允许拖选；拖动重排使用现有 # 列内手柄，不增加一列，不修改 PrimeVue 私有状态或靠冒泡覆盖 draggable。
 - 右键已选行保留多选，右键其他普通行改为独选，灰色行菜单仅两项；支持键盘菜单键/Shift+F10。

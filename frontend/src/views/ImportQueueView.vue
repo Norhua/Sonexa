@@ -12,6 +12,10 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { Pause, Play, Upload } from 'lucide-vue-next'
 import { App, type Models } from '@/api'
 import EmptyState from '@/components/EmptyState.vue'
+import Button from '@/volt/Button.vue'
+import Message from '@/volt/Message.vue'
+import ProgressBar from '@/volt/ProgressBar.vue'
+import SecondaryButton from '@/volt/SecondaryButton.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useTasksStore } from '@/stores/tasks'
 import { useUiStore } from '@/stores/ui'
@@ -113,8 +117,8 @@ function basename(path: string): string {
     <header class="flex h-12 shrink-0 items-center gap-3 px-4" style="--wails-draggable: drag">
       <h2 class="text-xl font-bold">导入队列</h2>
       <div class="flex-1" />
-      <button
-        class="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+      <Button
+        size="small"
         style="--wails-draggable: no-drag"
         :disabled="!settings.outboundAllowed"
         :title="!settings.outboundAllowed ? settings.outboundReason : '从表格文件导入'"
@@ -122,7 +126,7 @@ function basename(path: string): string {
       >
         <Upload class="size-4" />
         导入表格
-      </button>
+      </Button>
     </header>
 
     <EmptyState
@@ -141,7 +145,7 @@ function basename(path: string): string {
             <p class="truncate text-sm font-medium" :title="current.filename">
               {{ basename(current.filename) }}
             </p>
-            <p class="mt-0.5 text-xs text-muted-foreground">
+            <p class="mt-0.5 text-xs text-muted-color">
               {{ statusLabel(current.status) }} ·
               {{ current.processed }}/{{ current.totalRows }}
               <!-- 缺曲名的行在提交时就跳过了，没进队列——说清楚免得对不上文件行数 -->
@@ -150,57 +154,59 @@ function basename(path: string): string {
               </template>
             </p>
           </div>
-          <button
+          <SecondaryButton
             v-if="current.running"
-            class="flex items-center gap-1 rounded border px-2 py-1 text-sm hover:bg-accent"
+            variant="outlined"
+            size="small"
             @click="pause(current.id)"
           >
             <Pause class="size-3.5" /> 暂停
-          </button>
-          <button
+          </SecondaryButton>
+          <SecondaryButton
             v-else-if="current.processed < current.totalRows"
-            class="flex items-center gap-1 rounded border px-2 py-1 text-sm hover:bg-accent"
+            variant="outlined"
+            size="small"
             @click="resume(current.id)"
           >
             <Play class="size-3.5" /> 恢复
-          </button>
+          </SecondaryButton>
         </div>
 
-        <div class="mt-2 h-1.5 overflow-hidden rounded bg-muted">
-          <div class="h-full bg-primary transition-all" :style="{ width: `${percent}%` }" />
-        </div>
+        <ProgressBar :value="percent" :show-value="false" class="mt-2 h-1.5" />
 
         <dl class="mt-3 grid grid-cols-4 gap-2 text-xs">
           <div class="rounded border px-2 py-1.5">
-            <dt class="text-muted-foreground">已入库</dt>
+            <dt class="text-muted-color">已入库</dt>
             <dd class="text-base tabular-nums">{{ current.stats.imported }}</dd>
           </div>
           <div class="rounded border px-2 py-1.5">
-            <dt class="text-muted-foreground">待复核</dt>
+            <dt class="text-muted-color">待复核</dt>
             <dd class="text-base tabular-nums">{{ current.stats.review }}</dd>
           </div>
           <div class="rounded border px-2 py-1.5">
-            <dt class="text-muted-foreground">排队中</dt>
+            <dt class="text-muted-color">排队中</dt>
             <dd class="text-base tabular-nums">{{ current.stats.queued }}</dd>
           </div>
           <div class="rounded border px-2 py-1.5">
-            <dt class="text-muted-foreground">失败</dt>
+            <dt class="text-muted-color">失败</dt>
             <dd class="text-base tabular-nums">{{ current.stats.failed }}</dd>
           </div>
         </dl>
 
-        <button
+        <SecondaryButton
           v-if="current.stats.review > 0"
-          class="mt-2 rounded border px-2 py-1 text-xs hover:bg-accent"
+          variant="outlined"
+          size="small"
+          class="mt-2"
           @click="emit('goReview')"
         >
           到复核队列处置 {{ current.stats.review }} 条
-        </button>
+        </SecondaryButton>
 
         <!-- 失败条目逐行列出原始输入，供用户核对 -->
         <div v-if="current.failedTitles.length > 0" class="mt-3">
           <h3 class="text-xs font-medium">失败条目</h3>
-          <ul class="mt-1 space-y-0.5 text-xs text-muted-foreground">
+          <ul class="mt-1 space-y-0.5 text-xs text-muted-color">
             <li v-for="(t, i) in current.failedTitles" :key="i">{{ t }}</li>
           </ul>
         </div>
@@ -211,15 +217,15 @@ function basename(path: string): string {
         <h3 class="mb-1.5 text-xs font-medium">匹配日志</h3>
         <div
           ref="logBox"
-          class="max-h-72 space-y-0.5 overflow-auto rounded border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed"
+          class="max-h-72 space-y-0.5 overflow-auto rounded border bg-surface-50 p-2 font-mono text-[11px] leading-relaxed dark:bg-surface-800"
         >
-          <p v-if="tasks.log.length === 0" class="text-muted-foreground">
+          <p v-if="tasks.log.length === 0" class="text-muted-color">
             本次会话还没有日志。导入开始后逐条显示。
           </p>
           <p
             v-for="(line, i) in tasks.log"
             :key="i"
-            class="whitespace-pre-wrap text-muted-foreground"
+            class="whitespace-pre-wrap text-muted-color"
           >
             {{ line.text }}
           </p>
@@ -231,7 +237,7 @@ function basename(path: string): string {
         <h3 class="mb-1.5 text-xs font-medium">历史批次</h3>
         <table class="w-full border-collapse text-xs">
           <thead>
-            <tr class="border-b text-left text-muted-foreground">
+            <tr class="border-b text-left text-muted-color">
               <th class="px-2 py-1">文件</th>
               <th class="w-20 px-2 py-1">状态</th>
               <th class="w-20 px-2 py-1">已入库</th>
@@ -254,8 +260,8 @@ function basename(path: string): string {
       </section>
     </div>
 
-    <p v-if="error" class="shrink-0 border-t bg-destructive/10 px-4 py-2 text-xs text-destructive">
+    <Message v-if="error" severity="error" size="small" class="shrink-0 rounded-none">
       {{ error }}
-    </p>
+    </Message>
   </div>
 </template>

@@ -12,6 +12,9 @@ import { computed, ref } from 'vue'
 import { X, Pencil, ImagePlus } from 'lucide-vue-next'
 import { App, display, duration, DASH } from '@/api'
 import CoverArt from '@/components/CoverArt.vue'
+import Button from '@/volt/Button.vue'
+import SecondaryButton from '@/volt/SecondaryButton.vue'
+import Tag from '@/volt/Tag.vue'
 import type { Models } from '@/api'
 
 const props = defineProps<{
@@ -126,13 +129,13 @@ const releaseInfo = computed(() => [
 <template>
   <aside
     v-if="open && detail"
-    class="flex w-[390px] shrink-0 flex-col border-l bg-card"
+    class="flex w-[390px] shrink-0 flex-col border-l bg-app-chrome"
   >
     <header class="flex shrink-0 items-center justify-between border-b px-4 py-2">
-      <span class="text-xs text-muted-foreground">详情</span>
-      <button class="rounded p-1 hover:bg-accent" title="关闭" @click="emit('close')">
+      <span class="text-xs text-muted-color">详情</span>
+      <SecondaryButton variant="text" rounded size="small" title="关闭" @click="emit('close')">
         <X class="size-4" />
-      </button>
+      </SecondaryButton>
     </header>
 
     <div class="min-h-0 flex-1 space-y-4 overflow-auto p-4">
@@ -151,33 +154,30 @@ const releaseInfo = computed(() => [
         />
       </div>
       <div class="flex justify-center">
-        <button
-          class="flex items-center gap-1 rounded border px-2 py-0.5 text-xs hover:bg-accent"
-          @click="openCoverPicker"
-        >
+        <SecondaryButton variant="outlined" size="small" @click="openCoverPicker">
           <ImagePlus class="size-3.5" />
           重新获取封面
-        </button>
+        </SecondaryButton>
       </div>
 
       <!-- 歌名与艺术家 -->
       <div>
         <h2 class="text-lg font-semibold leading-tight">{{ detail.track.title }}</h2>
-        <p class="mt-1 text-sm text-muted-foreground">{{ display(detail.track.artist) }}</p>
+        <p class="mt-1 text-sm text-muted-color">{{ display(detail.track.artist) }}</p>
       </div>
 
       <!-- 参与者 -->
       <section>
-        <h3 class="mb-2 text-xs font-medium text-muted-foreground">参与者</h3>
+        <h3 class="mb-2 text-xs font-medium text-muted-color">参与者</h3>
         <dl class="space-y-1.5 text-sm">
           <!-- 演唱：原串 + 可点击区间。括号与 CV: 部分不可点击 -->
           <div v-if="detail.creditText" class="flex gap-3">
-            <dt class="w-16 shrink-0 text-xs text-muted-foreground">演唱</dt>
+            <dt class="w-16 shrink-0 text-xs text-muted-color">演唱</dt>
             <dd class="flex-1">
               <template v-for="(part, i) in creditParts" :key="i">
                 <button
                   v-if="part.artistId"
-                  class="text-primary underline-offset-2 hover:underline"
+                  class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
                   @click="emit('viewArtist', part.artistId)"
                 >{{ part.text }}</button>
                 <span v-else>{{ part.text }}</span>
@@ -187,22 +187,22 @@ const releaseInfo = computed(() => [
 
           <!-- 其余角色按 role 分组，组内以顿号连接，各自可点击 -->
           <div v-for="group in detail.participants" :key="group.role" class="flex gap-3">
-            <dt class="w-16 shrink-0 text-xs text-muted-foreground">{{ group.label }}</dt>
+            <dt class="w-16 shrink-0 text-xs text-muted-color">{{ group.label }}</dt>
             <dd class="flex-1">
               <template v-for="(artist, i) in group.artists" :key="artist.artistId">
                 <span v-if="i > 0">、</span>
                 <button
-                  class="text-primary underline-offset-2 hover:underline"
+                  class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
                   @click="emit('viewArtist', artist.artistId)"
                 >{{ artist.name }}</button>
-                <span v-if="artist.attribute" class="text-xs text-muted-foreground">
+                <span v-if="artist.attribute" class="text-xs text-muted-color">
                   ({{ artist.attribute }})
                 </span>
               </template>
             </dd>
           </div>
 
-          <div v-if="!detail.creditText && detail.participants.length === 0" class="text-muted-foreground">
+          <div v-if="!detail.creditText && detail.participants.length === 0" class="text-muted-color">
             {{ DASH }}
           </div>
         </dl>
@@ -210,10 +210,10 @@ const releaseInfo = computed(() => [
 
       <!-- 发行信息 -->
       <section>
-        <h3 class="mb-2 text-xs font-medium text-muted-foreground">发行信息</h3>
+        <h3 class="mb-2 text-xs font-medium text-muted-color">发行信息</h3>
         <dl class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
           <div v-for="item in releaseInfo" :key="item.label" class="flex gap-2">
-            <dt class="w-16 shrink-0 text-xs text-muted-foreground">{{ item.label }}</dt>
+            <dt class="w-16 shrink-0 text-xs text-muted-color">{{ item.label }}</dt>
             <dd class="truncate">{{ item.value }}</dd>
           </div>
         </dl>
@@ -221,14 +221,14 @@ const releaseInfo = computed(() => [
 
       <!-- 厂牌与目录号 -->
       <section>
-        <h3 class="mb-2 text-xs font-medium text-muted-foreground">厂牌与目录号</h3>
+        <h3 class="mb-2 text-xs font-medium text-muted-color">厂牌与目录号</h3>
         <dl class="space-y-1.5 text-sm">
           <div class="flex gap-2">
-            <dt class="w-16 shrink-0 text-xs text-muted-foreground">厂牌</dt>
+            <dt class="w-16 shrink-0 text-xs text-muted-color">厂牌</dt>
             <dd>{{ display(meta?.label) }}</dd>
           </div>
           <div class="flex gap-2">
-            <dt class="w-16 shrink-0 text-xs text-muted-foreground">目录号</dt>
+            <dt class="w-16 shrink-0 text-xs text-muted-color">目录号</dt>
             <dd>{{ display(meta?.catalogNumber) }}</dd>
           </div>
         </dl>
@@ -236,32 +236,33 @@ const releaseInfo = computed(() => [
 
       <!-- 逐字段来源徽标 -->
       <section v-if="sourceBadges.length > 0">
-        <h3 class="mb-2 text-xs font-medium text-muted-foreground">字段来源</h3>
+        <h3 class="mb-2 text-xs font-medium text-muted-color">字段来源</h3>
         <div class="flex flex-wrap gap-1">
-          <span
+          <Tag
             v-for="s in sourceBadges"
             :key="s.key"
-            class="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+            severity="secondary"
+            :value="`${s.label}·${sourceLabel(s.source)}`"
+            class="px-1.5 py-0.5 text-[10px] font-normal"
             :title="`${s.label} 来自 ${sourceLabel(s.source)}`"
-          >
-            {{ s.label }}·{{ sourceLabel(s.source) }}
-          </span>
+          />
         </div>
       </section>
 
       <!-- 标签 chips。歌单不在抽屉显示 -->
       <section>
-        <h3 class="mb-2 text-xs font-medium text-muted-foreground">标签</h3>
+        <h3 class="mb-2 text-xs font-medium text-muted-color">标签</h3>
         <div v-if="detail.tags.length > 0" class="flex flex-wrap gap-1.5">
-          <span
+          <Tag
             v-for="tag in detail.tags"
             :key="tag.id"
-            class="rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground"
-          >
-            #{{ tag.name }}
-          </span>
+            severity="secondary"
+            rounded
+            :value="`#${tag.name}`"
+            class="text-xs font-normal"
+          />
         </div>
-        <p v-else class="text-sm text-muted-foreground">{{ DASH }}</p>
+        <p v-else class="text-sm text-muted-color">{{ DASH }}</p>
       </section>
     </div>
 
@@ -269,13 +270,13 @@ const releaseInfo = computed(() => [
     <div v-if="coverPickerOpen" class="shrink-0 border-t p-3">
       <div class="mb-2 flex items-center justify-between">
         <h3 class="text-xs font-medium">选择封面</h3>
-        <button class="rounded p-0.5 hover:bg-accent" @click="coverPickerOpen = false">
+        <SecondaryButton variant="text" rounded size="small" @click="coverPickerOpen = false">
           <X class="size-3.5" />
-        </button>
+        </SecondaryButton>
       </div>
-      <p v-if="coverLoading" class="text-xs text-muted-foreground">正在向全部上游查询…</p>
-      <p v-else-if="coverError" class="text-xs text-destructive">{{ coverError }}</p>
-      <p v-else-if="coverCandidates.length === 0" class="text-xs text-muted-foreground">
+      <p v-if="coverLoading" class="text-xs text-muted-color">正在向全部上游查询…</p>
+      <p v-else-if="coverError" class="text-xs text-danger-color">{{ coverError }}</p>
+      <p v-else-if="coverCandidates.length === 0" class="text-xs text-muted-color">
         所有上游都没有返回封面
       </p>
       <div v-else class="max-h-64 space-y-2 overflow-auto">
@@ -283,19 +284,25 @@ const releaseInfo = computed(() => [
         <div v-for="c in coverCandidates" :key="`${c.provider}-${c.sourceRef}`"
           class="rounded border p-2">
           <p class="truncate text-xs">
-            <span class="rounded bg-secondary px-1 text-[10px]">{{ c.provider }}</span>
+            <Tag
+              severity="secondary"
+              :value="c.provider"
+              class="px-1 py-0 text-[10px] font-normal"
+            />
             {{ c.title }}
           </p>
           <div class="mt-1.5 flex flex-wrap gap-1">
-            <button
+            <SecondaryButton
               v-for="v in c.variants"
               :key="v.url"
-              class="rounded border px-1.5 py-0.5 text-[10px] hover:bg-accent"
+              variant="outlined"
+              size="small"
+              class="text-[10px]"
               :title="c.constructed ? '构造型来源，采用时先验证，不可用自动退档' : v.type"
               @click="adopt(c.provider, v, c.variants)"
             >
               {{ v.label }}
-            </button>
+            </SecondaryButton>
           </div>
         </div>
       </div>
@@ -303,13 +310,10 @@ const releaseInfo = computed(() => [
 
     <!-- 底部明确的编辑按钮——右键不应是进入编辑的唯一入口 -->
     <footer class="shrink-0 border-t p-3">
-      <button
-        class="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90"
-        @click="emit('edit', detail.track.id)"
-      >
+      <Button fluid @click="emit('edit', detail.track.id)">
         <Pencil class="size-4" />
         编辑
-      </button>
+      </Button>
     </footer>
   </aside>
 </template>

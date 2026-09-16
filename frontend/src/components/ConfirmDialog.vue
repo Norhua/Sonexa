@@ -5,39 +5,48 @@
  * 替代 window.confirm —— 它在 Wails(macOS) 上恒返回 false 且不弹窗，
  * 于是「删除」类动作全都静默失败。详见 stores/ui.ts。
  */
+import { computed } from 'vue'
+import Dialog from '@/volt/Dialog.vue'
+import Button from '@/volt/Button.vue'
+import DangerButton from '@/volt/DangerButton.vue'
+import SecondaryButton from '@/volt/SecondaryButton.vue'
 import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
+
+const open = computed({
+  get: () => ui.confirmOptions !== null,
+  // Dialog 自己关闭（Esc、点遮罩、右上角叉）时按取消结算，
+  // 否则调用方会永远等在那个 Promise 上
+  set: (v: boolean) => {
+    if (!v) ui.settleConfirm(false)
+  },
+})
 </script>
 
 <template>
-  <div
-    v-if="ui.confirmOptions"
-    class="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-8"
-    @click.self="ui.settleConfirm(false)"
+  <Dialog
+    v-model:visible="open"
+    modal
+    :header="ui.confirmOptions?.title ?? ''"
+    :style="{ width: '400px' }"
   >
-    <div class="w-[400px] rounded-lg border bg-card p-4 shadow-xl">
-      <h2 class="text-sm font-semibold">{{ ui.confirmOptions.title }}</h2>
-      <p v-if="ui.confirmOptions.message" class="mt-2 text-sm text-muted-foreground">
-        {{ ui.confirmOptions.message }}
-      </p>
+    <p v-if="ui.confirmOptions?.message" class="text-sm text-muted-color">
+      {{ ui.confirmOptions.message }}
+    </p>
 
-      <div class="mt-4 flex justify-end gap-2">
-        <button class="rounded border px-3 py-1.5 text-sm hover:bg-accent" @click="ui.settleConfirm(false)">
-          取消
-        </button>
-        <button
-          :class="[
-            'rounded-md px-3 py-1.5 text-sm',
-            ui.confirmOptions.danger
-              ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-              : 'bg-primary text-primary-foreground hover:bg-primary/90',
-          ]"
-          @click="ui.settleConfirm(true)"
-        >
-          {{ ui.confirmOptions.confirmLabel ?? '确定' }}
-        </button>
-      </div>
-    </div>
-  </div>
+    <template #footer>
+      <SecondaryButton autofocus size="small" @click="ui.settleConfirm(false)">取消</SecondaryButton>
+      <DangerButton
+        v-if="ui.confirmOptions?.danger"
+        size="small"
+        @click="ui.settleConfirm(true)"
+      >
+        {{ ui.confirmOptions?.confirmLabel ?? '确定' }}
+      </DangerButton>
+      <Button v-else size="small" @click="ui.settleConfirm(true)">
+        {{ ui.confirmOptions?.confirmLabel ?? '确定' }}
+      </Button>
+    </template>
+  </Dialog>
 </template>

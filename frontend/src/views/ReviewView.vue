@@ -9,6 +9,12 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { App, display, type Models } from '@/api'
 import CandidateTable from '@/components/CandidateTable.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import Button from '@/volt/Button.vue'
+import InputText from '@/volt/InputText.vue'
+import Message from '@/volt/Message.vue'
+import SecondaryButton from '@/volt/SecondaryButton.vue'
+import Select from '@/volt/Select.vue'
+import Tag from '@/volt/Tag.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useLibraryStore } from '@/stores/library'
 import { useSearchStore } from '@/stores/search'
@@ -103,6 +109,9 @@ async function load() {
   }
 }
 
+/** 地区下拉的选项：「跟随默认」置顶。 */
+const countryOptions = computed(() => [{ code: '', name: '跟随默认' }, ...countries.value])
+
 async function updateHint() {
   const text = `${research.value.title} ${research.value.artist}`.trim()
   if (!text) return
@@ -172,7 +181,7 @@ function next() {
     <!-- 顶部：待处置总数与分项计数 -->
     <header class="flex h-12 shrink-0 items-center gap-3 px-4" style="--wails-draggable: drag">
       <h2 class="text-xl font-bold">复核队列</h2>
-      <span v-if="queue" class="text-sm text-muted-foreground">
+      <span v-if="queue" class="text-sm text-muted-color">
         {{ queue.total }} 条待处置 · 待选 {{ queue.pending }} · 失败 {{ queue.failed }}
       </span>
       <div class="flex-1" />
@@ -192,16 +201,18 @@ function next() {
         <div class="flex items-start gap-3">
           <div class="min-w-0 flex-1">
             <p class="text-base font-medium">{{ display(current.inTitle) }}</p>
-            <p class="mt-0.5 text-sm text-muted-foreground">
+            <p class="mt-0.5 text-sm text-muted-color">
               {{ display(current.inArtist) }} · {{ display(current.inAlbum) }}
             </p>
-            <p class="mt-0.5 text-xs text-muted-foreground">
+            <p class="mt-0.5 text-xs text-muted-color">
               导入时的原始文本 · 来自 {{ current.batchTag }}
             </p>
           </div>
-          <span class="shrink-0 rounded bg-secondary px-2 py-0.5 text-xs">
-            {{ current.status === 'failed' ? '失败' : '待选' }}
-          </span>
+          <Tag
+            class="shrink-0"
+            :severity="current.status === 'failed' ? 'danger' : 'secondary'"
+            :value="current.status === 'failed' ? '失败' : '待选'"
+          />
         </div>
 
         <!--
@@ -209,32 +220,42 @@ function next() {
           离用户的视线与手都太远——处置一条之后紧接着要用的就是「下一条」。
         -->
         <div v-if="queue && queue.items.length > 0" class="mt-3 flex items-center gap-2 text-sm">
-          <button class="rounded border px-2 py-0.5 hover:bg-accent disabled:opacity-40"
-            :disabled="index === 0" @click="prev">
+          <SecondaryButton variant="outlined" size="small" :disabled="index === 0" @click="prev">
             ← 上一条
-          </button>
-          <span class="tabular-nums text-muted-foreground">
+          </SecondaryButton>
+          <span class="tabular-nums text-muted-color">
             {{ index + 1 }} / {{ queue.items.length }}
           </span>
-          <button class="rounded border px-2 py-0.5 hover:bg-accent disabled:opacity-40"
-            :disabled="index >= queue.items.length - 1" @click="next">
+          <SecondaryButton
+            variant="outlined"
+            size="small"
+            :disabled="index >= queue.items.length - 1"
+            @click="next"
+          >
             下一条 →
-          </button>
+          </SecondaryButton>
         </div>
 
         <div class="mt-2 flex gap-2">
-          <button class="rounded border px-3 py-1 text-sm hover:bg-accent"
-            @click="act(() => App.NoMatchNeeded(current!.id))">
+          <SecondaryButton
+            variant="outlined"
+            size="small"
+            @click="act(() => App.NoMatchNeeded(current!.id))"
+          >
             无需匹配
-          </button>
+          </SecondaryButton>
           <!--
             「移出队列」而不是「删除记录」：它丢弃的是这条**待处置记录**，
-            曲库里什么都不会少。叫「删除」会让人以为动的是曲目。
+            曲库里什么都不会少。叫「删除」会让人以为动的是曲目，
+            因此按钮也不用 danger 色——它不是破坏性操作。
           -->
-          <button class="rounded border px-3 py-1 text-sm hover:bg-accent"
-            @click="act(() => App.DiscardReviewItem(current!.id))">
+          <SecondaryButton
+            variant="outlined"
+            size="small"
+            @click="act(() => App.DiscardReviewItem(current!.id))"
+          >
             移出队列
-          </button>
+          </SecondaryButton>
         </div>
       </section>
 
@@ -243,45 +264,52 @@ function next() {
         <h3 class="mb-2 text-sm font-medium">重新搜索</h3>
         <div class="flex flex-wrap items-end gap-2">
           <label class="text-xs">曲名
-            <input v-model="research.title" class="mt-1 block w-48 rounded border bg-background px-2 py-1 text-sm" />
+            <InputText v-model="research.title" size="small" class="mt-1 block w-48" />
           </label>
           <label class="text-xs">艺术家
-            <input v-model="research.artist" class="mt-1 block w-36 rounded border bg-background px-2 py-1 text-sm" />
+            <InputText v-model="research.artist" size="small" class="mt-1 block w-36" />
           </label>
           <label class="text-xs">专辑
-            <input v-model="research.album" class="mt-1 block w-36 rounded border bg-background px-2 py-1 text-sm" />
+            <InputText v-model="research.album" size="small" class="mt-1 block w-36" />
           </label>
           <!-- 上游单选下拉，从注册表渲染，默认 MusicBrainz -->
           <label class="text-xs">上游
-            <select v-model="researchProvider" class="mt-1 block rounded border bg-background px-2 py-1 text-sm">
-              <option v-for="p in settings.providers" :key="p.id" :value="p.id">
-                {{ p.displayName }}
-              </option>
-            </select>
+            <Select
+              v-model="researchProvider"
+              :options="settings.providers"
+              option-label="displayName"
+              option-value="id"
+              size="small"
+              class="mt-1 block"
+            />
           </label>
           <label v-if="showCountry" class="text-xs">地区
-            <select v-model="country" class="mt-1 block rounded border bg-background px-2 py-1 text-sm">
-              <option value="">跟随默认</option>
-              <option v-for="c in countries" :key="c.code" :value="c.code">{{ c.name }}</option>
-            </select>
+            <Select
+              v-model="country"
+              :options="countryOptions"
+              option-label="name"
+              option-value="code"
+              size="small"
+              class="mt-1 block"
+            />
           </label>
-          <button
-            class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          <Button
+            size="small"
             :disabled="researching || !settings.outboundAllowed"
             :title="!settings.outboundAllowed ? settings.outboundReason : ''"
             @click="doResearch"
           >
             {{ researching ? '搜索中…' : '重新搜索' }}
-          </button>
+          </Button>
         </div>
-        <p v-if="showCountry && hint?.detected" class="mt-1 text-xs text-muted-foreground">
+        <p v-if="showCountry && hint?.detected" class="mt-1 text-xs text-muted-color">
           {{ hint.message }}
         </p>
-        <p class="mt-2 text-xs text-muted-foreground">
+        <p class="mt-2 text-xs text-muted-color">
           改搜只影响这次查询，不改动条目的原始导入值。
         </p>
         <!-- 已尝试变体：变体机制对用户是黑盒，不显示会让人困惑 -->
-        <p v-if="current.triedVariants?.length" class="mt-1 text-xs text-muted-foreground">
+        <p v-if="current.triedVariants?.length" class="mt-1 text-xs text-muted-color">
           已尝试变体:
           <template v-for="(v, i) in current.triedVariants" :key="i">
             <span v-if="i > 0"> · </span>「{{ v }}」
@@ -303,10 +331,13 @@ function next() {
         >
           <template #empty>还没有候选结果，可改写条件或换上游再试</template>
           <template #footer-actions>
-            <button class="rounded border px-2 py-0.5 hover:bg-accent"
-              @click="act(() => App.NoneMatched(current!.id))">
+            <SecondaryButton
+              variant="outlined"
+              size="small"
+              @click="act(() => App.NoneMatched(current!.id))"
+            >
               无一匹配
-            </button>
+            </SecondaryButton>
           </template>
         </CandidateTable>
       </section>
@@ -314,7 +345,7 @@ function next() {
       <!-- 状态说明：仅失败状态显示 -->
       <section v-if="current.status === 'failed'" class="border-t p-4 text-sm">
         <h3 class="mb-1 font-medium">状态说明</h3>
-        <p class="text-muted-foreground">
+        <p class="text-muted-color">
           已重试 {{ current.attemptCount }} 次
           <template v-if="current.lastError"> · 最后错误: {{ current.lastError }}</template>
           <template v-if="current.lastErrorAt">
@@ -322,19 +353,22 @@ function next() {
           </template>
         </p>
         <div class="mt-2 flex gap-2">
-          <button class="rounded border px-3 py-1 hover:bg-accent"
-            @click="act(() => App.RetryReviewItem(current!.id))">
+          <SecondaryButton
+            variant="outlined"
+            size="small"
+            @click="act(() => App.RetryReviewItem(current!.id))"
+          >
             立即重试
-          </button>
-          <button class="rounded border px-3 py-1 hover:bg-accent" @click="library.goTo('importQueue')">
+          </SecondaryButton>
+          <SecondaryButton variant="outlined" size="small" @click="library.goTo('importQueue')">
             查看日志
-          </button>
+          </SecondaryButton>
         </div>
       </section>
     </div>
 
-    <p v-if="error" class="shrink-0 border-t bg-destructive/10 px-4 py-2 text-xs text-destructive">
+    <Message v-if="error" severity="error" size="small" class="shrink-0 rounded-none">
       {{ error }}
-    </p>
+    </Message>
   </div>
 </template>

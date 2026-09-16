@@ -59,7 +59,7 @@ function onError() {
 </script>
 
 <template>
-  <div class="flex items-center justify-center overflow-hidden bg-muted text-muted-foreground">
+  <div class="flex items-center justify-center overflow-hidden bg-surface-100 text-muted-color dark:bg-surface-800">
     <img
       v-if="src"
       v-show="state === 'ok'"
@@ -72,7 +72,7 @@ function onError() {
     />
     <ImageIcon v-if="state === 'none'" :class="iconClass" />
     <LoaderCircle v-else-if="state === 'loading'" :class="[iconClass, 'animate-spin']" />
-    <ImageOff v-else-if="state === 'error'" :class="[iconClass, 'text-destructive']" />
+    <ImageOff v-else-if="state === 'error'" :class="[iconClass, 'text-danger-color']" />
     <span v-else-if="state === 'empty'" :class="[labelClass, 'font-mono leading-none opacity-60']">
       nil
     </span>
