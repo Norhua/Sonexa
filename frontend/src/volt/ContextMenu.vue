@@ -17,7 +17,7 @@
 <script setup lang="ts">
 /*
  * Volt 上游没有提供 ContextMenu，这一份按 Menu.vue 的写法补齐：
- * 同一套 surface / primary 令牌、同一组过渡，右键菜单与下拉菜单因此长得一样。
+ * 同一套 surface / primary 令牌。桌面右键菜单取消进入动画，避免首次关闭被漏掉。
  * 升级 Volt 时这个文件不会被覆盖——它本来就是我们自己的。
  */
 import ContextMenu, { type ContextMenuPassThroughOptions, type ContextMenuProps } from 'primevue/contextmenu';

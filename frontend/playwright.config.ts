@@ -9,5 +9,10 @@ export default defineConfig({
     { name: 'chromium', use: { browserName: 'chromium' } },
     { name: 'webkit', use: { browserName: 'webkit' } },
   ],
-  webServer: { command: 'npm run dev -- --host 127.0.0.1 --port 5198 --strictPort', url: 'http://127.0.0.1:5198', reuseExistingServer: false },
+  webServer: {
+    command: process.env.SONEXA_E2E_PREVIEW
+      ? 'npm run preview -- --host 127.0.0.1 --port 5198 --strictPort'
+      : 'npm run dev -- --host 127.0.0.1 --port 5198 --strictPort',
+    url: 'http://127.0.0.1:5198', reuseExistingServer: false,
+  },
 })

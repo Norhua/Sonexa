@@ -132,7 +132,11 @@ function showMenu(row: ListRow, event: MouseEvent) {
   event.preventDefault()
   selection.context(row.key)
   menuRow.value = row
-  void nextTick(() => menu.value?.show(event))
+  void nextTick(() => {
+    // 右键菜单关闭后返回当前行，而不是右键前的侧栏/旧行。
+    if (!row.ghost) rowElement(event.target)?.focus({ preventScroll: true })
+    menu.value?.show(event)
+  })
 }
 function onContextMenu(event: MouseEvent) {
   if (interactive(event.target)) return

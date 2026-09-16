@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page } from './fixtures'
 import { fileURLToPath } from 'node:url'
 const stub = fileURLToPath(new URL('./wails-stub.js', import.meta.url))
 const rows = (page: Page) => page.locator('.track-list [data-row-key]')
@@ -48,6 +48,9 @@ test('sorting keeps stable anchor and menu state', async ({ page }) => {
   await expect(page.getByRole('menuitem', { name: /标题/ })).toContainText('升序')
   await page.getByRole('menuitem', { name: /默认顺序/ }).click()
   await expect(rows(page).first()).toHaveAttribute('data-row-key', 'track:1')
+  await page.getByTitle('排序：默认顺序').click()
+  await page.getByRole('menuitem', { name: /默认顺序/ }).click()
+  await expect(page.getByTitle('排序：默认顺序')).toBeVisible()
 })
 test('text drag preserves selection and clipboard text; selected/hover differ in both themes', async ({ page }) => {
   await clickRow(page, 0)
@@ -60,6 +63,10 @@ test('text drag preserves selection and clipboard text; selected/hover differ in
   await expect.poll(() => page.evaluate(() => window.getSelection()?.toString().length ?? 0)).toBeGreaterThan(1)
   await expect(selected(page)).toHaveCount(1)
   await expect(rows(page).first()).toHaveAttribute('aria-selected', 'true')
+  // 双击文字的浏览器词语选区不能阻止打开曲目详情。
+  await title.dblclick()
+  await expect(page.locator('aside')).toBeVisible()
+  await page.locator('aside').getByTitle('关闭', { exact: true }).click()
   for (const dark of [false, true]) {
     await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), dark)
     await rows(page).nth(1).hover()

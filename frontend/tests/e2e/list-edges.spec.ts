@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page } from './fixtures'
 import { fileURLToPath } from 'node:url'
 const rows = (page: Page) => page.locator('.track-list [data-row-key]')
 const selected = (page: Page) => page.locator('.track-list [aria-selected="true"]')
@@ -66,6 +66,16 @@ test('keyboard context menu and viewport clamping', async ({ page }) => {
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(900)
   await page.locator('nav').getByRole('button', { name: '全部曲目', exact: true }).click()
   await expect(menu).toHaveCount(0)
+})
+test('search current-list export uses visible results, not the previous library filter', async ({ page }) => {
+  await page.locator('nav').getByRole('button', { name: '搜索', exact: true }).click()
+  await page.getByRole('searchbox').fill('Tetra')
+  await page.getByRole('searchbox').press('Enter')
+  await expect(rows(page)).toHaveCount(1)
+  await rows(page).first().locator('td').last().click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '导出当前列表…' }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__lastExport?.trackIds)).toEqual([3])
+  await expect.poll(() => page.evaluate(() => (window as any).__lastExport?.scope)).toBe('selection')
 })
 test('review Select switches upstream and refreshes candidates', async ({ page }) => {
   await page.getByRole('button', { name: /复核队列/ }).click()

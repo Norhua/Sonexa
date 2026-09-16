@@ -48,7 +48,7 @@
 
 <script setup lang="ts">
 /*
- * 本文件由 `npx volt-vue add DataTable` 取自 Volt，之后有四处本地改动：
+ * 本文件源自 Volt 4.5.5 tag，之后有以下本地样式改动：
  *
  *   1. 行密度：headerCell / bodyCell 的 py-3 px-4 收到 py-2 / py-1.5 px-2。
  *      曲目表格是一份长列表，Volt 的默认间距一屏放不下多少行。
@@ -60,7 +60,9 @@
  *      每个可排序列都常驻一个箭头时，一排表头读起来全是箭头，
  *      反而看不出当前按哪一列排的。
  *
- * 重新从上游拉取这个文件时，以上四处需重新施加。
+ * 官方来源与定制细节见 README.md / upstream-sources.json。
+ * 除紧凑样式外，本分支显式合并外部 PT（不能覆盖整套主题），图标改用 Lucide。
+ * 重新从上游拉取这个文件时，以上定制需逐项复核。
  */
 import { ChevronsLeft as AngleDoubleLeftIcon, ChevronsRight as AngleDoubleRightIcon, ChevronLeft as AngleLeftIcon, ChevronRight as AngleRightIcon, LoaderCircle as SpinnerIcon } from 'lucide-vue-next';
 import DataTable, { type DataTablePassThroughOptions, type DataTableProps } from 'primevue/datatable';

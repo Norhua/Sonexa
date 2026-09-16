@@ -7,7 +7,7 @@
  * 原顶栏上的三个入口各自归位——
  * 搜索去了搜索页与各视图右上角，导入去了导入队列页，主题切换去了设置。
  */
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { App as Api, Events, EventsOn, display } from '@/api'
 import type { Models } from '@/api'
 import AppSidebar from '@/components/AppSidebar.vue'
@@ -24,9 +24,10 @@ import AlbumsView from '@/views/AlbumsView.vue'
 import SearchView from '@/views/SearchView.vue'
 import ImportQueueView from '@/views/ImportQueueView.vue'
 import ReviewView from '@/views/ReviewView.vue'
-import SettingsDialog from '@/views/SettingsDialog.vue'
-import ImportWizard from '@/views/ImportWizard.vue'
-import EditDialog from '@/views/EditDialog.vue'
+/** 模态表单按需载入；首次浏览不解析设置、导入与编辑的控件代码。 */
+const SettingsDialog = defineAsyncComponent(() => import('@/views/SettingsDialog.vue'))
+const ImportWizard = defineAsyncComponent(() => import('@/views/ImportWizard.vue'))
+const EditDialog = defineAsyncComponent(() => import('@/views/EditDialog.vue'))
 import { useLibraryStore } from '@/stores/library'
 import { useSearchStore } from '@/stores/search'
 import { useSettingsStore } from '@/stores/settings'
@@ -296,12 +297,15 @@ function copyInfo(targets: Row[]) {
 
 async function exportScope(scope: 'playlist' | 'filtered' | 'selection' | 'all') {
   try {
+    const searchResult = scope === 'filtered' && library.view === 'search' && search.isLibrary
     const res = await Api.ExportTracks({
-      scope,
+      // 搜索页不使用 library.baseFilter：那是上一个浏览视图的过滤器。
+      // 导出已展示结果的快照，不能把全库误当成「当前列表」。
+      scope: searchResult ? 'selection' : scope,
       format: settings.settings?.importExport.exportFormat ?? 'csv',
       depth: 'full',
       filter: library.baseFilter(),
-      trackIds: selectedIds.value,
+      trackIds: searchResult ? search.libraryRows.map(row => row.id) : selectedIds.value,
     } as Models.main.ExportRequest)
     if (res) notice.value = `已导出 ${res.count} 条到 ${res.path}`
   } catch (e) {
@@ -503,7 +507,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
       @saved="library.loadTracks()"
     />
 
-    <SettingsDialog />
+    <SettingsDialog v-if="ui.settingsOpen" />
     <PromptDialog />
     <ConfirmDialog />
   </div>

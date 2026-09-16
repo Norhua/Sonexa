@@ -1,9 +1,10 @@
 <script setup lang="ts">
-/** Volt Dialog；PrimeVue 4 的全局 Escape 会同时关闭嵌套弹窗，改为仅由焦点所在弹窗处理。 */
+/** Volt Dialog；顶层弹窗独占 Escape，兼容 WebKit 点击按钮不聚焦的行为。 */
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { X, Maximize2, Minimize2 } from 'lucide-vue-next'
 import Dialog, { type DialogProps, type DialogPassThroughOptions } from 'primevue/dialog'
 import { ptViewMerge } from './utils'
+import { registerDialog } from './dialogStack'
 interface Props extends /* @vue-ignore */ DialogProps {
   visible?: boolean
   closeOnEscape?: boolean
@@ -11,9 +12,15 @@ interface Props extends /* @vue-ignore */ DialogProps {
 const props = withDefaults(defineProps<Props>(), { visible: false, closeOnEscape: true })
 const emit = defineEmits<{ 'update:visible': [value: boolean] }>()
 let returnFocus: HTMLElement | null = null
+let unregister: (() => void) | undefined
 watch(() => props.visible, visible => {
-  if (visible) returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-}, { immediate: true })
+  unregister?.()
+  unregister = undefined
+  if (visible) {
+    returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    unregister = registerDialog({ close: () => emit('update:visible', false), escape: () => props.closeOnEscape })
+  }
+}, { immediate: true, flush: 'sync' })
 function restoreFocus() {
   const target = returnFocus
   returnFocus = null
@@ -21,19 +28,12 @@ function restoreFocus() {
     if (target?.isConnected) target.focus({ preventScroll: true })
   })
 }
-onBeforeUnmount(restoreFocus)
-function keydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || !props.closeOnEscape) return
-  event.preventDefault()
-  event.stopPropagation()
-  emit('update:visible', false)
-}
+onBeforeUnmount(() => { unregister?.(); restoreFocus() })
 const theme = ref<DialogPassThroughOptions>({
   root: {
     class: `flex flex-col max-h-[90dvh] max-w-[calc(100vw-2rem)] rounded-xl border border-surface-200 dark:border-surface-700
       bg-surface-0 dark:bg-surface-900 text-color shadow-lg
       p-maximized:w-screen p-maximized:h-screen p-maximized:max-h-full p-maximized:rounded-none`,
-    onKeydown: keydown,
     style: { '--wails-draggable': 'no-drag' },
   },
   header: 'flex items-center justify-between shrink-0 gap-4 px-5 py-4',
