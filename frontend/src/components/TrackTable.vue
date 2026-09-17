@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** 唯一曲目表格：Volt 提供结构/重排，useListSelection 独占选择与焦点。 */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { GripVertical, Pause, Play } from 'lucide-vue-next'
+import { Check, GripVertical, Pause, Play } from 'lucide-vue-next'
 import Column from 'primevue/column'
 import type { DataTableRowReorderEvent, DataTableSortEvent } from 'primevue/datatable'
 import type { MenuItem } from 'primevue/menuitem'
@@ -11,12 +11,14 @@ import ContextMenu from '@/volt/ContextMenu.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import CoverArt from '@/components/CoverArt.vue'
 import { display, duration } from '@/api'
+import { trackColumns, useTrackColumnsStore } from '@/stores/trackColumns'
 import { useEnrichStore } from '@/stores/enrich'
 import { listRows, sortRows, uniqueTracks, type ListRow, type Row } from '@/lib/trackRows'
 import { useListSelection } from '@/lib/useListSelection'
 export type { Row } from '@/lib/trackRows'
 
 const props = withDefaults(defineProps<{
+  drawerOpen?: boolean
   rows: Row[]
   collectionId?: number
   fixedOrder?: boolean
@@ -41,6 +43,22 @@ const emit = defineEmits<{
   exportScope: [scope: 'playlist' | 'filtered' | 'selection' | 'all']
   reorder: [orderedIds: number[]]
 }>()
+const columns = useTrackColumnsStore()
+const headerMenu = ref<InstanceType<typeof ContextMenu> | null>(null)
+const headerMenuModel = computed<MenuItem[]>(() => trackColumns.map(column => ({
+  label: column.label,
+  checked: columns.has(column.key),
+  disabled: columns.has(column.key) && columns.visible.length === 1,
+  command: () => columns.toggle(column.key),
+})))
+const headerMenuPT = {
+  item: ({ context }: { context: { item: MenuItem } }) => ({
+    role: 'menuitemcheckbox', 'aria-checked': context.item.checked,
+  }),
+}
+const textColumns = computed(() => [
+  { field: 'title', label: '标题' }, { field: 'artist', label: '艺术家' }, { field: 'album', label: '专辑' },
+].filter(column => columns.has(column.field as 'title' | 'artist' | 'album')))
 const enrich = useEnrichStore()
 const root = ref<HTMLElement | null>(null)
 const menu = ref<InstanceType<typeof ContextMenu> | null>(null)
@@ -70,6 +88,7 @@ watch(() => props.contextKey, () => {
   selection.clear()
   selection.focused.value = orderedRows.value.find(row => !row.ghost)?.key ?? null
   menu.value?.hide()
+  headerMenu.value?.hide()
 })
 watch(() => props.rows, () => { menu.value?.hide(); menuRow.value = null })
 onBeforeUnmount(() => emit('selectionChange', []))
@@ -116,6 +135,9 @@ function onClick(event: MouseEvent) {
   if (row) {
     if (row.ghost) return
     selection.choose(row.key, event)
+    if (props.drawerOpen && event.detail <= 1 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+      emit('open', row)
+    }
     // 普通点击后行接管焦点；划选时绝不 focus，否则 WebKit 会丢选区。
     void focusRow()
   } else if (event.target instanceof Element && !event.target.closest('thead, [data-track-toolbar]')) {
@@ -130,6 +152,7 @@ function onDoubleClick(event: MouseEvent) {
 }
 function showMenu(row: ListRow, event: MouseEvent) {
   event.preventDefault()
+  headerMenu.value?.hide()
   selection.context(row.key)
   menuRow.value = row
   void nextTick(() => {
@@ -139,11 +162,27 @@ function showMenu(row: ListRow, event: MouseEvent) {
   })
 }
 function onContextMenu(event: MouseEvent) {
+  if (event.target instanceof Element && event.target.closest('thead')) {
+    event.preventDefault()
+    menu.value?.hide()
+    headerMenu.value?.show(event)
+    return
+  }
   if (interactive(event.target)) return
   const row = rowAt(event.target)
   if (row) showMenu(row, event)
 }
 function onKeyDown(event: KeyboardEvent) {
+  if ((event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) && event.target instanceof Element) {
+    const header = event.target.closest('thead th')
+    if (header) {
+      event.preventDefault()
+      const box = header.getBoundingClientRect()
+      menu.value?.hide()
+      headerMenu.value?.show(new MouseEvent('contextmenu', { clientX: box.left, clientY: box.bottom }))
+      return
+    }
+  }
   // 仅接管行/列表本身；输入框、工具栏、弹窗和 Teleport 菜单均不属于这里。
   if (event.isComposing || event.altKey || (event.target !== root.value && event.target !== rowElement(event.target))) return
   const meta = event.ctrlKey || event.metaKey
@@ -206,11 +245,11 @@ defineExpose({ selectedCount, trackCount, selectedRows })
     @contextmenu="onContextMenu" @keydown="onKeyDown">
     <div data-track-toolbar class="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs text-muted-color">
       <span role="status">{{ trackCount }} 首曲目<span v-if="selectedCount"> · 已选 {{ selectedCount }} 项</span></span>
-      <span v-if="canReorder" class="text-muted-color">拖动 # 列手柄调整顺序</span>
+      <span v-if="canReorder && columns.has('position')" class="text-muted-color">拖动曲序列手柄调整顺序</span>
       <div class="flex-1" />
       <div class="flex items-center gap-1.5" :title="enrich.hint">
         <span>补全信息匹配</span>
-        <SecondaryButton size="small" variant="outlined" :disabled="enrich.idleEmpty && !enrich.running" @click="enrich.toggle()">
+        <SecondaryButton size="small" variant="text" pt:root:class="h-6 gap-1 p-small:px-1.5 p-small:py-0 p-small:text-xs" :disabled="enrich.idleEmpty && !enrich.running" @click="enrich.toggle()">
           <component :is="enrich.running ? Pause : Play" class="size-3" />{{ enrich.running ? '暂停' : '开始' }}
         </SecondaryButton>
         <span class="tabular-nums">{{ enrich.label }}</span>
@@ -220,28 +259,32 @@ defineExpose({ selectedCount, trackCount, selectedRows })
     <DataTable :value="orderedRows" data-key="key" lazy scrollable scroll-height="flex"
       :selection="selection.selectedRows.value" :pt="tablePT" :loading="loading"
       :sort-field="sortField" :sort-order="sortDesc ? -1 : 1"
-      :table-style="{ minWidth: '850px', tableLayout: 'fixed' }" @sort="onSort" @row-reorder="onReorder">
-      <Column :key="canReorder ? 'reorder' : 'position'" header="#" :row-reorder="canReorder" style="width: 44px">
+      :table-style="{ minWidth: `${columns.minWidth}px`, tableLayout: 'fixed' }" @sort="onSort" @row-reorder="onReorder">
+      <Column v-if="columns.has('position')" :key="canReorder ? 'reorder' : 'position'" :row-reorder="canReorder" style="width: 44px">
         <template v-if="!canReorder" #body="{ data }"><span class="select-text text-xs tabular-nums">{{ data.trackNumber ?? '' }}</span></template>
         <template #rowreordericon><GripVertical data-pc-section="reorderablerowhandle" class="size-4 cursor-grab text-muted-color" aria-label="拖动调整顺序" /></template>
       </Column>
-      <Column header="封面" style="width: 48px"><template #body="{ data }"><CoverArt :source="data.coverSource" :adopted-path="data.adoptedCoverPath" class="size-8 rounded" /></template></Column>
-      <Column v-for="column in [{ field: 'title', label: '标题' }, { field: 'artist', label: '艺术家' }, { field: 'album', label: '专辑' }]"
+      <Column v-if="columns.has('cover')" header="封面" style="width: 48px"><template #body="{ data }"><CoverArt :source="data.coverSource" :adopted-path="data.adoptedCoverPath" class="size-8 rounded" /></template></Column>
+      <Column v-for="column in textColumns"
         :key="column.field" :field="column.field" :header="column.label" :sortable="!fixedOrder">
         <template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template>
         <template #body="{ data }"><span data-text-cell class="block select-text truncate" :title="data[column.field] ?? ''">{{ display(data[column.field]) }}</span></template>
       </Column>
-      <Column field="durationMs" header="时长" :sortable="!fixedOrder" style="width: 76px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ duration(data.durationMs) }}</span></template></Column>
-      <Column field="year" header="年份" :sortable="!fixedOrder" style="width: 76px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ display(data.year) }}</span></template></Column>
-      <Column header="载体" style="width: 80px"><template #body="{ data }"><span class="block select-text truncate" :title="data.mediumFormat">{{ display(data.mediumFormat) }}</span></template></Column>
-      <Column header="国家" style="width: 64px"><template #body="{ data }"><span class="select-text">{{ display(data.country) }}</span></template></Column>
-      <Column header="状态" style="width: 100px"><template #body="{ data }">
-        <SecondaryButton v-if="data.otherVersion" size="small" variant="text" @click="emit('open', data)">其他版本</SecondaryButton>
-        <SecondaryButton v-else-if="data.ghost" size="small" variant="outlined" @click="emit('addGhostToLibrary', data)">加入曲库</SecondaryButton>
-      </template></Column>
+      <Column v-if="columns.has('duration')" field="durationMs" header="时长" :sortable="!fixedOrder" style="width: 76px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ duration(data.durationMs) }}</span></template></Column>
+      <Column v-if="columns.has('year')" field="year" header="年份" :sortable="!fixedOrder" style="width: 76px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ display(data.year) }}</span></template></Column>
+      <Column v-if="columns.has('medium')" header="载体" style="width: 80px"><template #body="{ data }"><span class="block select-text truncate" :title="data.mediumFormat">{{ display(data.mediumFormat) }}</span></template></Column>
+      <Column v-if="columns.has('country')" header="国家" style="width: 64px"><template #body="{ data }"><span class="select-text">{{ display(data.country) }}</span></template></Column>
       <template #empty><div class="py-10 text-center text-muted-color"><slot name="empty">没有曲目</slot></div></template>
     </DataTable>
     <ContextMenu ref="menu" :model="menuModel" />
+    <ContextMenu ref="headerMenu" :model="headerMenuModel" :pt="headerMenuPT" aria-label="显示列">
+      <template #item="{ item, props: itemProps }">
+        <a v-bind="itemProps.action">
+          <span class="size-4 shrink-0"><Check v-if="item.checked" class="size-4" aria-hidden="true" /></span>
+          <span>{{ item.label }}</span>
+        </a>
+      </template>
+    </ContextMenu>
   </div>
 </template>
 

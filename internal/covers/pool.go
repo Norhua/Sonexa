@@ -22,9 +22,13 @@ const MaxConcurrency = 16
 type Fetcher struct {
 	// Key 是缓存键；同一张图在多行出现时键相同，请求被合并。
 	Key string
-	// URLs 是按从高到低排列的降级链；任一档不可得时自动降级。
+	// URLs 是降级链；图片不可得时可由注入的解析器展开链尾索引。
 	URLs []string
 }
+
+// IndexParser 识别 provider 的图片索引并提取实际图片地址。
+// 非索引地址返回 handled=false；仅由 Go 侧注入，不接受前端提供解析逻辑。
+type IndexParser func(url string, body []byte) (urls []string, handled bool, err error)
 
 // Pool 是进程级封面工作池。
 //
@@ -38,10 +42,11 @@ type Pool struct {
 	client *http.Client
 	group  singleflight.Group
 
-	mu        sync.Mutex
-	sem       chan struct{}
-	inflight  map[string]context.CancelFunc
-	userAgent string
+	mu          sync.Mutex
+	sem         chan struct{}
+	inflight    map[string]context.CancelFunc
+	userAgent   string
+	indexParser IndexParser
 }
 
 // NewPool 建立工作池。concurrency 超出上限时被截断。
@@ -59,6 +64,13 @@ func NewPool(cache *DiskCache, concurrency int, userAgent string) *Pool {
 		inflight:  map[string]context.CancelFunc{},
 		userAgent: userAgent,
 	}
+}
+
+// SetIndexParser 在启动时注入索引解析器。索引与图片共用并发槽位和 singleflight。
+func (p *Pool) SetIndexParser(parser IndexParser) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.indexParser = parser
 }
 
 // SetConcurrency 调整并发上限。
@@ -81,7 +93,7 @@ func (p *Pool) Concurrency() int {
 	return cap(p.sem)
 }
 
-// ErrNotFound 表示降级链全部不可得，调用方应使用占位图。
+// ErrNotFound 表示降级链确认无图；网络/服务错误不能伪装成无图。
 var ErrNotFound = errors.New("封面不可得")
 
 // Fetch 取一张封面。
@@ -138,20 +150,41 @@ func (p *Pool) Fetch(ctx context.Context, f Fetcher) ([]byte, error) {
 	return v.([]byte), nil
 }
 
-// fetchLadder 按降级链依次尝试，任一档不可得时自动降级。
-//
-// 全部不可得时返回 ErrNotFound——单张失败只影响该行，
-// 不重排整批、不阻塞其他列渲染。
+// fetchLadder 先尝试直接图片，必要时解析链尾索引。
+// 只有全为 404 / 空索引才返回 ErrNotFound；保留其余错误供 UI 区分。
 func (p *Pool) fetchLadder(ctx context.Context, urls []string) ([]byte, error) {
+	p.mu.Lock()
+	parser := p.indexParser
+	p.mu.Unlock()
+	return p.fetchURLs(ctx, urls, parser)
+}
+
+func (p *Pool) fetchURLs(ctx context.Context, urls []string, parser IndexParser) ([]byte, error) {
+	var failure error
 	for _, url := range urls {
 		data, err := p.fetchOne(ctx, url)
+		if err == nil && parser != nil {
+			images, handled, parseErr := parser(url, data)
+			if handled {
+				err = parseErr
+				if err == nil {
+					// 索引只展开一层，不递归跟随任意 JSON。
+					data, err = p.fetchURLs(ctx, images, nil)
+				}
+			}
+		}
 		if err == nil {
 			return data, nil
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		// 404 是常态（大量发行没有图），继续降级
+		if !errors.Is(err, ErrNotFound) {
+			failure = err
+		}
+	}
+	if failure != nil {
+		return nil, failure
 	}
 	return nil, ErrNotFound
 }
@@ -171,6 +204,9 @@ func (p *Pool) fetchOne(ctx context.Context, url string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("取图返回 %s", resp.Status)
 	}

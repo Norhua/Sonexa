@@ -24,6 +24,7 @@ import Select from '@/volt/Select.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { LibraryScope, useSearchStore } from '@/stores/search'
 
+defineProps<{ drawerOpen?: boolean }>()
 const settings = useSettingsStore()
 const search = useSearchStore()
 
@@ -216,6 +217,7 @@ async function addToLibrary(row: Models.main.CandidateRow) {
     <div class="min-h-0 flex-1 overflow-auto">
       <!-- 资料库结果：与其他视图共用同一个曲目表格 -->
       <TrackTable
+        :drawer-open="drawerOpen"
         v-if="search.isLibrary && search.searched"
         :rows="rows"
         :loading="search.loading"

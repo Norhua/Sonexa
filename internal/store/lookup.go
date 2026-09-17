@@ -86,9 +86,7 @@ type TracklistPosition string
 const (
 	// PositionOwned 已入库：标识等值比对命中。
 	PositionOwned TracklistPosition = "owned"
-	// PositionOtherVersion 已有其他版本：标识未命中，但录音标识命中某曲目。
-	PositionOtherVersion TracklistPosition = "other_version"
-	// PositionMissing 未入库：都未命中，呈现为灰色行。
+	// PositionMissing 未入库：曲目标识未命中，呈现为灰色行。
 	PositionMissing TracklistPosition = "missing"
 )
 
@@ -102,15 +100,8 @@ type ResolvedPosition struct {
 
 // ResolveTracklist 判定某发行清单中每个位置的状态。
 //
-// 三种状态：
-//
-//	已入库        release_track.track_ref = track.match_ref
-//	              AND release.provider = track.match_source
-//	已有其他版本   上面未命中，但 recording_ref 命中某曲目的 recording_ref
-//	未入库        都未命中 → 灰色行
-//
-// 中间那个状态不能省：用户从 CD 版入库、专辑视图显示的是数字版清单时，
-// 同一首歌的 track MBID 不同——只做等值 join 会把用户明明有的歌标成缺失。
+// 只按来源与 track 标识精确判定；同一 recording 的其他 track 不代表已拥有
+// 当前清单位置，也不提供跨版本跳转。
 func (s *Store) ResolveTracklist(releaseID int64, provider string) ([]ResolvedPosition, error) {
 	tracks, err := s.GetTracklist(releaseID)
 	if err != nil {
@@ -134,40 +125,9 @@ func (s *Store) ResolveTracklist(releaseID int64, provider string) ([]ResolvedPo
 			}
 		}
 
-		// 已有其他版本：recording 标识命中
-		if t.RecordingRef != nil && *t.RecordingRef != "" {
-			id, err := s.FindByRecordingRef(*t.RecordingRef)
-			if err != nil {
-				return nil, err
-			}
-			if id != 0 {
-				pos.State, pos.TrackID = PositionOtherVersion, id
-				out = append(out, pos)
-				continue
-			}
-		}
-
 		out = append(out, pos)
 	}
 	return out, nil
-}
-
-// FindByRecordingRef 按录音标识查找曲目；未命中返回 0。
-//
-// 用于「已有其他版本」判定——recording_ref 已存在于 track 上，
-// 这个判定是免费的。
-func (s *Store) FindByRecordingRef(recordingRef string) (int64, error) {
-	if recordingRef == "" {
-		return 0, nil
-	}
-	var id int64
-	err := s.db.QueryRow(
-		`SELECT id FROM track WHERE recording_ref = ? LIMIT 1`,
-		recordingRef).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, nil
-	}
-	return id, err
 }
 
 // SetProvenance 写入匹配来源、标识与匹配时间。

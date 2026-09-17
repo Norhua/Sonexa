@@ -3,7 +3,7 @@
         ref="el"
         unstyled
         @hide="restoreFocus"
-        :pt="theme"
+        :pt="mergedTheme"
         :ptOptions="{
             mergeProps: ptViewMerge
         }"
@@ -21,11 +21,14 @@
  * 升级 Volt 时这个文件不会被覆盖——它本来就是我们自己的。
  */
 import ContextMenu, { type ContextMenuPassThroughOptions, type ContextMenuProps } from 'primevue/contextmenu';
-import { nextTick, onBeforeUnmount, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
+import { usePassThrough } from 'primevue/passthrough';
 import { ptViewMerge } from './utils';
 
-interface Props extends /* @vue-ignore */ ContextMenuProps {}
-defineProps<Props>();
+interface Props extends /* @vue-ignore */ ContextMenuProps {
+    pt?: ContextMenuPassThroughOptions;
+}
+const props = defineProps<Props>();
 
 const theme = ref<ContextMenuPassThroughOptions>({
     root: `bg-surface-0 dark:bg-surface-900
@@ -53,6 +56,7 @@ const theme = ref<ContextMenuPassThroughOptions>({
     transition: { css: false }
 });
 
+const mergedTheme = computed(() => usePassThrough(theme.value, props.pt ?? {}, { mergeSections: true, mergeProps: true }));
 const el = ref<InstanceType<typeof ContextMenu>>();
 let returnFocus: HTMLElement | null = null;
 function restoreFocus() {

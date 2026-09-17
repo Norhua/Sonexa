@@ -3,7 +3,11 @@ package musicbrainz
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/norhua/sonexa/internal/provider"
 )
@@ -32,7 +36,7 @@ type caaImage struct {
 // SearchCovers 按条件搜索封面。
 //
 // 先搜出候选发行，再读各自的 CAA 索引——索引真实枚举可用图片，
-// 因此 MB 侧的规格是「读出来的」而非构造的，不会出现点开是 404 的情形。
+// 因此 MB 侧的规格是「读出来的」而非构造的。索引与图片的可用性仍可能随时间变化。
 func (p *Provider) SearchCovers(ctx context.Context, q provider.Query) ([]provider.CoverGroup, error) {
 	candidates, err := p.SearchTracks(ctx, q)
 	if err != nil {
@@ -41,14 +45,28 @@ func (p *Provider) SearchCovers(ctx context.Context, q provider.Query) ([]provid
 
 	seen := map[string]bool{}
 	var out []provider.CoverGroup
+	var failure error
 	for _, c := range candidates {
 		// 候选是 track 粒度，同一发行会出现多次，按发行去重
 		releaseRef := releaseRefOf(c)
 		if releaseRef == "" || seen[releaseRef] {
 			continue
 		}
+		// 最多检查十张发行；无图时也有界，避免空结果触发无界串行请求。
+		if len(seen) >= 10 {
+			break
+		}
 		seen[releaseRef] = true
-		if !c.HasCover {
+		// 搜索响应的 artwork 标记可能缺失；以 CAA 索引为准。
+		images, err := p.FetchCoverIndex(ctx, releaseRef)
+		if err != nil {
+			var httpErr *provider.HTTPError
+			if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound {
+				failure = err
+			}
+			continue
+		}
+		if len(images) == 0 {
 			continue
 		}
 		group := provider.CoverGroup{
@@ -58,19 +76,20 @@ func (p *Provider) SearchCovers(ctx context.Context, q provider.Query) ([]provid
 			Artist:    c.ArtistName,
 			// MB 的规格来自索引的真实枚举，不是构造出来的
 			Constructed: false,
-			Images:      CAAFrontLadder(releaseRef, derefStr(c.ReleaseGroupRef)),
+			Images:      images,
 		}
 		out = append(out, group)
-		if len(out) >= 10 {
-			break
-		}
+	}
+	if len(out) == 0 && failure != nil {
+		return nil, failure
 	}
 	return out, nil
 }
 
 // FetchCoverIndex 读取某发行的 CAA 索引，枚举可用图片及其类型。
 //
-// 详情抽屉据此可展示 Front 之外的图（Back / Booklet），而列表缩略图只用 Front。
+// 详情抽屉据此可展示 Front 之外的图（Back / Booklet / Medium）。
+// 自动缩略图先尝试 Front，耗尽后才回退到索引中实际存在的图片。
 func (p *Provider) FetchCoverIndex(ctx context.Context, releaseMBID string) ([]provider.CoverImage, error) {
 	params := map[string]string{}
 	body, err := p.client.Get(ctx, provider.GetRequest{
@@ -89,6 +108,11 @@ func (p *Provider) FetchCoverIndex(ctx context.Context, releaseMBID string) ([]p
 	var index caaIndex
 	if err := json.Unmarshal(body, &index); err != nil {
 		return nil, fmt.Errorf("解析封面索引失败: %w", err)
+	}
+	// 未标记 Front 的图片也可用于无正面图时的回退。
+	// nil Images（字段缺失或 null）是无效索引；[] 才是明确的空索引。
+	if index.Images == nil {
+		return nil, fmt.Errorf("封面索引缺少 images 数组")
 	}
 	return ParseCoverIndex(&index), nil
 }
@@ -113,12 +137,14 @@ func ParseCoverIndex(index *caaIndex) []provider.CoverImage {
 		if img.Front {
 			imgType = "Front"
 		}
-		out = append(out, provider.CoverImage{Type: imgType, URL: img.Image})
+		if img.Image != "" {
+			out = append(out, provider.CoverImage{Type: imgType, URL: secureCAAURL(img.Image)})
+		}
 
 		// 缩略图各档也作为可选规格列出
 		for _, size := range []string{"1200", "500", "250"} {
 			if url, ok := img.Thumbnails[size]; ok && url != "" {
-				out = append(out, provider.CoverImage{Type: imgType, URL: url})
+				out = append(out, provider.CoverImage{Type: imgType, URL: secureCAAURL(url)})
 			}
 		}
 	}
@@ -166,9 +192,64 @@ func releaseRefOf(c provider.Candidate) string {
 	return ""
 }
 
-func derefStr(s *string) string {
-	if s == nil {
-		return ""
+// CAAIndexFallbackURLs 只在正面图降级链耗尽后读取实际索引。
+func CAAIndexFallbackURLs(releaseMBID, releaseGroupMBID string) []string {
+	var urls []string
+	if releaseMBID != "" {
+		urls = append(urls, CoverArtArchiveBaseURL+"/release/"+releaseMBID)
 	}
-	return *s
+	if releaseGroupMBID != "" {
+		urls = append(urls, CoverArtArchiveBaseURL+"/release-group/"+releaseGroupMBID)
+	}
+	return urls
+}
+
+// ParseCAAThumbnailIndex 由封面池调用；不把索引 JSON 当作图片缓存。
+// 保留 Front 优先；无 Front 时允许 Medium / Back 等实际存在的图片。
+func ParseCAAThumbnailIndex(rawURL string, body []byte) ([]string, bool, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host != "coverartarchive.org" {
+		return nil, false, nil
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) != 2 || (parts[0] != "release" && parts[0] != "release-group") {
+		return nil, false, nil
+	}
+	var index caaIndex
+	if err := json.Unmarshal(body, &index); err != nil {
+		return nil, true, fmt.Errorf("解析封面索引失败: %w", err)
+	}
+	if index.Images == nil {
+		return nil, true, fmt.Errorf("封面索引缺少 images 数组")
+	}
+	var urls []string
+	seen := map[string]bool{}
+	for _, front := range []bool{true, false} {
+		for _, img := range index.Images {
+			if img.Front != front {
+				continue
+			}
+			for _, raw := range []string{img.Thumbnails["250"], img.Thumbnails["500"], img.Thumbnails["1200"], img.Image} {
+				if raw == "" {
+					continue
+				}
+				imageURL := secureCAAURL(raw)
+				if !seen[imageURL] {
+					seen[imageURL] = true
+					urls = append(urls, imageURL)
+				}
+			}
+		}
+	}
+	return urls, true, nil
+}
+
+// CAA 的索引仍可能给出 http 地址；这两个官方图片主机均支持 HTTPS。
+func secureCAAURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err == nil && u.Scheme == "http" && (u.Host == "coverartarchive.org" || u.Host == "archive.org" || strings.HasSuffix(u.Host, ".archive.org")) {
+		u.Scheme = "https"
+		return u.String()
+	}
+	return raw
 }

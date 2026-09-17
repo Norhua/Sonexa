@@ -30,6 +30,7 @@ func (a *App) coverLadder(providerID, releaseRef, artworkURL string, releaseGrou
 		for _, img := range images {
 			urls = append(urls, img.URL)
 		}
+		urls = append(urls, musicbrainz.CAAIndexFallbackURLs(releaseRef, rgRef)...)
 		return urls
 
 	case provider.ITunes:

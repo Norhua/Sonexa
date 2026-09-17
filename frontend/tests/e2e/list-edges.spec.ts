@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/')
   await expect(rows(page)).toHaveCount(7)
 })
-test('ghost positions remain unique, keyboard skips them, exports deduplicate track IDs', async ({ page }) => {
+test('ghost positions remain unique, keyboard and export skip unowned versions', async ({ page }) => {
   await page.getByRole('button', { name: '专辑', exact: true }).click()
   await page.getByRole('button', { name: /测试专辑/ }).click()
   await expect(rows(page)).toHaveCount(5)
@@ -18,7 +18,7 @@ test('ghost positions remain unique, keyboard skips them, exports deduplicate tr
   await page.keyboard.press('ArrowDown')
   await expect(rows(page).nth(2)).toBeFocused()
   await page.keyboard.press('Meta+a')
-  await expect(selected(page)).toHaveCount(3)
+  await expect(selected(page)).toHaveCount(2)
   await expect(page.getByRole('status')).toContainText('2 首曲目 · 已选 2 项')
   await rows(page).nth(1).locator('td').nth(2).click({ button: 'right' })
   await expect(page.getByRole('menuitem')).toHaveCount(2)

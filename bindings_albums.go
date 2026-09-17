@@ -12,8 +12,8 @@ import (
 
 // AlbumRow 是专辑详情中的一行。
 //
-// 三种状态：已入库（正常行）、已有其他版本（正常行 + 徽章）、
-// 未入库（灰色行）。灰色行的列定义与普通行完全相同。
+// 两种状态：已入库（正常行）、未入库（灰色行）。
+// 灰色行的列定义与普通行完全相同。
 type AlbumRow struct {
 	DiscNumber  int     `json:"discNumber"`
 	TrackNumber int     `json:"trackNumber"`
@@ -22,7 +22,7 @@ type AlbumRow struct {
 	Credit      *string `json:"credit"`
 	DurationMS  *int    `json:"durationMs"`
 
-	// State 为 owned | other_version | missing。
+	// State 为 owned | missing。
 	State string `json:"state"`
 	// TrackID 非零时可点开详情；灰色行为 0。
 	TrackID int64 `json:"trackId"`
@@ -39,19 +39,19 @@ type AlbumDetail struct {
 	// ReleaseID 是这张专辑对应的歌集 id，也是前端的选中键。
 	ReleaseID int64 `json:"releaseId"`
 	// GroupID 非零时这条专辑代表一个发行组。
-	GroupID int64  `json:"groupId"`
-	Title   string `json:"title"`
+	GroupID int64   `json:"groupId"`
+	Title   string  `json:"title"`
 	Credit  *string `json:"credit"`
 	// 头部发行信息
-	PrimaryType  *string `json:"primaryType"`
-	Year         *int    `json:"year"`
-	MediumFormat *string `json:"mediumFormat"`
-	Country      *string `json:"country"`
-	Label        *string `json:"label"`
+	PrimaryType   *string `json:"primaryType"`
+	Year          *int    `json:"year"`
+	MediumFormat  *string `json:"mediumFormat"`
+	Country       *string `json:"country"`
+	Label         *string `json:"label"`
 	CatalogNumber *string `json:"catalogNumber"`
-	DiscTotal    *int    `json:"discTotal"`
-	Provider     *string `json:"provider"`
-	ReleaseRef   *string `json:"releaseRef"`
+	DiscTotal     *int    `json:"discTotal"`
+	Provider      *string `json:"provider"`
+	ReleaseRef    *string `json:"releaseRef"`
 	// ReleaseGroupRef 与 Provider/ReleaseRef 一起构成封面地址的来源。
 	ReleaseGroupRef *string `json:"releaseGroupRef"`
 	// CoverPath 非空时是已采用封面的落盘路径，优先于临时缩略图。
@@ -146,7 +146,7 @@ func (a *App) GetAlbumDetail(releaseID int64) (*AlbumDetail, error) {
 		return detail, nil
 	}
 
-	// 清单完整：三状态解析
+	// 清单完整：按曲目标识解析已入库/未入库
 	positions, err := a.store.ResolveTracklist(rel.ID, *rel.Provider)
 	if err != nil {
 		return nil, err
@@ -345,9 +345,9 @@ func (a *App) upsertReleaseFromDetail(providerID, releaseRef string, d *provider
 	return a.store.UpsertRelease(&store.Release{
 		ReleaseGroupID: groupID,
 		Provider:       &providerID, ProviderRef: &releaseRef,
-		Title:       title,
-		Credit:      d.AlbumCredit,
-		PrimaryType: strPtrOrNil(store.NormalizeReleaseType(deref(d.PrimaryType))),
+		Title:         title,
+		Credit:        d.AlbumCredit,
+		PrimaryType:   strPtrOrNil(store.NormalizeReleaseType(deref(d.PrimaryType))),
 		ReleaseStatus: d.ReleaseStatus, MediumFormat: d.MediumFormat,
 		Country: d.Country, ReleaseDate: d.ReleaseDate,
 		FirstReleaseDate: d.FirstReleaseDate,

@@ -18,6 +18,7 @@ import Message from '@/volt/Message.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import { useLibraryStore } from '@/stores/library'
 
+defineProps<{ drawerOpen?: boolean }>()
 const library = useLibraryStore()
 const albums = ref<Models.store.AlbumListItem[]>([])
 const detail = ref<Models.main.AlbumDetail | null>(null)
@@ -165,8 +166,6 @@ function toRows(): Row[] {
   return detail.value.rows
     .filter((r) => !onlyOwned.value || !r.ghost)
     .map((r) => ({
-      // 「其他版本」行的 trackId 就是被命中的那首已有曲目，
-      // 因此点击它能直接跳到用户手上的那一首。
       id: r.trackId,
       rowKey: `release:${detail.value?.releaseId}:${r.discNumber}:${r.trackNumber}:${r.trackRef ?? ''}`,
       title: r.title,
@@ -176,7 +175,6 @@ function toRows(): Row[] {
       trackNumber: r.trackNumber,
       discNumber: r.discNumber,
       ghost: r.ghost,
-      otherVersion: r.state === 'other_version',
       trackRef: r.trackRef,
       recordingRef: r.recordingRef,
       // 同一张专辑的每一行共用歌集封面——封面是歌集的属性
@@ -298,6 +296,7 @@ async function addGhost(row: Row) {
 
       <TrackTable
         v-if="detail"
+        :drawer-open="drawerOpen"
         :rows="toRows()"
         :context-key="`album:${detail.releaseId}`"
         fixed-order

@@ -172,13 +172,10 @@ async function goUpstreamSearch(prefill?: { title: string; artist: string; album
   await library.goTo('search')
 }
 
+let detailRequest = 0
+watch(drawerOpen, open => { if (!open) detailRequest++ }, { flush: 'sync' })
 async function openDetail(row: Row) {
-  try {
-    detail.value = await Api.GetTrackDetail(row.id)
-    drawerOpen.value = true
-  } catch (e) {
-    markFailure(e)
-  }
+  await openTrackById(row.id)
 }
 
 /** 出网失败的统一归口：失败即在全局提示位显示，不各页各弹一份。 */
@@ -191,11 +188,14 @@ function markFailure(e: unknown) {
 }
 
 async function openTrackById(trackId: number) {
+  const request = ++detailRequest
   try {
-    detail.value = await Api.GetTrackDetail(trackId)
+    const next = await Api.GetTrackDetail(trackId)
+    if (request !== detailRequest) return
+    detail.value = next
     drawerOpen.value = true
   } catch (e) {
-    notice.value = String(e)
+    if (request === detailRequest) markFailure(e)
   }
 }
 
@@ -268,13 +268,7 @@ async function viewArtist(row: Row) {
 
 /** 采用封面后重新读一次详情，使抽屉立刻显示新图。 */
 async function onCoverAdopted() {
-  if (detail.value) {
-    try {
-      detail.value = await Api.GetTrackDetail(detail.value.track.id)
-    } catch (e) {
-      markFailure(e)
-    }
-  }
+  if (detail.value && drawerOpen.value) await openTrackById(detail.value.track.id)
   await library.loadTracks()
 }
 
@@ -399,6 +393,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
             :sort-options="sortOptions"
           />
           <TrackTable
+            :drawer-open="drawerOpen"
             v-if="rows.length > 0"
             v-model:sort-key="sortKey"
             v-model:sort-desc="sortDesc"
@@ -428,6 +423,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
         </template>
 
         <SearchView
+          :drawer-open="drawerOpen"
           v-else-if="library.view === 'search'"
           @open-track="openDetail"
           @edit-track="(r) => (editing = r.id)"
@@ -444,6 +440,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
         <!-- 艺术家视图：中列 + 按 artist_id 过滤的标准曲目表格 -->
         <ArtistsView v-else-if="library.view === 'artists' || library.view === 'artist'">
           <TrackTable
+            :drawer-open="drawerOpen"
             :context-key="tableContext"
             :rows="rows"
             :loading="library.loading"
@@ -459,6 +456,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
         </ArtistsView>
 
         <AlbumsView
+          :drawer-open="drawerOpen"
           v-else-if="library.view === 'albums' || library.view === 'album'"
           @open-track="openTrackById"
           @edit-track="(id) => (editing = id)"
@@ -485,6 +483,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
     </div>
 
     <DetailDrawer
+      :key="detail?.track.id"
       :detail="detail"
       :open="drawerOpen"
       @close="drawerOpen = false"

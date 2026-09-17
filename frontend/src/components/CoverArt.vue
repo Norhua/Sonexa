@@ -46,6 +46,7 @@ const src = computed(() =>
 watch(src, (url) => (state.value = url ? 'loading' : 'none'), { immediate: true })
 
 function onError() {
+  const failedSrc = src.value
   if (props.adoptedPath) {
     // 已采用的封面是本地文件，读不到只可能是文件没了，不是「上游没有」
     state.value = 'error'
@@ -53,7 +54,7 @@ function onError() {
   }
   void coverOutcome(props.source, props.size).then((o) => {
     // 等待期间这一行可能已经换了图，此时不要把旧结果盖上去
-    if (state.value === 'loading') state.value = o
+    if (src.value === failedSrc && state.value === 'loading') state.value = o
   })
 }
 </script>
@@ -63,6 +64,7 @@ function onError() {
     <img
       v-if="src"
       v-show="state === 'ok'"
+      :key="src"
       :src="src"
       loading="lazy"
       alt=""

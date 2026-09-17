@@ -81,7 +81,7 @@ func TestSearchExpandsToTrackGranularity(t *testing.T) {
 		t.Errorf("黑胶版载体 = %v", vinyl.MediumFormat)
 	}
 
-	// 同一录音的三行共享 recording MBID（供「已有其他版本」判定）
+	// 同一录音的三行共享 recording MBID，但仍保留独立的 track 身份
 	for _, c := range got {
 		if c.RecordingRef == nil || *c.RecordingRef != "rec-0001-god-knows" {
 			t.Errorf("候选 %q 的 recording 标识 = %v", c.MatchRef, c.RecordingRef)

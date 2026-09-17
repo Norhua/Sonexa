@@ -366,6 +366,7 @@ func (a *App) attachLadderBuilder(svc *covers.Service) *covers.Service {
 	if svc == nil {
 		return nil
 	}
+	svc.Pool().SetIndexParser(musicbrainz.ParseCAAThumbnailIndex)
 	svc.SetLadderBuilder(func(providerID, ref, releaseGroupRef string) []string {
 		var rg *string
 		if releaseGroupRef != "" {

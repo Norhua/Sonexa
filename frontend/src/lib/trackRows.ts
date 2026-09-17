@@ -1,6 +1,6 @@
 import type { CoverSource } from '@/api'
 
-/** 曲目身份与清单位置分开；同一曲目可命中多个「其他版本」位置。 */
+/** 曲目身份与清单位置分开；灰色行没有库内 id。 */
 export interface Row {
   id: number
   title: string
@@ -16,7 +16,6 @@ export interface Row {
   coverSource?: CoverSource | null
   adoptedCoverPath?: string | null
   ghost?: boolean
-  otherVersion?: boolean
   trackRef?: string | null
   recordingRef?: string | null
   /** 清单行由父级提供稳定位置；普通库内行不需要。 */

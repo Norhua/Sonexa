@@ -15,7 +15,7 @@ Volt = 本地 Vue 包装源码 + **unstyled PrimeVue 4.5.5** + Tailwind CSS v4�
 - DataTable 显式合并传入的 `pt`，防止调用方整对象替换主题。固定表头、小字号/紧凑行；排序图标只在已排序、hover 或键盘聚焦时出现。
 - 表格业务状态归 `TrackTable.vue` + `lib/useListSelection.ts`；普通 DataTable 本身不带曲库业务。排序用同一份 `orderedRows`，以 `lazy` 关闭 PrimeVue 二次排序（并非服务端分页）。
 - Dialog 修正 unstyled flex/滚动/视口边界；禁用 PrimeVue 默认全局 Escape，由 `dialogStack.ts` 只关闭最上层，嵌套关闭互不干扰。WebKit 点击按钮未聚焦/保存时焦点落到 body 也可关闭；Select/Popover 消费 Escape 时保留父弹窗。支持取消焦点恢复，默认不点遮罩关闭，防误丢编辑。
-- ContextMenu 是按 Volt Menu 模式编写的本地组件，不声称上游提供。无进入动画，确保外部关闭监听/键盘焦点立即生效；Escape 后恢复来源焦点，不抢新弹窗焦点。
+- ContextMenu 是按 Volt Menu 模式编写的本地组件，不声称上游提供。无进入动画，确保外部关闭监听/键盘焦点立即生效；Escape 后恢复来源焦点，不抢新弹窗焦点。显式合并调用方 PT，使表头的 `menuitemcheckbox` / `aria-checked` 不覆盖默认主题。
 - 图标插槽统一 Lucide；`SortIcon.vue` 是本地补充。运行时仍可能传递依赖 `@primevue/icons`，不用 PrimeIcons 字体包。
 - Checkbox 移除上游与 4.5.5 插槽类型不匹配的 dataP；Chip 移除图标补键盘角色/可访问名称。
 - Popover 的 `hide()` 必须调用 hide，不能 toggle；Menu/Popover exposed 参数加类型。

@@ -136,7 +136,6 @@ CREATE INDEX idx_track_release ON track(release_id) WHERE release_id IS NOT NULL
 -- 部分唯一索引：未匹配的曲目（match_source IS NULL）不受唯一约束
 CREATE UNIQUE INDEX idx_match_ref ON track(match_source, match_ref)
   WHERE match_source IS NOT NULL;
-CREATE INDEX idx_track_recording ON track(recording_ref) WHERE recording_ref IS NOT NULL;
 CREATE INDEX idx_track_isrc ON track(isrc) WHERE isrc IS NOT NULL;
 CREATE INDEX idx_track_enrich ON track(enrich_state);
 
@@ -244,8 +243,6 @@ CREATE TABLE release_track (
 );
 CREATE INDEX idx_release_track_ref ON release_track(track_ref)
   WHERE track_ref IS NOT NULL;
-CREATE INDEX idx_release_track_recording ON release_track(recording_ref)
-  WHERE recording_ref IS NOT NULL;
 
 -- ========== 导入与复核队列 ==========
 CREATE TABLE import_batch (

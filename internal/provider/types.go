@@ -73,7 +73,7 @@ type Candidate struct {
 	CatalogNumber *string
 
 	// 去重与桥接
-	RecordingRef *string // MB recording MBID，用于「已有其他版本」判定
+	RecordingRef *string // MB recording MBID，保留上游录音元数据；不用于跨 track 判定
 	ISRC         *string
 
 	// 缩略图地址（列表用）

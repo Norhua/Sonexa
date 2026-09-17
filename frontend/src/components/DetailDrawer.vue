@@ -8,7 +8,7 @@
  * 必须优雅处理丰富信息为空的情况（「无需匹配」入库的曲目）：
  * 缺失字段显示占位短横线，不报错、不出现空白区域。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { X, Pencil, ImagePlus } from 'lucide-vue-next'
 import { App, display, duration, DASH } from '@/api'
 import CoverArt from '@/components/CoverArt.vue'
@@ -35,6 +35,17 @@ const coverCandidates = ref<Models.main.CoverCandidate[]>([])
 const coverLoading = ref(false)
 const coverError = ref('')
 
+let coverRequest = 0
+watch(() => props.open, open => {
+  if (!open) {
+    coverRequest++
+    coverPickerOpen.value = false
+    coverCandidates.value = []
+    coverLoading.value = false
+    coverError.value = ''
+  }
+})
+
 /**
  * 向**所有**上游查询封面，结果按置信度排序。
  *
@@ -43,16 +54,18 @@ const coverError = ref('')
  */
 async function openCoverPicker() {
   if (!props.detail) return
+  const request = ++coverRequest
   coverPickerOpen.value = true
   coverLoading.value = true
   coverError.value = ''
   try {
     const t = props.detail.track
-    coverCandidates.value = await App.SearchCovers(t.title, t.artist ?? '', t.album ?? '')
+    const candidates = await App.SearchCovers(t.title, t.artist ?? '', t.album ?? '')
+    if (request === coverRequest) coverCandidates.value = candidates
   } catch (e) {
-    coverError.value = String(e)
+    if (request === coverRequest) coverError.value = String(e)
   } finally {
-    coverLoading.value = false
+    if (request === coverRequest) coverLoading.value = false
   }
 }
 

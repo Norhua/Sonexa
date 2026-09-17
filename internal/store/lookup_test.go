@@ -148,13 +148,12 @@ func TestConcurrentAddSameResult(t *testing.T) {
 	}
 }
 
-// TestResolveTracklistThreeStates 覆盖 8.5 与 15.8：
-// 已入库 / 已有其他版本 / 未入库三种状态。
-func TestResolveTracklistThreeStates(t *testing.T) {
+// TestResolveTracklistExactIdentityOnly：只认相同来源的 track，不以 recording 跨版本跳转。
+func TestResolveTracklistExactIdentityOnly(t *testing.T) {
 	s := openTestStore(t)
 
 	// 用户从 CD 版入库了第 2 首
-	cdTrackID, err := s.CreateTrackWithProvenance(NewTrackInput{
+	_, err := s.CreateTrackWithProvenance(NewTrackInput{
 		Title:       "God knows...",
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-cd-02"),
 		Metadata: &MetadataInput{RecordingRef: ptr("rec-god-knows")},
@@ -176,7 +175,7 @@ func TestResolveTracklistThreeStates(t *testing.T) {
 	if err := s.ReplaceTracklist(releaseID, []ReleaseTrack{
 		// 第 1 首：track_ref 直接命中 → 已入库
 		{DiscNumber: 1, TrackNumber: 1, TrackRef: ptr("trk-digital-01"), Title: "冒険でしょでしょ?"},
-		// 第 2 首：track_ref 不同（数字版），但 recording 相同 → 已有其他版本
+		// 第 2 首：track_ref 不同，recording 相同也仍未入库
 		{DiscNumber: 1, TrackNumber: 2, TrackRef: ptr("trk-digital-02"),
 			RecordingRef: ptr("rec-god-knows"), Title: "God knows..."},
 		// 第 3 首：都未命中 → 未入库（灰色行）
@@ -196,12 +195,18 @@ func TestResolveTracklistThreeStates(t *testing.T) {
 	if got[0].State != PositionOwned || got[0].TrackID != ownedID {
 		t.Errorf("第 1 首 = %s/%d, 期望 owned/%d", got[0].State, got[0].TrackID, ownedID)
 	}
-	// 关键：CD 版入库而清单为数字版时，该位置不被标成缺失
-	if got[1].State != PositionOtherVersion {
-		t.Errorf("第 2 首 = %s, 期望 other_version——CD 版入库时不应被标成缺失", got[1].State)
+	if got[1].State != PositionMissing || got[1].TrackID != 0 {
+		t.Errorf("不同 track 不应跳转到同 recording 曲目: %+v", got[1])
 	}
-	if got[1].TrackID != cdTrackID {
-		t.Errorf("第 2 首指向 %d, 期望跳转到已有的 %d", got[1].TrackID, cdTrackID)
+	// 标识相同但来源不同也不算拥有。
+	otherSource, err := s.ResolveTracklist(releaseID, "itunes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, position := range otherSource {
+		if position.State != PositionMissing || position.TrackID != 0 {
+			t.Fatalf("跨来源误匹配: %+v", position)
+		}
 	}
 	if got[2].State != PositionMissing {
 		t.Errorf("第 3 首 = %s, 期望 missing（灰色行）", got[2].State)

@@ -183,7 +183,7 @@
             { trackId: 1, title: '已拥有 A', discNumber: 1, trackNumber: 1, ghost: false },
             { trackId: 0, title: '缺少 B', discNumber: 1, trackNumber: 2, ghost: true },
             { trackId: 2, title: '已拥有 C', discNumber: 1, trackNumber: 3, ghost: false },
-            { trackId: 1, title: 'A 的其他位置', discNumber: 1, trackNumber: 4, ghost: false, state: 'other_version' },
+            { trackId: 0, title: 'A 的另一版本（未入库）', discNumber: 1, trackNumber: 4, ghost: true, state: 'missing' },
             { trackId: 0, title: '缺少 D', discNumber: 1, trackNumber: 5, ghost: true },
           ],
         }),

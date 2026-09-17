@@ -337,6 +337,19 @@ func TestHandlerDistinguishesEmptyFromError(t *testing.T) {
 	if got := svc.Outcomes([]string{CacheKey("musicbrainz:no-art", 250)}); got[0] != OutcomeEmpty {
 		t.Errorf("无封面结果 = %q, 期望 empty", got[0])
 	}
+
+	atomic.StoreInt32(&status, http.StatusServiceUnavailable)
+	resp, err = http.Get(handler.URL + "/cover?provider=musicbrainz&ref=failed&size=250")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("服务错误被当成无图: %d", resp.StatusCode)
+	}
+	if got := svc.Outcomes([]string{CacheKey("musicbrainz:failed", 250)}); got[0] != OutcomeError {
+		t.Fatal(got)
+	}
 }
 
 // TestHandlerRejectsMissingSource 确保来源缺失时明确报错，而不是当成一张不存在的图。
