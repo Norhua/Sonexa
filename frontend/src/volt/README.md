@@ -3,7 +3,7 @@
 Volt = 本地 Vue 包装源码 + **unstyled PrimeVue 4.5.5** + Tailwind CSS v4。
 
 来源：<https://github.com/primefaces/primevue/tree/4.5.5/apps/volt/volt>（MIT，见 `LICENSE.md`）。
-本轮复用了 Claude 分支已引入并经核对的官方组件/普通控件接线；没有继承其 TrackTable 选择实现。
+官方组件与普通控件接线已核对；TrackTable 的选择行为由独立的受控模型实现。
 `upstream-sources.json` 记录各官方源文件的 SHA-256；它们不是当前定制文件的校验和。
 不要通过滚动 master 的 CLI 覆盖本地定制文件。升级运行时后，先核对 PT/slot API，再跑测试。
 

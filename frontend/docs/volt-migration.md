@@ -1,11 +1,10 @@
-# Volt 替换计划与审查（GPT 分支）
+# Volt 迁移设计与验证
 
 ## 边界
 
-- 起点 `7a29eb79a985ef7f1a3c4a4ec5b7a51dde874009`，分支 `fix-v1-shell-and-import-gpt`。
-- `fix-v1-shell-and-import` 保留 Claude 提交；不 reset、不重写历史。
-- OpenSpec 的 proposal/design/tasks 与 22 份 spec 仅供审查，不修改。
-- `tmp/v1-deviations.md` 是被忽略的工作文档，含 Claude 分支第七轮内容；原样保留。GPT 副本 `tmp/v1-deviations-gpt.md` 按本分支实际实现修订，旧测试结论不计作本轮证据。
+- 将前端组件迁移到 Volt，统一列表交互与模态行为。
+- OpenSpec 的 proposal/design/tasks 与 22 份 spec 作为核对基准，本次不直接同步。
+- 正式偏差与实现边界统一记录在 `change_record/v1-deviations.md`；历史测试结论不重复计入当前验证。
 - 不改变 Go/SQLite 数据模型、上游匹配、导入分流与 Wails API。
 
 ## 审查发现
@@ -25,7 +24,7 @@
 - 使用官方 tag `primevue/4.5.5/apps/volt/volt` 的源码与固定 `primevue@4.5.5`，而非滚动 master；MIT 许可、来源与本地定制清单一并入库。
 - `src/volt/` 承担通用控件与 Tailwind pass-through；采用单一中性色阶、可区分的 hover/selected/focus，保留 Lucide 图标。
 - 替换 shadcn/reka、原生输入/选择控件、自制菜单/Popover/Dialog，保留特定业务的导航结构和只读表格。
-- 对 Claude 方案中可独立复用的普通控件迁移逐项 review；不继承其曲目表格交互实现和验收声明。
+- 普通控件迁移与曲目表格交互分别核对，组件接线完成不等于选择模型符合契约。
 
 ### 2. 曲目列表
 
@@ -51,7 +50,8 @@
 - 同 30 项对生产 dist 重跑通过（`SONEXA_E2E_PREVIEW=1 npm run test:e2e`），未捕获 pageerror 为零。
 - `npm run build`、`go test ./...`、`go vet ./...`、Wails darwin/arm64 构建通过。
 - 仍有 Vite >500 kB 主块警告；未测原生首帧和大曲库性能，不把本地文件等同于无性能代价。
-- 实现范围与剩余偏差见 `tmp/v1-deviations-gpt.md` 第 20 节；原件/spec 均未改。
+- 实现范围与剩余偏差见 `change_record/v1-deviations.md` 第 20、21 节。
+  上述验证通过不代表后端各业务路径已完全满足 spec。
 
 ## 非目标
 

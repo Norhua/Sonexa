@@ -1,20 +1,21 @@
 # v1 实现与 spec 的偏差记录
 
-> 本文档记录本轮修复（分支 `fix-v1-shell-and-import`）对 v1 实现所做的改动，
-> 以及由此产生的、与 `openspec/changes/add-sonexa-v1/` 下现有文字不一致之处——
-> 主要是 `specs/**` 的条款，另有少数落在 `proposal.md` / `tasks.md`
-> （如第二十节的技术栈），同样需要同步。
+> 本文档记录 v1 实现的修复、行为调整，以及与
+> `openspec/changes/add-sonexa-v1/` 下现有规划文档不一致之处。
+> 核对范围包括 `specs/**`、`design.md`、`proposal.md` 与 `tasks.md`。
 >
-> **用途**：v1 全部问题解决后，由 AI 助手据此调用 openspec skills 更新 spec 文档。
-> 本轮**不**修改 spec 文件。
+> **用途**：作为后续同步规格与补齐实现的依据；本文不直接修改规划文档。
+> 各轮验证记录只说明当时的结果，不代表当前全部需求已通过验收。
+> 当前自动化验证见 20.7，规格覆盖、已核实的实现缺口与后续建议见第二十一节。
+> 同一主题经历多轮调整时，以较后的条目及其明确列出的限制为准。
 
-状态图例：`[需改 spec]` 实现已改、spec 待同步；`[纯 bug 修复]` 实现向 spec 靠拢，spec 无需改动。
+状态图例：`[需改 spec]` 已确定的行为或结构调整，spec 待同步；`[纯 bug 修复]` 实现向 spec 靠拢；`[待修复]` 实现仍未满足已确定要求，不能仅靠修改 spec 消除。
 
 ---
 
 ## 一、应用外壳与导航（`platform/app-shell`）
 
-### 1.1 侧栏分组结构改为五组 + 层级缩进 `[需改 spec]`
+### 1.1 侧栏四组导航 + 独立搜索入口与层级缩进 `[需改 spec]`
 
 **spec 现状**（`platform/app-shell` → `Requirement: 侧栏导航分组`）：
 
@@ -35,7 +36,7 @@
 
 变更点：
 
-1. **「上游搜索」独立入口取消**，并入新的「搜索」页（见 3.1）。
+1. **「上游搜索」独立入口取消**，并入新的「搜索」页（见 2.1、2.2）。
 2. **分组内的二级项需缩进**，与分组标题形成层级（此前平级，视觉上读不出从属关系）。
 3. **「资料库」组内顺序**改为 最近添加 → 全部曲目 → 艺术家 → 专辑。
 4. **「任务」组不再置于侧栏底部**，与其余分组同列于滚动区内；底部只保留「设置」。
@@ -69,7 +70,7 @@
 - **整条顶栏取消**。应用名不再在界面内显示（窗口标题栏已有）。
 - 红绿灯所在区域让给**侧栏顶部**：侧栏顶部留出安全区并设为可拖拽窗口区域。
 - 原顶栏上的三个入口重新安置：
-  - 全局搜索框 → 取消，改为「搜索」页 + 各视图右上角的视图内搜索框（见 3.1、3.2）。
+  - 全局搜索框 → 取消，改为「搜索」页 + 各视图右上角的搜索框（见 1.5、2.1）。
   - 「导入」按钮 → 取消。导入从「导入队列」页发起。
   - 深色/浅色切换 → 取消。主题只在设置中切换（设置里本就有该项）。
 
@@ -84,17 +85,12 @@
 
 改为与专辑视图一致：未选中时给出「从左侧选择一位艺术家」。
 
-### 1.5 列表中列各自带「就地查找」 `[需改 spec]`
+### 1.5 名单就地查找与曲目搜索区分 `[需改 spec]`
 
-艺术家与专辑视图的中列（名单列）各增加一个查找框，
-对应 Apple Music 的 `Find in Artists`。
-
-它与「视图内搜索框」不是一回事，需在 spec 中区分：
-
-| | 作用对象 | 位置 |
-| --- | --- | --- |
-| 视图内搜索框 | 曲目（走 FTS 与 TrackFilter） | 主区右上角 |
-| 中列就地查找 | 名单项（艺术家名 / 专辑名，纯前端过滤） | 中列顶部 |
+艺术家/专辑页右上角的 `ViewSearchBox` 过滤**中列名单**（艺术家名/专辑名），
+不经曲目 FTS；中列顶部没有另一个查找输入框。
+全部曲目、最近添加、歌单、标签页右上角的搜索则经 FTS 与 TrackFilter 筛选曲目。
+三栏页目前没有独立的曲目 FTS 输入；如需同时提供名单查找与曲目检索，需另行确定布局。
 
 ### 1.6 设置改为模态弹窗 `[需改 spec]`
 
@@ -105,6 +101,52 @@
 理由：设置不是浏览目的地，占用主内容区会打断当前浏览位置。
 
 「前往设置」类跳转（全局出网禁用提示、导入向导内的提示）改为**直接打开该弹窗**。
+
+### 1.7 头部区域统一为「左标题 / 右操作区」并去掉分割线 `[需改 spec]`
+
+**用户报告（第二轮 1、2）**：艺术家与专辑视图的搜索框被放进了中间栏列表上方，
+而不是窗口右上角；标题盒子还带着一条突兀的底边。
+
+**改为**（对齐 Apple Music，两种页面结构共用同一套规则）：
+
+| | 两栏页面（全部曲目/最近添加/歌单/标签） | 三栏页面（艺术家/专辑） |
+| --- | --- | --- |
+| 大标题 | 主区左上角 | **中间栏**左上角 |
+| 操作区（排序 + 搜索） | 主区右上角 | **主区**右上角 |
+
+- 两者恒在同一水平线上并垂直居中，靠共用同一个高度常量保证——
+  各写各的 padding 必然漂移。为此抽出 `PaneHeader` 作为唯一的高度来源。
+- **去掉全部页面顶部的横向分割线**，头部与下方列表连成一片。
+
+新增组件：`PaneHeader`（高度 + 垂直居中 + 窗口拖拽区）、`ViewSearchBox`、`SortMenu`。
+（`ViewSearchBox` 使用 Volt `InputText`，`SortMenu` 使用 Volt `Menu`；
+搜索页的主输入/范围/高级条件/搜索按钮也接入 `PaneHeader`，地区选项在其下方独立一行。）
+
+**实现约束**：`--wails-draggable` 会从父级**继承**给子元素，因此头部内的输入框与
+按钮必须各自声明 `no-drag`，否则点一下就开始拖窗口。
+
+### 1.8 列表新增排序入口 `[需改 spec]`
+
+排序菜单提供以下维度：
+
+- 曲目表格：默认顺序 / 标题 / 艺术家 / 专辑 / 年份 / 时长
+- 名单栏（艺术家、专辑）：名称 / 曲目数（专辑另有艺术家）
+- 再次点击同一维度即反向，默认顺序除外
+
+排序在**前端就地**做，列表顺序、选择与重排使用同一份数据。
+
+**当前排序契约**（见第二十节）：
+
+- 普通曲目表格的列头也是排序入口，与右上角菜单共用 `sortKey` / `sortDesc`。
+  专辑清单的列头不可排序，保持后端碟号/曲序；艺术家/本地搜索中的曲目表格可点列头排序。
+- `lib/trackRows.ts` 是唯一曲目比较器，使用 `Intl.Collator('zh-Hans-CN',
+  { numeric: true, sensitivity: 'base' })`，同值稳定，缺失值始终最后。
+  `App.vue` 不再计算第二份排序。DataTable 的 `lazy` 仅关闭其内部二次排序；
+  并非远程分页。选择模型、渲染和重排读取同一份 `orderedRows`。
+- 默认顺序总是恢复后端顺序，不显示无意义的升/降序；再次选默认也不翻转。
+- 排序图标在已排序、悬停或键盘聚焦时可见。
+- 歌单只有**无筛选且默认排序**时才能拖动，避免把可见子集提交为完整顺序。
+- 名单栏排序仍由艺术家/专辑视图管理，与曲目排序互不混用。
 
 ---
 
@@ -120,9 +162,9 @@
 
 1. **搜索页**（侧栏顶层入口）：独立页面，可搜**资料库**或**某个上游**，
    右上角以下拉菜单选择搜索范围（见 2.2）。高级搜索**只在搜索页提供**。
-2. **视图内搜索框**：全部曲目 / 最近添加 / 歌单 / 标签 / 艺术家 / 专辑 等页面的
-   **右上角**各有一个搜索框，作用域即当前视图，占位文案明示作用域
-   （如「在"电子"中搜索」）。就地筛选、不跳页、显示可清除的筛选 chip —— 这部分行为不变。
+2. **视图内搜索框**：全部曲目 / 最近添加 / 歌单 / 标签的右上角搜索
+   经 FTS 与 TrackFilter 在当前视图就地筛选，不跳页、显示可清除的筛选 chip。
+   艺术家 / 专辑页右上角输入过滤中列名单，不是曲目 FTS（见 1.5）。
 
 原 `Scenario: 在歌单页搜索` / `Scenario: 在全部曲目页搜索` 的行为仍成立，
 只是搜索框位置由「顶栏」改为「当前视图右上角」。
@@ -159,54 +201,6 @@
   年份区间、载体、国家、类型四项从高级搜索中**移除**。
 - 高级搜索**只在搜索页提供**，其他视图的右上角搜索框只做单字段快速搜索。
 - 面板**点击面板外任意处即关闭**（此前只有点「搜索」才关，属 bug，见 4.4）。
-
-### 1.7 头部区域统一为「左标题 / 右操作区」并去掉分割线 `[需改 spec]`
-
-**用户报告（第二轮 1、2）**：艺术家与专辑视图的搜索框被放进了中间栏列表上方，
-而不是窗口右上角；标题盒子还带着一条突兀的底边。
-
-**改为**（对齐 Apple Music，两种页面结构共用同一套规则）：
-
-| | 两栏页面（全部曲目/最近添加/歌单/标签） | 三栏页面（艺术家/专辑） |
-| --- | --- | --- |
-| 大标题 | 主区左上角 | **中间栏**左上角 |
-| 操作区（排序 + 搜索） | 主区右上角 | **主区**右上角 |
-
-- 两者恒在同一水平线上并垂直居中，靠共用同一个高度常量保证——
-  各写各的 padding 必然漂移。为此抽出 `PaneHeader` 作为唯一的高度来源。
-- **去掉全部页面顶部的横向分割线**，头部与下方列表连成一片。
-
-新增组件：`PaneHeader`（高度 + 垂直居中 + 窗口拖拽区）、`ViewSearchBox`、`SortMenu`。
-（第七轮起 `ViewSearchBox` 的输入框是 Volt 的 `InputText`、`SortMenu` 的浮层是
-Volt 的 `Menu`，见第二十节；三者的职责与位置不变。）
-
-**实现约束**：`--wails-draggable` 会从父级**继承**给子元素，因此头部内的输入框与
-按钮必须各自声明 `no-drag`，否则点一下就开始拖窗口。
-
-### 1.8 列表新增排序入口 `[需改 spec]`
-
-参考图里搜索框左边那个图标在 Apple Music 里是排序菜单。实现为真正的排序，
-不是装饰：
-
-- 曲目表格：默认顺序 / 标题 / 艺术家 / 专辑 / 年份 / 时长
-- 名单栏（艺术家、专辑）：名称 / 曲目数（专辑另有艺术家）
-- 再次点击同一维度即反向
-
-排序在**前端就地**做：列表已整批取回，为换一个顺序再往返一次后端既慢又会把
-滚动位置丢掉。歌单的拖拽重排只在「默认顺序」下可用——在排序视图里拖动，
-落点是没有意义的。
-
-**第七轮修订**（换到 Volt 之后，见第二十节）：
-
-- 曲目表格的**列头本身也是排序入口**，点击即按该列排序，再点反向。
-  它与右上角的排序菜单写的是**同一份状态**（`App.vue` 里 `sortKey`/`sortDesc`
-  与 DataTable 的 `sortField`/`sortOrder` 互为双向计算属性）——
-  两个入口各存一份的话，点完列头再打开菜单会看到一个过期的勾。
-- 排序由 DataTable 就地完成，`App.vue` 里手写的那份 comparator 已删除。
-  比较器随之从 `localeCompare(…, 'zh-Hans-CN')` 换成 PrimeVue 的
-  `Intl.Collator(undefined, { numeric: true })`：跟随系统区域设置，
-  且「第2首 / 第10首」这类串里的数字按数值比而不是按字典序。
-- 「名单栏」（艺术家、专辑中列）仍由各自视图排序，与曲目表格无关。
 
 ---
 
@@ -269,7 +263,7 @@ Volt 的 `Menu`，见第二十节；三者的职责与位置不变。）
 **修复**：在 `Client.Get` 中实现传输层重试——
 
 - 对可重试错误（429 / 5xx / 超时 / 临时网络错误）按策略重试，
-  默认 `TransportRetryPolicy`：最多 4 次尝试、基数 1s、上限 10s、带抖动。
+  默认 `TransportRetryPolicy`：最多 6 次尝试、基数 1s、指数退避上限 20s、带抖动（历次实测见第七节）。
 - 每次重试**重新取令牌桶令牌**，不绕过限流。
 - 尊重 `Retry-After`（比退避长时以它为准）。
 - 遵守 `ctx` 取消。
@@ -306,7 +300,7 @@ Volt 的 `Menu`，见第二十节；三者的职责与位置不变。）
 **用户报告 10**：高级搜索只有点「搜索」才会关闭，点页面其他地方不会关闭。
 
 **修复**：面板注册 `pointerdown` 外部点击与 `Esc` 关闭。
-（第七轮起面板改用 Volt 的 `Popover`，这两件事由它负责，本仓库不再自己监听；
+（面板现使用 Volt 的 `Popover`，外部关闭由它负责；
 行为不变，见第二十节。）
 
 ### 4.5 设置里的主题下拉会翻转而非设值 `[纯 bug 修复]`
@@ -360,7 +354,7 @@ iTunes 结果的封面列永远是占位方块。
 `TrackTable` 只在自身根元素上监听 `click` 关闭菜单，
 点侧栏或页头时菜单会一直悬在那儿。改为监听 window 的 `pointerdown`，
 与侧栏的右键菜单一致。
-（第七轮起两处右键菜单都是 Volt 的 `ContextMenu`，关闭由它负责；行为不变。）
+（两处右键菜单现均使用 Volt 风格 `ContextMenu`，关闭由它负责；行为不变。）
 
 ### 4.9 导入进度永远到不了 100% `[纯 bug 修复]`
 
@@ -439,7 +433,7 @@ Not found: time.Time
    传输层重试必须重新取令牌桶令牌，不得绕过限流。
 4. **窗口外壳**：侧栏顶部留出红绿灯安全区并设为 `--wails-draggable: drag`；
    界面内不再显示应用名。
-5. **组件库为 Volt**（第七轮起，见第二十节）。两条随之而来的约定：
+5. **组件库为 Volt**（见第二十节）。两条随之而来的约定：
    - **只有一套调色板**：`--p-*`（`src/style.css`）。Volt 组件与手写标记
      共用它，不再另起一套语义色名。
    - **通用控件先找 `src/volt/`**，没有再手写；手写的要放进 `src/volt/`
@@ -528,8 +522,8 @@ recording:"曲名" AND (release:"歌集" OR artist:"歌手" OR artist:"备选写
 
 ### 9.2 曲名闸门：词元包含 → 版本标记必须一致
 
-**spec 现状**（`matching/confidence`）：「曲名不匹配即丢弃」，但未规定曲名的
-比较方式；实现与署名/歌集共用 `CompareText`，其中含「词元集合包含」一档。
+**spec 现状**（`matching/confidence`）：规定「曲名不匹配即丢弃」，并统一定义了
+含「词元集合包含」的三级文本比较；当前曲名不再与署名/歌集共用同一种比较。
 
 **问题**：`{tetra}` ⊆ `{tetra, offvocal}`，于是 `Tetra.` 与
 `Tetra. (off vocal)` 判成模糊匹配——这正是用户报告的「选错了版本」。
@@ -594,8 +588,8 @@ L3 曲名独行   连歌集带歌手都对不上时，只用曲名
 的锚定级会返回几百条同名的裸 `That Girl`，按「返回了就停」阶梯会停在一堆用不上的
 候选上，更宽的一级永远不会被试到。
 
-剥离变体不再扣分（`StripPenalty` 保留字段但恒为 0）：曲名是否对得上改由
-`CompareTitle` 判定，不需要再用分数去压制误剥离。
+剥离变体不再扣分：曲名是否对得上由 `CompareTitle` 判定，
+不需要再用分数去压制误剥离。
 
 ### 9.6 跨发行组的两个例外 —— 已于第三轮撤销
 
@@ -621,7 +615,7 @@ L3 曲名独行   连歌集带歌手都对不上时，只用曲名
 
 ### 9.8 参考实现
 
-本次重做的思路来自 `/Users/amadeus/work-space/test/musiclib`
+本次重做参考了本地 `musiclib` 项目的实现
 （`internal/musicbrainz/types.go` 的 `RecordingQueryLadder`、
 `internal/normalize/annotation.go` 的 `SearchCore` / `TitleAgrees` / `CreditAgrees`）。
 那份实现里的实测结论（`artist:` 的语义、子短语匹配、词组级是 OR）经本项目
@@ -639,7 +633,7 @@ release group MBID 照原样），因此不联网、不在仓库里塞几百 KB 
 
 ---
 
-## 十、分流规则严格化（`matching/dispatch`、`import/table-import`）`[需改 spec]`
+## 十、分流规则严格化（`matching/pipeline`、`import/table-import`）`[需改 spec]`
 
 **用户报告（第三轮）**：`世界中の雨` 被直接入库了，但在 MusicBrainz 上能搜到
 多个一模一样的条目。
@@ -788,7 +782,7 @@ recording MBID / release group MBID / 发行状态 / 载体 / 国家 照原样�
 
 ---
 
-## 十一、封面加载（`platform/covers`）`[纯 bug 修复]`
+## 十一、封面加载（`upstream/cover-art`）
 
 **用户报告（第三轮）**：所有位置的专辑图片都加载不出来——详情抽屉、搜索列表、
 复核列表都是。详情抽屉里没有封面时还显示了一个 emoji。
@@ -846,9 +840,11 @@ Go 的工作池，不受 webview 每主机连接数的限制。
 `CancelCovers([])` → `CancelAllExcept({})` → **取消进程内全部在途取图**。
 `library:changed` 事件会触发重载，于是取图任务被反复清空。
 
-**修复**：删掉这个调用与那个恒为空的 ref。`<img loading="lazy">` 本就只为
-接近视口的行发请求，工作池里在途的任务天然就是用户看得见的那些，
-这层取消是多余的。Go 侧的 `CancelOutOfView` 保留，等真正做视口跟踪时再接。
+**修复**：删掉这个调用与那个恒为空的 ref，避免重载取消全部取图。
+`<img loading="lazy">` 可以延后图片元素的请求，但**不等于**后台取图任务会随滚动取消：
+搜索页仍会批量预取全部结果。Go 侧 `CancelOutOfView` 保留，前端尚无真实视口跟踪，
+也未调用 `CancelCovers`。因此防止误取消已修复，spec 的「滚出视口任务取消/降级」
+仍是实现缺口（见 21.4），不能认定为已满足。
 
 ### 11.4 复核队列的候选快照丢掉了 iTunes 的基准图地址 `[纯 bug 修复]`
 
@@ -958,7 +954,8 @@ Archive 上没有图），而「取图出错」是可以重试的故障。画成
 
 ### 12.3 阶梯的推进条件随之收紧
 
-**spec 现状**（`matching/pipeline`）：「有过得了曲名闸的候选即停」。
+**此前实现**（第九节）：「有过得了曲名闸的候选即停」；
+原 `matching/text-processing` spec 仍写「高置信即停」，两次调整都需同步。
 
 **改为**：「有过得了**两道**闸的候选即停」。只过曲名那一道停不下来，
 否则更宽的一级永远试不到。
@@ -969,7 +966,7 @@ Archive 上没有图），而「取图出错」是可以重试的故障。画成
 
 ### 12.4 参考实现与回归测试
 
-思路来自 `/Users/amadeus/work-space/test/musiclib` 的
+思路来自本地 `musiclib` 项目的
 `internal/musicbrainz/confidence.go` → `Plausible`（那里的实测记录是
 `recording:"夕立"` 有 192 条同名录音，全摆出来等于让人手工否掉 192 次）。
 
@@ -992,9 +989,12 @@ Archive 上没有图），而「取图出错」是可以重试的故障。画成
 在 MB 1 req/s 之下那一次请求就是 1–2 秒的卡顿——而它的产出
 （参与者、作曲作词、厂牌、目录号、风格）与「这条曲目能不能进库」无关。
 
-参考实现：`/Users/amadeus/work-space/test/musiclib`（`internal/matching/enrich.go`
+参考实现：本地 `musiclib` 项目（`internal/matching/enrich.go`
 的 `EnrichTask`、`internal/matching/matching.go` 的 `Accept`「不发任何网络请求」、
 `internal/musicbrainz/transport.go` 的 `priorityGate`）。
+
+> **验证范围**：零请求接受与调度行为已有回归；后台详情按目标曲目取数、
+> 清单顺带落库及用户锁保护仍有实现缺口，见 21.3，不能由调度测试通过推断已满足。
 
 ### 13.1 零请求接受 `[需改 spec]`
 
@@ -1008,7 +1008,7 @@ Archive 上没有图），而「取图出错」是可以重试的故障。画成
 
 同一改动覆盖搜索页的「加入曲库」（本来就不补详情，现在会触发后台任务）。
 
-### 13.2 三态补全状态机 + schema 迁移 0003 `[需改 spec]`
+### 13.2 三态补全状态机 `[需改 spec]`
 
 **spec 现状**（`platform/data-store`）：`track_metadata` 无补全状态字段。
 
@@ -1052,7 +1052,7 @@ Archive 上没有图），而「取图出错」是可以重试的故障。画成
 
 - **工作集**：`enrich_state='pending'` 且有发行标识且重试未达上限，按入库顺序。
   枚举是**同步**的，调用方当场就知道有没有事可做。
-- **自动开始**的四个时机：应用启动、导入批次跑完、接受一条候选、加入曲库，
+- **自动开始**的时机：应用启动、导入批次跑完、接受一条候选、加入曲库，
   以及用户的检索结束（交互计数归零）。
 - **自动让路**：`outboundBusy()` 报告「导入匹配在跑」或「用户检索在飞」时任务转入
   `waiting` 并说明在等什么。让的是**整个配额**而不只是次序——见 13.4。
@@ -1148,22 +1148,20 @@ Archive 上没有图），而「取图出错」是可以重试的故障。画成
 
 灰色行的既有约束全部不变（不可选中、不计入计数、Cmd+A 跳过、菜单只有两项）。
 
-**第七轮修订**（换到 Volt 之后，见第二十节）：上表每一行的行为都不变，变的是谁实现它。
+**选择模型与键盘契约**：
 
-- 这五种操作现在由 Volt 的 `DataTable`（`selectionMode="multiple"` +
-  `metaKeySelection`）原生提供，`TrackTable` 不再自己算区间与锚点。
-- 选中态/悬停态的强弱改由**令牌**保证，不再是两个就地写死的类：
-  选中取 `--p-highlight-background`（surface-200 / surface-700），
-  悬停取 `--p-content-hover-background`（surface-100 / surface-800）。
-  这条约束因此对全应用生效，而不只是曲目表格。
-- **灰色行不可选中**改为在 `update:selection` 这个唯一出口上过滤。
-  DataTable 有好几条路径会写选中集合（单击、Shift 连选、Cmd+A、键盘上下），
-  而「灰色行不可选中」是对**集合**的约束、不是对某条路径的约束——
-  在出口过滤一次，每条路径就都守住了。
-  （PrimeVue v4 的 DataTable 没有逐行的可选性开关，这也是唯一的落点。）
-- **单击灰色行保留原有选中**，不把选中集合清空：它不可选中，
-  但也不该顺手把用户已经选好的那几行丢掉。此前的实现是同样的行为，
-  这里写明是因为换成「出口过滤」后它变成了一条需要显式保留的规则。
+- `useListSelection.ts` 是唯一选择模型，DataTable 不启用 `selectionMode`；
+  仅受控传入 selection 作显示。锚点/焦点保存稳定行 key，不保存排序前下标。
+- 原表五项动作保留；额外支持：上下/Home/End 移动并独选，Shift 扩展/收缩范围，
+  Cmd/Ctrl+上下仅移动焦点，Cmd/Ctrl+Shift 追加范围，Space 切换，Enter 打开，
+  Escape 清空，Shift+F10/菜单键打开菜单。无文字选区时 Cmd/Ctrl+C 复制所选曲目信息。
+- Cmd/Ctrl+A 仅在行/列表获得焦点时生效；输入、工具栏、侧栏和弹窗不接管。
+  空白处单击清空；右键已选行保留多选，右键未选普通行独选，灰色行保持既有选中。
+- 灰色行在状态模型入口排除，键盘移动和全选均跳过；不是事后剔除。
+- 清单位置 key 与曲目 id 分开：id=0 的多条灰色行不碰撞，多个位置命中同一曲目
+  时可以显示多个选中位置，但计数/导出/删除/添加集合均按曲目 id 去重。
+- 选中用 `--p-highlight-background`（浅色 surface-200/暗色 surface-700），
+  hover 用 surface-100/800，焦点另有 outline；鼠标停在已选行不降低选中强度。
 
 ### 14.2 单元格内仍可划选文字 `[需改 spec]`
 
@@ -1174,9 +1172,10 @@ Archive 上没有图），而「取图出错」是可以重试的故障。画成
 2. 行选中判定放在 `click` 而不是 `mousedown` 上，并比对按下与松开的位移：
    位移超过 4px **且真的产生了文字选区**时，这一下算划选，不动行选中状态。
 
-**第七轮修订**：第 2 条的判据不变，落点变了。DataTable 把行选中绑在 `<tr>`
-自己的 `click` 上，本仓库改不了它，因此把这道判定移到**表格外层的捕获阶段**：
-捕获阶段在目标元素之前执行，判定为划选就 `stopPropagation()`，那一下到不了行。
+位移以欧氏距离 >4px 判定，并且必须确有文字选区。
+普通点击后聚焦行，划选时不改选择、不强制 focus（WebKit 可能因此丢文字选区）。
+由于 DataTable 内置选择已关闭，不需要捕获 click 并 stopPropagation 来对抗另一套选择。
+歌单不设置整行可拖动，使用现有 # 列中的 DataTable 原生手柄；标题等文字仍可划选。
 
 另有一处必须显式阻止：Shift + 单击时浏览器会顺手把整段文字选进选区
 （读起来正是用户说的「整个页面的文字变成蓝底高亮」），因此
@@ -1214,7 +1213,9 @@ Ctrl/Cmd + A 同理需要 `preventDefault()`，且**在输入框里不接管**
 
 **审查时发现。** 切视图/筛选/重载后 `selected` 里可能留着已不在列表中的 id，
 而「导出选中项」用的正是这个集合——用户会导出到一批他此刻根本看不见的曲目。
-改为在 `rows` 变化时把不存在的 id 剔掉并重新上报选中集合。
+改为在 `rows` 变化时把不存在的 key 剔掉并重新上报有效曲目 id。
+同一组件切换歌单/艺术家/专辑上下文时清空选择；卸载上报空集合。
+普通后台重载保留仍存在的 key，并换成新行对象，避免菜单/批量操作读旧字段。
 
 ### 14.6 验证
 
@@ -1234,17 +1235,11 @@ Cmd+A 选中所有行 / Cmd+A 不产生文字选区 / 文字划选保留 /
 `EventsOnMultiple`，桩件只实现前者时应用会在 `onMounted` 中途抛错，
 表现为「表格有数据但侧栏徽章与工具栏进度都是空的」。
 
-**第七轮修订**：这 15 条断言原样保留、全部仍通过，但**选择器跟着标记走**了
-（换成 Volt 之后 DOM 变了，断言的措辞没变）：
-
-- 选中态读 `tr[data-p-selected="true"]`，不再猜 class ——
-  选中底色由 `p-selected:bg-highlight!` 这个变体给出，class 串里看不到结果。
-- 右键菜单读 `[data-pc-name="contextmenu"] [data-pc-section="itemlink"]`；
-  unstyled 模式下没有 `p-contextmenu` 这类类名，`data-pc-*` 才是稳定的锚点。
-
-另新增 `tmp/harness/drive-sort.mjs`（5 条断言），核对排序的两个入口：
-点列头即按该列排序、排序菜单的勾与列头同步、从菜单选维度生效、
-再选同一维度即反向、回到「默认顺序」即恢复后端给的顺序。
+当前可重复执行的验证为已纳入版本控制的
+`frontend/tests/unit/` 与 `frontend/tests/e2e/`（真实应用 + Wails 桩件）。
+选择读标准 `aria-selected`，结构用稳定行 key，交互通过真实鼠标/键盘事件驱动。
+覆盖与执行结果见 20.7，包括灰色行、重复 id、排序后范围、焦点作用域与重排；
+上述历史脚本的断言不重复计入当前结果。
 
 ---
 
@@ -1294,10 +1289,9 @@ Cmd+A 选中所有行 / Cmd+A 不产生文字选区 / 文字划选保留 /
 上一条不在窗口右上角 / 先手动搜一次 / 切换上游自动重搜 / 结果换成新上游的
 ```
 
-**第七轮修订**：6 条断言原样保留、全部仍通过。上游下拉从原生 `<select>`
-换成 Volt 的 `Select` 之后，驱动方式必须改成**真实鼠标事件**——
-`Select` 的选项在 `mousedown` 上选定，合成的 `.click()` 选不中它。
-这一点对任何要驱动 Volt 下拉的脚本都成立，因此记在这里。
+当前上游下拉使用 Volt `Select`，Playwright 通过真实鼠标/键盘驱动，
+覆盖先手动搜索、再切 iTunes 自动重搜并显示地区选择。执行结果见 20.7，
+历史六条断言不重复计入当前结果。
 
 ---
 
@@ -1359,18 +1353,23 @@ Cmd+A 选中所有行 / Cmd+A 不产生文字选区 / 文字划选保留 /
 > （类型、载体、国家、厂牌、目录号、音轨数）写 `release`，并顺带登记发行组。
 > 「只写候选自己带的字段」这一条不变。
 
+**注意**：该段描述统一入口与目标契约，不表示四个调用方已传齐同样的数据。
+灰色行入口尚未传入所属发行、碟号与音轨号；候选 `Year` 尚未映射到歌集日期，
+`AlbumCredit` 则暂以曲目署名填入。现状与后续修复建议见 21.3、21.4。
+
 `CandidateRow` 补了 `discNumber` / `releaseStatus` / `firstReleaseDate` 三个不显示的
 字段，使行能**无损**还原成候选（`toCandidate` 与 `rowFrom` 互为逆运算）——
 否则经过界面往返的那两条路径必然比导入少几列。
 
-**与 spec 冲突处**（`matching/provenance`）：spec 把 `import`（导入文件原值）列为
-逐字段来源的一种取值。现在**没有任何路径产生它**——曲目记录的是「上游怎么说」，
+**与 spec 冲突处**（`library/track-library` 与 `design.md` D2）：规划把 `import`
+（导入文件原值）列为逐字段来源的一种取值。候选入库路径不再产生它——曲目记录的是「上游怎么说」，
 表格那一行是「用户当时怎么写」；补了会让一首曲目的署名一半来自上游、一半来自
 表格，且看不出哪一半是哪一半。建议从来源取值里删掉 `import`。
 
 **未动的部分**：`import_item.in_title/in_artist/in_album` 仍然保留——它们是复核队列
 的工作数据（上半区显示原始文本、改搜预填、「无需匹配」按原始输入入库都靠它），
-spec 明确要求这三件事。它们只是不再流进 `track`。
+spec 明确要求这三件事。它们只在「无需匹配」这条明确按原始输入收录的路径进入 `track`，
+不会为已接受的上游候选补缺失字段。
 
 ### 18.2 检索只有一个入口：`matching.Engine.Run` `[需改 spec]`
 
@@ -1476,7 +1475,7 @@ track                         -- 曲目：单表
   provenance_json, locked_json
 ```
 
-`✎` 标记的是编辑界面里用户可改的字段。
+`✎` 标记模型设计要求可编辑的字段；当前界面的实际覆盖与未接线字段见 19.6。
 
 **与 spec 冲突处**：
 
@@ -1505,7 +1504,8 @@ track                         -- 曲目：单表
 
 **年份不再单独存一列**：它由歌集的 `release_date` / `first_release_date`
 派生（`Release.Year()`）。曲目的年份本来就是发行年份，存两份必然漂移。
-用户改年份即改歌集的发行日期，逐字段来源与锁随之落在歌集上。
+年份修改应写到歌集发行日期并记录歌集级来源与锁；目前编辑绑定尚未接通这条路径，
+不能把存储层支持日期更新等同于界面已能保存年份（见 19.6、21.3）。
 
 ### 19.2 「署名」与「参与角色」拆为两件事 `[需改 spec]`
 
@@ -1527,7 +1527,12 @@ track                         -- 曲目：单表
 3. 「这位艺术家是否被署名」只能从 `credit_spans_json` 这个 JSON 列看出来，
    而 spec 明确禁止它参与查询。
 
-**改为**新增两张表，与 `track_artist` 分工：
+**目标与实现边界**：表结构与 `applyDetailArtists` 已拆开署名和角色，
+但 MusicBrainz 的 `parseRecordingArtists` 仍把 recording 的 `artist-credit`
+转成 `role='vocal'`；抽屉也仍把署名区标为「演唱」。因此下述成员判定已实现，
+「署名不再冒充演唱」尚未在真实解析链路完全落实（见 21.3）。
+
+**存储与绑定层调整后**：
 
 | 表 | 回答的问题 |
 | --- | --- |
@@ -1664,24 +1669,26 @@ SELECT track_id, artist_id FROM track_artist WHERE role = 'vocal'
 编辑界面对发行级字段（歌集名、厂牌、目录号、载体、国家、类型、年份）
 标「歌集」徽标并说明改动对该歌集全部曲目生效（`FieldRow.ReleaseScoped`）。
 
-### 19.6 编辑界面的字段集合调整 `[需改 spec]`
+### 19.6 编辑界面的字段集合与接线边界 `[待修复]`
 
-按用户第六轮给出的数据清单，用户可编辑的字段收敛为：
+歌集成为实体后，存储层具备曲目字段与歌集字段的独立更新原语；
+这不代表所有字段都已出现在编辑界面。当前 `buildEditSession` 实际返回：
 
-| 层 | 字段 |
+| 层 | 当前界面字段 |
 | --- | --- |
-| 曲目 | 曲名、曲目署名艺术家、碟号、音轨号、风格、注释 |
-| 歌集 | 歌集名、歌集类型、歌集艺术家、碟数、音轨数、封面路径 |
+| 曲目 | 曲名、曲目署名艺术家、碟号、音轨号、时长、风格、注释 |
+| 歌集 | 歌集名、年份、厂牌、目录号、载体、国家、类型 |
 
-变化点：
-- **注释**（`comment`）此前不在编辑界面的字段表里，现已补入。
-- **年份**不再是独立字段（见 19.1），改为编辑歌集的发行日期。
-- 厂牌、目录号、载体、国家仍可编辑，但归歌集层。
+- 注释已接入；时长仍可编辑。
+- 年份仍以「年份」输入框呈现，不是日期输入框；`ApplyEdits` 没有将 `year`
+  转成歌集的 `releaseDate`，保存不会更新年份。
+- 歌集艺术家、碟数、音轨数、封面路径尚无编辑字段；封面可经详情抽屉重新获取并采用，
+  不等于有手动路径编辑入口。碟数与音轨数的后端保存分支已有，但前端尚未提供。
+- 厂牌、目录号、载体、国家、类型的值写入歌集；歌集锁与来源在编辑会话中的读取
+  仍有缺口（见 21.3）。
 
-歌集类型的取值域固定为 `album` / `ep` / `single` / `broadcast` / `other`
-（`store.NormalizeReleaseType` 归一，对齐 MusicBrainz 的 release-group 主类型）。
-上游给出取值域之外的类型时归入 `other`；上游**没给**时留空——
-「上游没说」与「上游说了 Other」是两件事。
+歌集类型的存储取值域为 `album` / `ep` / `single` / `broadcast` / `other`
+（`store.NormalizeReleaseType` 归一）。上游给出域外值时归入 `other`，未给时留空。
 
 ### 19.7 顺带修掉的四处 `[纯 bug 修复]`
 
@@ -1741,11 +1748,10 @@ CD 的 release 行作为清单缓存保留（`library/release-catalog` 要求如
 
 ### 19.10 遗留观察（第六轮新增）
 
-1. **发行组内的 release 数尚未真正出网取得**。`release_group.release_count`
-   这一列与它的读写路径都在，专辑详情也会显示「共 N 个版本」，
-   但目前只有详情响应顺带带回的值会写入，**没有**发起 MusicBrainz 的
-   release browse 请求去取准确数。按用户裁决它应当「从上游取并落库，可手动改」，
-   取数那一步待补——自然的落点是后台补全任务，不该阻塞入库。
+1. **发行组内的 release 数尚无生产写入路径**。`release_group.release_count`
+   列、store 读写原语与专辑详情的条件显示已存在，但 `provider.Detail` 没有此字段，
+   生产代码既不从详情填入，也未发起 release browse 请求；`SetReleaseGroupCount`
+   尚无调用方，也无手动编辑入口。取数与接线待补，不应阻塞入库。
 
 2. **歌集级字段没有单独的编辑入口**。歌集的字段现在经由某一首曲目的编辑界面
    修改（标「歌集」徽标）。专辑详情页本身还没有「编辑这张歌集」的入口，
@@ -1756,8 +1762,8 @@ CD 的 release 行作为清单缓存保留（`library/release-catalog` 要求如
    本轮只建表与读写原语，`applyDetailArtists` 尚未填充它。
 
 4. **本地歌集的归拢键是 (标题, 署名) 的大小写不敏感精确比对**。
-   同一张专辑在不同行写成「涼宮ハルヒの詰合」与「涼宮ハルヒの詰合 」
-   （尾随空格已 trim，但全角/半角差异未归一）时会裂成两条本地歌集。
+   同一张专辑在不同行使用全角/半角或其他异体写法时可能裂成两条本地歌集
+   （尾随空格已 trim，但字符形式未归一）。
    匹配阶段的 `matching.Normalize` 比这严格得多，但把它引到这里
    意味着「不同写法自动合并」，与 `library/artists` 的
    「不同写法不自动合并」取向相反，因此本轮没有做。
@@ -1777,241 +1783,289 @@ CD 的 release 行作为清单缓存保留（`library/release-catalog` 要求如
   `TestF11` 的「用户改过的年份不被重新匹配覆盖」改为断言歌集的发行日期
   （年份已由它派生），被保护的语义不变。
 - `internal/importer` —— 导入路径写出的曲目与歌集。
-- main 包 `TestAllAdmissionPathsWriteIdenticalTracks` 扩到**四**条入库路径
-  （补上专辑视图灰色行），并新增「每条路径都真的挂上了歌集」的断言——
-  发行级字段移到 release 之后，某条路径漏建歌集仍能通过只比曲目的对比。
+- main 包 `TestAllAdmissionPathsWriteIdenticalTracks` 覆盖四个入口，但完整元数据
+  相等及挂上歌集的断言只比较搜索、复核、导入三条路径；灰色行只比较共有曲目字段，
+  并允许发行字段缺失。该测试不能证明灰色行完整归属与四路字段完全一致（见 21.3）。
 
 ### 19.12 验证记录
 
 - `go test ./...` 全绿；`-race` 对 main、store、importer、acceptance 单独跑过。
 - `wails build` 成功且**零告警**。
-- 突变验证：把艺术家列表的成员判定改回无条件 `JOIN track_artist`、
-  把署名艺术家改回一律写 `role='vocal'`——两处突变都被上面那条用例捕获，
-  确认它不是空过。
+- 单元断言验证上述存储与绑定层拆分能识别错误的成员条件或角色值；
+  尚未覆盖 MusicBrainz 原始响应解析仍推断 `vocal` 的路径（见 21.3）。
 
 ---
 
-## 二十、组件库从 shadcn-vue 换成 Volt `[需改 spec]`
+## 二十、Volt 替换与文件列表交互 `[需改 spec]`
 
-**用户裁决（第七轮）**：曲目表格要做成文件管理器里那样的列表，
-shadcn-vue 下改了几轮都差一层；PrimeVue 里有现成的，
-为了后期好调风格，改用 Volt。
+迁移设计见 `frontend/docs/volt-migration.md`，
+组件来源与定制清单见 `frontend/src/volt/README.md`。
 
-**技术栈变更**：
+### 20.1 技术栈与来源
 
 ```
 Wails(Go + Vue(Vue3 + TypeScript + Tailwind CSS v4 + Volt + Lucide Icons + Pinia(按需引入)))
-                                                      ^^^^ 原为 shadcn-vue
 ```
 
-**与 spec 冲突处**（两处都不在 `specs/**` 里，但同属本变更，需一并改）：
+Volt 是仓库内的组件源码，不是另一个主题 npm 包。行为由 unstyled PrimeVue 提供，
+外观由本地 Tailwind pass-through 提供，后续风格改动落在源码中。
 
-| 文件 | 现状 |
+- 固定 `primevue@4.5.5`；官方源文件来自 `primefaces/primevue` 的 **4.5.5 tag**，
+  已逐文件核对并保留 MIT 许可与源文件 SHA-256。选定可复现版本，不据此宣称 5.x 不可用。
+- 删除 `reka-ui`、`class-variance-authority`、`clsx`、`tw-animate-css`、shadcn CLI 配置与旧 Button/cn。
+- 增加 `primevue`、`tailwindcss-primeui`；保留 Vue、Tailwind v4、Lucide、Pinia、tailwind-merge。
+- 新增开发测试依赖 Vitest/Playwright；测试不进入生产包。
+
+**与 spec 冲突**：`proposal.md` 的 What Changes/Impact 仍写 shadcn-vue，
+`tasks.md` 1.2 仍是接入 shadcn 的已完成项；需将目标技术栈改为 Volt 并注明迁移。
+`platform/app-shell` 单击打开抽屉/工具栏导出等与此前第十四节已经冲突，本轮仍按该裁决，
+并增加 Enter 打开/键盘范围/菜单「打开详情」；技术栈与交互条款需一并同步。
+
+### 20.2 控件覆盖与风格入口
+
+| 领域 | 当前实现 |
 | --- | --- |
-| `proposal.md:9` | 「…Vue 3/TypeScript 前端（Tailwind CSS v4、**shadcn-vue**、Lucide、按需 Pinia）…」 |
-| `proposal.md:62` | 「…前端 Vue 3、Tailwind CSS v4、**shadcn-vue**、Lucide。」 |
-| `tasks.md:4` | 「1.2 接入 Tailwind CSS v4 与 **shadcn-vue**，验证一个按钮组件在暗色/亮色下渲染正常」 |
+| 曲目/候选表格 | 共用 `volt/DataTable.vue` + `primevue/column`；各自仍是唯一业务组件 |
+| 侧栏/曲目右键 | 本地 Volt 风格 `ContextMenu`（上游未提供），自动定位/关闭/键盘导航 |
+| 排序/高级搜索 | Volt `Menu` / `Popover`，Popover.hide 调用 hide，不再错误 toggle |
+| 设置/导入/编辑/输入/确认/歌集改名范围 | Volt `Dialog`，统一焦点/滚动/关闭语义 |
+| 文本/数字/下拉/勾选 | `InputText` / `InputNumber` / `Select` / `Checkbox` |
+| 操作/状态 | `Button`、`SecondaryButton`、`DangerButton`、`Tag`、`Chip`、`Badge`、`Message`、`ProgressBar` |
 
-`specs/**` 下的条款不点名组件库，因此本次替换**没有**让实现与任何
-requirement 冲突；受影响的是 1.7 / 1.8 / 14.1 / 14.2 那几条**已记在本文档里**的
-实现约定，均已就地修订，不另起新说法。
+业务导航项、可点击署名仍可用原生 button，导入日志等只读表格无需变成 DataTable。
+不为了“换库”把每个 HTML 标签都包装成库组件。
 
-### 20.1 为什么是 Volt，以及它是什么
+- 唯一基础调色板为 `--p-surface-*`；中性主色 `--p-primary-*` 引用它，而非复制相同色值。
+- 选中/hover/focus 分离（见 14.1），浅深色由 `.dark` 与 color-scheme 控制。
+- 控件、菜单图标插槽使用 Lucide，未引入 PrimeIcons 字体。
+- 单例工具类覆盖用 `pt:root:class`，状态尺寸用同层变体覆盖，避免 class 竞争导致搜索图标压住输入文字。
+- DataTable 显式合并传入 PT，不能让业务行属性覆盖整套主题；加了实际 computed style 回归测试。
+- 各基础控件布局/语义默认在 `src/volt/` 调整；应用自有色也在 `style.css`，不是第二套主题。
 
-Volt 不是一个 npm 依赖，而是一批**拷进仓库的 `.vue` 文件**（`src/volt/`）：
-行为来自 `primevue`（以 `unstyled` 模式接入，只出结构与无障碍语义），
-外观是这些文件里的 Tailwind 类，可以直接改。这正是「方便后期调整风格」
-所要的形态——样式在仓库里、可 diff、可 review，而不是藏在主题包中。
+### 20.3 为什么不直接启用 DataTable 原生 selection
 
-换库的**动因**是曲目表格：多选、连选、键盘导航、粘性表头、列排序，
-shadcn-vue 一个都不提供，每加一样都是在重造一个 DataTable。
+审查 PrimeVue 4.5.5 源码发现：范围锚点保存数组下标；普通方向键只移焦点，Enter 选中；
+没有逐行不可选的公开 prop。只启用 multiple 再过滤 ghost，仍达不到约定且形成两套逻辑。
 
-**版本**：`primevue` 钉在 **4.5.5**（精确版本，不加 `^`）。
-Volt 的组件源随 primevue 仓库发布，本次取自 `apps/volt/volt`（4.5.5 那一版），
-组件与 pass-through 的结构必须与所依赖的 primevue 同版，
-否则 `pt` 里的段名对不上、样式会整块丢失。
-`primevue` 5.x 的 Volt 在一个非公开仓库里，暂不可用。
+因此 DataTable 负责结构、粘性表头、排序事件与原生拖拽；
+`useListSelection.ts` 独占选择/锚点/焦点，`trackRows.ts` 独占顺序/位置 identity/曲目去重。
+具体行为以 **14.1、14.2、1.8 的交互契约**为准。
 
-随之增删的依赖：
+额外核对：`value-change` 不是每次 value/sortField 外部变化都触发，不能把它当作唯一顺序源。
+统一 `orderedRows` 传入 DataTable 并关闭二次排序，不再猜测其内部 processedData。
 
-| 增 | 删 |
+### 20.4 歌单手柄与上下文
+
+- 不新增一列：完整歌单在 **# 列**显示原生重排手柄，其他视图仍显示曲序。
+  列定义数量/其余列/菜单保持一致。这是 # 单元格的显式视图变体，建议 spec 明确允许。
+- 不在冒泡阶段强改 draggable、不访问 DataTable 私有实例。图标插槽明确带
+  `data-pc-section="reorderablerowhandle"`，由 PrimeVue 原生重排流程管理。
+- 只在默认顺序且没有筛选时可拖动；文字单元格始终可拖选文字。
+- 批量拖动/框选/列宽持久化未实现，不将“文件管理器式”泛化为已支持这些功能。
+
+### 20.5 弹窗与 Wails
+
+- 全部模态框用 Volt Dialog；限制视口尺寸、固定头尾/内部滚动，默认不因点遮罩丢弃编辑。
+- PrimeVue 4 的全局 Escape 会同时通知多个 Dialog，本地 `dialogStack.ts` 只关闭顶层。
+  不能只在弹窗根元素监听：**WebKit 点击 button 后不一定聚焦它**，保存按钮临时 disabled 后
+  焦点还可能落到 body，根监听会漏 Escape。新增双浏览器回归已覆盖此场景。
+- Select/Popover 已消费 Escape 时，不继续关父弹窗；关闭顶层不关底层编辑器。
+- Prompt 输入自动聚焦；破坏性确认默认聚焦取消；取消时恢复可用的来源焦点。
+- 右键菜单无进入动画，避免动画期间尚未绑定 outside click/焦点而漏第一次关闭。
+- 所有按钮/输入/combobox 默认 `--wails-draggable: no-drag`；安全区与 PaneHeader 仍可拖窗口。
+- 搜索页也接入 PaneHeader（48px 主操作行，地区选项另起一行）。
+
+### 20.6 审查连带修复 `[纯 bug 修复]`
+
+1. 候选「已在库中」不再用原生 disabled 挡住所有点击；有 localTrackId 时执行跳转，
+   无 id 才 disabled。加入后保存 AddToLibrary 返回的 id，不会再次入库。
+2. 本地搜索行的已采用封面字段从无效的 `coverPath` 改为 TrackTable 的 `adoptedCoverPath`。
+3. 导入选择文件/解析失败即使没有 preview 也显示 Message，不再把错误藏在 preview footer。
+4. 搜索页「导出当前列表」不再拿 `library.baseFilter()`（旧视图过滤器）导出全库；
+   传当前已展示结果 id 快照，以已有 selection 导出 API 实现，Go API 不变。
+5. InputNumber 默认不允许空数值/不分组，窄输入不会溢出容器；Tag 密度、Message warn 变体修正。
+6. 默认排序反复点击不再出现“默认顺序（降序）”这种无效状态。
+
+### 20.7 当前版本自动化验证
+
+- `npm test`：10 项单元测试通过，覆盖普通/增量/范围收缩/排序后锚点/删除锚点/ghost/
+  键盘/右键/后台替换行对象/重复曲目位置/自然排序与缺失值。
+- `npm run test:e2e`：**15 个场景 × Chromium/WebKit = 30 项通过**，真实组件与 Wails 桩件。
+  同一套测试也对 `npm run build` 后的 dist 用 `SONEXA_E2E_PREVIEW=1 npm run test:e2e`
+  重跑，**30/30 通过**，验证生产打包/异步模态分块。
+  所有场景收集未捕获 pageerror 并要求为零。覆盖选择/导出、排序菜单、文字拖选/双击、
+  Prompt、设置所有分组/主题/数字输入、导入失败与提交、嵌套改名、Popover、ghost 去重、
+  歌单原生重排、筛选禁用重排、菜单键/视口边缘、搜索导出、复核切上游、已入库跳转、
+  200 行滚动/粘性表头/主题截图。
+- `npm run build`：vue-tsc + Vite 成功。仍有 **>500 kB chunk warning**，不能写“零告警”。
+  模态表单已按需载入，但主包约 880 kB（gzip 221 kB），CSS 约 103 kB（gzip 15.5 kB）；
+  未进行原生启动性能测量，不宣称包体增加没有首帧影响。
+- `go test ./...`：11 个包通过；另执行 `go test -count=1 -race ./...`，
+  11 个包均通过；`go vet ./...` 通过。
+- `openspec validate add-sonexa-v1 --strict` 通过，仅表示规划文件结构合法，
+  不证明实现符合全部场景；语义核对见第二十一节。
+- `~/.go/bin/wails build`：darwin/arm64 打包成功，无 `time.Time` 绑定告警；
+  产物 `build/bin/sonexa.app`。
+- 用户已确认当前修改通过人工验证；本次文档核对没有另行启动使用真实用户数据库的
+  原生应用，也未请求真实上游、删除用户数据或执行数据库迁移。
+  **WebKit 自动化不等于原生 Wails 人工验收**。
+
+可重复执行的前端测试/桩件位于 `frontend/tests/`，截图/trace 位于被忽略的
+`frontend/test-results/`；正式偏差记录统一维护在 `change_record/v1-deviations.md`。
+
+### 20.8 尚未覆盖/已有偏差的准确边界
+
+- 无虚拟滚动/分页、大曲库性能基准；启用前需联测键盘、文字选择与重排。
+- `library/export` 的字段深度尚无前端入口，仍固定 `depth='full'`；这是未完成项，
+  不能视为 spec 已满足。
+- 三栏页只有名单查找，缺少曲目 FTS 输入（1.5）。
+- 歌集独立编辑入口、release_count 主动取数、release_credit 接线等仍待完成。
+- 原生验收包括红绿灯安全区/拖窗口、输入法、拖拽手感、真实导入/文件对话框、
+  系统缩放与目标曲库规模；自动化结果不扩大用户已确认的人工验证范围。
+- 其他已核实的后端缺口与测试覆盖边界见第二十一节。
+
+---
+
+## 二十一、规格与实现一致性核对
+
+### 21.1 结论与验证范围
+
+核对基准为 `openspec/changes/add-sonexa-v1/` 的 proposal、design、tasks、
+22 份 spec（174 条 requirement、305 个 scenario），并将本文记录的后续裁决作为修订依据。
+
+| 维度 | 结果 |
 | --- | --- |
-| `primevue@4.5.5`、`tailwindcss-primeui` | `reka-ui`、`class-variance-authority`、`clsx`、`tw-animate-css` |
+| 规划完整性 | tasks 为 182/182 完成，OpenSpec 严格格式校验通过；勾选状态不等于生产链路已全部完成 |
+| 前端交互 | 当前 Volt、排序、受控选择、模态与导出交互有代码及双浏览器回归证据，与第十四、二十节基本一致 |
+| 规格同步 | 原 spec 仍包含旧模型、旧导航与旧分流；本文已记录对应的确定调整，尚未同步规划文件 |
+| 实现正确性 | 仍有下述已核实缺口；不能宣称「spec + 偏差记录的全部目标均已实现」 |
+| 测试范围 | 自动化执行结果见 20.7；未逐个动态执行全部 305 个规格场景，也未重跑真实上游或原生人工验收 |
 
-`tailwind-merge` 保留——Volt 的 `ptViewMerge` 用它合并 pass-through 的类名。
-`lucide-vue-next` 保留：图标仍用 Lucide，只有 Volt 组件**内部**的图标
-（下拉箭头、关闭叉、勾）用 `@primevue/icons`，那是组件自带的。
-一并删除的还有 `components.json`（shadcn CLI 的配置）、
-`src/components/ui/`（shadcn 的 Button）与 `src/lib/utils.ts`（`cn()`）。
+本次仅整理文档、记录问题，不改变用户已验证的应用代码。
+以下缺口在整理前已经存在，不是文档整理引入的回归。
 
-### 20.2 调色板收敛为一套 `[需改 spec]`
+### 21.2 各领域的实现与修订映射
 
-此前 shadcn 的 `--background / --foreground / --accent / --popover / …`
-与 Volt 的 `--p-surface-* / --p-primary-*` 会**并存**：改一次风格得改两处，
-而两处必然漂移。现在只有 `--p-*` 一套（`src/style.css`），
-Volt 组件与手写标记共用。
+下表是代码与测试入口索引，不表示每个 requirement 都有独立的端到端测试。
 
-- **色阶**：`--p-primary-*` 与 `--p-surface-*` 取同一条中性色阶
-  （Tailwind neutral）——本应用是单色设计，主色即前景色。
-  换主色只需改这一条色阶。
-- **语义令牌**：`--p-content-*`、`--p-highlight-*`、`--p-text-*` 由
-  `tailwindcss-primeui` 规定取值域，映射成 `bg-emphasis`、`bg-highlight`、
-  `text-muted-color`、`border-surface` 等工具类。
-- **应用自有的四个**挂在同一层，不另起体系：
-  `--p-app-background`（主内容区的地）、`--p-app-chrome-background`
-  （侧栏与详情抽屉）、`--p-ghost-color`（灰色行）、`--p-danger-color`。
-- **选中强于悬停**这条约束由令牌本身保证（见 14.1 的第七轮修订）。
+| 规格领域 | 主要实现 / 回归入口 | 应结合本文阅读的调整 |
+| --- | --- | --- |
+| `platform/app-shell`、`platform/settings` | `frontend/src/App.vue`、`components/TrackTable.vue`、`views/SettingsView.vue`、`tests/e2e/` | 第一、二、十四、二十节；参数与禁用态限制见 21.4 |
+| `platform/data-store`、`library/track-library` | `internal/store/migrations.go`、`create.go`、`track.go`；schema/migrate/delete/fts 测试 | 第十三、十九节；锁与详情落库限制见 21.3 |
+| `library/artists`、`library/browse-views` | `internal/store/artist.go`、`browse.go`、`bindings_albums.go`；`vocaloid_view_test.go`、`browse_test.go` | 第十九节；真实解析与灰色行入库限制见 21.3 |
+| `library/collections` | `internal/store/collection.go`、`frontend/src/components/AppSidebar.vue`；`TestPlaylistOrderPersists`、列表 E2E | 第十四、20.4 节；仅完整且默认顺序的歌单可拖动 |
+| `library/release-catalog` | `internal/store/release.go`、`stale.go`、`lookup.go`、`bindings_albums.go`；release/stale/lookup 测试 | 第十九节；后台详情清单未保存见 21.3 |
+| `library/search`、`library/export` | `internal/store/library.go`、`fts.go`、`bindings_export.go`、`internal/export/`、前端 search store | 第二、十四、20.6 节；深度选择 UI 缺失见 20.8 |
+| `matching/text-processing`、`matching/confidence`、`matching/pipeline` | `internal/matching/`、`internal/importer/runner.go`；对应单测与 CSV 验收 | 第九、十、十二、十八节 |
+| `matching/provenance` | `internal/matching/provenance.go`、`internal/store/admit.go`、`lookup.go`；admit/provenance/lookup 测试 | 第十八、十九节；编辑重匹配溯源见 21.3 |
+| `upstream/provider-registry`、`upstream/musicbrainz`、`upstream/itunes` | `internal/provider/`；client/retry/limiter/registry/provider 测试 | 第四、九、十三节；解析与 TTL 边界见 21.3、21.4 |
+| `upstream/search`、`review/review-queue` | `bindings_upstream.go`、`bindings_review.go`、`views/SearchView.vue`、`views/ReviewView.vue` | 第二、十三、十五、十八节 |
+| `upstream/cover-art` | `internal/covers/`、`bindings_covers.go`、`components/CoverArt.vue`；covers 与 wiring 测试 | 第十一、19.3 节；尺寸与视口取消限制见 21.4 |
+| `import/table-import` | `internal/importer/`、`bindings_import.go`、`views/ImportWizard.vue`；importer/roundtrip/CSV/E2E | 第三、四、十、十八节 |
+| `editing/track-editing` | `bindings_edit.go`、`views/EditDialog.vue`、`internal/store/release.go` | 19.5、19.6、20.5 节；生产保存缺口见 21.3 |
 
-`.dark` 仍是切换深浅的开关（`@custom-variant dark`），主题 store 未改。
+### 21.3 已核实的关键缺口 `[待修复]`
 
-### 20.3 逐组件的落点
+#### A. 后台详情缺少目标曲目标识，且未保存返回的清单
 
-| 原先 | 现在 |
-| --- | --- |
-| 手写 `<table>` + 自己算选中 | `volt/DataTable.vue` + `primevue/column` |
-| 手写右键菜单浮层（两处） | `volt/ContextMenu.vue` |
-| 手写排序浮层 | `volt/Menu.vue`（popup） |
-| 手写高级搜索浮层 | `volt/Popover.vue` |
-| 手写模态框（设置/编辑/导入向导/确认/输入） | `volt/Dialog.vue` |
-| 原生 `<select>`（8 处） | `volt/Select.vue` |
-| 原生 `<input>`（文本/数字/勾选） | `volt/InputText.vue`、`InputNumber.vue`、`Checkbox.vue` |
-| shadcn `Button` 与各处手写按钮 | `volt/Button.vue`、`SecondaryButton.vue`、`DangerButton.vue` |
-| 手写徽章 / chip / 进度条 / 提示条 | `volt/Tag.vue`、`Chip.vue`、`ProgressBar.vue`、`Badge.vue`、`Message.vue` |
+- **依据**：`internal/store/enrichstate.go:35` 的 `EnrichTarget` 只有发行标识，
+  `bindings_enrich.go:319` 构造 `provider.Ref` 时没有 `TrackRef`。
+  `internal/provider/musicbrainz/detail.go:340` 的 `findTrack` 在该值为空时取发行第一首。
+- **影响**：补全第二首及之后的曲目时，可能把第一首的曲名、录音标识、曲序与参与者写进去，
+  原 `match_ref` 却仍指向目标曲目。`ApplyDetailToTrack` 也没有将 `Detail.Tracklist`
+  交给 `ReplaceTracklist`；目前完整清单保存仅在 `FetchTracklist` 路径。
+- **核验**：本地两曲 HTTP 桩件经真实 `RefreshTrackDetail` 执行后，第二首的
+  `match_ref=audit-second` 保持不变，标题却成为 `First song`、录音变为 `rec-first`；
+  该发行清单仍为 `none`、0 行。
+- **建议**：工作集携带并传递曲目级标识；详情落库统一保存整张发行清单，
+  增加从非首曲入库到后台补全的完整回归。对应第十三节、`upstream/musicbrainz`、
+  `library/release-catalog`，不能仅把文档改成允许串曲。
 
-`PromptDialog` / `ConfirmDialog` 仍在，仍是 `window.prompt/confirm`
-在 Wails(macOS) 上失效的替身（见 4.1 与第六节第 1 条），
-只是壳换成了 `volt/Dialog.vue`。
+#### B. 用户锁未被所有详情写入路径遵守
 
-### 20.4 `src/volt/` 里的本地改动
+- **依据**：`internal/store/enrich.go:17` 的 `WriteDetailColumns` 直接更新曲名、署名与歌集字段，
+  没有读取锁；`applyDetailMeta` 对部分字段的过滤挡不住这条直接写入路径。
+  `GetMetadata` 只带出 `track` 的来源/锁，未合并 `release` 的来源/锁。
+- **核验**：先用 `UpdateTrackFields(..., true)` 锁定标题，再执行真实
+  `ApplyDetailToTrack`；标题被上游值覆盖，而 `locked["title"]` 仍为 true。
+- **建议**：曲目与歌集的所有写入口统一遵守各自字段锁，编辑会话读取正确归属的来源/锁，
+  并覆盖同歌集多首曲目与后台补全场景。关联 `library/track-library`、
+  `editing/track-editing`；既有 F11 测试只调用存储原语，不能证明这条链路正确。
 
-这些文件是**本仓库的源码**，改它们是 Volt 的用法而不是 hack；
-但重新从上游拉取时需要重新施加，因此逐条记在这里，各文件头部也有同样的说明。
+#### C. 署名仍在 MusicBrainz 解析阶段被推断为演唱
 
-**`DataTable.vue`（四处）**
+- **依据**：`internal/provider/musicbrainz/detail.go:191` 的 `parseRecordingArtists` 遍历
+  recording 的 `ArtistCredit` 时仍写 `Role: "vocal"`；`DetailDrawer.vue` 仍将署名区标为「演唱」。
+- **核验**：没有任何 vocal 关系、仅有 recording 署名的原始 JSON 经
+  `ParseDetailJSON` 后，仍生成该署名者的 vocal 关系。
+- **测试边界**：`TestVocaloidAndCreditedComposerReachArtistView` 传入手工构造的
+  `provider.Detail`，绕过了上述解析器，因此其通过不能证明真实响应中作词者不会被标成演唱者。
+- **建议**：从原始响应分别构造署名与参与角色，只有真实演唱关系才产生 vocal，
+  并对抽屉文案与原始 JSON → 解析 → 落库 → 分面做联合回归。对应 19.2 的已确定裁决。
 
-1. 行密度：`headerCell` / `bodyCell` 的 `py-3 px-4` 收到 `py-2` / `py-1.5 px-2`。
-   曲目表格是一份长列表，Volt 的默认间距一屏放不下多少行。
-2. 表头字重 `font-semibold` → `font-normal`，字号 `text-xs`，取 muted 色。
-3. `bodyCell` 的下边框在浅色下取 `surface-100`：逐行都画满 `surface-200`
-   的线时，一屏几十行读起来像格子纸。
-4. 排序图标默认透明，只在该列已排序或鼠标悬在列头上时显形
-   （见下方 20.6）。
+#### D. 灰色行入库未携带所属歌集与位置
 
-**`Dialog.vue`（一处）**：root 加 `flex flex-col`。上游的 header/footer 写着
-`shrink-0`、content 写着 `overflow-y-auto`，这套只有在 root 是纵向 flex 时才成立；
-而 `.p-dialog { display:flex }` 来自 PrimeVue 的样式包，**unstyled 模式下并不加载**。
-设置弹窗给了固定高度，缺这一条内容区不会滚而是把弹窗撑破。
+- **依据**：`frontend/src/views/AlbumsView.vue:188` 与 `bindings_albums.go:364`
+  的灰色行入库路径
+  仅传来源、track ref、标题、署名、时长、recording ref；未传已知的发行、碟号、音轨号。
+- **核验**：调用后新曲目的 `release_id` 为 NULL，补全状态为 `absent`。
+  它仍可通过 match_ref 在清单位置被识别，但没有歌集归属、不能进入该歌集的后台详情补全工作集。
+- **建议**：从当前清单/发行取得并传入真实上下文，再经 `AdmitCandidate` 入库；
+  回归应验证歌集归属、专辑计数与后台工作集，而不仅是几个共有字段。对应 18.1、19.11。
 
-**`ContextMenu.vue`（自补）**：Volt 上游没有提供 ContextMenu。
-按 `Menu.vue` 的写法补了一份：同一套 surface/primary 令牌、同一组过渡，
-于是右键菜单与下拉菜单长得一样。升级 Volt 时这个文件不会被覆盖。
+#### E. 编辑年份及重新匹配/取消的持久化语义不完整
 
-**`Checkbox.vue`（一处）**：去掉 icon 插槽里的 `dataP` 透传——
-上游那份对着比 4.5.5 更新的插槽类型写的，本仓库钉的版本没有这个字段。
-它只是把变体标记转给图标，去掉不影响勾选框本身。
+- **年份**：`bindings_edit.go:166` 的编辑字段仍返回 `year`，但 `ApplyEdits` 的曲目、歌集写入白名单
+  都没有把它映射为 `releaseDate`。本地核验：2006 年曲目保存为 2015 后仍读出 2006。
+- **重新匹配**：`bindings_edit.go:68` 的 `RematchTrack` 仅以候选填充上游字段；`buildEditSession` 的匹配身份
+  仍来自旧 metadata，没有返回新候选标识。前端仅在手工改变 `manualRef` 时提交新标识，
+  因而普通「更换 → 保存」不会自动把溯源换成新候选，跨源填充还可能记为旧来源。
+- **取消与失败**：`frontend/src/views/EditDialog.vue:156` 的 `clearProvenance` 立即调用持久化 API，不等待保存；
+  `ApplyEdits` 在校验匹配标识或完成改名确认之前已分步写入，后续报错不能整体回滚。
+- **建议**：建立包含新候选身份、待清空溯源与年份/日期映射的编辑草稿；
+  保存前完成校验，曲目/歌集/溯源在同一事务提交。补「清空后取消」「非法标识保存」
+  与「跨源更换后保存」测试。对应 `editing/track-editing` 的保存前不落盘及溯源覆盖要求。
 
-**`Menu.vue` / `Popover.vue`**：给 `defineExpose` 的形参补类型标注
-（上游是隐式 `any`，本仓库开着 `noImplicitAny`）。行为无改动。
+上述动态核验使用独立临时数据库与本地 HTTP 桩件，没有接触用户数据或真实上游。
+它们确认的是缺陷现象，不计入 20.7 的功能通过数；其余条目由生产调用链静态核对确认。
 
-### 20.5 DataTable 没有的三件事，各自的落点
+### 21.4 其他未完成项与应明确的边界 `[待修复]`
 
-前两件见 14.1 / 14.2 的第七轮修订（灰色行不可选中、文字划选不改行选中）。
-第三件：
+1. **设置参数**：高置信没有数值门槛是正确的结构性设计，需同步
+   `platform/settings` 与 `design.md` 的既有冲突。界面「复核阈值」虽可保存，
+   `ReviewThreshold` 未被匹配引擎消费；权重与相似度配置可由后端读取，但没有设置 UI。
+   建议先决定复核阈值的用途，再接线或移除，不能写成所有参数均即时生效。
+2. **封面尺寸、预取与取消**：自动详情封面仍使用 `CoverArt` 默认的 250px，未实现
+   spec 的自动最高质量；手动选图/采用另有高档降级链。搜索页有批量预取，复核页没有；
+   前端没有实际调用 `CancelCovers`。建议补目标尺寸与视口跟踪的端到端测试，
+   不将浏览器 lazy 属性等同于工作池取消（见 11.3）。
+3. **入库字段与来源**：`AdmitCandidate` 未将 `Candidate.Year` 写为歌集日期，
+   并以 `ArtistName` 同时作为歌集署名；候选自身没有独立的歌集署名字段。
+   初次候选入库也未逐字段记录 provider 来源。需明确候选字段契约并补持久化映射，
+   不将「不用表格值补缺」扩大为「候选全部字段均无损保存」。
+4. **歌集配套能力**：`release_count` 主动获取/手动编辑、`release_credit` 生产填充、
+   歌集独立编辑入口仍未实现（19.10）；19.6 列出的部分歌集字段缺少编辑入口。
+5. **导出与规模**：字段深度 UI 仍固定 full；无分页/虚拟滚动性能验收。
+   快速 FTS 在 `internal/store/library.go` 中取最多 2000 个 id，因此
+   大规模筛选并非无上限；后续需明确结果截断或分页语义。
+6. **不确定署名的人工处置**：`MarkTrackForReview` 只写 `enrich_error`，
+   `TracksNeedingReview` 未接入复核界面，成功补全后的 `SetEnrichState` 还会清掉该错误。
+   不能声称此类曲目已经进入可操作的复核队列；需单独持久化标记并提供处置入口。
+7. **出网提示与禁用态**：后端有前置条件检查，但详情的「重新获取封面」按钮未按
+   `outboundAllowed` 禁用/提供设置跳转；搜索、复核等页面仍有局部错误提示，
+   并未全部统一到全局提示位置。需补全 UI 状态与错误事件接线。
+8. **iTunes 生命周期**：原始响应缓存与清单读取有 TTL，已入库 track/release
+   元数据没有统一过期清理或重取机制。不能据缓存测试宣称全部 iTunes 元数据都满足
+   spec 的短期留存要求；需单独明确已收藏元数据的生命周期与条款边界。
 
-**歌单的拖拽重排**。DataTable 只认它自带的拖拽手柄列
-（`onRowMouseDown` 里一律 `draggable = false`，除非按在手柄上），
-而加一列手柄意味着歌单页比别处多一列——
-`platform/app-shell` 要求各处列定义完全一致，不能只给歌单多一列。
+### 21.5 后续同步与修复顺序
 
-因此：在表格**外层的冒泡阶段**把 `draggable` 设回来。冒泡阶段在
-`<tr>` 自己的 mousedown 处理器之后执行，于是能覆盖它置的 `false`。
-在文字单元格（`[data-text-cell]`）上按下时不设——那一下用户是要划选文字，
-不是要搬动行。这也顺带修掉了原先的一个小毛病：此前歌单行是静态
-`draggable="true"`，于是在歌单里没法划选单元格里的文字。
-
-### 20.6 排序图标只在该列已排序或悬停时显形 `[需改 spec]`
-
-Volt 给每个可排序列都常驻一个箭头。一排表头读下来全是箭头，
-反而看不出此刻按哪一列排的。改为默认透明、已排序的那一列常显、
-鼠标悬在列头上时显形——Finder 与 Apple Music 都是这个做法。
-
-### 20.7 踩到的三处，记下以免重复发现
-
-1. **Volt 的 `Select` 在 `mousedown` 上选定选项**，不是 `click`。
-   合成的 `.click()` 选不中它，驱动脚本必须发真实鼠标事件（见 15.4 的修订）。
-2. **`sx()` 不受 unstyled 影响**：DataTable 的 `position: sticky` 是经由
-   `inlineStyles` 加在 `<thead>` 上的行内样式，unstyled 模式下照样生效，
-   因此粘性表头**不需要**额外补 CSS。
-   而 `.p-dialog` 那类**类名上的**布局规则来自样式包，unstyled 下确实会丢——
-   两者的区别就是 20.4 里 Dialog 那一处改动的由来。
-3. **`data-pc-name` / `data-pc-section` 是 unstyled 下唯一稳定的 DOM 锚点**。
-   `p-contextmenu`、`p-select` 这类类名在 unstyled 模式下根本不生成，
-   任何按类名找元素的脚本都会落空。
-
-### 20.8 桩件补齐：设置对象的形状 `[纯 bug 修复]`
-
-**本轮核对时发现。** `tmp/harness/stub.js` 里的 `GetSettings` 返回
-`musicBrainz`（大写 B）且没有 `general`，而 `config.Settings` 的键是
-`musicbrainz`、且有 `general`。键名对不上时设置弹窗整块渲染不出来——
-`SettingsView` 的 `v-if="draft"` 拿到的是一个读不出字段的对象。
-
-桩件不是产品代码，但它是**前端交互的唯一自动化核对手段**，
-形状对不上就等于这一块从来没被核对过。已按 `wailsjs/go/models.ts` 补齐，
-设置弹窗现在能在桩件里打开并逐组切换。
-
-同样地补上了导入向导与编辑对话框要用的那几个绑定
-（`PickImportFile` / `AnalyzeImportFile` / `RemapImportColumns` / `SubmitImport` /
-`GetEditSession` / `PlanAlbumRename` / `ApplyEdits` / `ClearProvenance`）——
-这两个模板本轮被整体重写，而此前没有任何运行时核对，只过了类型检查。
-
-### 20.9 验证记录（第七轮）
-
-- `go test ./...` 全绿（Go 侧未改动，作为回归基线跑过）。
-- `npm run build`（`vue-tsc --noEmit` + `vite build`）通过，无类型错误。
-- `~/.go/bin/wails build` 成功且**零告警**；打包出的 `.app` 可启动、常驻不崩。
-- 前端以 Wails 桩件在无头 Chrome 中用真实鼠标/键盘事件驱动，
-  **36 条断言全部通过**：
-
-  | 脚本 | 条数 | 覆盖 |
-  | --- | --- | --- |
-  | `drive.mjs` | 15 | 曲目表格的选中、划选、右键菜单、导出、详情抽屉（见 14.6） |
-  | `drive-review.mjs` | 6 | 复核队列的三处交互（见 15.4） |
-  | `drive-sort.mjs` | 5 | 排序的两个入口与「默认顺序」（本轮新增） |
-  | `drive-dialogs.mjs` | 10 | 导入向导与编辑对话框（本轮新增，见 20.8） |
-
-- 截图逐屏核对亮/暗两套主题：全部曲目、搜索页、导入队列、复核队列、
-  设置弹窗、导入向导、编辑对话框——布局与令牌在两套主题下均正确。
-
-**核对过程中踩到的一处，记下以免重复**：无头 Chrome 的调试端口被上一次
-未正常退出的实例占着时，新起的实例绑不上端口，而驱动脚本的
-`fetch(/json/list)` 会连到**那个旧实例**——于是断言跑在上一轮的页面上，
-失败与通过都不可信。脚本退出前必须确保 `chrome.kill()` 执行到，
-排查断言失败前先确认没有残留实例。
-
-### 20.10 遗留观察（第七轮新增）
-
-1. **前端包体变大约 3.4 倍**：`203.8 kB → 900.4 kB`（gzip `66.4 kB → 225.1 kB`），
-   CSS `28.7 kB → 101.0 kB`。来源是 `primevue` 的组件运行时与
-   `tailwindcss-primeui` 生成的工具类。对 Wails 桌面应用这是**本地文件**、
-   不过网，首帧影响可忽略；记在这里是因为它是一个真实的、可度量的代价。
-   若以后要压：`primevue` 支持按组件入口引入（现在已经是），
-   剩下的大头是 DataTable 自身，没有更小的替代。
-
-2. **虚拟滚动尚未启用**。DataTable 自带 `virtualScrollerOptions`，
-   而当前实现把一屏全部行都渲染出来（换库前也是如此）。
-   曲库到几千首时值得开，但那会改变「Cmd+A 选中列表里的所有曲目」
-   与拖拽重排的语义（未渲染的行不在 DOM 里），需要一并想清楚，本轮未做。
-
-3. **分页未启用**，这是有意的：Apple Music 式的连续列表里不该出现页码。
-   DataTable 的 paginator 相关 pass-through 因此在 `volt/DataTable.vue` 里
-   留着但不起作用。
-
-4. **`npx volt-vue add <X>` 会从 master 拉取**，而本仓库钉在 4.5.5。
-   以后要补组件时，应当从 4.5.5 那个 tag 取，或取回后核对
-   pass-through 的段名与所依赖的 primevue 版本一致。
-
-5. **搜索页的页头没有走 `PaneHeader`**。它自己写了一条
-   `px-4 py-2.5` 的头部，因此高度与其余页面的 48px 不同，
-   窗口拖拽区也没覆盖到（换库前即如此，本轮未改）。
-   1.7 要求「两栏/三栏页面的头部共用同一个高度常量」，
-   搜索页是第三种结构，spec 与本文档都还没规定它。
+- **先修关键路径**：21.3 中的串曲、锁覆盖与保存语义具有数据正确性风险；
+  应先补失败场景回归，再修实现，不能靠下调规格掩盖。
+- **同步已确定裁决**：第一至二十节中标为需改 spec 的导航、列表、分流、统一检索、
+  后台调度、实体与署名结构、Volt 技术栈，需同时更新相关 spec、proposal、tasks 与 design。
+  尤其是 design 的 D1/D2/D3/D5/D8/D10/D12/D13，不能只替换技术栈名称。
+- **清理历史冲突**：保留原决策背景时要注明已被后续裁决取代，例如 7 入库的历史结果、
+  已撤销的跨组例外、0002/0003 的开发期迁移与旧表名。
+- **不提前归档**：文档整理完成不代表整个 v1 规格验收完成；
+  完成修复与规划同步后再做正式归档核验。
