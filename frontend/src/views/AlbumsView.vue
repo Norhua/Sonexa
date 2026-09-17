@@ -168,6 +168,7 @@ function toRows(): Row[] {
       // 「其他版本」行的 trackId 就是被命中的那首已有曲目，
       // 因此点击它能直接跳到用户手上的那一首。
       id: r.trackId,
+      rowKey: `release:${detail.value?.releaseId}:${r.discNumber}:${r.trackNumber}:${r.trackRef ?? ''}`,
       title: r.title,
       artist: r.credit,
       album: detail.value?.title,
@@ -298,6 +299,7 @@ async function addGhost(row: Row) {
       <TrackTable
         v-if="detail"
         :rows="toRows()"
+        :context-key="`album:${detail.releaseId}`"
         fixed-order
         @open="(r) => emit('openTrack', r.id)"
         @edit="(r) => emit('editTrack', r.id)"

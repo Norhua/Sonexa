@@ -5,7 +5,7 @@
  * 替代 window.prompt —— 它在 Wails(macOS) 上恒返回 null 且不弹窗，
  * 详见 stores/ui.ts 的说明。
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Dialog from '@/volt/Dialog.vue'
 import Button from '@/volt/Button.vue'
 import InputText from '@/volt/InputText.vue'
@@ -25,12 +25,9 @@ const open = computed({
 
 watch(
   () => ui.promptOptions,
-  async (options) => {
+  (options) => {
     if (!options) return
     value.value = options.value ?? ''
-    await nextTick()
-    input.value?.$el?.focus()
-    input.value?.$el?.select()
   },
   { immediate: true },
 )
@@ -48,6 +45,7 @@ function submit() {
     modal
     :header="ui.promptOptions?.title ?? ''"
     :style="{ width: '400px' }"
+    @show="input?.$el?.select()"
   >
     <p v-if="ui.promptOptions?.description" class="mb-3 text-xs text-muted-color">
       {{ ui.promptOptions.description }}
@@ -57,6 +55,7 @@ function submit() {
       {{ ui.promptOptions?.label ?? '名称' }}
       <InputText
         ref="input"
+        autofocus
         v-model="value"
         size="small"
         class="mt-1 w-full"

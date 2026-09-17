@@ -46,6 +46,6 @@ const el = ref();
 defineExpose({
     toggle: (event: Event, target?: unknown) => el.value.toggle(event, target),
     show: (event: Event, target?: unknown) => el.value.show(event, target),
-    hide: () => el.value.toggle()
+    hide: () => el.value.hide()
 });
 </script>

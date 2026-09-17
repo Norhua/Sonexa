@@ -118,6 +118,7 @@ async function submit() {
     :style="{ width: '820px' }"
     content-class="min-h-0"
   >
+    <Message v-if="error" severity="error" size="small" class="mb-3">{{ error }}</Message>
     <!-- 出网前置条件未满足时入口禁用，文案与其他出网入口一致 -->
     <div v-if="!settings.outboundAllowed" class="p-6 text-center">
       <AlertTriangle class="mx-auto mb-2 size-8 text-muted-color" />
@@ -245,7 +246,6 @@ async function submit() {
     </template>
 
     <template v-if="settings.outboundAllowed && preview" #footer>
-      <p v-if="error" class="mr-auto text-xs text-danger-color">{{ error }}</p>
       <SecondaryButton size="small" @click="emit('close')">取消</SecondaryButton>
       <Button size="small" :disabled="loading || importableCount === 0" @click="submit">
         提交导入 ({{ importableCount }} 条)

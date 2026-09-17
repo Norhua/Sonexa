@@ -36,7 +36,7 @@ const open = computed({
     </p>
 
     <template #footer>
-      <SecondaryButton size="small" @click="ui.settleConfirm(false)">取消</SecondaryButton>
+      <SecondaryButton autofocus size="small" @click="ui.settleConfirm(false)">取消</SecondaryButton>
       <DangerButton
         v-if="ui.confirmOptions?.danger"
         size="small"

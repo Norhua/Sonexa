@@ -7,7 +7,7 @@
         }"
     >
         <template #closeicon>
-            <TimesIcon />
+            <TimesIcon class="size-4" />
         </template>
         <template v-for="(_, slotName) in $slots" #[slotName]="slotProps">
             <slot :name="slotName" v-bind="slotProps ?? {}" />
@@ -16,7 +16,7 @@
 </template>
 
 <script setup lang="ts">
-import TimesIcon from '@primevue/icons/times';
+import { X as TimesIcon } from 'lucide-vue-next';
 import Message, { type MessagePassThroughOptions, type MessageProps } from 'primevue/message';
 import { ref } from 'vue';
 import { ptViewMerge } from './utils';
@@ -35,7 +35,7 @@ const theme = ref<MessagePassThroughOptions>({
         p-success:p-outlined:text-green-500 p-success:p-outlined:outline-green-500 dark:p-success:p-outlined:text-green-600 dark:p-success:p-outlined:outline-green-600
         p-success:p-simple:text-green-500 dark:p-success:p-simple:text-green-600
         p-warn:bg-yellow-50/95 p-warn:outline-yellow-200 p-warn:text-yellow-600 dark:p-warn:bg-yellow-500/15 dark:p-warn:outline-yellow-700/35 dark:p-warn:text-yellow-500
-        p-warn:p-outlined:text-yellow-500 p-warn:p-outlined:outline-yellow-500 dark: p-warn:p-outlined:text-yellow-600 dark:p-warn:p-outlined:outline-yellow-600
+        p-warn:p-outlined:text-yellow-500 p-warn:p-outlined:outline-yellow-500 dark:p-warn:p-outlined:text-yellow-600 dark:p-warn:p-outlined:outline-yellow-600
         p-warn:p-simple:text-yellow-500 dark:p-warn:p-simple:text-yellow-600
         p-error:bg-red-50/95 p-error:outline-red-200 p-error:text-red-600 dark:p-error:bg-red-500/15 dark:p-error:outline-red-700/35 dark:p-error:text-red-500
         p-error:p-outlined:text-red-500 p-error:p-outlined:outline-red-500 dark:p-error:p-outlined:text-red-600 dark:p-error:p-outlined:outline-red-600
@@ -60,13 +60,13 @@ const theme = ref<MessagePassThroughOptions>({
         focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2
         p-info:hover:bg-blue-100 p-info:focus-visible:outline-blue-600 dark:p-info:hover:bg-white/5 dark:p-info:focus-visible:outline-blue-500
         p-success:hover:bg-green-100 p-success:focus-visible:outline-green-600 dark:p-success:hover:bg-white/5 dark:p-success:focus-visible:outline-green-500
-        p:warn:hover:bg-yellow-100 p:warn:focus-visible:outline-yellow-600 dark:p:warn:hover:bg-white/5 dark:p:warn:focus-visible:outline-yellow-500
+        p-warn:hover:bg-yellow-100 p-warn:focus-visible:outline-yellow-600 dark:p-warn:hover:bg-white/5 dark:p-warn:focus-visible:outline-yellow-500
         p-error:hover:bg-red-100 p-error:focus-visible:outline-red-600 dark:p-error:hover:bg-white/5 dark:p-error:focus-visible:outline-red-500
         p-secondary:hover:bg-surface-200 p-secondary:focus-visible:outline-surface-600 dark:p-secondary:hover:bg-surface-700 dark:p-secondary:focus-visible:outline-surface-300
         p-contrast:hover:bg-surface-800 p-contrast:focus-visible:outline-surface-50 dark:p-contrast:hover:bg-surface-100 dark:p-contrast:focus-visible:outline-surface-950
         p-outlined:hover:bg-transparent p-simple:hover:bg-transparent`,
     closeIcon: `w-4 h-4 text-base
-        p-small:w-3.5 p-small:h-3.5 p-small:text-sm 
+        p-small:w-3.5 p-small:h-3.5 p-small:text-sm
         p-large:w-[1.125rem] p-large:h-[1.125rem] p-large:text-xl`,
     transition: {
         enterFromClass: 'opacity-0',

@@ -1,69 +1,60 @@
-<template>
-    <Dialog
-        unstyled
-        :pt="theme"
-        :ptOptions="{
-            mergeProps: ptViewMerge
-        }"
-    >
-        <template #closebutton="{ closeCallback }">
-            <SecondaryButton variant="text" rounded @click="closeCallback" autofocus>
-                <template #icon>
-                    <TimesIcon />
-                </template>
-            </SecondaryButton>
-        </template>
-        <template #maximizebutton="{ maximized, maximizeCallback }">
-            <SecondaryButton variant="text" rounded @click="maximizeCallback" autofocus>
-                <template #icon>
-                    <WindowMinimizeIcon v-if="maximized" />
-                    <WindowMaximizeIcon v-else />
-                </template>
-            </SecondaryButton>
-        </template>
-        <template v-for="(_, slotName) in $slots" #[slotName]="slotProps">
-            <slot :name="slotName" v-bind="slotProps ?? {}" />
-        </template>
-    </Dialog>
-</template>
-
 <script setup lang="ts">
-import TimesIcon from '@primevue/icons/times';
-import WindowMaximizeIcon from '@primevue/icons/windowmaximize';
-import WindowMinimizeIcon from '@primevue/icons/windowminimize';
-import Dialog, { type DialogPassThroughOptions, type DialogProps } from 'primevue/dialog';
-import { ref } from 'vue';
-import SecondaryButton from './SecondaryButton.vue';
-import { ptViewMerge } from './utils';
-
-/*
- * 本文件取自 Volt，有一处本地改动：root 加 `flex flex-col`。
- * 上游的 header/footer 写着 shrink-0、content 写着 overflow-y-auto，
- * 这套只有在 root 是纵向 flex 时才成立；而 `.p-dialog` 的
- * display:flex 来自 PrimeVue 的样式包，unstyled 模式下并不加载。
- * 设置弹窗给了固定高度，缺这一条内容区就不会滚而是把弹窗撑破。
- */
-
-interface Props extends /* @vue-ignore */ DialogProps {}
-defineProps<Props>();
-
+/** Volt Dialog；顶层弹窗独占 Escape，兼容 WebKit 点击按钮不聚焦的行为。 */
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { X, Maximize2, Minimize2 } from 'lucide-vue-next'
+import Dialog, { type DialogProps, type DialogPassThroughOptions } from 'primevue/dialog'
+import { ptViewMerge } from './utils'
+import { registerDialog } from './dialogStack'
+interface Props extends /* @vue-ignore */ DialogProps {
+  visible?: boolean
+  closeOnEscape?: boolean
+}
+const props = withDefaults(defineProps<Props>(), { visible: false, closeOnEscape: true })
+const emit = defineEmits<{ 'update:visible': [value: boolean] }>()
+let returnFocus: HTMLElement | null = null
+let unregister: (() => void) | undefined
+watch(() => props.visible, visible => {
+  unregister?.()
+  unregister = undefined
+  if (visible) {
+    returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    unregister = registerDialog({ close: () => emit('update:visible', false), escape: () => props.closeOnEscape })
+  }
+}, { immediate: true, flush: 'sync' })
+function restoreFocus() {
+  const target = returnFocus
+  returnFocus = null
+  void nextTick(() => {
+    if (target?.isConnected) target.focus({ preventScroll: true })
+  })
+}
+onBeforeUnmount(() => { unregister?.(); restoreFocus() })
 const theme = ref<DialogPassThroughOptions>({
-    root: `flex flex-col max-h-[90%] max-w-screen rounded-xl
-        border border-surface-200 dark:border-surface-700
-        bg-surface-0 dark:bg-surface-900
-        text-surface-700 dark:text-surface-0 shadow-lg
-        p-maximized:w-screen p-maximized:h-screen p-maximized:top-0 p-maximized:start-0p-maximized: max-h-full p-maximized:rounded-none`,
-    header: `flex items-center justify-between shrink-0 p-5`,
-    title: `font-semibold text-xl`,
-    headerActions: `flex items-center gap-2`,
-    content: `overflow-y-auto pt-0 px-5 pb-5 p-maximized:grow`,
-    footer: `shrink-0 pt-0 px-5 pb-5 flex justify-end gap-2`,
-    mask: `p-modal:bg-black/50 p-modal:fixed p-modal:top-0 p-modal:start-0 p-modal:w-full p-modal:h-full`,
-    transition: {
-        enterFromClass: 'opacity-0 scale-75',
-        enterActiveClass: 'transition-all duration-150 ease-[cubic-bezier(0,0,0.2,1)]',
-        leaveActiveClass: 'transition-all duration-150 ease-[cubic-bezier(0.4,0,0.2,1)]',
-        leaveToClass: 'opacity-0 scale-75'
-    }
-});
+  root: {
+    class: `flex flex-col max-h-[90dvh] max-w-[calc(100vw-2rem)] rounded-xl border border-surface-200 dark:border-surface-700
+      bg-surface-0 dark:bg-surface-900 text-color shadow-lg
+      p-maximized:w-screen p-maximized:h-screen p-maximized:max-h-full p-maximized:rounded-none`,
+    style: { '--wails-draggable': 'no-drag' },
+  },
+  header: 'flex items-center justify-between shrink-0 gap-4 px-5 py-4',
+  title: 'font-semibold text-base',
+  headerActions: 'flex items-center gap-2',
+  content: 'min-h-0 overflow-y-auto px-5 pb-5 p-maximized:grow',
+  footer: 'shrink-0 px-5 pb-5 flex justify-end gap-2',
+  pcCloseButton: { root: 'inline-flex size-7 items-center justify-center rounded-md cursor-pointer hover:bg-emphasis focus-visible:outline focus-visible:outline-primary' },
+  pcMaximizeButton: { root: 'inline-flex size-7 items-center justify-center rounded-md cursor-pointer hover:bg-emphasis' },
+  mask: 'p-modal:bg-black/40 p-modal:fixed p-modal:inset-0',
+  transition: {
+    enterFromClass: 'opacity-0 scale-95', enterActiveClass: 'transition duration-150 motion-reduce:transition-none',
+    leaveActiveClass: 'transition duration-100 motion-reduce:transition-none', leaveToClass: 'opacity-0 scale-95',
+  },
+})
 </script>
+<template>
+  <Dialog unstyled :visible="visible" :close-on-escape="false" :draggable="false" block-scroll
+    :pt="theme" :pt-options="{ mergeProps: ptViewMerge }" @update:visible="emit('update:visible', $event)" @after-hide="restoreFocus">
+    <template #closeicon><X class="size-4" /></template>
+    <template #maximizeicon="{ maximized }"><component :is="maximized ? Minimize2 : Maximize2" class="size-4" /></template>
+    <template v-for="(_, slotName) in $slots" #[slotName]="slotProps"><slot :name="slotName" v-bind="slotProps ?? {}" /></template>
+  </Dialog>
+</template>

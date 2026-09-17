@@ -93,8 +93,8 @@ const truncated = computed(() => props.limit > 0 && !expanded.value && props.row
 
 function onAct(row: Models.main.CandidateRow) {
   // 「已在库中」为禁用态，但点击可跳转到该曲目
-  if (row.action === '已在库中' && row.localTrackId) {
-    emit('jumpLocal', row.localTrackId)
+  if (row.action === '已在库中') {
+    if (row.localTrackId) emit('jumpLocal', row.localTrackId)
     return
   }
   emit('act', row)
@@ -205,7 +205,8 @@ function onAct(row: Models.main.CandidateRow) {
           <SecondaryButton
             variant="outlined"
             size="small"
-            :disabled="data.action === '已在库中'"
+            :disabled="data.action === '已在库中' && !data.localTrackId"
+            :aria-label="data.action === '已在库中' ? `查看库中曲目：${data.title}` : undefined"
             :title="data.action === '已在库中' ? '点击跳转到该曲目' : ''"
             @click="onAct(data)"
           >

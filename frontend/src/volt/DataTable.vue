@@ -1,8 +1,9 @@
 <template>
     <DataTable
         ref="el"
+        v-bind="$attrs"
         unstyled
-        :pt="theme"
+        :pt="mergedTheme"
         :ptOptions="{
             mergeProps: ptViewMerge
         }"
@@ -47,7 +48,7 @@
 
 <script setup lang="ts">
 /*
- * 本文件由 `npx volt-vue add DataTable` 取自 Volt，之后有四处本地改动：
+ * 本文件源自 Volt 4.5.5 tag，之后有以下本地样式改动：
  *
  *   1. 行密度：headerCell / bodyCell 的 py-3 px-4 收到 py-2 / py-1.5 px-2。
  *      曲目表格是一份长列表，Volt 的默认间距一屏放不下多少行。
@@ -59,20 +60,22 @@
  *      每个可排序列都常驻一个箭头时，一排表头读起来全是箭头，
  *      反而看不出当前按哪一列排的。
  *
- * 重新从上游拉取这个文件时，以上四处需重新施加。
+ * 官方来源与定制细节见 README.md / upstream-sources.json。
+ * 除紧凑样式外，本分支显式合并外部 PT（不能覆盖整套主题），图标改用 Lucide。
+ * 重新从上游拉取这个文件时，以上定制需逐项复核。
  */
-import AngleDoubleLeftIcon from '@primevue/icons/angledoubleleft';
-import AngleDoubleRightIcon from '@primevue/icons/angledoubleright';
-import AngleLeftIcon from '@primevue/icons/angleleft';
-import AngleRightIcon from '@primevue/icons/angleright';
-import SpinnerIcon from '@primevue/icons/spinner';
+import { ChevronsLeft as AngleDoubleLeftIcon, ChevronsRight as AngleDoubleRightIcon, ChevronLeft as AngleLeftIcon, ChevronRight as AngleRightIcon, LoaderCircle as SpinnerIcon } from 'lucide-vue-next';
 import DataTable, { type DataTablePassThroughOptions, type DataTableProps } from 'primevue/datatable';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import { usePassThrough } from 'primevue/passthrough';
 import SecondaryButton from './SecondaryButton.vue';
 import { ptViewMerge } from './utils';
 
-interface Props extends /* @vue-ignore */ DataTableProps {}
-defineProps<Props>();
+interface Props extends /* @vue-ignore */ DataTableProps {
+    pt?: DataTablePassThroughOptions;
+}
+const props = defineProps<Props>();
+defineOptions({ inheritAttrs: false });
 
 const theme = ref<DataTablePassThroughOptions>({
     root: `relative p-flex-scrollable:flex p-flex-scrollable:flex-col p-flex-scrollable:h-full`,
@@ -97,7 +100,7 @@ const theme = ref<DataTablePassThroughOptions>({
             bg-surface-0 dark:bg-surface-900
             text-surface-500 dark:text-surface-400
             p-sortable:cursor-pointer p-sortable:select-none p-sortable:focus-visible:outline p-sortable:focus-visible:outline-1 p-sortable:focus-visible:-outline-offset-1 p-sortable:focus-visible:outline-primary
-            p-sortable:not-p-sorted:hover:bg-surface-100 p-sortable:not-p-sorted:hover:text-surface-800 
+            p-sortable:not-p-sorted:hover:bg-surface-100 p-sortable:not-p-sorted:hover:text-surface-800
             dark:p-sortable:not-p-sorted:hover:bg-surface-800 dark:p-sortable:not-p-sorted:hover:text-surface-0
             p-sorted:bg-highlight
             p-frozen:sticky p-frozen:bg-surface-0 dark:p-frozen:bg-surface-900 p-frozen:z-10
@@ -117,13 +120,13 @@ const theme = ref<DataTablePassThroughOptions>({
         sortIcon: `text-surface-500 dark:text-surface-400 transition-colors duration-200
             group-p-sortable:not-group-p-sorted:group-hover:text-surface-600 dark:group-p-sortable:not-group-p-sorted:group-hover:text-surface-300
             group-p-sorted:bg-highlight
-            opacity-0 group-hover:opacity-100 group-p-sorted:opacity-100`,
+            opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-p-sorted:opacity-100`,
         pcSortBadge: {
             root: `bg-primary text-primary-contrast rounded-full min-w-6 h-6 inline-flex items-center justify-center text-xs font-bold`
         },
         pcHeaderCheckbox: {
             root: `relative inline-flex select-none w-5 h-5 align-bottom`,
-            input: `peer cursor-pointer disabled:cursor-default appearance-none 
+            input: `peer cursor-pointer disabled:cursor-default appearance-none
                 absolute start-0 top-0 w-full h-full m-0 p-0 opacity-0 z-10
                 border border-transparent rounded-xs`,
             box: `flex justify-center items-center rounded-sm w-5 h-5
@@ -133,7 +136,7 @@ const theme = ref<DataTablePassThroughOptions>({
                 peer-enabled:peer-hover:border-surface-400 dark:peer-enabled:peer-hover:border-surface-600
                 p-checked:border-primary p-checked:bg-primary p-checked:text-primary-contrast
                 peer-enabled:peer-hover:p-checked:bg-primary-emphasis peer-enabled:peer-hover:p-checked:border-primary-emphasis
-                peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary peer-focus-visible:outline 
+                peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary peer-focus-visible:outline
                 p-disabled:bg-surface-200 dark:p-disabled:bg-surface-400 p-disabled:border-surface-300 dark:p-disabled:border-surface-700 p-disabled:text-surface-700 dark:p-disabled:text-surface-400
                 shadow-[0_1px_2px_0_rgba(18,18,23,0.05)] transition-colors duration-200`,
             icon: `text-sm w-[0.875rem] h-[0.875rem] transition-none`
@@ -148,7 +151,7 @@ const theme = ref<DataTablePassThroughOptions>({
                 peer-enabled:peer-hover:border-surface-400 dark:peer-enabled:peer-hover:border-surface-600
                 p-checked:border-primary p-checked:bg-primary
                 peer-enabled:peer-hover:p-checked:bg-primary-emphasis peer-enabled:peer-hover:p-checked:border-primary-emphasis
-                peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary peer-focus-visible:outline 
+                peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary peer-focus-visible:outline
                 p-filled:bg-surface-50 dark:p-filled:bg-surface-800
                 p-invalid:border-red-400 dark:p-invalid:border-red-300
                 p-disabled:bg-surface-200 dark:p-disabled:bg-surface-400 p-disabled:border-surface-300 dark:p-disabled:border-surface-700
@@ -161,7 +164,7 @@ const theme = ref<DataTablePassThroughOptions>({
         },
         pcRowCheckbox: {
             root: `relative inline-flex select-none w-5 h-5 align-bottom`,
-            input: `peer cursor-pointer disabled:cursor-default appearance-none 
+            input: `peer cursor-pointer disabled:cursor-default appearance-none
                 absolute start-0 top-0 w-full h-full m-0 p-0 opacity-0 z-10
                 border border-transparent rounded-xs`,
             box: `flex justify-center items-center rounded-sm w-5 h-5
@@ -171,7 +174,7 @@ const theme = ref<DataTablePassThroughOptions>({
                 peer-enabled:peer-hover:border-surface-400 dark:peer-enabled:peer-hover:border-surface-600
                 p-checked:border-primary p-checked:bg-primary p-checked:text-primary-contrast
                 peer-enabled:peer-hover:p-checked:bg-primary-emphasis peer-enabled:peer-hover:p-checked:border-primary-emphasis
-                peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary peer-focus-visible:outline 
+                peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary peer-focus-visible:outline
                 p-disabled:bg-surface-200 dark:p-disabled:bg-surface-400 p-disabled:border-surface-300 dark:p-disabled:border-surface-700 p-disabled:text-surface-700 dark:p-disabled:text-surface-400
                 shadow-[0_1px_2px_0_rgba(18,18,23,0.05)] transition-colors duration-200`,
             icon: `text-sm w-[0.875rem] h-[0.875rem] transition-none`
@@ -196,8 +199,9 @@ const theme = ref<DataTablePassThroughOptions>({
     rowReorderIndicatorDown: `absolute hidden`
 });
 
-const el = ref();
+const mergedTheme = computed(() => usePassThrough(theme.value, props.pt ?? {}, { mergeSections: true, mergeProps: ptViewMerge }));
+const el = ref<InstanceType<typeof DataTable>>();
 defineExpose({
-    exportCSV: () => el.value.exportCSV()
+    exportCSV: () => el.value?.exportCSV()
 });
 </script>

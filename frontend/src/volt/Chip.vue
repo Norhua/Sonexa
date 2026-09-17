@@ -9,6 +9,7 @@
         <template #removeicon="{ removeCallback, keydownCallback }">
             <TimesCircleIcon
                 class="cursor-pointer text-base w-4 h-4 rounded-full text-surface-800 dark:text-surface-0 focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-primary"
+                role="button" tabindex="0" aria-label="移除筛选"
                 @click="removeCallback"
                 @keydown="keydownCallback"
             />
@@ -20,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import TimesCircleIcon from '@primevue/icons/timescircle';
+import { CircleX as TimesCircleIcon } from 'lucide-vue-next';
 import Chip, { type ChipPassThroughOptions, type ChipProps } from 'primevue/chip';
 import { ref } from 'vue';
 import { ptViewMerge } from './utils';

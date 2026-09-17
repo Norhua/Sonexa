@@ -17,17 +17,17 @@
 
 :root {
   /* 色阶：Tailwind neutral。单色设计下 primary 与 surface 同源 */
-  --p-primary-50: #fafafa;
-  --p-primary-100: #f5f5f5;
-  --p-primary-200: #e5e5e5;
-  --p-primary-300: #d4d4d4;
-  --p-primary-400: #a3a3a3;
-  --p-primary-500: #737373;
-  --p-primary-600: #525252;
-  --p-primary-700: #404040;
-  --p-primary-800: #262626;
-  --p-primary-900: #171717;
-  --p-primary-950: #0a0a0a;
+  --p-primary-50: var(--p-surface-50);
+  --p-primary-100: var(--p-surface-100);
+  --p-primary-200: var(--p-surface-200);
+  --p-primary-300: var(--p-surface-300);
+  --p-primary-400: var(--p-surface-400);
+  --p-primary-500: var(--p-surface-500);
+  --p-primary-600: var(--p-surface-600);
+  --p-primary-700: var(--p-surface-700);
+  --p-primary-800: var(--p-surface-800);
+  --p-primary-900: var(--p-surface-900);
+  --p-primary-950: var(--p-surface-950);
   --p-surface-0: #ffffff;
   --p-surface-50: #fafafa;
   --p-surface-100: #f5f5f5;
@@ -120,6 +120,11 @@
   * {
     border-color: var(--p-content-border-color);
   }
+  /* 原生滚动条/输入装饰随主题，业务控件不继承窗口拖拽。 */
+  :root { color-scheme: light; }
+  .dark { color-scheme: dark; }
+  button, input, textarea, select, [role="combobox"] { --wails-draggable: no-drag; }
+  button:focus-visible { outline: 1px solid var(--p-primary-color); outline-offset: -1px; }
   html, body, #app {
     height: 100%;
   }

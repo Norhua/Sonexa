@@ -35,7 +35,10 @@ const model = computed(() =>
 
 function pick(key: string) {
   // 再点一次当前维度就反向，与 Finder / Apple Music 的行为一致
-  if (sortKey.value === key) desc.value = !desc.value
+  if (key === 'default') {
+    sortKey.value = key
+    desc.value = false
+  } else if (sortKey.value === key) desc.value = !desc.value
   else {
     sortKey.value = key
     desc.value = false
@@ -62,7 +65,7 @@ function pick(key: string) {
         <a v-bind="itemProps.action" class="flex items-center gap-2">
           <Check :class="['size-3.5', sortKey === item.key ? '' : 'invisible']" />
           <span class="flex-1">{{ item.label }}</span>
-          <span v-if="sortKey === item.key" class="text-xs text-muted-color">
+          <span v-if="sortKey === item.key && item.key !== 'default'" class="text-xs text-muted-color">
             {{ desc ? '降序' : '升序' }}
           </span>
         </a>

@@ -13,6 +13,7 @@ import { computed, onMounted, ref } from 'vue'
 import { Search as SearchIcon } from 'lucide-vue-next'
 import { App, type Models } from '@/api'
 import AdvancedSearchPanel from '@/components/AdvancedSearchPanel.vue'
+import PaneHeader from '@/components/PaneHeader.vue'
 import CandidateTable from '@/components/CandidateTable.vue'
 import TrackTable, { type Row } from '@/components/TrackTable.vue'
 import Button from '@/volt/Button.vue'
@@ -85,7 +86,7 @@ const rows = computed<Row[]>(() =>
     mediumFormat: t.mediumFormat,
     country: t.country,
     coverSource: { provider: t.matchSource, ref: t.releaseRef, rg: t.releaseGroupRef },
-    coverPath: t.coverPath,
+    adoptedCoverPath: t.coverPath,
   })),
 )
 
@@ -120,7 +121,8 @@ async function run() {
 
 async function addToLibrary(row: Models.main.CandidateRow) {
   try {
-    await App.AddToLibrary(row)
+    const id = await App.AddToLibrary(row)
+    row.localTrackId = id
     row.action = '已在库中'
     if (!row.badges.includes('本地')) row.badges = ['本地', ...row.badges]
   } catch (e) {
@@ -132,8 +134,9 @@ async function addToLibrary(row: Models.main.CandidateRow) {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <!-- 页头：搜索框居中，范围下拉在右上角 -->
-    <header class="shrink-0 px-4 py-2.5">
-      <div class="flex items-center gap-3">
+    <header class="shrink-0">
+      <PaneHeader>
+      <div class="flex w-full items-center gap-3" style="--wails-draggable: no-drag">
         <div class="relative mx-auto w-full max-w-xl">
           <SearchIcon
             class="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-color"
@@ -142,7 +145,7 @@ async function addToLibrary(row: Models.main.CandidateRow) {
             v-model="search.query"
             type="search"
             size="small"
-            class="w-full pl-9"
+            pt:root:class="w-full p-small:pl-9"
             :placeholder="search.isLibrary ? '搜索资料库' : `在 ${scopeLabel} 中搜索`"
             @keyup.enter="run"
           />
@@ -178,9 +181,10 @@ async function addToLibrary(row: Models.main.CandidateRow) {
           {{ search.loading ? '搜索中…' : '搜索' }}
         </Button>
       </div>
+      </PaneHeader>
 
       <!-- 地区下拉仅在当前上游需要地区参数时出现 -->
-      <div v-if="showCountry" class="mt-2 flex items-center justify-end gap-2 text-xs">
+      <div v-if="showCountry" class="flex items-center justify-end gap-2 px-4 pb-2 text-xs">
         <label class="flex items-center gap-1">
           地区
           <Select

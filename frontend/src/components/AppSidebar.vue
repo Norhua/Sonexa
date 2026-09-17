@@ -201,7 +201,7 @@ function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | '
             v-if="tasks.hasActiveImport"
             :value="tasks.progressPercent"
             :show-value="false"
-            class="ml-6 mt-1 h-1"
+            pt:root:class="ml-6 mt-1 h-1"
           />
         </button>
 

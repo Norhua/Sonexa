@@ -2,6 +2,7 @@
     <ContextMenu
         ref="el"
         unstyled
+        @hide="restoreFocus"
         :pt="theme"
         :ptOptions="{
             mergeProps: ptViewMerge
@@ -16,11 +17,11 @@
 <script setup lang="ts">
 /*
  * Volt 上游没有提供 ContextMenu，这一份按 Menu.vue 的写法补齐：
- * 同一套 surface / primary 令牌、同一组过渡，右键菜单与下拉菜单因此长得一样。
+ * 同一套 surface / primary 令牌。桌面右键菜单取消进入动画，避免首次关闭被漏掉。
  * 升级 Volt 时这个文件不会被覆盖——它本来就是我们自己的。
  */
 import ContextMenu, { type ContextMenuPassThroughOptions, type ContextMenuProps } from 'primevue/contextmenu';
-import { ref } from 'vue';
+import { nextTick, onBeforeUnmount, ref } from 'vue';
 import { ptViewMerge } from './utils';
 
 interface Props extends /* @vue-ignore */ ContextMenuProps {}
@@ -48,17 +49,26 @@ const theme = ref<ContextMenuPassThroughOptions>({
         shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)]`,
     submenuIcon: `ml-auto text-surface-400 dark:text-surface-500`,
     separator: `border-t border-surface-200 dark:border-surface-700 my-1`,
-    transition: {
-        enterFromClass: 'opacity-0 scale-y-75',
-        enterActiveClass: 'transition duration-120 ease-[cubic-bezier(0,0,0.2,1)]',
-        leaveActiveClass: 'transition-opacity duration-100 ease-linear',
-        leaveToClass: 'opacity-0'
-    }
+    // 桌面菜单即时出现；避免 transition 完成前点击外部/Escape 尚未绑定。
+    transition: { css: false }
 });
 
-const el = ref();
+const el = ref<InstanceType<typeof ContextMenu>>();
+let returnFocus: HTMLElement | null = null;
+function restoreFocus() {
+    const target = returnFocus;
+    returnFocus = null;
+    void nextTick(() => {
+        // 点击别处或打开弹窗时不能抢走新焦点；仅菜单自身失焦到 body 时恢复。
+        if (target?.isConnected && document.activeElement === document.body) target.focus({ preventScroll: true });
+    });
+}
+onBeforeUnmount(restoreFocus);
 defineExpose({
-    show: (event: Event, target?: any) => el.value.show(event, target),
-    hide: () => el.value.hide()
+    show: (event: MouseEvent) => {
+        returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        el.value?.show(event);
+    },
+    hide: () => el.value?.hide()
 });
 </script>

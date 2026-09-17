@@ -7,16 +7,16 @@
         }"
     >
         <template #dropdownicon>
-            <ChevronDownIcon />
+            <ChevronDownIcon class="size-4" />
         </template>
         <template #loadingicon>
-            <SpinnerIcon class="animate-spin" />
+            <SpinnerIcon class="size-4 animate-spin" />
         </template>
         <template #filtericon>
-            <SearchIcon class="text-surface-400" />
+            <SearchIcon class="size-4 text-surface-400" />
         </template>
         <template #clearicon="{ clearCallback }">
-            <TimesIcon @click="clearCallback" class="text-surface-400 absolute top-1/2 -mt-2 end-10" />
+            <TimesIcon @click="clearCallback" class="size-4 text-surface-400 absolute top-1/2 -mt-2 end-10" />
         </template>
         <template v-for="(_, slotName) in $slots" #[slotName]="slotProps">
             <slot :name="slotName" v-bind="slotProps ?? {}" />
@@ -25,10 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import ChevronDownIcon from '@primevue/icons/chevrondown';
-import SearchIcon from '@primevue/icons/search';
-import SpinnerIcon from '@primevue/icons/spinner';
-import TimesIcon from '@primevue/icons/times';
+import { ChevronDown as ChevronDownIcon, Search as SearchIcon, LoaderCircle as SpinnerIcon, X as TimesIcon } from 'lucide-vue-next';
 import Select, { type SelectPassThroughOptions, type SelectProps } from 'primevue/select';
 import { ref } from 'vue';
 import { ptViewMerge } from './utils';

@@ -7,7 +7,7 @@
  * 原顶栏上的三个入口各自归位——
  * 搜索去了搜索页与各视图右上角，导入去了导入队列页，主题切换去了设置。
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { App as Api, Events, EventsOn, display } from '@/api'
 import type { Models } from '@/api'
 import AppSidebar from '@/components/AppSidebar.vue'
@@ -24,9 +24,10 @@ import AlbumsView from '@/views/AlbumsView.vue'
 import SearchView from '@/views/SearchView.vue'
 import ImportQueueView from '@/views/ImportQueueView.vue'
 import ReviewView from '@/views/ReviewView.vue'
-import SettingsDialog from '@/views/SettingsDialog.vue'
-import ImportWizard from '@/views/ImportWizard.vue'
-import EditDialog from '@/views/EditDialog.vue'
+/** 模态表单按需载入；首次浏览不解析设置、导入与编辑的控件代码。 */
+const SettingsDialog = defineAsyncComponent(() => import('@/views/SettingsDialog.vue'))
+const ImportWizard = defineAsyncComponent(() => import('@/views/ImportWizard.vue'))
+const EditDialog = defineAsyncComponent(() => import('@/views/EditDialog.vue'))
 import { useLibraryStore } from '@/stores/library'
 import { useSearchStore } from '@/stores/search'
 import { useSettingsStore } from '@/stores/settings'
@@ -62,42 +63,6 @@ const sortOptions: SortOption[] = [
 ]
 const sortKey = ref('default')
 const sortDesc = ref(false)
-
-/**
- * 排序维度与表格字段的对照。
- *
- * 排序菜单说的是「维度」，DataTable 认的是「字段名」，两边差一层：
- * 「默认顺序」对应没有字段（保持后端给的顺序，歌单的人工排序就在里面），
- * 「时长」对应的字段名是 durationMs。
- */
-const SORT_FIELDS: Record<string, string | null> = {
-  default: null,
-  title: 'title',
-  artist: 'artist',
-  album: 'album',
-  year: 'year',
-  duration: 'durationMs',
-}
-
-/**
- * 双向：排序菜单与点击列头写的是同一份状态。
- *
- * 表格的列头本身也可点击排序，两个入口若各存一份状态，
- * 点完列头再打开菜单会看到一个过期的勾。
- */
-const sortField = computed<string | null>({
-  get: () => SORT_FIELDS[sortKey.value] ?? null,
-  set: (field) => {
-    const hit = Object.entries(SORT_FIELDS).find(([, f]) => f === field)
-    sortKey.value = hit ? hit[0] : 'default'
-  },
-})
-const sortOrder = computed<number>({
-  get: () => (sortDesc.value ? -1 : 1),
-  set: (order) => {
-    sortDesc.value = order < 0
-  },
-})
 
 let offLibrary: (() => void) | null = null
 
@@ -156,8 +121,10 @@ const showTrackTable = computed(() =>
   ['all', 'recent', 'playlist', 'tag'].includes(library.view),
 )
 
-/** 歌单的拖拽重排只在默认顺序下可用——在排序视图里拖动，落点是没有意义的。 */
-const canReorder = computed(() => library.view === 'playlist' && sortKey.value === 'default')
+/** 手工顺序仅在完整歌单的默认排序中可编辑，避免拿筛选子集覆盖整张歌单。 */
+const canReorder = computed(() => library.view === 'playlist' && sortKey.value === 'default' && library.chips.length === 0)
+const tableContext = computed(() => `${library.view}:${library.contextId}`)
+watch(tableContext, () => { selectedIds.value = [] })
 
 /** 空态文案各不相同，不复用同一句通用提示。 */
 const emptyState = computed(() => {
@@ -330,12 +297,15 @@ function copyInfo(targets: Row[]) {
 
 async function exportScope(scope: 'playlist' | 'filtered' | 'selection' | 'all') {
   try {
+    const searchResult = scope === 'filtered' && library.view === 'search' && search.isLibrary
     const res = await Api.ExportTracks({
-      scope,
+      // 搜索页不使用 library.baseFilter：那是上一个浏览视图的过滤器。
+      // 导出已展示结果的快照，不能把全库误当成「当前列表」。
+      scope: searchResult ? 'selection' : scope,
       format: settings.settings?.importExport.exportFormat ?? 'csv',
       depth: 'full',
       filter: library.baseFilter(),
-      trackIds: selectedIds.value,
+      trackIds: searchResult ? search.libraryRows.map(row => row.id) : selectedIds.value,
     } as Models.main.ExportRequest)
     if (res) notice.value = `已导出 ${res.count} 条到 ${res.path}`
   } catch (e) {
@@ -430,8 +400,9 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
           />
           <TrackTable
             v-if="rows.length > 0"
-            v-model:sort-field="sortField"
-            v-model:sort-order="sortOrder"
+            v-model:sort-key="sortKey"
+            v-model:sort-desc="sortDesc"
+            :context-key="tableContext"
             :rows="rows"
             :collection-id="library.view === 'playlist' ? library.contextId : 0"
             :reorderable="canReorder"
@@ -473,6 +444,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
         <!-- 艺术家视图：中列 + 按 artist_id 过滤的标准曲目表格 -->
         <ArtistsView v-else-if="library.view === 'artists' || library.view === 'artist'">
           <TrackTable
+            :context-key="tableContext"
             :rows="rows"
             :loading="library.loading"
             @open="openDetail"
@@ -535,7 +507,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
       @saved="library.loadTracks()"
     />
 
-    <SettingsDialog />
+    <SettingsDialog v-if="ui.settingsOpen" />
     <PromptDialog />
     <ConfirmDialog />
   </div>

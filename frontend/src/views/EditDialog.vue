@@ -294,11 +294,14 @@ const groups = computed(() => [
       </p>
 
       <!-- 改歌集名的二次确认：歌集是共享实体，先让用户看见影响范围 -->
-      <div
-        v-if="renamePlan"
-        class="absolute inset-0 z-10 flex items-center justify-center bg-app/80 p-6"
+      <Dialog
+        :visible="renamePlan !== null"
+        modal
+        header="选择歌集改名范围"
+        :style="{ width: '460px' }"
+        @update:visible="renamePlan = null"
       >
-        <div class="w-full max-w-md rounded-lg border bg-app p-4 shadow-lg">
+        <div v-if="renamePlan">
           <h3 class="text-sm font-semibold">这张歌集下有 {{ renamePlan.trackCount }} 首曲目</h3>
           <p class="mt-1 text-xs text-muted-color">
             把「{{ renamePlan.currentTitle || '未命名专辑' }}」改为「{{ pendingAlbumTitle }}」，
@@ -343,7 +346,7 @@ const groups = computed(() => [
             取消
           </SecondaryButton>
         </div>
-      </div>
+      </Dialog>
     </div>
 
     <template #footer>
@@ -352,7 +355,7 @@ const groups = computed(() => [
       </SecondaryButton>
       <p v-if="error" class="mr-auto text-xs text-danger-color">{{ error }}</p>
       <SecondaryButton size="small" @click="cancel">取消</SecondaryButton>
-      <Button size="small" :disabled="loading" @click="save()">保存</Button>
+      <Button size="small" :disabled="loading || !!renamePlan || !session" @click="save()">保存</Button>
     </template>
   </Dialog>
 </template>

@@ -36,7 +36,7 @@ function clear() {
       type="search"
       size="small"
       :placeholder="placeholder"
-      class="w-full pl-8 pr-7"
+      pt:root:class="w-full p-small:pl-8 p-small:pr-7"
       @keyup.enter="emit('submit')"
       @search="emit('submit')"
     />
@@ -45,7 +45,7 @@ function clear() {
       variant="text"
       rounded
       size="small"
-      class="absolute right-0.5 top-1/2 -translate-y-1/2"
+      pt:root:class="absolute right-0.5 top-1/2 -translate-y-1/2 size-6 p-small:p-0"
       title="清除"
       @click="clear"
     >
