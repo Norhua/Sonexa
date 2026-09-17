@@ -6,7 +6,7 @@
 >
 > **用途**：作为后续同步规格与补齐实现的依据；本文不直接修改规划文档。
 > 各轮验证记录只说明当时的结果，不代表当前全部需求已通过验收。
-> 最新截图审查修复与验证见第二十二节；20.7 保留上一轮验证结果。
+> 最新截图审查修复与验证见第二十三节；20.7、22.5 保留历轮验证结果。
 > 规格覆盖、已核实的实现缺口与后续建议见第二十一节。
 > 本文是唯一正文；`tmp/v1-deviations.md` 为指向本文的符号链接，避免两份记录分叉。
 > 同一主题经历多轮调整时，以较后的条目及其明确列出的限制为准。
@@ -135,7 +135,7 @@
 - 名单栏（艺术家、专辑）：名称 / 曲目数（专辑另有艺术家）
 - 再次点击同一维度即反向，默认顺序除外
 
-排序在**前端就地**做，列表顺序、选择与重排使用同一份数据。
+排序在**前端就地**做，列表顺序与选择使用同一份数据。
 
 **当前排序契约**（见第二十节）：
 
@@ -144,10 +144,10 @@
 - `lib/trackRows.ts` 是唯一曲目比较器，使用 `Intl.Collator('zh-Hans-CN',
   { numeric: true, sensitivity: 'base' })`，同值稳定，缺失值始终最后。
   `App.vue` 不再计算第二份排序。DataTable 的 `lazy` 仅关闭其内部二次排序；
-  并非远程分页。选择模型、渲染和重排读取同一份 `orderedRows`。
+  并非远程分页。选择模型与渲染读取同一份 `orderedRows`。
 - 默认顺序总是恢复后端顺序，不显示无意义的升/降序；再次选默认也不翻转。
 - 排序图标在已排序、悬停或键盘聚焦时可见。
-- 歌单只有**无筛选且默认排序**时才能拖动，避免把可见子集提交为完整顺序。
+- 曲序/歌单手柄整列已移除，当前界面不再提供拖动重排；默认排序仍恢复已保存的歌单顺序（23.2）。
 - 名单栏排序仍由艺术家/专辑视图管理，与曲目排序互不混用。
 
 ---
@@ -996,8 +996,9 @@ Archive 上没有图），而「取图出错」是可以重试的故障。画成
 的 `EnrichTask`、`internal/matching/matching.go` 的 `Accept`「不发任何网络请求」、
 `internal/musicbrainz/transport.go` 的 `priorityGate`）。
 
-> **验证范围**：零请求接受与调度行为已有回归；后台详情按目标曲目取数、
-> 清单顺带落库及用户锁保护仍有实现缺口，见 21.3，不能由调度测试通过推断已满足。
+> **验证范围**：零请求接受与调度行为已有回归；第二十三节补齐非首曲的目标定位、
+> 详情清单保存及导入/后台/刷新接线回归。用户锁保护仍有实现缺口（21.3 B），
+> 不能由曲目身份修复推断全部详情写入语义已满足。
 
 ### 13.1 零请求接受 `[需改 spec]`
 
@@ -1179,7 +1180,7 @@ Ctrl/Cmd、Shift 多选与文字拖选不触发详情切换，避免批量选择
 位移以欧氏距离 >4px 判定，并且必须确有文字选区。
 普通点击后聚焦行，划选时不改选择、不强制 focus（WebKit 可能因此丢文字选区）。
 由于 DataTable 内置选择已关闭，不需要捕获 click 并 stopPropagation 来对抗另一套选择。
-歌单不设置整行可拖动，使用曲序列中的 DataTable 原生手柄（表头留空）；标题等文字仍可划选。
+歌单不设置整行可拖动；曲序列与原生拖动手柄已按后续裁决移除（23.2），标题等文字仍可划选。
 
 另有一处必须显式阻止：Shift + 单击时浏览器会顺手把整段文字选进选区
 （读起来正是用户说的「整个页面的文字变成蓝底高亮」），因此
@@ -1853,21 +1854,20 @@ Volt 是仓库内的组件源码，不是另一个主题 npm 包。行为由 uns
 审查 PrimeVue 4.5.5 源码发现：范围锚点保存数组下标；普通方向键只移焦点，Enter 选中；
 没有逐行不可选的公开 prop。只启用 multiple 再过滤 ghost，仍达不到约定且形成两套逻辑。
 
-因此 DataTable 负责结构、粘性表头、排序事件与原生拖拽；
+因此 DataTable 负责结构、粘性表头与排序事件；
 `useListSelection.ts` 独占选择/锚点/焦点，`trackRows.ts` 独占顺序/位置 identity/曲目去重。
+原生重排接线已按 23.2 移除。
 具体行为以 **14.1、14.2、1.8 的交互契约**为准。
 
 额外核对：`value-change` 不是每次 value/sortField 外部变化都触发，不能把它当作唯一顺序源。
 统一 `orderedRows` 传入 DataTable 并关闭二次排序，不再猜测其内部 processedData。
 
-### 20.4 歌单手柄与上下文
+### 20.4 歌单手柄与上下文（已由 23.2 调整）
 
-- 不新增一列：完整歌单在**曲序列**显示原生重排手柄，其他视图显示曲序；表头留空。
-  此列可通过表头菜单隐藏，隐藏期间无拖动手柄，不改变已保存顺序。
-- 不在冒泡阶段强改 draggable、不访问 DataTable 私有实例。图标插槽明确带
-  `data-pc-section="reorderablerowhandle"`，由 PrimeVue 原生重排流程管理。
-- 只在默认顺序且没有筛选时可拖动；文字单元格始终可拖选文字。
-- 批量拖动/框选/列宽持久化未实现，不将“文件管理器式”泛化为已支持这些功能。
+- 曲序和歌单手柄原来共用一列，现**整列移除**，不再保留空表头或隐藏列入口。
+- 删除业务组件的重排事件、提示与 `App.vue` 的前端提交接线，不改为整行拖动。
+- 歌单显式顺序及后端重排 API 保留，默认排序仍读已保存顺序；界面当前无重排入口。
+- 文字单元格始终可拖选文字。批量拖动/框选/列宽持久化未实现。
 
 ### 20.5 弹窗与 Wails
 
@@ -1892,7 +1892,7 @@ Volt 是仓库内的组件源码，不是另一个主题 npm 包。行为由 uns
 5. InputNumber 默认不允许空数值/不分组，窄输入不会溢出容器；Tag 密度、Message warn 变体修正。
 6. 默认排序反复点击不再出现“默认顺序（降序）”这种无效状态。
 
-### 20.7 上一轮自动化验证（最新结果见 22.5）
+### 20.7 历轮自动化验证（最新结果见 23.3）
 
 - `npm test`：10 项单元测试通过，覆盖普通/增量/范围收缩/排序后锚点/删除锚点/ghost/
   键盘/右键/后台替换行对象/重复曲目位置/自然排序与缺失值。
@@ -1947,7 +1947,7 @@ Volt 是仓库内的组件源码，不是另一个主题 npm 包。行为由 uns
 | 实现正确性 | 仍有下述已核实缺口；不能宣称「spec + 偏差记录的全部目标均已实现」 |
 | 测试范围 | 自动化执行结果见 20.7；未逐个动态执行全部 305 个规格场景，也未重跑真实上游或原生人工验收 |
 
-以下为当时文档核对结论，不表示当前代码未改变；本轮截图审查的实现与验证见第二十二节。
+以下为当时文档核对结论，不表示当前代码未改变；后续截图审查的实现与验证见第二十二、二十三节。
 以下缺口在整理前已经存在，除后文明确修复者外仍保留为待处理项。
 
 ### 21.2 各领域的实现与修订映射
@@ -1959,8 +1959,8 @@ Volt 是仓库内的组件源码，不是另一个主题 npm 包。行为由 uns
 | `platform/app-shell`、`platform/settings` | `frontend/src/App.vue`、`components/TrackTable.vue`、`views/SettingsView.vue`、`tests/e2e/` | 第一、二、十四、二十节；参数与禁用态限制见 21.4 |
 | `platform/data-store`、`library/track-library` | `internal/store/migrations.go`、`create.go`、`track.go`；schema/migrate/delete/fts 测试 | 第十三、十九节；锁与详情落库限制见 21.3 |
 | `library/artists`、`library/browse-views` | `internal/store/artist.go`、`browse.go`、`bindings_albums.go`；`vocaloid_view_test.go`、`browse_test.go` | 第十九节；真实解析与灰色行入库限制见 21.3 |
-| `library/collections` | `internal/store/collection.go`、`frontend/src/components/AppSidebar.vue`；`TestPlaylistOrderPersists`、列表 E2E | 第十四、20.4 节；仅完整且默认顺序的歌单可拖动 |
-| `library/release-catalog` | `internal/store/release.go`、`stale.go`、`lookup.go`、`bindings_albums.go`；release/stale/lookup 测试 | 第十九节；后台详情清单未保存见 21.3 |
+| `library/collections` | `internal/store/collection.go`、`frontend/src/components/AppSidebar.vue`；`TestPlaylistOrderPersists`、列表 E2E | 第十四、20.4、23.2 节；保留显式顺序，当前 UI 不提供拖动 |
+| `library/release-catalog` | `internal/store/release.go`、`stale.go`、`lookup.go`、`bindings_albums.go`；release/stale/lookup 测试 | 第十九、23.1 节；详情清单已接入保存 |
 | `library/search`、`library/export` | `internal/store/library.go`、`fts.go`、`bindings_export.go`、`internal/export/`、前端 search store | 第二、十四、20.6 节；深度选择 UI 缺失见 20.8 |
 | `matching/text-processing`、`matching/confidence`、`matching/pipeline` | `internal/matching/`、`internal/importer/runner.go`；对应单测与 CSV 验收 | 第九、十、十二、十八节 |
 | `matching/provenance` | `internal/matching/provenance.go`、`internal/store/admit.go`、`lookup.go`；admit/provenance/lookup 测试 | 第十八、十九节；编辑重匹配溯源见 21.3 |
@@ -1972,20 +1972,19 @@ Volt 是仓库内的组件源码，不是另一个主题 npm 包。行为由 uns
 
 ### 21.3 已核实的关键缺口 `[待修复]`
 
-#### A. 后台详情缺少目标曲目标识，且未保存返回的清单
+#### A. 后台详情目标错配与清单丢失（已于 23.1 修复） `[纯 bug 修复]`
 
-- **依据**：`internal/store/enrichstate.go:35` 的 `EnrichTarget` 只有发行标识，
-  `bindings_enrich.go:319` 构造 `provider.Ref` 时没有 `TrackRef`。
-  `internal/provider/musicbrainz/detail.go:340` 的 `findTrack` 在该值为空时取发行第一首。
-- **影响**：补全第二首及之后的曲目时，可能把第一首的曲名、录音标识、曲序与参与者写进去，
-  原 `match_ref` 却仍指向目标曲目。`ApplyDetailToTrack` 也没有将 `Detail.Tracklist`
-  交给 `ReplaceTracklist`；目前完整清单保存仅在 `FetchTracklist` 路径。
-- **核验**：本地两曲 HTTP 桩件经真实 `RefreshTrackDetail` 执行后，第二首的
-  `match_ref=audit-second` 保持不变，标题却成为 `First song`、录音变为 `rec-first`；
-  该发行清单仍为 `none`、0 行。
-- **建议**：工作集携带并传递曲目级标识；详情落库统一保存整张发行清单，
-  增加从非首曲入库到后台补全的完整回归。对应第十三节、`upstream/musicbrainz`、
-  `library/release-catalog`，不能仅把文档改成允许串曲。
+- **原缺陷**：`EnrichTarget` 仅携带发行标识，共用取数入口没有传 `Ref.TrackRef`，
+  MB `findTrack` 在空标识时默认取发行第一首。曲名/录音/曲序/参与者被覆盖，
+  `match_ref` 却仍指向原曲目；`ApplyDetailToTrack` 也未保存返回的完整清单。
+- **原核验**：第二首 `match_ref=audit-second` 保持不变，标题却成为 `First song`、
+  录音变为 `rec-first`；发行清单为 `none`、0 行。用户 image3/image4 再次报告同一缺陷。
+- **现实现**：共用入口出网前从当前 track 读取 `match_ref` 并核对来源/发行，
+  将其传给 provider；响应必须精确定位目标，缺标识/未命中报错而非取第一首。
+  响应返回后再核对身份，详情与清单保存共用落点；未指定曲目的专辑清单请求不改曲目。
+- **回归**：`enrich_identity_test.go` 覆盖非首曲导入、后台与刷新路径，以及专辑清单/
+  全部曲目/详情一致性；provider 原始 JSON 回放覆盖跨碟与未命中。具体边界见 23.1。
+  此修复不等于 21.3 B–E 已完成。
 
 #### B. 用户锁未被所有详情写入路径遵守
 
@@ -2066,8 +2065,8 @@ Volt 是仓库内的组件源码，不是另一个主题 npm 包。行为由 uns
 
 ### 21.5 后续同步与修复顺序
 
-- **先修关键路径**：21.3 中的串曲、锁覆盖与保存语义具有数据正确性风险；
-  应先补失败场景回归，再修实现，不能靠下调规格掩盖。
+- **先修关键路径**：21.3 A 的串曲与清单丢失已由 23.1 修复；锁覆盖与保存语义
+  仍有数据正确性风险，应继续补失败场景回归并修实现，不能靠下调规格掩盖。
 - **同步已确定裁决**：第一至二十节中标为需改 spec 的导航、列表、分流、统一检索、
   后台调度、实体与署名结构、Volt 技术栈，需同时更新相关 spec、proposal、tasks 与 design。
   尤其是 design 的 D1/D2/D3/D5/D8/D10/D12/D13，不能只替换技术栈名称。
@@ -2103,7 +2102,8 @@ Volt 是仓库内的组件源码，不是另一个主题 npm 包。行为由 uns
   不改变 track MBID 身份，也不改导入去重/ISRC 合并规则。
 - 灰色行仍不可选、不可打开详情、不计数/导出；「加入曲库 / 查看上游」保留在右键菜单。
   21.3 D 的灰色行入库上下文缺失是另一处既有问题，本轮不宣称修复它。
-- 仅删除曲序列的 `#` **表头文字**，仍显示音轨号；完整且默认排序的歌单仍用此列的拖动手柄。
+- 本轮当时仅删除曲序列的 `#` **表头文字**；后续 23.2 按用户裁决移除整列及歌单手柄，
+  不再保留音轨号的表格展示（详情与底层字段保留）。
 
 **与规划冲突**：`library/release-catalog` 的「清单位置的三种状态」及「已有其他版本」场景、
 `design.md` D4 末段、`tasks.md` 8.5 / 15.8 仍要求 recording 回退，待改为上述两态。
@@ -2167,12 +2167,12 @@ Volt 是仓库内的组件源码，不是另一个主题 npm 包。行为由 uns
 - 表头右键打开列显隐菜单，带 Lucide 勾选图标与 `menuitemcheckbox / aria-checked` 语义；
   键盘聚焦可排序表头时支持菜单键/Shift+F10，菜单内支持方向键/Home/End、Enter、Escape。
   点外部或切上下文关闭，不触发行级菜单/排序/选中操作。
-- 菜单只列现有九项：曲序、封面、标题、艺术家、专辑、时长、年份、载体、国家。
-  不引入 image2 中的额外字段，也不将已删除的状态列放回来。
+- 菜单当前只列八项：封面、标题、艺术家、专辑、时长、年份、载体、国家。
+  原九项中的曲序已在 23.2 移除，不引入 image2 中的额外字段，也不恢复状态列。
 - `stores/trackColumns.ts` 统一持有偏好，`sonexa.trackColumns` 本地保存，
   跨曲目视图/刷新生效；列恢复时仍在原位置。不影响导出字段、选中项和排序。
   至少保留一列；无效/空偏好恢复默认，存储不可用不阻止当前会话操作。
-- 隐藏曲序列即隐藏歌单手柄及提示，不改歌单顺序；重新显示即可继续拖动。
+- 曲序/手柄不再是可隐藏/恢复的列（23.2）；旧偏好中的 `position` 会被忽略，歌单顺序不变。
 - 开始/暂停从原描边按钮改为 24px 高、12px 字号的小型文字按钮，保留图标、文字、
   禁用态、点击行为与进度；不修改后台任务调度。
 
@@ -2194,3 +2194,94 @@ Volt 是仓库内的组件源码，不是另一个主题 npm 包。行为由 uns
 - 浅/深色列菜单截图在 `frontend/test-results/`。真实上游仅核对公开 MB/CAA 数据及图片响应；
   回归使用隔离临时库/Wails 桩件，没有读取或迁移用户数据库。
   **尚未做原生 Wails 人工验收，也不宣称第二十一节的其他缺口已解决。**
+
+---
+
+## 二十三、非首曲补全错配与移除曲序/歌单手柄列
+
+**范围**：用户 `tmp/image/image3.png` / `image4.png` 报告的两个问题。
+沿用 Wails + Go + Vue 3 + TypeScript + Tailwind CSS v4 + Volt + Lucide + Pinia；
+未调用 OpenSpec skills，未修改 `openspec/`，未改 schema、做迁移或读取用户数据库。
+
+### 23.1 补全必须定位已入库的那首曲目 `[纯 bug 修复]`
+
+**根因**：正是 21.3 A 的既有缺口。候选入库时身份正确，但取详情只传发行标识，
+没有传 `Ref.TrackRef`。MB 解析器将空值理解为「第一首」，于是补全把
+`綿雪の夢`（第 4 首，ハトリアヤ，5:21）改为 `Honey Trap`（第 1 首，Chia，4:27），
+其 `match_ref` 仍是第 4 首的 track MBID。全部曲目与详情读被覆盖的 `track`，
+专辑完整清单则按原 `match_ref` 识别拥有位置，因此两个页面看似矛盾。
+
+**修复**：
+
+1. `fetchAndApplyDetail` 在出网前读取当前曲目的 `match_ref`，校验来源与所属发行，
+   作为 `Ref.TrackRef` 传入。选择在共用入口读当前身份，而不是在工作集/手动刷新/
+   导入回调各复制一份，三条生产路径都不会漏接。响应后再次核对身份，丢弃在途期间
+   发生重新匹配/移动歌集的旧响应；返回详情也必须声明同来源、同发行、同曲目标识。
+2. MB 的空 `trackRef` **仅返回发行信息和清单**，不再默认挑第一首；非空标识必须
+   精确命中 track MBID。`Detail.MatchRef` 仅在定位成功后赋值，未命中返回明确错误。
+   iTunes 同样按 `country:trackId` 精确定位，并拒绝未命中/地区不符。
+3. 缺标识、错误标识，以及无 track MBID 的 `recording@release` 合成候选，
+   **保留入库数据并使补全失败**，不猜测同 recording 的某个位置，也不标成 fetched。
+   后台仍按现有失败计数/上限停下；这类候选需重新匹配为真实 track 标识才能补全。
+   本轮没有增加合成标识到 track MBID 的自动消歧或身份转换。
+4. `ApplyDetailToTrack` 保存同一次响应携带的非空清单，和 `FetchTracklist` 共用转换/保存函数。
+   正常完整响应标 complete，已知返回数量少于声明总数时标 partial；MB 总曲数改为
+   所有碟的总和，不再误用目标所在单碟的数量。清单不会为未拥有位置创建曲目。
+5. 专辑清单请求不指定目标，也不再顺带用首曲 recording 去补某条已入库曲目；
+   删除 `enrichOwnedTracksFromDetail` / `detailForPosition` 这条隐式写入路径。
+   曲目补全统一由显式目标入口执行。原始发行响应缓存仍按发行复用，每次按各自
+   track 标识重新解析，不缓存“上一首的解析结果”，也不为曲目再取一遍清单。
+
+**与 spec 的关系**：目标身份正确、详情顺带保存完整清单是在修复
+`upstream/musicbrainz`「详情拉取一次获取尽可能多的信息 / 详情响应顺带写入曲目清单」
+及 `library/release-catalog` 的既有契约，**不是允许串曲的新偏差**。
+`21.3 A` 已就地改为已修复；13 节验证边界与 21.2 索引同步更新。
+
+**边界**：本轮不修 21.3 B 的用户锁、C 的署名推断 vocal、D 的灰色行入库上下文，
+也不修 E 的编辑保存语义。身份前后校验不等于整套详情/参与者/清单写入已是一个原子事务。
+已污染的旧库不做自动修复或迁移，按开发阶段约定由用户测试前清理。
+
+### 23.2 移除曲序与歌单拖动手柄整列 `[需改 spec]`
+
+- 不仅清空 `#` 表头：删除 `TrackTable` 的整列（单元格、空表头、原生拖动手柄），
+  默认第一列现在是封面。全部曲目、最近添加、歌单、标签、艺术家、专辑和本地搜索共用此行为。
+- 删除列菜单的「曲序」，只剩封面、标题、艺术家、专辑、时长、年份、载体、国家八项。
+  旧 localStorage 偏好中的 `position` 被过滤；若仅剩该键则恢复有效默认列。
+- 同步移除手柄提示、重排 prop/event 和 `App.vue` 提交顺序的接线，不改成整行可拖动。
+  文字拖选、行多选、排序、导出、列显隐与详情切换不受影响。
+- 保留底层碟号/音轨号、详情与编辑字段、候选表格「第几曲/共几曲」，
+  专辑清单仍按碟号/音轨号排序；这不是删除曲目位置元数据。
+- 歌单的显式顺序、后端 `ReorderCollection` API 与已有顺序数据保留，默认排序仍读它们；
+  **当前 UI 不再提供拖动重排入口**，也没有另加一种重排交互。
+
+**与 spec 冲突**：`library/collections`「歌单有序，标签无序」中的
+“支持拖拽重排”及「拖拽重排歌单」场景，现与用户要求冲突，需后续调整为上述边界。
+`platform/app-shell` 未固定普通曲目表格的列清单，统一移除不破坏各视图列一致性；
+其中单独规定的候选表格曲序列不在本轮移除范围。
+本文 1.8、14.2、20.3/20.4、22.1/22.4 已同步改写，避免仍声称可恢复/使用手柄；
+历轮已执行的重排测试只作为历史记录保留。
+
+### 23.3 验证与交付
+
+- **先复现再修复**：新增 main 包回放在修复前证明后台、手动刷新、导入立即补全
+  三条路径都会把第 4 首覆盖成第一首；iTunes 也未真正补齐目标曲目字段。
+- `enrich_identity_test.go` 经真实 provider 解析、生产入口与隔离 SQLite 验证：
+  非首曲的标题/署名/曲序/时长/录音/作品/ISRC/参与者正确；全部曲目、详情与专辑拥有位置一致；
+  一次详情即保存清单且无需再次请求；同发行多首复用原始缓存仍各自定位；
+  缺标识/未命中/合成标识不写错曲；请求途中身份变化被拒绝；仅取清单不改曲目；
+  截断清单不伪装完整；iTunes 精确定位与跨地区拒绝。
+- `internal/provider/musicbrainz/detail_target_test.go`：原始 JSON → 解析，覆盖
+  首曲/非首曲/多碟重复曲序、相同 recording 不替代 track 标识、空目标与非法目标，
+  碟数/全发行总曲数及文本音轨号 `A1`。
+- `go test ./...`、`go test -count=1 -race ./...`、`go vet ./...` 通过；最后补充
+  同发行缓存用例后再次运行 main / MusicBrainz / iTunes 的非缓存 race 测试通过。
+  原有未跟踪 `scratch/` 不修改、不提交（Go 枚举到该包，无测试）。
+- `npm test`：**17 项通过**；`npm run build`：TypeScript / Vite 通过，仍有既有
+  **>500 kB chunk warning**（主 JS 约 881 kB，gzip 222 kB），不宣称零告警。
+- `SONEXA_E2E_PREVIEW=1 npm run test:e2e`：生产 dist 的 22 场景 × Chromium/WebKit，
+  **44 项通过**，保留鼠标/键盘选择、文字拖选、排序、导出、模态、详情切换等回归；
+  原手柄重排场景改为确认整列/提示/菜单项不存在、拖选不提交重排、排序筛选不改歌单顺序。
+  列菜单浅/深色截图位于 `frontend/test-results/`，已查看 WebKit 浅色截图确认无空列。
+- `~/.go/bin/wails build`：darwin/arm64 打包成功，生成绑定无差异；产物
+  `build/bin/sonexa.app`。`git diff --check` 通过，`openspec/` 无改动。
+- 不访问真实上游、不启动使用用户数据的应用；**尚待用户清库重新导入后进行原生 Wails 人工验收**。

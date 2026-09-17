@@ -293,13 +293,15 @@ func (a *App) FetchTracklist(providerID, releaseRef string, force bool) error {
 		return err
 	}
 
-	// 详情已经拉回来了，顺带把参与者与丰富信息落到已入库的同位置曲目上。
-	// 此前只在单元测试里调用的艺术家子系统，到这里才真正接进生产路径。
-	if err := a.enrichOwnedTracksFromDetail(providerID, releaseRef, detail); err != nil {
-		// 丰富失败不应让清单补全整体失败
-		_ = err
+	if err := a.replaceTracklistFromDetail(releaseID, detail); err != nil {
+		return err
 	}
+	a.notifyLibraryChanged()
+	return nil
+}
 
+// replaceTracklistFromDetail 共用详情/清单入口；不把未定位的发行详情写进曲目。
+func (a *App) replaceTracklistFromDetail(releaseID int64, detail *provider.Detail) error {
 	entries := make([]store.ReleaseTrack, 0, len(detail.Tracklist))
 	for _, e := range detail.Tracklist {
 		entries = append(entries, store.ReleaseTrack{
@@ -310,14 +312,10 @@ func (a *App) FetchTracklist(providerID, releaseRef string, force bool) error {
 		})
 	}
 	state := store.TracklistComplete
-	if len(entries) == 0 {
+	if len(entries) == 0 || (detail.TrackTotal != nil && len(entries) < *detail.TrackTotal) {
 		state = store.TracklistPartial
 	}
-	if err := a.store.ReplaceTracklist(releaseID, entries, state); err != nil {
-		return err
-	}
-	a.notifyLibraryChanged()
-	return nil
+	return a.store.ReplaceTracklist(releaseID, entries, state)
 }
 
 // upsertReleaseFromDetail 由详情写入或更新发行记录。
@@ -354,7 +352,7 @@ func (a *App) upsertReleaseFromDetail(providerID, releaseRef string, d *provider
 		TrackTotal:       d.TrackTotal, DiscTotal: d.DiscTotal,
 		Label:          d.Label,
 		CatalogNumber:  d.CatalogNumber,
-		TracklistState: store.TracklistComplete, FetchedAt: &now,
+		TracklistState: store.TracklistNone, FetchedAt: &now,
 	})
 }
 
@@ -415,77 +413,4 @@ func (a *App) ladderConfig() matching.LadderConfig {
 		return matching.DefaultLadderConfig()
 	}
 	return matching.LadderFromSettings(a.settings.Get().Matching)
-}
-
-// enrichOwnedTracksFromDetail 把一次已取得的详情落到对应的那首已入库曲目上。
-//
-// 一次详情请求只解析一个 recording 的关系（MB 的 release 详情里，
-// recording-level-rels 与 work-rels 是挂在被解析的那条 recording 上的），
-// 因此这里是「按录音标识精确对上一首」而不是喂给整张专辑——
-// 把一条 recording 的作曲作词写满整张专辑，会把甲曲的作曲安到乙曲上。
-//
-// 匹配用录音标识而非曲目标识：用户从 CD 版入库、当前显示数字版清单时，
-// track MBID 不同但 recording MBID 相同，按录音匹配才能落到用户已有的那首。
-func (a *App) enrichOwnedTracksFromDetail(providerID, releaseRef string, d *provider.Detail) error {
-	if d == nil || d.RecordingRef == nil || *d.RecordingRef == "" {
-		return nil
-	}
-	if len(d.Artists) == 0 && d.TrackCredit == nil {
-		return nil
-	}
-
-	rel, err := a.store.GetReleaseByRef(providerID, releaseRef)
-	if err != nil || rel == nil {
-		return err
-	}
-	positions, err := a.store.ResolveTracklist(rel.ID, providerID)
-	if err != nil {
-		return err
-	}
-
-	for _, pos := range positions {
-		if pos.TrackID == 0 {
-			continue // 灰色行没有曲目可丰富
-		}
-		meta, err := a.store.GetMetadata(pos.TrackID)
-		if err != nil || meta == nil || meta.RecordingRef == nil {
-			continue
-		}
-		if *meta.RecordingRef != *d.RecordingRef {
-			continue // 不是同一条录音，不作丰富
-		}
-		perTrack := detailForPosition(d, deref(pos.Track.TrackRef))
-		return a.ApplyDetailToTrack(context.Background(), pos.TrackID, providerID, perTrack)
-	}
-	return nil
-}
-
-// detailForPosition 从整份详情里取出某一个曲目位置的字段。
-//
-// 清单位置携带的标题与署名归该位置所有；作曲家等 Work 层级的关系
-// 在 MB 的响应里挂在 recording 上，因此这里复用整份详情的参与者列表。
-func detailForPosition(d *provider.Detail, trackRef string) *provider.Detail {
-	if d == nil {
-		return nil
-	}
-	out := *d
-	out.MatchRef = trackRef
-
-	for _, e := range d.Tracklist {
-		if e.TrackRef == nil || *e.TrackRef != trackRef {
-			continue
-		}
-		out.Title = strPtrOrNil(e.Title)
-		out.TrackCredit = e.TrackCredit
-		out.TrackNumber = &e.TrackNumber
-		out.DiscNumber = &e.DiscNumber
-		out.DurationMS = e.DurationMS
-		out.RecordingRef = e.RecordingRef
-		out.TrackNumberText = e.TrackNumberText
-		if e.TrackCredit == nil {
-			out.TrackCredit = d.AlbumCredit
-		}
-		return &out
-	}
-	return &out
 }

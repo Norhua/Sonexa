@@ -79,7 +79,6 @@ func candidateFrom(r result, country string) provider.Candidate {
 func ParseLookup(resp *lookupResponse, country, trackRef string) *provider.Detail {
 	d := &provider.Detail{
 		Provider:  provider.ITunes,
-		MatchRef:  trackRef,
 		FetchedAt: time.Now().UTC(),
 	}
 	if len(resp.Results) == 0 {
@@ -142,6 +141,7 @@ func ParseLookup(resp *lookupResponse, country, trackRef string) *provider.Detai
 
 		// 目标曲目位置的字段
 		if trackRef != "" && ref == trackRef {
+			d.MatchRef = ref
 			d.Title = strPtr(r.TrackName)
 			d.TrackCredit = strPtr(r.ArtistName)
 			if r.TrackNumber > 0 {

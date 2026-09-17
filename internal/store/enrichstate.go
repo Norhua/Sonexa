@@ -32,12 +32,13 @@ const (
 // 不设上限的话，一条永久取不到的曲目会在每一轮里都排在队首。
 const MaxEnrichAttempts = 5
 
-// EnrichTarget 是工作集里的一条：补它需要的最少信息。
+// EnrichTarget 是工作集中的调度快照；取数前由共用补全入口读取当前 match_ref，
+// 并核对来源/发行，避免手动刷新、立即补全或排队期间重新匹配漏用曲目身份。
 type EnrichTarget struct {
 	TrackID  int64
 	Provider string
 	// ReleaseRef 是发行标识。MusicBrainz 用 release MBID，
-	// iTunes 用 `country:collectionID`——两者都存在 release_mbid 列上。
+	// iTunes 用 `country:collectionID`——两者都存在 release.provider_ref 上。
 	ReleaseRef string
 	Attempts   int
 }

@@ -15,12 +15,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('track column preferences', () => {
-  it.each(['broken', '[]', '["status"]', '{}'])('invalid preferences %s restore existing columns', saved => {
+  it.each(['broken', '[]', '["status"]', '["position"]', '{}'])('invalid preferences %s restore existing columns', saved => {
     storage.set('sonexa.trackColumns', saved)
     expect(useTrackColumnsStore().visible).toEqual(trackColumns.map(column => column.key))
   })
   it('filters unknown keys and duplicates; last column cannot be hidden', async () => {
-    storage.set('sonexa.trackColumns', '["title","status","title"]')
+    storage.set('sonexa.trackColumns', '["title","status","position","title"]')
     const columns = useTrackColumnsStore()
     expect(columns.visible).toEqual(['title'])
     columns.toggle('title')

@@ -40,16 +40,24 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 	if err := json.Unmarshal(body, &rel); err != nil {
 		return nil, fmt.Errorf("解析 MusicBrainz 详情响应失败: %w", err)
 	}
-	return ParseDetail(&rel, ref.TrackRef), nil
+	return parseDetailTarget(&rel, ref.TrackRef)
+}
+
+func parseDetailTarget(rel *releaseDetail, trackRef string) (*provider.Detail, error) {
+	d := ParseDetail(rel, trackRef)
+	if trackRef != "" && d.MatchRef == "" {
+		return nil, fmt.Errorf("发行 %s 中未找到目标曲目 %s", rel.ID, trackRef)
+	}
+	return d, nil
 }
 
 // ParseDetail 把详情响应解析为 Detail。导出以便金样例测试离线重放。
 //
-// trackRef 指定要解析哪一个曲目位置；为空时取第一个。
+// trackRef 为空只解析发行和清单；非空时必须精确匹配 track MBID，不回退首曲。
+// MatchRef 仅在实际定位成功后赋值，调用方可区分“未找到”与“字段缺失”。
 func ParseDetail(rel *releaseDetail, trackRef string) *provider.Detail {
 	d := &provider.Detail{
 		Provider:   provider.MusicBrainz,
-		MatchRef:   trackRef,
 		AlbumTitle: strPtr(rel.Title),
 		ReleaseRef: strPtr(rel.ID),
 		FetchedAt:  time.Now().UTC(),
@@ -96,48 +104,60 @@ func ParseDetail(rel *releaseDetail, trackRef string) *provider.Detail {
 
 	// 清单：响应中本就包含，顺带解析，不额外花请求
 	d.Tracklist = parseTracklist(rel)
-
-	// 定位目标曲目位置，取其曲目级字段
-	if med, trk, ok := findTrack(rel, trackRef); ok {
-		d.Title = strPtr(firstNonEmpty(trk.Title, recordingTitle(trk)))
-		if credit := joinArtistCredit(trk.ArtistCredit); credit != "" {
-			d.TrackCredit = &credit
-		}
-		if trk.Position > 0 {
-			pos := trk.Position
-			d.TrackNumber = &pos
-		}
-		if trk.Number != "" {
-			d.TrackNumberText = strPtr(trk.Number)
-		}
+	// 歌集总曲数是全部碟的总和，不是目标曲目所在那张碟的曲数。
+	total := 0
+	for _, med := range rel.Media {
 		if med.TrackCount > 0 {
-			total := med.TrackCount
-			d.TrackTotal = &total
+			total += med.TrackCount
+		} else {
+			total += len(med.TrackList())
 		}
-		if med.Position > 0 {
-			disc := med.Position
-			d.DiscNumber = &disc
-		}
-		if med.Format != "" {
+		if d.MediumFormat == nil {
 			d.MediumFormat = strPtr(med.Format)
 		}
-		if trk.Length != nil {
-			d.DurationMS = trk.Length
+	}
+	if total > 0 {
+		d.TrackTotal = &total
+	}
+
+	// 定位目标曲目位置，取其曲目级字段；未指定/未命中绝不取首曲或借用署名。
+	med, trk, ok := findTrack(rel, trackRef)
+	if !ok {
+		return d
+	}
+	d.MatchRef = trk.ID
+	d.Title = strPtr(firstNonEmpty(trk.Title, recordingTitle(trk)))
+	if credit := joinArtistCredit(trk.ArtistCredit); credit != "" {
+		d.TrackCredit = &credit
+	}
+	if trk.Position > 0 {
+		pos := trk.Position
+		d.TrackNumber = &pos
+	}
+	if trk.Number != "" {
+		d.TrackNumberText = strPtr(trk.Number)
+	}
+	if med.Position > 0 {
+		disc := med.Position
+		d.DiscNumber = &disc
+	}
+	d.MediumFormat = strPtr(med.Format)
+	if trk.Length != nil {
+		d.DurationMS = trk.Length
+	}
+	if trk.Recording != nil {
+		d.RecordingRef = strPtr(trk.Recording.ID)
+		if len(trk.Recording.ISRCs) > 0 {
+			d.ISRC = strPtr(trk.Recording.ISRCs[0])
 		}
-		if trk.Recording != nil {
-			d.RecordingRef = strPtr(trk.Recording.ID)
-			if len(trk.Recording.ISRCs) > 0 {
-				d.ISRC = strPtr(trk.Recording.ISRCs[0])
+		if d.TrackCredit == nil {
+			if credit := joinArtistCredit(trk.Recording.ArtistCredit); credit != "" {
+				d.TrackCredit = &credit
 			}
-			if d.TrackCredit == nil {
-				if credit := joinArtistCredit(trk.Recording.ArtistCredit); credit != "" {
-					d.TrackCredit = &credit
-				}
-			}
-			d.Artists = parseRecordingArtists(trk.Recording)
-			if workRef := firstWorkID(trk.Recording); workRef != "" {
-				d.WorkRef = strPtr(workRef)
-			}
+		}
+		d.Artists = parseRecordingArtists(trk.Recording)
+		if workRef := firstWorkID(trk.Recording); workRef != "" {
+			d.WorkRef = strPtr(workRef)
 		}
 	}
 
@@ -336,11 +356,14 @@ func dedupeArtists(in []provider.DetailArtist) []provider.DetailArtist {
 	return out
 }
 
-// findTrack 在 release 中定位指定的曲目位置；trackRef 为空时取第一个。
+// findTrack 只接受精确的曲目标识；空标识表示仅取发行清单。
 func findTrack(rel *releaseDetail, trackRef string) (medium, track, bool) {
+	if trackRef == "" {
+		return medium{}, track{}, false
+	}
 	for _, med := range rel.Media {
 		for _, trk := range med.TrackList() {
-			if trackRef == "" || trk.ID == trackRef {
+			if trk.ID == trackRef {
 				return med, trk, true
 			}
 		}
@@ -450,7 +473,7 @@ func ParseDetailJSON(body []byte, trackRef string) (*provider.Detail, error) {
 	if err := json.Unmarshal(body, &rel); err != nil {
 		return nil, fmt.Errorf("解析详情响应失败: %w", err)
 	}
-	return ParseDetail(&rel, trackRef), nil
+	return parseDetailTarget(&rel, trackRef)
 }
 
 // ParseVoiceActorJSON 解析艺术家响应的原始字节，供离线重放使用。

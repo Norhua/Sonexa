@@ -24,6 +24,7 @@ type Ref struct {
 	// ID 是详情请求的主标识（MB 用 release MBID，iTunes 用 collectionId）。
 	ID string
 	// TrackRef 是曲目粒度标识（MB 用 track MBID，iTunes 用 {country}:{trackId}）。
+	// 为空时只取发行/清单；非空但找不到目标时 FetchDetail 必须返回错误。
 	TrackRef string
 	Country  string
 }
@@ -104,6 +105,7 @@ type CoverGroup struct {
 // Detail 是一次详情拉取的完整结果。字段远多于 Candidate，全部可空。
 type Detail struct {
 	Provider ProviderID
+	// MatchRef 只在精确定位曲目成功后赋值；仅取发行清单时为空。
 	MatchRef string
 
 	Title       *string

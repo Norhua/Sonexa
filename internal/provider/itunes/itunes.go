@@ -174,7 +174,11 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("解析 iTunes 清单响应失败: %w", err)
 	}
-	return ParseLookup(&resp, country, ref.TrackRef), nil
+	d := ParseLookup(&resp, country, ref.TrackRef)
+	if ref.TrackRef != "" && d.MatchRef == "" {
+		return nil, fmt.Errorf("专辑 %s 中未找到目标曲目 %s", ref.ID, ref.TrackRef)
+	}
+	return d, nil
 }
 
 // lookupLimit 是清单查询的返回条数上限。

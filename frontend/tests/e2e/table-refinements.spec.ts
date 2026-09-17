@@ -6,7 +6,7 @@ const cell = (page: Page, i: number) => rows(page).nth(i).locator('td').last()
 const headerMenu = (page: Page) => page.getByRole('menuitemcheckbox')
 async function openColumns(page: Page) {
   await page.locator('.track-list thead th').first().click({ button: 'right' })
-  await expect(headerMenu(page)).toHaveCount(9)
+  await expect(headerMenu(page)).toHaveCount(8)
 }
 
 test.beforeEach(async ({ page }) => {
@@ -64,7 +64,8 @@ test('late detail responses cannot override latest selection or reopen a closed 
 test('header menu toggles only existing columns, persists across views/reload and leaves selection/sort intact', async ({ page }, testInfo) => {
   await expect(page.getByRole('columnheader', { name: '#', exact: true })).toHaveCount(0)
   await expect(page.getByRole('columnheader', { name: '状态', exact: true })).toHaveCount(0)
-  await expect(page.locator('.track-list thead th')).toHaveCount(9)
+  await expect(page.locator('.track-list thead th')).toHaveCount(8)
+  await expect(page.locator('.track-list thead th').first()).toHaveText('封面')
   await cell(page, 0).click()
   await page.getByRole('columnheader', { name: '标题', exact: true }).click()
   await openColumns(page)
@@ -93,19 +94,18 @@ test('header menu toggles only existing columns, persists across views/reload an
   await expect(page.getByRole('columnheader', { name: '艺术家', exact: true })).toBeVisible()
   await page.getByRole('columnheader', { name: '标题', exact: true }).focus()
   await page.keyboard.press('Shift+F10')
-  await expect(headerMenu(page)).toHaveCount(9)
+  await expect(headerMenu(page)).toHaveCount(8)
+  await expect(headerMenu(page).filter({ hasText: '曲序' })).toHaveCount(0)
   await page.keyboard.press('Home')
   await page.keyboard.press('Enter')
-  await expect(page.locator('.track-list thead th')).toHaveCount(8)
+  await expect(page.locator('.track-list thead th')).toHaveCount(7)
   await openColumns(page)
   await page.getByRole('button', { name: '最近添加', exact: true }).click()
   await expect(headerMenu(page)).toHaveCount(0)
 })
 
-test('header menu keeps one visible column and hiding position never changes playlist order', async ({ page }) => {
+test('header menu keeps one visible column without changing playlist order', async ({ page }) => {
   await page.getByRole('button', { name: /测试歌单/ }).click()
-  await openColumns(page)
-  await headerMenu(page).filter({ hasText: '曲序' }).click()
   await expect(page.locator('[data-pc-section="reorderablerowhandle"]')).toHaveCount(0)
   expect(await page.evaluate(() => (window as any).__lastReorder)).toBeUndefined()
   for (const label of ['封面', '艺术家', '专辑', '时长', '年份', '载体', '国家']) {

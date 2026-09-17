@@ -3,7 +3,6 @@ import { defineStore } from 'pinia'
 
 /** 只控制既有列的可见性；不影响排序、选择、导出字段或歌单顺序。 */
 export const trackColumns = [
-  { key: 'position', label: '曲序', width: 44 },
   { key: 'cover', label: '封面', width: 48 },
   { key: 'title', label: '标题', width: 150 },
   { key: 'artist', label: '艺术家', width: 150 },

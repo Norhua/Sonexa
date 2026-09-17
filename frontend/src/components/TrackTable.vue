@@ -1,9 +1,9 @@
 <script setup lang="ts">
-/** 唯一曲目表格：Volt 提供结构/重排，useListSelection 独占选择与焦点。 */
+/** 唯一曲目表格：Volt 提供结构，useListSelection 独占选择与焦点。 */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { Check, GripVertical, Pause, Play } from 'lucide-vue-next'
+import { Check, Pause, Play } from 'lucide-vue-next'
 import Column from 'primevue/column'
-import type { DataTableRowReorderEvent, DataTableSortEvent } from 'primevue/datatable'
+import type { DataTableSortEvent } from 'primevue/datatable'
 import type { MenuItem } from 'primevue/menuitem'
 import DataTable from '@/volt/DataTable.vue'
 import SortIcon from '@/volt/SortIcon.vue'
@@ -22,11 +22,10 @@ const props = withDefaults(defineProps<{
   rows: Row[]
   collectionId?: number
   fixedOrder?: boolean
-  reorderable?: boolean
   loading?: boolean
   /** 相同组件切换歌单/艺术家/查询时必须重置交互上下文。 */
   contextKey?: string
-}>(), { collectionId: 0, fixedOrder: false, reorderable: false, loading: false, contextKey: '' })
+}>(), { collectionId: 0, fixedOrder: false, loading: false, contextKey: '' })
 const sortKey = defineModel<string>('sortKey', { default: 'default' })
 const sortDesc = defineModel<boolean>('sortDesc', { default: false })
 const emit = defineEmits<{
@@ -41,7 +40,6 @@ const emit = defineEmits<{
   viewUpstream: [row: Row]
   selectionChange: [ids: number[]]
   exportScope: [scope: 'playlist' | 'filtered' | 'selection' | 'all']
-  reorder: [orderedIds: number[]]
 }>()
 const columns = useTrackColumnsStore()
 const headerMenu = ref<InstanceType<typeof ContextMenu> | null>(null)
@@ -68,7 +66,6 @@ const selection = useListSelection(orderedRows)
 const selectedRows = computed(() => uniqueTracks(selection.selectedRows.value))
 const selectedCount = computed(() => selectedRows.value.length)
 const trackCount = computed(() => uniqueTracks(props.rows).length)
-const canReorder = computed(() => props.reorderable && !props.fixedOrder && sortKey.value === 'default' && !props.loading)
 const sortField = computed(() => props.fixedOrder || sortKey.value === 'default' ? undefined : sortKey.value === 'duration' ? 'durationMs' : sortKey.value)
 const tablePT = computed(() => ({
   table: { 'aria-label': '曲目列表', 'aria-multiselectable': 'true' },
@@ -97,9 +94,6 @@ function onSort(event: DataTableSortEvent) {
   if (props.fixedOrder) return
   sortKey.value = event.sortField === 'durationMs' ? 'duration' : String(event.sortField ?? 'default')
   sortDesc.value = event.sortOrder === -1
-}
-function onReorder(event: DataTableRowReorderEvent) {
-  if (canReorder.value) emit('reorder', uniqueTracks(event.value).map(row => row.id))
 }
 function rowElement(target: EventTarget | null) {
   return target instanceof Element ? target.closest<HTMLElement>('[data-row-key]') : null
@@ -245,7 +239,6 @@ defineExpose({ selectedCount, trackCount, selectedRows })
     @contextmenu="onContextMenu" @keydown="onKeyDown">
     <div data-track-toolbar class="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs text-muted-color">
       <span role="status">{{ trackCount }} 首曲目<span v-if="selectedCount"> · 已选 {{ selectedCount }} 项</span></span>
-      <span v-if="canReorder && columns.has('position')" class="text-muted-color">拖动曲序列手柄调整顺序</span>
       <div class="flex-1" />
       <div class="flex items-center gap-1.5" :title="enrich.hint">
         <span>补全信息匹配</span>
@@ -259,11 +252,7 @@ defineExpose({ selectedCount, trackCount, selectedRows })
     <DataTable :value="orderedRows" data-key="key" lazy scrollable scroll-height="flex"
       :selection="selection.selectedRows.value" :pt="tablePT" :loading="loading"
       :sort-field="sortField" :sort-order="sortDesc ? -1 : 1"
-      :table-style="{ minWidth: `${columns.minWidth}px`, tableLayout: 'fixed' }" @sort="onSort" @row-reorder="onReorder">
-      <Column v-if="columns.has('position')" :key="canReorder ? 'reorder' : 'position'" :row-reorder="canReorder" style="width: 44px">
-        <template v-if="!canReorder" #body="{ data }"><span class="select-text text-xs tabular-nums">{{ data.trackNumber ?? '' }}</span></template>
-        <template #rowreordericon><GripVertical data-pc-section="reorderablerowhandle" class="size-4 cursor-grab text-muted-color" aria-label="拖动调整顺序" /></template>
-      </Column>
+      :table-style="{ minWidth: `${columns.minWidth}px`, tableLayout: 'fixed' }" @sort="onSort">
       <Column v-if="columns.has('cover')" header="封面" style="width: 48px"><template #body="{ data }"><CoverArt :source="data.coverSource" :adopted-path="data.adoptedCoverPath" class="size-8 rounded" /></template></Column>
       <Column v-for="column in textColumns"
         :key="column.field" :field="column.field" :header="column.label" :sortable="!fixedOrder">
@@ -295,6 +284,4 @@ defineExpose({ selectedCount, trackCount, selectedRows })
 .track-list :deep(.track-row[aria-selected="true"]) { background: var(--p-highlight-background) !important; color: var(--p-highlight-color); }
 .track-list :deep(.track-row:focus-visible) { outline: 1px solid var(--p-primary-color); outline-offset: -1px; }
 .track-list :deep(.track-row[data-ghost="true"]) { color: var(--p-ghost-color); }
-.track-list :deep([data-p-datatable-dragpoint-top="true"]) { box-shadow: inset 0 2px var(--p-primary-color); }
-.track-list :deep([data-p-datatable-dragpoint-bottom="true"]) { box-shadow: inset 0 -2px var(--p-primary-color); }
 </style>

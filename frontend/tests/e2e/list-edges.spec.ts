@@ -31,17 +31,20 @@ test('ghost positions remain unique, keyboard and export skip unowned versions',
   await expect.poll(() => page.evaluate(() => (window as any).__lastExport?.trackIds)).toEqual([1, 2])
   await expect(page.getByRole('columnheader', { name: '标题' })).not.toHaveAttribute('tabindex', '0')
 })
-test('playlist reorders via native DataTable handle, never by dragging text or a filtered subset', async ({ page }) => {
+test('playlist has no position/drag column; text dragging, sorting and filtering never reorder it', async ({ page }) => {
   await page.getByRole('button', { name: /测试歌单/ }).click()
-  const handle = rows(page).nth(4).locator('[data-pc-section="reorderablerowhandle"]')
-  await expect(handle).toBeVisible()
-  const target = (await rows(page).first().boundingBox())!
-  await handle.hover()
+  await expect(page.locator('[data-pc-section="reorderablerowhandle"]')).toHaveCount(0)
+  await expect(page.locator('.track-list thead th').first()).toHaveText('封面')
+  await expect(page.getByText('拖动曲序列手柄调整顺序')).toHaveCount(0)
+  const original = await rows(page).evaluateAll(els => els.map(el => el.getAttribute('data-row-key')))
+  const text = (await rows(page).nth(4).locator('[data-text-cell]').first().boundingBox())!
+  await page.mouse.move(text.x + 2, text.y + text.height / 2)
   await page.mouse.down()
-  await page.mouse.move(target.x + 20, target.y + 2, { steps: 15 })
-  await page.mouse.move(target.x + 22, target.y + 3)
+  await page.mouse.move(text.x + 70, text.y + text.height / 2, { steps: 12 })
   await page.mouse.up()
-  await expect.poll(() => page.evaluate(() => (window as any).__lastReorder?.ids)).toEqual([5, 1, 2, 3, 4, 6, 7])
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString().length ?? 0)).toBeGreaterThan(1)
+  expect(await page.evaluate(() => (window as any).__lastReorder)).toBeUndefined()
+  expect(await rows(page).evaluateAll(els => els.map(el => el.getAttribute('data-row-key')))).toEqual(original)
   await page.getByRole('columnheader', { name: '标题' }).click()
   await expect(page.locator('[data-pc-section="reorderablerowhandle"]')).toHaveCount(0)
   await page.getByTitle('排序：标题').click()
@@ -50,6 +53,7 @@ test('playlist reorders via native DataTable handle, never by dragging text or a
   await page.getByRole('searchbox').press('Enter')
   await expect(rows(page)).toHaveCount(1)
   await expect(page.locator('[data-pc-section="reorderablerowhandle"]')).toHaveCount(0)
+  expect(await page.evaluate(() => (window as any).__lastReorder)).toBeUndefined()
 })
 test('keyboard context menu and viewport clamping', async ({ page }) => {
   await rows(page).first().locator('td').last().click()

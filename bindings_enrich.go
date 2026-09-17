@@ -21,6 +21,9 @@ func (a *App) ApplyDetailToTrack(
 	providerID string,
 	d *provider.Detail,
 ) error {
+	if d == nil {
+		return fmt.Errorf("详情为空，无法补全曲目")
+	}
 	// 1. 丰富信息（不含参与者）
 	if err := a.applyDetailMeta(trackID, providerID, d); err != nil {
 		return err
@@ -28,6 +31,16 @@ func (a *App) ApplyDetailToTrack(
 	// 2. 参与者关系 + 可点击区间
 	if err := a.applyDetailArtists(ctx, trackID, providerID, d); err != nil {
 		return err
+	}
+	// 3. 同一次响应已带完整清单，不再等专辑页另取一次。
+	if d.ReleaseRef != nil && len(d.Tracklist) > 0 {
+		rel, err := a.store.GetReleaseByRef(providerID, *d.ReleaseRef)
+		if err != nil {
+			return err
+		}
+		if rel != nil {
+			return a.replaceTracklistFromDetail(rel.ID, d)
+		}
 	}
 	return nil
 }
@@ -312,15 +325,41 @@ func (a *App) fetchAndApplyDetail(ctx context.Context, target store.EnrichTarget
 		return fmt.Errorf("缺少发行标识，无法拉取详情")
 	}
 
+	// 在共用入口从当前记录读取身份，而不是只依赖排队时的发行快照。
+	// 后台、手动刷新与导入时立即补全均经过这里，不能漏接某一条路径。
+	meta, err := a.store.GetMetadata(target.TrackID)
+	if err != nil {
+		return err
+	}
+	if meta == nil || deref(meta.MatchRef) == "" {
+		return fmt.Errorf("缺少曲目标识，无法定位详情")
+	}
+	if deref(meta.MatchSource) != target.Provider || deref(meta.ReleaseRef) != target.ReleaseRef {
+		return fmt.Errorf("曲目的上游来源或所属发行已改变，取消本次补全")
+	}
+	trackRef := *meta.MatchRef
+
 	p, err := a.registry.Get(provider.ProviderID(target.Provider))
 	if err != nil {
 		return err
 	}
 	d, err := p.FetchDetail(ctx, provider.Ref{
-		ID: target.ReleaseRef, Country: countryOf(target.ReleaseRef),
+		Provider: provider.ProviderID(target.Provider),
+		ID:       target.ReleaseRef, TrackRef: trackRef, Country: countryOf(target.ReleaseRef),
 	})
 	if err != nil {
 		return fmt.Errorf("拉取详情失败: %w", err)
+	}
+	if d == nil || string(d.Provider) != target.Provider || deref(d.ReleaseRef) != target.ReleaseRef || d.MatchRef != trackRef {
+		return fmt.Errorf("详情未匹配目标曲目，拒绝写入")
+	}
+	// 请求在途时可能发生重新匹配/移动歌集；迟到的旧详情不能覆盖新身份。
+	current, err := a.store.GetMetadata(target.TrackID)
+	if err != nil {
+		return err
+	}
+	if current == nil || deref(current.MatchSource) != target.Provider || deref(current.MatchRef) != trackRef || deref(current.ReleaseRef) != target.ReleaseRef {
+		return fmt.Errorf("曲目身份在拉取期间已改变，取消本次补全")
 	}
 	return a.ApplyDetailToTrack(ctx, target.TrackID, target.Provider, d)
 }
