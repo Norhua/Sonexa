@@ -236,11 +236,11 @@ defineExpose({ selectedCount, trackCount, selectedRows })
 </script>
 
 <template>
-  <div ref="root" class="track-list flex h-full min-h-0 flex-1 flex-col outline-none" tabindex="-1"
+  <div ref="root" class="track-list flex h-full min-h-0 flex-1 flex-col outline-none" tabindex="-1" :aria-busy="loading"
     @mousedown.capture="onMouseDown" @click="onClick" @dblclick="onDoubleClick"
     @contextmenu="onContextMenu" @keydown="onKeyDown">
     <div data-track-toolbar class="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs text-muted-color">
-      <span role="status">{{ trackCount }} 首曲目<span v-if="selectedCount"> · 已选 {{ selectedCount }} 项</span></span>
+      <span role="status"><template v-if="loading">正在加载曲目…</template><template v-else>{{ trackCount }} 首曲目<span v-if="selectedCount"> · 已选 {{ selectedCount }} 项</span></template></span>
       <div class="flex-1" />
       <div class="flex items-center gap-1.5" :title="enrich.hint">
         <span>补全信息匹配</span>
@@ -266,7 +266,7 @@ defineExpose({ selectedCount, trackCount, selectedRows })
       <Column v-if="hasColumn('year')" field="year" header="年份" :sortable="!fixedOrder" style="width: 76px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ display(data.year) }}</span></template></Column>
       <Column v-if="hasColumn('medium')" header="载体" style="width: 80px"><template #body="{ data }"><span class="block select-text truncate" :title="data.mediumFormat">{{ display(data.mediumFormat) }}</span></template></Column>
       <Column v-if="hasColumn('country')" header="国家" style="width: 64px"><template #body="{ data }"><span class="select-text">{{ display(data.country) }}</span></template></Column>
-      <template #empty><div class="py-10 text-center text-muted-color"><slot name="empty">没有曲目</slot></div></template>
+      <template #empty><div class="py-10 text-center text-muted-color"><slot name="empty">{{ loading ? '正在加载曲目…' : '没有曲目' }}</slot></div></template>
     </DataTable>
     <ContextMenu ref="menu" :model="menuModel" />
     <ContextMenu ref="headerMenu" :model="headerMenuModel" :pt="headerMenuPT" aria-label="显示列">

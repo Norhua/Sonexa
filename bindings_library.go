@@ -114,7 +114,7 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 
 	detail := &TrackDetail{Track: *track, Metadata: meta, Tags: tags}
 
-	// 署名原串与成员区间保留在接口中；抽屉参与者只显示真实角色分组。
+	// 署名原串与成员区间：抽屉在无角色分组时以「署名」兜底，不推断演唱。
 	if meta != nil && meta.Credit != nil {
 		detail.CreditText = *meta.Credit
 	} else if track.Artist != nil {
@@ -240,6 +240,9 @@ func (a *App) creditSpans(trackID int64, text string) ([]CreditSpan, error) {
 		start, end := *e.SpanStart, *e.SpanEnd
 		if start < 0 || end > len(text) || start >= end {
 			continue // 区间越界则跳过，不猜测
+		}
+		if e.CreditedName == nil || *e.CreditedName != text[start:end] {
+			continue // 署名已编辑而成员区间未重建时，不能把新文本误链到旧艺术家。
 		}
 		out = append(out, CreditSpan{
 			Start: start, End: end, ArtistID: e.ArtistID,

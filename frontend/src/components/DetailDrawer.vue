@@ -12,6 +12,7 @@ import { computed, ref, watch } from 'vue'
 import { X, Pencil, ImagePlus } from 'lucide-vue-next'
 import { App, display, duration, DASH } from '@/api'
 import CoverArt from '@/components/CoverArt.vue'
+import { creditParts } from '@/lib/creditParts'
 import Button from '@/volt/Button.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import Tag from '@/volt/Tag.vue'
@@ -90,6 +91,10 @@ async function adopt(provider: string, variant: Models.covers.Variant,
 }
 
 const meta = computed(() => props.detail?.metadata ?? null)
+const fallbackCredit = computed(() => creditParts(
+  props.detail?.creditText || props.detail?.track.artist || '',
+  props.detail?.creditSpans ?? [],
+))
 
 /** 发行信息：缺失字段显示占位短横线。 */
 const releaseInfo = computed(() => [
@@ -165,10 +170,22 @@ const releaseInfo = computed(() => [
             </dd>
           </div>
 
-          <div v-if="detail.participants.length === 0" class="text-muted-color">
-            {{ DASH }}
-          </div>
+          <template v-if="detail.participants.length === 0">
+            <!-- 署名说明谁被署名，不推断演唱。仅在无角色时兜底，避免完整列表重复。 -->
+            <div v-if="fallbackCredit.length" class="flex gap-3">
+              <dt class="w-16 shrink-0 text-xs text-muted-color">署名</dt>
+              <dd class="min-w-0 flex-1 break-words">
+                <template v-for="(part, i) in fallbackCredit" :key="i">
+                  <button v-if="part.artistId"
+                    class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                    @click="emit('viewArtist', part.artistId)"
+                  >{{ part.text }}</button><span v-else>{{ part.text }}</span>
+                </template>
+              </dd>
+            </div>
+          </template>
         </dl>
+        <p v-if="detail.participants.length === 0" class="mt-1.5 text-xs text-muted-color">暂无参与角色信息</p>
       </section>
 
       <!-- 发行信息 -->

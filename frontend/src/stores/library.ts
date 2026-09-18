@@ -73,17 +73,20 @@ export const useLibraryStore = defineStore('library', () => {
     return f
   }
 
+  let trackRequest = 0
   async function loadTracks() {
+    const request = ++trackRequest
     loading.value = true
     error.value = ''
     try {
       const page = await App.ListTracks(baseFilter())
+      if (request !== trackRequest) return
       tracks.value = page.tracks ?? []
       total.value = page.total
     } catch (e) {
-      error.value = String(e)
+      if (request === trackRequest) error.value = String(e)
     } finally {
-      loading.value = false
+      if (request === trackRequest) loading.value = false
     }
   }
 
@@ -98,6 +101,14 @@ export const useLibraryStore = defineStore('library', () => {
     kind: ViewKind,
     opts?: { id?: number; groupId?: number; title?: string },
   ) {
+    // 导航本身即使不读取曲目也使旧请求失效；旧响应不能清掉新请求的 loading。
+    trackRequest++
+    loading.value = false
+    error.value = ''
+    if (view.value !== kind || contextId.value !== (opts?.id ?? 0) || contextGroupId.value !== (opts?.groupId ?? 0)) {
+      tracks.value = []
+      total.value = 0
+    }
     view.value = kind
     contextId.value = opts?.id ?? 0
     contextGroupId.value = opts?.groupId ?? 0

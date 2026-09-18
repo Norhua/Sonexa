@@ -12,7 +12,7 @@ Volt = 本地 Vue 包装源码 + **unstyled PrimeVue 4.5.5** + Tailwind CSS v4�
 - 调色板、浅深色、选中与 hover 对比：`../style.css`。surface 色阶是单一来源，primary 默认引用它。
 - 密度与样式：各组件 `theme`（Tailwind pass-through）；优先在这里调整，不在业务页面重复覆盖。
 - 单例覆盖使用 `pt:root:class`（如搜索框）而非 `class` 与默认工具类竞争；状态变体须同层覆盖（如 `p-small:pl-8`）。
-- DataTable 显式合并传入的 `pt`，防止调用方整对象替换主题。固定表头、小字号/紧凑行；排序图标只在已排序、hover 或键盘聚焦时出现。
+- DataTable 显式合并传入的 `pt`，防止调用方整对象替换主题。固定表头、小字号/紧凑行；排序图标只在已排序、hover 或键盘聚焦时出现。加载遮罩使用 `bg-app` 跟随浅深色，无黑色半透明蒙层/背景模糊，避免快速切换闪黑。
 - 表格业务状态归 `TrackTable.vue` + `lib/useListSelection.ts`；普通 DataTable 本身不带曲库业务。排序用同一份 `orderedRows`，以 `lazy` 关闭 PrimeVue 二次排序（并非服务端分页）。
 - Dialog 修正 unstyled flex/滚动/视口边界；禁用 PrimeVue 默认全局 Escape，由 `dialogStack.ts` 只关闭最上层，嵌套关闭互不干扰。WebKit 点击按钮未聚焦/保存时焦点落到 body 也可关闭；Select/Popover 消费 Escape 时保留父弹窗。支持取消焦点恢复，默认不点遮罩关闭，防误丢编辑。
 - ContextMenu 是按 Volt Menu 模式编写的本地组件，不声称上游提供。无进入动画，确保外部关闭监听/键盘焦点立即生效；Escape 后恢复来源焦点，不抢新弹窗焦点。显式合并调用方 PT，使表头的 `menuitemcheckbox` / `aria-checked` 不覆盖默认主题。

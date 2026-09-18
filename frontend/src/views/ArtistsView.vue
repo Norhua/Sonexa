@@ -9,6 +9,7 @@ import { App, type Models } from '@/api'
 import PaneHeader from '@/components/PaneHeader.vue'
 import SortMenu, { type SortOption } from '@/components/SortMenu.vue'
 import ViewSearchBox from '@/components/ViewSearchBox.vue'
+import Message from '@/volt/Message.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import { useLibraryStore } from '@/stores/library'
 
@@ -19,6 +20,7 @@ const filter = ref('')
 const header = ref<Models.main.ArtistHeader | null>(null)
 const activeRole = ref('')
 const loading = ref(false)
+const error = ref('')
 
 const emit = defineEmits<{ selected: [] }>()
 
@@ -28,6 +30,8 @@ async function load() {
   loading.value = true
   try {
     artists.value = (await App.ListArtists()) ?? []
+  } catch (e) {
+    error.value = String(e)
   } finally {
     loading.value = false
   }
@@ -38,15 +42,26 @@ function titleOf(a: Models.store.ArtistListItem): string {
   return a.voiceActor ? `${a.name} (CV: ${a.voiceActor})` : a.name
 }
 
-// 回到未选中态时清掉上一位艺术家的头部：否则分面条还挂着他的角色计数
+// 头部跟随当前导航，而不是等请求完成后才导航；旧请求不能覆盖分面或抢回视图。
 watch(
-  () => library.view,
-  (v) => {
-    if (v !== 'artist') {
-      header.value = null
-      activeRole.value = ''
+  () => [library.view, library.contextId] as const,
+  async ([view, id], _, onCleanup) => {
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    header.value = null
+    activeRole.value = ''
+    error.value = ''
+    if (view !== 'artist' || !id) return
+    try {
+      const result = await App.GetArtistHeader(id)
+      if (cancelled) return
+      header.value = result
+      if (result.title) library.contextTitle = result.title
+    } catch (e) {
+      if (!cancelled) error.value = String(e)
     }
   },
+  { immediate: true },
 )
 
 /** 中间栏的排序维度。 */
@@ -73,9 +88,8 @@ const visibleArtists = computed(() => {
 
 async function select(a: Models.store.ArtistListItem) {
   activeRole.value = ''
-  header.value = await App.GetArtistHeader(a.id)
   await library.goTo('artist', { id: a.id, title: titleOf(a) })
-  emit('selected')
+  if (library.view === 'artist' && library.contextId === a.id) emit('selected')
 }
 
 /** 按 role 的分面筛选：在同一张表格内收窄。 */
@@ -104,6 +118,7 @@ defineExpose({ header, activeRole, pickFacet })
             ? 'bg-highlight font-medium'
             : 'hover:bg-emphasis',
         ]"
+        :aria-current="library.view === 'artist' && library.contextId === a.id ? 'true' : undefined"
         @click="select(a)"
       >
         <span class="flex-1 truncate">{{ titleOf(a) }}</span>
@@ -139,6 +154,9 @@ defineExpose({ header, activeRole, pickFacet })
         </div>
       </div>
 
+      <Message v-if="error || library.error" severity="error" size="small" class="shrink-0 rounded-none">
+        {{ error || library.error }}
+      </Message>
       <!-- 未选中艺术家时不显示曲目表格：这一屏还没有「该艺术家的曲目」可言，
            沿用上一个视图残留的行会让人以为它们属于某位艺术家 -->
       <slot v-if="library.view === 'artist'" />

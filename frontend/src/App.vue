@@ -272,9 +272,9 @@ async function onCoverAdopted() {
 
 async function goToArtist(artistId: number) {
   try {
-    const header = await Api.GetArtistHeader(artistId)
     drawerOpen.value = false
-    await library.goTo('artist', { id: artistId, title: header.title })
+    // 立即导航；ArtistsView 按当前上下文读取分面，并负责丢弃旧响应。
+    await library.goTo('artist', { id: artistId, title: '艺术家' })
   } catch (e) {
     notice.value = String(e)
   }

@@ -59,6 +59,7 @@
  *   4. 排序图标默认透明，只在该列已排序或鼠标悬在列头上时显形。
  *      每个可排序列都常驻一个箭头时，一排表头读起来全是箭头，
  *      反而看不出当前按哪一列排的。
+ *   5. 加载遮罩跟随应用背景，无黑色蒙层或背景模糊，避免浅色模式快速切换闪黑。
  *
  * 官方来源与定制细节见 README.md / upstream-sources.json。
  * 除紧凑样式外，本分支显式合并外部 PT（不能覆盖整套主题），图标改用 Lucide。
@@ -92,7 +93,7 @@ const theme = ref<DataTablePassThroughOptions>({
     footer: `py-3 px-4 border-b border-surface-200 dark:border-surface-700
         bg-surface-0 dark:bg-surface-900
         text-surface-700 dark:text-surface-0`,
-    mask: `bg-black/50 text-surface-200 absolute z-10 flex items-center justify-center w-full h-full backdrop-blur-md`,
+    mask: `bg-app text-muted-color absolute inset-0 z-10 flex items-center justify-center`,
     column: {
         root: ``,
         headerCell: `group py-2 px-2 font-normal text-xs text-start transition-colors duration-200
