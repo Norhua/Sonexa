@@ -141,7 +141,10 @@ type Detail struct {
 	ReleaseGroupRef *string
 	WorkRef         *string
 
-	// 参与者：演唱、器乐、作曲、作词等
+	// Credits 保留上游结构化署名的边界，不把 joinphrase 当作艺术家名。
+	Credits []CreditArtist `json:"-"` // 仅 Go 侧解析/落库使用，不进入前端详情模型。
+
+	// 参与者：只含上游明确给出的角色关系，不由署名推断演唱。
 	Artists []DetailArtist
 
 	// 该 release 的完整曲目清单（详情响应本就包含，顺带写入）
@@ -151,6 +154,17 @@ type Detail struct {
 	// AlbumDetail.FetchedAt（RFC3339 串）。带 time.Time 会让 Wails 的
 	// TS 模型生成器每次构建都打印 `Not found: time.Time`。
 	FetchedAt time.Time `json:"-"`
+}
+
+// CreditArtist 是原串中的一个署名身份（字节区间）。
+type CreditArtist struct {
+	Name          string
+	CanonicalName string
+	SortName      *string
+	Type          *string
+	MBID          *string
+	Start         int
+	End           int
 }
 
 // DetailArtist 是详情中的一位参与者。

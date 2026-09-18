@@ -37,129 +37,41 @@ func openStore(t *testing.T) *store.Store {
 
 func ptr[T any](v T) *T { return &v }
 
-// TestF3_CharacterAndVoiceActor 覆盖 22.1 / F3：
-// 导入一首 涼宮ハルヒ(CV:平野綾)，验证：
-//   - 搜索「平野綾」与「涼宮ハルヒ」都命中
-//   - 抽屉的署名原串两段分别可点
-//   - 两个艺术家视图都含这首歌
-func TestF3_CharacterAndVoiceActor(t *testing.T) {
+// TestF3_CombinedCVCredit 验证当前裁决：CV 原串为单个身份，两个名字仍可检索。
+func TestF3_CombinedCVCredit(t *testing.T) {
 	s := openStore(t)
-	rules := matching.DefaultRules()
-
 	const credit = "涼宮ハルヒ(CV:平野綾)"
-
-	// 解析署名：拆出角色与人物两个艺术家 + 配音关系
-	parsed := rules.ParseCredit(credit)
-	if parsed.Uncertain {
-		t.Fatal("标准 CV 形态不应被判为不确定")
+	parsed := matching.DefaultRules().ParseCredit(credit)
+	if parsed.Uncertain || len(parsed.Artists) != 1 {
+		t.Fatalf("CV must be one identity: %+v", parsed)
 	}
-	if len(parsed.Artists) != 2 {
-		t.Fatalf("解析出 %d 位艺术家, 期望 2", len(parsed.Artists))
-	}
-
-	// 入库
-	trackID, err := s.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: "God knows...", Credit: ptr(credit),
-		MatchSource: ptr("musicbrainz"), MatchRef: ptr("11111111-2222-3333-4444-555555555555"),
-	})
+	trackID, err := s.CreateTrackWithProvenance(store.NewTrackInput{Title: "God knows...", Credit: ptr(credit)})
 	if err != nil {
-		t.Fatalf("入库失败: %v", err)
+		t.Fatal(err)
 	}
-
-	// 建立艺术家、署名分解与配音关系
-	//
-	// 署名与参与角色分两张表：track_credit 记「谁出现在署名串里」，
-	// track_artist 记「担任什么角色」。角色艺术家另有一条 character 关系——
-	// 那是它与这首歌的唯一联系（它不担任演唱）。
-	ids := map[string]int64{}
-	var credits []store.CreditEntry
-	var relations []store.TrackArtist
-	for i, a := range parsed.Artists {
-		artistID, err := s.UpsertArtist(&store.Artist{Name: a.Name, Type: ptr(a.Type)})
-		if err != nil {
-			t.Fatalf("建立艺术家 %s 失败: %v", a.Name, err)
-		}
-		ids[a.Name] = artistID
-		start, end, name := a.Start, a.End, a.Name
-		credits = append(credits, store.CreditEntry{
-			ArtistID: artistID, Position: i, CreditedName: &name,
-			SpanStart: &start, SpanEnd: &end,
-		})
-		relations = append(relations, store.TrackArtist{
-			ArtistID: artistID, Role: store.ArtistRole(a.Role),
-		})
+	artistID, err := s.UpsertArtist(&store.Artist{Name: credit, Type: ptr("person")})
+	if err != nil {
+		t.Fatal(err)
 	}
-	for character, actor := range parsed.VoiceOf {
-		if err := s.LinkArtists(ids[character], ids[actor], store.LinkVoiceOf); err != nil {
-			t.Fatalf("建立配音关系失败: %v", err)
-		}
+	start, end := parsed.Artists[0].Start, parsed.Artists[0].End
+	if err := s.SetTrackCredits(trackID, []store.CreditEntry{{
+		ArtistID: artistID, CreditedName: ptr(credit), SpanStart: &start, SpanEnd: &end,
+	}}); err != nil {
+		t.Fatal(err)
 	}
-	if err := s.SetTrackArtists(trackID, relations); err != nil {
-		t.Fatalf("写入参与者失败: %v", err)
-	}
-	if err := s.SetTrackCredits(trackID, credits); err != nil {
-		t.Fatalf("写入署名分解失败: %v", err)
-	}
-
-	// [验收 1] 搜索两个名字都命中同一首歌
 	for _, query := range []string{"平野綾", "涼宮ハルヒ"} {
 		hits, err := s.SearchTrackIDs(query, 10)
-		if err != nil {
-			t.Fatalf("检索 %q 失败: %v", query, err)
-		}
-		if len(hits) != 1 || hits[0] != trackID {
-			t.Errorf("检索 %q 得到 %v, 期望 [%d]", query, hits, trackID)
+		if err != nil || len(hits) != 1 || hits[0] != trackID {
+			t.Fatalf("search %s: %v, %v", query, hits, err)
 		}
 	}
-
-	// [验收 2] 抽屉的两段分别可点，且括号与 CV: 不在可点区间内
-	stored, err := s.GetTrackCredits(trackID)
-	if err != nil {
-		t.Fatalf("读取署名分解失败: %v", err)
+	artists, err := s.ListArtists()
+	if err != nil || len(artists) != 1 || artists[0].Name != credit {
+		t.Fatalf("artists: %+v, %v", artists, err)
 	}
-	if len(stored) != 2 {
-		t.Fatalf("可点击区间 = %d 段, 期望 2 段", len(stored))
-	}
-	byID := map[int64]string{}
-	for _, sp := range stored {
-		if sp.SpanStart == nil || sp.SpanEnd == nil {
-			t.Fatal("署名分解缺少区间")
-		}
-		byID[sp.ArtistID] = credit[*sp.SpanStart:*sp.SpanEnd]
-	}
-	if byID[ids["涼宮ハルヒ"]] != "涼宮ハルヒ" {
-		t.Errorf("角色区间取出 %q", byID[ids["涼宮ハルヒ"]])
-	}
-	if byID[ids["平野綾"]] != "平野綾" {
-		t.Errorf("声优区间取出 %q", byID[ids["平野綾"]])
-	}
-	for _, frag := range byID {
-		for _, forbidden := range []string{"(", ")", "CV", ":"} {
-			if containsStr(frag, forbidden) {
-				t.Errorf("可点击片段 %q 不应包含 %q", frag, forbidden)
-			}
-		}
-	}
-
-	// [验收 3] 两个艺术家视图都含这首歌
-	for name, artistID := range ids {
-		tracks, err := s.ListTracks(store.TrackFilter{ArtistID: artistID})
-		if err != nil {
-			t.Fatalf("查询 %s 的曲目失败: %v", name, err)
-		}
-		if len(tracks) != 1 || tracks[0].ID != trackID {
-			t.Errorf("%s 的艺术家视图含 %d 首, 期望含这首歌", name, len(tracks))
-		}
-	}
-
-	// 角色艺术家的视图标题
-	artists, _ := s.ListArtists()
-	for _, a := range artists {
-		if a.ID == ids["涼宮ハルヒ"] {
-			if got := a.DisplayTitle(); got != "涼宮ハルヒ (CV: 平野綾)" {
-				t.Errorf("角色视图标题 = %q", got)
-			}
-		}
+	tracks, err := s.ListTracks(store.TrackFilter{ArtistID: artistID})
+	if err != nil || len(tracks) != 1 || tracks[0].ID != trackID {
+		t.Fatalf("tracks: %+v, %v", tracks, err)
 	}
 }
 
@@ -180,7 +92,7 @@ func TestF4_GhostRowsAndCount(t *testing.T) {
 		Provider:       ptr("musicbrainz"), ProviderRef: ptr("rel-12"),
 		Title:         "十二首专辑",
 		ReleaseStatus: ptr("Official"), MediumFormat: ptr("CD"),
-		TrackTotal:    ptr(12), TracklistState: store.TracklistComplete,
+		TrackTotal: ptr(12), TracklistState: store.TracklistComplete,
 	})
 	if err != nil {
 		t.Fatalf("写入发行失败: %v", err)

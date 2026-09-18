@@ -161,6 +161,16 @@ func ParseDetail(rel *releaseDetail, trackRef string) *provider.Detail {
 		}
 	}
 
+	// 结构化边界优先级与 TrackCredit 完全一致。
+	credits := trk.ArtistCredit
+	if joinArtistCredit(credits) == "" && trk.Recording != nil {
+		credits = trk.Recording.ArtistCredit
+	}
+	if joinArtistCredit(credits) == "" {
+		credits = rel.ArtistCredit
+	}
+	d.Credits = parseCreditArtists(credits)
+
 	// 发行级署名兜底为曲目级署名
 	if d.TrackCredit == nil && d.AlbumCredit != nil {
 		d.TrackCredit = d.AlbumCredit
@@ -207,28 +217,28 @@ func parseTracklist(rel *releaseDetail) []provider.TracklistEntry {
 	return out
 }
 
-// parseRecordingArtists 解析演唱者、器乐演奏者与（经 Work 的）作曲作词。
+// parseCreditArtists 保存上游的身份边界（包括含 & 的乐队名），但不赋参与角色。
+func parseCreditArtists(credits []artistCredit) []provider.CreditArtist {
+	var out []provider.CreditArtist
+	offset := 0
+	for _, c := range credits {
+		name := firstNonEmpty(c.Name, c.Artist.Name)
+		if name != "" {
+			out = append(out, provider.CreditArtist{
+				Name: name, CanonicalName: c.Artist.Name,
+				SortName: strPtr(c.Artist.SortName), Type: normalizeArtistType(c.Artist.Type),
+				MBID: strPtr(c.Artist.ID), Start: offset, End: offset + len(name),
+			})
+		}
+		offset += len(name) + len(c.JoinPhrase)
+	}
+	return out
+}
+
+// parseRecordingArtists 只解析实际角色关系，不从 artist-credit 推断演唱。
 func parseRecordingArtists(rec *recording) []provider.DetailArtist {
 	var out []provider.DetailArtist
 	position := 0
-
-	// 曲目级署名中的艺术家
-	for _, c := range rec.ArtistCredit {
-		if c.Artist.Name == "" && c.Name == "" {
-			continue
-		}
-		name := firstNonEmpty(c.Artist.Name, c.Name)
-		out = append(out, provider.DetailArtist{
-			Name:         name,
-			SortName:     strPtr(c.Artist.SortName),
-			Type:         normalizeArtistType(c.Artist.Type),
-			MBID:         strPtr(c.Artist.ID),
-			Role:         "vocal",
-			CreditedName: strPtr(c.Name),
-			Position:     position,
-		})
-		position++
-	}
 
 	// recording-level-rels：演唱者与器乐演奏者
 	for _, reln := range rec.Relations {

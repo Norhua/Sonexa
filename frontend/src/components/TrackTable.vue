@@ -11,7 +11,7 @@ import ContextMenu from '@/volt/ContextMenu.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import CoverArt from '@/components/CoverArt.vue'
 import { display, duration } from '@/api'
-import { trackColumns, useTrackColumnsStore } from '@/stores/trackColumns'
+import { trackColumns, useTrackColumnsStore, type TrackColumnContext, type TrackColumnKey } from '@/stores/trackColumns'
 import { useEnrichStore } from '@/stores/enrich'
 import { listRows, sortRows, uniqueTracks, type ListRow, type Row } from '@/lib/trackRows'
 import { useListSelection } from '@/lib/useListSelection'
@@ -22,10 +22,11 @@ const props = withDefaults(defineProps<{
   rows: Row[]
   collectionId?: number
   fixedOrder?: boolean
+  columnContext?: TrackColumnContext
   loading?: boolean
   /** 相同组件切换歌单/艺术家/查询时必须重置交互上下文。 */
   contextKey?: string
-}>(), { collectionId: 0, fixedOrder: false, loading: false, contextKey: '' })
+}>(), { collectionId: 0, fixedOrder: false, columnContext: 'library', loading: false, contextKey: '' })
 const sortKey = defineModel<string>('sortKey', { default: 'default' })
 const sortDesc = defineModel<boolean>('sortDesc', { default: false })
 const emit = defineEmits<{
@@ -42,12 +43,13 @@ const emit = defineEmits<{
   exportScope: [scope: 'playlist' | 'filtered' | 'selection' | 'all']
 }>()
 const columns = useTrackColumnsStore()
+const hasColumn = (key: TrackColumnKey) => columns.has(key, props.columnContext)
 const headerMenu = ref<InstanceType<typeof ContextMenu> | null>(null)
 const headerMenuModel = computed<MenuItem[]>(() => trackColumns.map(column => ({
   label: column.label,
-  checked: columns.has(column.key),
-  disabled: columns.has(column.key) && columns.visible.length === 1,
-  command: () => columns.toggle(column.key),
+  checked: hasColumn(column.key),
+  disabled: hasColumn(column.key) && columns.visibleFor(props.columnContext).length === 1,
+  command: () => columns.toggle(column.key, props.columnContext),
 })))
 const headerMenuPT = {
   item: ({ context }: { context: { item: MenuItem } }) => ({
@@ -56,7 +58,7 @@ const headerMenuPT = {
 }
 const textColumns = computed(() => [
   { field: 'title', label: '标题' }, { field: 'artist', label: '艺术家' }, { field: 'album', label: '专辑' },
-].filter(column => columns.has(column.field as 'title' | 'artist' | 'album')))
+].filter(column => hasColumn(column.field as 'title' | 'artist' | 'album')))
 const enrich = useEnrichStore()
 const root = ref<HTMLElement | null>(null)
 const menu = ref<InstanceType<typeof ContextMenu> | null>(null)
@@ -252,17 +254,18 @@ defineExpose({ selectedCount, trackCount, selectedRows })
     <DataTable :value="orderedRows" data-key="key" lazy scrollable scroll-height="flex"
       :selection="selection.selectedRows.value" :pt="tablePT" :loading="loading"
       :sort-field="sortField" :sort-order="sortDesc ? -1 : 1"
-      :table-style="{ minWidth: `${columns.minWidth}px`, tableLayout: 'fixed' }" @sort="onSort">
-      <Column v-if="columns.has('cover')" header="封面" style="width: 48px"><template #body="{ data }"><CoverArt :source="data.coverSource" :adopted-path="data.adoptedCoverPath" class="size-8 rounded" /></template></Column>
+      :table-style="{ minWidth: `${columns.widthFor(columnContext)}px`, tableLayout: 'fixed' }" @sort="onSort">
+      <Column v-if="hasColumn('cover')" header="封面" style="width: 48px"><template #body="{ data }"><CoverArt :source="data.coverSource" :adopted-path="data.adoptedCoverPath" class="size-8 rounded" /></template></Column>
+      <Column v-if="hasColumn('trackNumber')" header="音轨号" style="width: 72px"><template #body="{ data }"><span class="select-text tabular-nums">{{ display(data.trackNumber) }}</span></template></Column>
       <Column v-for="column in textColumns"
         :key="column.field" :field="column.field" :header="column.label" :sortable="!fixedOrder">
         <template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template>
         <template #body="{ data }"><span data-text-cell class="block select-text truncate" :title="data[column.field] ?? ''">{{ display(data[column.field]) }}</span></template>
       </Column>
-      <Column v-if="columns.has('duration')" field="durationMs" header="时长" :sortable="!fixedOrder" style="width: 76px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ duration(data.durationMs) }}</span></template></Column>
-      <Column v-if="columns.has('year')" field="year" header="年份" :sortable="!fixedOrder" style="width: 76px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ display(data.year) }}</span></template></Column>
-      <Column v-if="columns.has('medium')" header="载体" style="width: 80px"><template #body="{ data }"><span class="block select-text truncate" :title="data.mediumFormat">{{ display(data.mediumFormat) }}</span></template></Column>
-      <Column v-if="columns.has('country')" header="国家" style="width: 64px"><template #body="{ data }"><span class="select-text">{{ display(data.country) }}</span></template></Column>
+      <Column v-if="hasColumn('duration')" field="durationMs" header="时长" :sortable="!fixedOrder" style="width: 76px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ duration(data.durationMs) }}</span></template></Column>
+      <Column v-if="hasColumn('year')" field="year" header="年份" :sortable="!fixedOrder" style="width: 76px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ display(data.year) }}</span></template></Column>
+      <Column v-if="hasColumn('medium')" header="载体" style="width: 80px"><template #body="{ data }"><span class="block select-text truncate" :title="data.mediumFormat">{{ display(data.mediumFormat) }}</span></template></Column>
+      <Column v-if="hasColumn('country')" header="国家" style="width: 64px"><template #body="{ data }"><span class="select-text">{{ display(data.country) }}</span></template></Column>
       <template #empty><div class="py-10 text-center text-muted-color"><slot name="empty">没有曲目</slot></div></template>
     </DataTable>
     <ContextMenu ref="menu" :model="menuModel" />

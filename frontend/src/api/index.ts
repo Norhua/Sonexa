@@ -90,7 +90,7 @@ export function trackPosition(
   n: number | null | undefined,
   total: number | null | undefined,
 ): string {
-  if (n === null || n === undefined) return DASH
-  if (total === null || total === undefined) return String(n)
-  return `${n}/${total}`
+  const part = (value: number | null | undefined) => value != null && value > 0 ? String(value) : DASH
+  if ((n == null || n <= 0) && (total == null || total <= 0)) return DASH
+  return `${part(n)}/${part(total)}`
 }

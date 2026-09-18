@@ -17,7 +17,7 @@ afterEach(() => vi.unstubAllGlobals())
 describe('track column preferences', () => {
   it.each(['broken', '[]', '["status"]', '["position"]', '{}'])('invalid preferences %s restore existing columns', saved => {
     storage.set('sonexa.trackColumns', saved)
-    expect(useTrackColumnsStore().visible).toEqual(trackColumns.map(column => column.key))
+    expect(useTrackColumnsStore().visible).toEqual(trackColumns.filter(column => column.key !== 'trackNumber').map(column => column.key))
   })
   it('filters unknown keys and duplicates; last column cannot be hidden', async () => {
     storage.set('sonexa.trackColumns', '["title","status","position","title"]')
@@ -29,6 +29,25 @@ describe('track column preferences', () => {
     await nextTick()
     expect(JSON.parse(storage.get('sonexa.trackColumns')!)).toEqual(['title', 'cover'])
     expect(columns.minWidth).toBe(198)
+  })
+  it('album defaults and preferences are independent, including last-column protection', async () => {
+    const columns = useTrackColumnsStore()
+    expect(columns.has('trackNumber')).toBe(false)
+    expect(columns.has('trackNumber', 'album')).toBe(true)
+    columns.toggle('trackNumber')
+    columns.toggle('trackNumber', 'album')
+    expect(columns.has('trackNumber')).toBe(true)
+    expect(columns.has('trackNumber', 'album')).toBe(false)
+    await nextTick()
+    setActivePinia(createPinia())
+    const reloaded = useTrackColumnsStore()
+    expect(reloaded.has('trackNumber')).toBe(true)
+    expect(reloaded.has('trackNumber', 'album')).toBe(false)
+    for (const key of reloaded.albumVisible.filter(key => key !== 'title')) reloaded.toggle(key, 'album')
+    reloaded.toggle('title', 'album')
+    expect(reloaded.albumVisible).toEqual(['title'])
+    expect(reloaded.widthFor('album')).toBe(150)
+    expect(reloaded.visible).toContain('cover')
   })
   it('unavailable storage does not prevent toggles', async () => {
     vi.stubGlobal('localStorage', {

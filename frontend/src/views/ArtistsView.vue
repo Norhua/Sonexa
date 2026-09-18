@@ -89,10 +89,10 @@ defineExpose({ header, activeRole, pickFacet })
 
 <template>
   <div class="flex min-h-0 flex-1">
-    <!-- 中列：左上角是大标题（三栏页面的标题归这一栏） -->
+    <!-- 中列：固定的栏目标题，不随选中艺术家变化 -->
     <div class="flex w-64 shrink-0 flex-col border-r">
       <PaneHeader>
-        <h2 class="truncate text-xl font-bold">{{ library.contextTitle }}</h2>
+        <h2 class="truncate text-sm font-normal text-muted-color">艺术家</h2>
       </PaneHeader>
       <div class="min-h-0 flex-1 overflow-auto">
       <button

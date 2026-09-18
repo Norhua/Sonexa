@@ -201,10 +201,10 @@ async function addGhost(row: Row) {
 
 <template>
   <div class="flex min-h-0 flex-1">
-    <!-- 中列：左上角是大标题（三栏页面的标题归这一栏） -->
+    <!-- 中列：固定的栏目标题，不随选中专辑变化 -->
     <div class="flex w-72 shrink-0 flex-col border-r">
       <PaneHeader>
-        <h2 class="truncate text-xl font-bold">{{ library.contextTitle }}</h2>
+        <h2 class="truncate text-sm font-normal text-muted-color">专辑</h2>
       </PaneHeader>
       <div class="min-h-0 flex-1 overflow-auto">
       <button
@@ -299,6 +299,7 @@ async function addGhost(row: Row) {
         :drawer-open="drawerOpen"
         :rows="toRows()"
         :context-key="`album:${detail.releaseId}`"
+        column-context="album"
         fixed-order
         @open="(r) => emit('openTrack', r.id)"
         @edit="(r) => emit('editTrack', r.id)"

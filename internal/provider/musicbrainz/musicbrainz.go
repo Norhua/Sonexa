@@ -291,8 +291,12 @@ func buildCandidate(rec recording, rel release, med medium, trk track, credit st
 	if length := firstNonNilInt(trk.Length, rec.Length); length != nil {
 		c.DurationMS = length
 	}
-	if trk.Position > 0 {
-		pos := trk.Position
+	pos := trk.Position
+	if pos <= 0 {
+		// 搜索响应可能只有 number；只接受数字，不把 A1 等文本位置猜成数字。
+		pos, _ = strconv.Atoi(trk.Number)
+	}
+	if pos > 0 {
 		c.TrackNumber = &pos
 	}
 	if med.TrackCount > 0 {

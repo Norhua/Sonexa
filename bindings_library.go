@@ -68,14 +68,14 @@ type FieldSource struct {
 type TrackDetail struct {
 	Track    store.TrackView      `json:"track"`
 	Metadata *store.TrackMetadata `json:"metadata"`
-	/** Sources 是逐字段来源，供渲染来源徽标。 */
+	/** Sources 保留逐字段来源数据；当前前端暂不显示来源徽标。 */
 	Sources []FieldSource      `json:"sources"`
 	Tags    []store.Collection `json:"tags"`
-	// CreditText 是曲目级署名原串，演唱区优先渲染它。
+	// CreditText 是曲目级署名原串，不作为演唱关系的依据。
 	CreditText string `json:"creditText"`
 	// CreditSpans 是原串中可点击的片段；对不上的片段不在其中，渲染为纯文本。
 	CreditSpans []CreditSpan `json:"creditSpans"`
-	// Participants 是除演唱外的角色分组，按固定顺序排列。
+	// Participants 是全部实际角色的分组，按固定顺序排列。
 	// character 不单独成组——它只出现在署名原串的可点击片段中。
 	Participants []ParticipantGroup `json:"participants"`
 	/** CoverProvider / CoverRef / CoverGroupRef 是临时缩略图的来源标识。 */
@@ -114,7 +114,7 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 
 	detail := &TrackDetail{Track: *track, Metadata: meta, Tags: tags}
 
-	// 演唱区：优先渲染署名原串 + 可点击区间
+	// 署名原串与成员区间保留在接口中；抽屉参与者只显示真实角色分组。
 	if meta != nil && meta.Credit != nil {
 		detail.CreditText = *meta.Credit
 	} else if track.Artist != nil {

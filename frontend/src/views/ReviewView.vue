@@ -5,7 +5,7 @@
  * 单一界面处置全部人工判断——疑似重复、跨发行组的多个高置信、无结果、失败。
  * 待选 / 匹配中 / 失败只是状态标签，界面结构完全一致。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { App, display, type Models } from '@/api'
 import CandidateTable from '@/components/CandidateTable.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -79,14 +79,14 @@ watch(researchProvider, async () => {
   await doResearch()
 })
 
+let researchRequest = 0
+onBeforeUnmount(() => { researchRequest++ })
+
 watch(current, (item) => {
+  researchRequest++
+  researching.value = false
   if (!item) return
-  // 表单以原始导入值预填，但改写不回写
-  research.value = {
-    title: item.inTitle ?? '',
-    artist: item.inArtist ?? '',
-    album: item.inAlbum ?? '',
-  }
+  restoreOriginal()
   expanded.value = false
   // 换了条目就还没搜过：此时改选上游不该自动出网
   searched.value = false
@@ -119,21 +119,35 @@ async function updateHint() {
   if (hint.value?.detected && !country.value) country.value = hint.value.country
 }
 
+/** 只恢复三个输入，不提交查询、不修改原始记录或上游/地区选择。 */
+function restoreOriginal() {
+  const item = current.value
+  if (!item) return
+  research.value = {
+    title: item.inTitle ?? '',
+    artist: item.inArtist ?? '',
+    album: item.inAlbum ?? '',
+  }
+}
+
 async function doResearch() {
-  if (!current.value) return
+  const item = current.value
+  if (!item) return
+  const request = ++researchRequest
+  searched.value = true
   researching.value = true
   error.value = ''
   try {
     const rows = await App.ResearchReviewItem(
-      current.value.id, research.value.title, research.value.artist,
+      item.id, research.value.title, research.value.artist,
       research.value.album, researchProvider.value, country.value,
     )
-    current.value.candidates = rows ?? []
-    searched.value = true
+    if (request !== researchRequest) return
+    item.candidates = rows ?? []
   } catch (e) {
-    error.value = String(e)
+    if (request === researchRequest) error.value = String(e)
   } finally {
-    researching.value = false
+    if (request === researchRequest) researching.value = false
   }
 }
 
@@ -196,17 +210,12 @@ function next() {
     />
 
     <div v-else-if="current" class="min-h-0 flex-1 overflow-auto">
-      <!-- 上半区：原始导入文本与条目动作 -->
+      <!-- 条目标题、来源批次与逐条浏览 -->
       <section class="border-b p-4">
         <div class="flex items-start gap-3">
           <div class="min-w-0 flex-1">
             <p class="text-base font-medium">{{ display(current.inTitle) }}</p>
-            <p class="mt-0.5 text-sm text-muted-color">
-              {{ display(current.inArtist) }} · {{ display(current.inAlbum) }}
-            </p>
-            <p class="mt-0.5 text-xs text-muted-color">
-              导入时的原始文本 · 来自 {{ current.batchTag }}
-            </p>
+            <p class="mt-0.5 text-xs text-muted-color">来自 {{ current.batchTag }}</p>
           </div>
           <Tag
             class="shrink-0"
@@ -215,10 +224,7 @@ function next() {
           />
         </div>
 
-        <!--
-          逐条浏览就放在条目动作的上面一行：它此前在窗口右上角，
-          离用户的视线与手都太远——处置一条之后紧接着要用的就是「下一条」。
-        -->
+        <!-- 逐条浏览保留在条目标题下方。 -->
         <div v-if="queue && queue.items.length > 0" class="mt-3 flex items-center gap-2 text-sm">
           <SecondaryButton variant="outlined" size="small" :disabled="index === 0" @click="prev">
             ← 上一条
@@ -235,33 +241,10 @@ function next() {
             下一条 →
           </SecondaryButton>
         </div>
-
-        <div class="mt-2 flex gap-2">
-          <SecondaryButton
-            variant="outlined"
-            size="small"
-            @click="act(() => App.NoMatchNeeded(current!.id))"
-          >
-            无需匹配
-          </SecondaryButton>
-          <!--
-            「移出队列」而不是「删除记录」：它丢弃的是这条**待处置记录**，
-            曲库里什么都不会少。叫「删除」会让人以为动的是曲目，
-            因此按钮也不用 danger 色——它不是破坏性操作。
-          -->
-          <SecondaryButton
-            variant="outlined"
-            size="small"
-            @click="act(() => App.DiscardReviewItem(current!.id))"
-          >
-            移出队列
-          </SecondaryButton>
-        </div>
       </section>
 
       <!-- 重新搜索 -->
       <section class="border-b p-4">
-        <h3 class="mb-2 text-sm font-medium">重新搜索</h3>
         <div class="flex flex-wrap items-end gap-2">
           <label class="text-xs">曲名
             <InputText v-model="research.title" size="small" class="mt-1 block w-48" />
@@ -305,16 +288,17 @@ function next() {
         <p v-if="showCountry && hint?.detected" class="mt-1 text-xs text-muted-color">
           {{ hint.message }}
         </p>
-        <p class="mt-2 text-xs text-muted-color">
-          改搜只影响这次查询，不改动条目的原始导入值。
-        </p>
-        <!-- 已尝试变体：变体机制对用户是黑盒，不显示会让人困惑 -->
-        <p v-if="current.triedVariants?.length" class="mt-1 text-xs text-muted-color">
-          已尝试变体:
-          <template v-for="(v, i) in current.triedVariants" :key="i">
-            <span v-if="i > 0"> · </span>「{{ v }}」
-          </template>
-        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <SecondaryButton variant="outlined" size="small" @click="restoreOriginal">
+            恢复原始信息
+          </SecondaryButton>
+          <SecondaryButton variant="outlined" size="small" @click="act(() => App.NoMatchNeeded(current!.id))">
+            无需匹配
+          </SecondaryButton>
+          <SecondaryButton variant="outlined" size="small" @click="act(() => App.DiscardReviewItem(current!.id))">
+            移出队列
+          </SecondaryButton>
+        </div>
       </section>
 
       <!-- 候选列表：与上游搜索共用同一组件 -->

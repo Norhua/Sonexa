@@ -168,20 +168,13 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 		t.Error("检索作曲者未命中——Work 层级的作曲关系没有落到曲目上")
 	}
 
-	// GetTrackDetail 是前端的真实入口，它应能给出两段可点击区间与分组
+	// GetTrackDetail 保留一个完整 CV 区间；参与者来自实际角色关系。
 	d, err := app.GetTrackDetail(trackID)
 	if err != nil {
 		t.Fatalf("GetTrackDetail 失败: %v", err)
 	}
-	if len(d.CreditSpans) != 2 {
-		t.Errorf("可点击区间 = %d 段, 期望 2 段", len(d.CreditSpans))
-	}
-	for _, sp := range d.CreditSpans {
-		for _, forbidden := range []string{"(", ")", "CV", ":"} {
-			if len(sp.Text) > 0 && containsText(sp.Text, forbidden) {
-				t.Errorf("可点击片段 %q 不应包含 %q", sp.Text, forbidden)
-			}
-		}
+	if len(d.CreditSpans) != 1 || d.CreditSpans[0].Text != credit {
+		t.Errorf("CV 应保留一个完整署名区间: %+v", d.CreditSpans)
 	}
 	// 参与者区应含分组的作曲与作词，且不含「角色」分组
 	var hasComposer, hasLyricist, hasCharacterGroup bool
@@ -202,7 +195,7 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 		t.Error("character 不应单独成组——它只出现在署名原串的可点击片段中")
 	}
 
-	// 艺术家视图：两个艺术家都应含这首歌
+	// 艺术家视图：完整 CV 身份含这首歌，不再派生两个条目。
 	artists, err := app.ListArtists()
 	if err != nil {
 		t.Fatalf("ListArtists 失败: %v", err)
@@ -217,7 +210,7 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"涼宮ハルヒ", "平野綾"} {
+	for _, want := range []string{credit} {
 		var id int64
 		for _, a := range artists {
 			if a.Name == want {
@@ -225,7 +218,7 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 			}
 		}
 		if id == 0 {
-			t.Errorf("未建立艺术家 %q——CV 拆分没有执行", want)
+			t.Errorf("未建立完整 CV 艺术家 %q", want)
 			continue
 		}
 		tracks, err := app.store.ListTracks(store.TrackFilter{ArtistID: id})

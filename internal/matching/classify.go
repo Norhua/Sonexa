@@ -10,7 +10,7 @@ import (
 type BracketKind string
 
 const (
-	// KindCV 角色与声优：拆为两个艺术家 + 一条配音关系。
+	// KindCV 角色与声优注记：检索可识别两侧，署名身份保留整体。
 	KindCV BracketKind = "cv"
 	// KindVersion 版本标识：必须保留，是曲名的一部分。
 	KindVersion BracketKind = "version"
@@ -100,7 +100,7 @@ type Classification struct {
 //
 // 判定顺序写死，不可调整：
 //
-//  1. 内层匹配 CV 模式        → 角色/声优拆分
+//  1. 内层匹配 CV 模式        → 角色/声优注记
 //  2. 内层命中版本关键词表      → 保留，不生成变体也不剥离
 //  3. 内层命中翻译提示词        → 生成变体
 //  4. 内外层主要文字系统不同    → 生成变体

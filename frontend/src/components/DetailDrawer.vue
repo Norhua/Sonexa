@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 详情抽屉。宽度 360–420px。
+ * 详情抽屉。宽度 340px。
  *
  * 纵向顺序：封面 → 歌名 → 艺术家 → 参与者 → 发行信息 → 厂牌与目录号
  * → 标签 chips → 编辑按钮。
@@ -91,41 +91,6 @@ async function adopt(provider: string, variant: Models.covers.Variant,
 
 const meta = computed(() => props.detail?.metadata ?? null)
 
-/**
- * 把署名原串切成可点击与纯文本两种片段。
- *
- * 演唱区优先渲染原串，按可点击区间生成链接；
- * 对不上 artist 的片段保持纯文本，不猜测、不隐藏。
- */
-const creditParts = computed(() => {
-  const text = props.detail?.creditText ?? ''
-  const spans = [...(props.detail?.creditSpans ?? [])].sort((a, b) => a.start - b.start)
-  const parts: { text: string; artistId?: number }[] = []
-  let cursor = 0
-
-  for (const span of spans) {
-    if (span.start > cursor) {
-      parts.push({ text: text.slice(cursor, span.start) })
-    }
-    parts.push({ text: text.slice(span.start, span.end), artistId: span.artistId })
-    cursor = span.end
-  }
-  if (cursor < text.length) {
-    parts.push({ text: text.slice(cursor) })
-  }
-  return parts
-})
-
-/** 逐字段来源：把有值的字段按来源分组显示徽标。 */
-const sourceBadges = computed(() => props.detail?.sources ?? [])
-
-/** 来源的中文名；provider id 直接显示。 */
-function sourceLabel(src: string): string {
-  if (src === 'user') return '用户'
-  if (src === 'import') return '导入'
-  return src
-}
-
 /** 发行信息：缺失字段显示占位短横线。 */
 const releaseInfo = computed(() => [
   { label: '类型', value: display(meta.value?.primaryType) },
@@ -142,7 +107,7 @@ const releaseInfo = computed(() => [
 <template>
   <aside
     v-if="open && detail"
-    class="flex w-[390px] shrink-0 flex-col border-l bg-app-chrome"
+    class="flex w-[340px] shrink-0 flex-col border-l bg-app-chrome"
   >
     <header class="flex shrink-0 items-center justify-between border-b px-4 py-2">
       <span class="text-xs text-muted-color">详情</span>
@@ -183,22 +148,7 @@ const releaseInfo = computed(() => [
       <section>
         <h3 class="mb-2 text-xs font-medium text-muted-color">参与者</h3>
         <dl class="space-y-1.5 text-sm">
-          <!-- 演唱：原串 + 可点击区间。括号与 CV: 部分不可点击 -->
-          <div v-if="detail.creditText" class="flex gap-3">
-            <dt class="w-16 shrink-0 text-xs text-muted-color">演唱</dt>
-            <dd class="flex-1">
-              <template v-for="(part, i) in creditParts" :key="i">
-                <button
-                  v-if="part.artistId"
-                  class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                  @click="emit('viewArtist', part.artistId)"
-                >{{ part.text }}</button>
-                <span v-else>{{ part.text }}</span>
-              </template>
-            </dd>
-          </div>
-
-          <!-- 其余角色按 role 分组，组内以顿号连接，各自可点击 -->
+          <!-- 全部参与角色统一分组，不把署名另列为演唱 -->
           <div v-for="group in detail.participants" :key="group.role" class="flex gap-3">
             <dt class="w-16 shrink-0 text-xs text-muted-color">{{ group.label }}</dt>
             <dd class="flex-1">
@@ -215,7 +165,7 @@ const releaseInfo = computed(() => [
             </dd>
           </div>
 
-          <div v-if="!detail.creditText && detail.participants.length === 0" class="text-muted-color">
+          <div v-if="detail.participants.length === 0" class="text-muted-color">
             {{ DASH }}
           </div>
         </dl>
@@ -224,7 +174,7 @@ const releaseInfo = computed(() => [
       <!-- 发行信息 -->
       <section>
         <h3 class="mb-2 text-xs font-medium text-muted-color">发行信息</h3>
-        <dl class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
+        <dl class="grid grid-cols-1 gap-y-1.5 text-sm">
           <div v-for="item in releaseInfo" :key="item.label" class="flex gap-2">
             <dt class="w-16 shrink-0 text-xs text-muted-color">{{ item.label }}</dt>
             <dd class="truncate">{{ item.value }}</dd>
@@ -245,21 +195,6 @@ const releaseInfo = computed(() => [
             <dd>{{ display(meta?.catalogNumber) }}</dd>
           </div>
         </dl>
-      </section>
-
-      <!-- 逐字段来源徽标 -->
-      <section v-if="sourceBadges.length > 0">
-        <h3 class="mb-2 text-xs font-medium text-muted-color">字段来源</h3>
-        <div class="flex flex-wrap gap-1">
-          <Tag
-            v-for="s in sourceBadges"
-            :key="s.key"
-            severity="secondary"
-            :value="`${s.label}·${sourceLabel(s.source)}`"
-            class="px-1.5 py-0.5 text-[10px] font-normal"
-            :title="`${s.label} 来自 ${sourceLabel(s.source)}`"
-          />
-        </div>
       </section>
 
       <!-- 标签 chips。歌单不在抽屉显示 -->

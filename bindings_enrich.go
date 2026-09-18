@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
@@ -29,7 +30,7 @@ func (a *App) ApplyDetailToTrack(
 		return err
 	}
 	// 2. 参与者关系 + 可点击区间
-	if err := a.applyDetailArtists(ctx, trackID, providerID, d); err != nil {
+	if err := a.applyDetailArtists(trackID, providerID, d); err != nil {
 		return err
 	}
 	// 3. 同一次响应已带完整清单，不再等专辑页另取一次。
@@ -107,170 +108,154 @@ func (a *App) applyDetailMeta(trackID int64, providerID string, d *provider.Deta
 	return a.store.ApplyMetadataEdits(trackID, edits, provenance, locked)
 }
 
-// applyDetailArtists 由详情写艺术家、配音关系、署名分解与参与角色。
-//
-// 「署名」与「参与角色」是两件不同的事，落在两张表上：
-//
-//	track_credit  谁出现在署名串里，以什么写法、在哪个区间
-//	track_artist  谁在这首歌上担任什么角色（演唱、作曲、作词……）
-//
-// 此前只有后者，而署名串解析出的艺术家被一律写成 role='vocal'——
-// 于是只作词作曲的署名艺术家（如 DECO*27）在库里被标成演唱者，
-// 而 MusicBrainz 关系给出的未署名作词作曲与署名艺术家长得一模一样，
-// 艺术家列表因此把所有人都列了出来。
-//
-// 角色只来自上游的**关系**，不从署名串猜：署名串只说明「这条歌署了谁的名」，
-// 说明不了这个人做了什么。
-func (a *App) applyDetailArtists(ctx context.Context, trackID int64, providerID string, d *provider.Detail) error {
+// applyDetailArtists 分别写入署名成员与真实角色；CV 署名为一个完整身份。
+func (a *App) applyDetailArtists(trackID int64, providerID string, d *provider.Detail) error {
 	credit := deref(d.TrackCredit)
 	if credit == "" {
 		credit = deref(d.AlbumCredit)
 	}
+	rules := matching.DefaultRules()
+	parsed := rules.ParseCredit(credit)
+	var upstreamCredits [][]provider.CreditArtist
+	// MB 已给出边界，不能再按标点拆乐队名。跨多个部件的 CV 署名仍合为一个身份。
+	if len(d.Credits) > 0 {
+		parsed = matching.CreditParse{Raw: credit}
+		for _, c := range d.Credits {
+			if c.Start < 0 || c.End > len(credit) || c.Start >= c.End || credit[c.Start:c.End] != c.Name {
+				parsed.Uncertain = true
+				break
+			}
+		}
+		segments := matching.FindBracketSegments(credit)
+		for i := 0; i < len(d.Credits) && !parsed.Uncertain; {
+			c := d.Credits[i]
+			end := c.End
+			for _, seg := range segments {
+				if seg.Start >= c.Start && seg.End > end &&
+					(seg.Start <= end || strings.TrimSpace(credit[end:seg.Start]) == "") && rules.Classify(seg).Kind == matching.KindCV {
+					end = seg.End
+				}
+			}
+			j := i + 1
+			for j < len(d.Credits) && d.Credits[j].Start < end {
+				if d.Credits[j].End > end {
+					parsed.Uncertain = true
+				}
+				j++
+			}
+			part := rules.ParseCreditName(credit[c.Start:end])
+			if part.Uncertain || len(part.Artists) != 1 {
+				parsed.Uncertain = true
+				break
+			}
+			pa := part.Artists[0]
+			pa.Start += c.Start
+			pa.End += c.Start
+			parsed.Artists = append(parsed.Artists, pa)
+			upstreamCredits = append(upstreamCredits, d.Credits[i:j])
+			i = j
+		}
+	}
 
-	artistIDs := map[string]int64{}
 	var credits []store.CreditEntry
 	var relations []store.TrackArtist
-
-	if credit != "" {
-		rules := matching.DefaultRules()
-		parsed := rules.ParseCredit(credit)
-
-		if parsed.Uncertain {
-			// 拆分不确定时不拆：保留原串、标记该条目待人工确认。
-			// 但**不提前返回**——上游关系给出的作曲作词与这次拆分无关，
-			// 丢掉它们等于因为署名串难解析而连带丢掉整首歌的参与者。
-			if err := a.store.MarkTrackForReview(trackID, "署名拆分不确定，需人工确认"); err != nil {
+	// 同一声优有多个角色署名时不猜是哪一个；普通署名可按明确上游身份复用。
+	type creditIdentity struct {
+		id int64
+		cv bool
+	}
+	identities := map[string][]creditIdentity{}
+	remember := func(key string, id int64, cv bool) {
+		for _, existing := range identities[key] {
+			if existing.id == id {
+				return
+			}
+		}
+		identities[key] = append(identities[key], creditIdentity{id, cv})
+	}
+	if parsed.Uncertain {
+		if err := a.store.MarkTrackForReview(trackID, "署名拆分不确定，需人工确认"); err != nil {
+			return err
+		}
+	} else {
+		for i, pa := range parsed.Artists {
+			artist := &store.Artist{Name: pa.Name, Type: strPtrOrNil(pa.Type)}
+			cv := pa.VoiceActor != ""
+			var upstream *provider.CreditArtist
+			if len(upstreamCredits) > i {
+				upstream = &upstreamCredits[i][0]
+				if !cv {
+					artist.SortName, artist.Type = upstream.SortName, upstream.Type
+					// 保留实际署名写法，不把不同写法跨曲目自动合并。
+					// 别名不抢占规范名的唯一 MBID；当前曲目内仍可按明确身份对应角色。
+					if upstream.CanonicalName == "" || upstream.CanonicalName == pa.Name {
+						artist.MBID = upstream.MBID
+					}
+				}
+			}
+			id, err := a.store.UpsertArtist(artist)
+			if err != nil {
 				return err
 			}
-		} else {
-			for i, pa := range parsed.Artists {
-				id, err := a.store.UpsertArtist(&store.Artist{
-					Name: pa.Name, Type: strPtrOrNil(pa.Type),
-				})
-				if err != nil {
-					return err
-				}
-				artistIDs[pa.Name] = id
-
-				// 署名：记这个人出现在原串的哪一段。credited_name 是**他自己**
-				// 那一段的写法，不是整条署名串——此前这里写的是整串，
-				// 于是参与者区把整条署名当成了某一位艺术家的名字。
-				start, end := pa.Start, pa.End
-				name := pa.Name
-				credits = append(credits, store.CreditEntry{
-					ArtistID: id, Position: i, CreditedName: &name,
-					SpanStart: &start, SpanEnd: &end,
-				})
-
-				// 角色署名里的角色艺术家（「涼宮ハルヒ(CV:平野綾)」的前半）
-				// 仍需要一条 character 关系：它是这位角色与这首歌的唯一联系。
-				if pa.Type == store.ArtistTypeCharacter {
-					relations = append(relations, store.TrackArtist{
-						ArtistID: id, Role: store.RoleCharacter, Source: &providerID,
-					})
-				}
+			start, end, name := pa.Start, pa.End, pa.Name
+			credits = append(credits, store.CreditEntry{
+				ArtistID: id, Position: i, CreditedName: &name, SpanStart: &start, SpanEnd: &end,
+			})
+			remember("name:"+pa.Name, id, cv)
+			if cv {
+				remember("name:"+pa.VoiceActor, id, true)
 			}
-			// 配音关系
-			for character, actor := range parsed.VoiceOf {
-				charID, actorID := artistIDs[character], artistIDs[actor]
-				if charID == 0 || actorID == 0 {
-					continue
-				}
-				if err := a.store.LinkArtists(charID, actorID, store.LinkVoiceOf); err != nil {
-					return err
+			if upstream != nil {
+				for _, part := range upstreamCredits[i] {
+					remember("name:"+part.Name, id, cv)
+					if part.CanonicalName != "" {
+						remember("name:"+part.CanonicalName, id, cv)
+					}
+					if part.MBID != nil {
+						remember("mbid:"+*part.MBID, id, cv)
+					}
 				}
 			}
 		}
 	}
 
-	// 上游关系给出的参与者：角色以它为准
 	seen := map[string]bool{}
 	for _, da := range d.Artists {
-		if da.Name == "" || da.Role == "" {
+		if da.Name == "" || !store.IsValidRole(store.ArtistRole(da.Role)) {
 			continue
 		}
-		if !store.IsValidRole(store.ArtistRole(da.Role)) {
-			continue // 取值域之外的关系不创建
+		matches := identities["name:"+da.Name]
+		if da.MBID != nil && len(identities["mbid:"+*da.MBID]) > 0 {
+			matches = identities["mbid:"+*da.MBID]
 		}
-
-		// 角色类型且来源为 MB 时，可补一次配音关系请求
-		if musicbrainzIsCharacter(da.Type) && da.MBID != nil && providerID == string(provider.MusicBrainz) {
-			if actor, err := a.lookupVoiceActor(ctx, *da.MBID); err == nil && actor != nil {
-				charID, err := a.store.UpsertArtist(&store.Artist{
-					Name: da.Name, Type: da.Type, MBID: da.MBID,
-				})
-				if err != nil {
-					return err
-				}
-				actorID, err := a.store.UpsertArtist(&store.Artist{
-					Name: actor.Name, Type: actor.Type, MBID: actor.MBID,
-				})
-				if err != nil {
-					return err
-				}
-				if err := a.store.LinkArtists(charID, actorID, store.LinkVoiceOf); err != nil {
-					return err
-				}
+		var id int64
+		if len(matches) == 1 && (!matches[0].cv || da.Role == "vocal") {
+			id = matches[0].id
+		} else {
+			var err error
+			id, err = a.store.UpsertArtist(&store.Artist{
+				Name: da.Name, SortName: da.SortName, Type: da.Type, MBID: da.MBID,
+			})
+			if err != nil {
+				return err
 			}
 		}
-
-		key := da.Name + "\x00" + da.Role
+		key := fmt.Sprintf("%d\x00%s", id, da.Role)
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-
-		id, err := a.store.UpsertArtist(&store.Artist{
-			Name: da.Name, SortName: da.SortName, Type: da.Type, MBID: da.MBID,
-		})
-		if err != nil {
-			return err
-		}
-		artistIDs[da.Name] = id
-
 		position := da.Position
 		relations = append(relations, store.TrackArtist{
-			ArtistID:  id,
-			Role:      store.ArtistRole(da.Role),
-			Attribute: da.Attribute,
-			Position:  &position,
-			Source:    &providerID,
+			ArtistID: id, Role: store.ArtistRole(da.Role), Attribute: da.Attribute,
+			Position: &position, Source: &providerID,
 		})
 	}
-
-	// 署名分解里此前没对上 id 的名字，可能在关系里出现过（上游两处写法一致时）。
-	// 两处都写完之后再整体落库，顺序无关。
-	if len(credits) > 0 {
-		if err := a.store.SetTrackCredits(trackID, credits); err != nil {
-			return err
-		}
+	// 空结果也替换，避免刷新后残留旧的署名成员或误推断的演唱关系。
+	if err := a.store.SetTrackCredits(trackID, credits); err != nil {
+		return err
 	}
-	if len(relations) > 0 {
-		if err := a.store.SetTrackArtists(trackID, relations); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// lookupVoiceActor 取角色的配音关系。
-//
-// 仅当艺术家类型为角色时才调用，结果由 provider_cache 缓存，
-// 同一角色二次出现时命中缓存不再发请求。
-func (a *App) lookupVoiceActor(ctx context.Context, artistMBID string) (*provider.DetailArtist, error) {
-	mb, err := a.registry.Get(provider.MusicBrainz)
-	if err != nil {
-		return nil, err
-	}
-	// 具体的补充请求是 MB 特有的能力，接口上没有它的位置
-	type voiceLookup interface {
-		VoiceActorOf(context.Context, string) (*provider.DetailArtist, error)
-	}
-	v, ok := mb.(voiceLookup)
-	if !ok {
-		return nil, fmt.Errorf("该上游不支持角色关系查询")
-	}
-	return v.VoiceActorOf(ctx, artistMBID)
+	return a.store.SetTrackArtists(trackID, relations)
 }
 
 // RefreshTrackDetail 为已入库曲目立即拉取并落库详情。
@@ -362,10 +347,6 @@ func (a *App) fetchAndApplyDetail(ctx context.Context, target store.EnrichTarget
 		return fmt.Errorf("曲目身份在拉取期间已改变，取消本次补全")
 	}
 	return a.ApplyDetailToTrack(ctx, target.TrackID, target.Provider, d)
-}
-
-func musicbrainzIsCharacter(t *string) bool {
-	return t != nil && (*t == "character" || *t == "Character")
 }
 
 func deref(s *string) string {

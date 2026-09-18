@@ -255,13 +255,6 @@ const groups = computed(() => [
                   class="w-full"
                   @update:model-value="manual[data.key] = $event ?? ''"
                 />
-                <!-- 用户改过的字段显示「用户」徽标 -->
-                <Tag
-                  v-if="data.userLocked"
-                  severity="secondary"
-                  value="用户"
-                  class="shrink-0 px-1 py-0 text-[10px] font-normal"
-                />
               </div>
             </template>
           </Column>
@@ -289,7 +282,7 @@ const groups = computed(() => [
       </section>
 
       <p class="text-xs text-muted-color">
-        带「用户」徽标的字段默认不填充，需逐项勾选；也可手动直接改写值。
+        用户改过的字段默认不填充，需逐项勾选；也可手动直接改写值。
         标「歌集」的字段属于歌集，改动对该歌集的全部曲目生效。
       </p>
 

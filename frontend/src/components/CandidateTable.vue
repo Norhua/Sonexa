@@ -68,9 +68,6 @@ function columnVisible(cap: string): boolean {
 const showMedium = computed(() => columnVisible('MediumFormat'))
 const showCountry = computed(() => columnVisible('Country'))
 const showPrimaryType = computed(() => columnVisible('PrimaryType'))
-// 厂牌列由 Capabilities 驱动：只搜不支持它的上游时隐藏，部分支持时填占位
-const showLabel = computed(() => columnVisible('Label'))
-const showCatalogNumber = computed(() => columnVisible('CatalogNumber'))
 
 /** 某一行是否支持某列——不支持时填占位短横线。 */
 function rowSupports(row: Models.main.CandidateRow, cap: string): boolean {
@@ -162,7 +159,7 @@ function onAct(row: Models.main.CandidateRow) {
         </template>
       </Column>
 
-      <Column header="第几曲" class="w-20">
+      <Column header="音轨" class="w-20">
         <template #body="{ data }">
           <span class="tabular-nums">{{ trackPosition(data.trackNumber, data.trackTotal) }}</span>
         </template>
@@ -182,25 +179,13 @@ function onAct(row: Models.main.CandidateRow) {
         <template #body="{ data }">{{ cell(data, 'Country', data.country) }}</template>
       </Column>
 
-      <Column v-if="showLabel" header="厂牌" class="max-w-0">
-        <template #body="{ data }">
-          <div class="truncate">{{ cell(data, 'Label', data.label) }}</div>
-        </template>
-      </Column>
-
-      <Column v-if="showCatalogNumber" header="目录号" class="max-w-0">
-        <template #body="{ data }">
-          <div class="truncate">{{ cell(data, 'CatalogNumber', data.catalogNumber) }}</div>
-        </template>
-      </Column>
-
       <Column header="置信度" class="w-16">
         <template #body="{ data }">
           <span class="tabular-nums">{{ Math.round(data.confidence) }}</span>
         </template>
       </Column>
 
-      <Column header="动作" class="w-24">
+      <Column class="w-24">
         <template #body="{ data }">
           <SecondaryButton
             variant="outlined"

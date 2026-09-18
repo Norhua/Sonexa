@@ -6,7 +6,7 @@ const cell = (page: Page, i: number) => rows(page).nth(i).locator('td').last()
 const headerMenu = (page: Page) => page.getByRole('menuitemcheckbox')
 async function openColumns(page: Page) {
   await page.locator('.track-list thead th').first().click({ button: 'right' })
-  await expect(headerMenu(page)).toHaveCount(8)
+  await expect(headerMenu(page)).toHaveCount(9)
 }
 
 test.beforeEach(async ({ page }) => {
@@ -94,7 +94,7 @@ test('header menu toggles only existing columns, persists across views/reload an
   await expect(page.getByRole('columnheader', { name: '艺术家', exact: true })).toBeVisible()
   await page.getByRole('columnheader', { name: '标题', exact: true }).focus()
   await page.keyboard.press('Shift+F10')
-  await expect(headerMenu(page)).toHaveCount(8)
+  await expect(headerMenu(page)).toHaveCount(9)
   await expect(headerMenu(page).filter({ hasText: '曲序' })).toHaveCount(0)
   await page.keyboard.press('Home')
   await page.keyboard.press('Enter')
