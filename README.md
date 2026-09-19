@@ -85,6 +85,13 @@ SONEXA_E2E_PREVIEW=1 npm run test:e2e
 - Wails darwin/arm64 打包通过；生成绑定与迁移前的方法名、参数、返回类型和模型字段相同，仅包命名空间从 main 改为 app。
 - OpenSpec 22 份主规格及归档任务严格校验通过。现有大包告警和产品实现缺口继续保留，未进行原生人工验收。
 
+## 自动生成文件的历史清理（2026-09-19）
+
+- `frontend/wailsjs/`（包括 models.ts、历次 main/app 绑定及 runtime）和 `frontend/package.json.md5` 已从全部 4 个本地分支历史移除，分支名及合并拓扑保留，相关提交哈希已改变。
+- 清理时逐个比较了 76 个提交的文件树与父提交关系，确认除目标路径外的文件内容不变；40 个目标历史 blob 已从当前仓库对象库清除。没有远程仓库，因此未推送或强推；其他旧克隆不会自动改变，不能把旧分支再合回来恢复这些文件。
+- 本机可再生成的文件仍保留且被忽略。完整旧历史 bundle、原有文件备份与 commit-map 位于仓库外 `../Sonexa-git-history-backups/2026-09-19-generated-cleanup.vJtO06/`；该备份仍含旧生成文件，仅用于恢复，不是已清理的历史副本。
+- 从无生成绑定、dist 或依赖目录的快照重新安装/生成后，前端 34 项单测、类型检查/Vite 和 78 项 E2E 通过；Go internal race、vet/build 及从零 Wails 打包通过。保留大包告警；安装提示现有 lucide-vue-next 弃用及部分依赖安装脚本待批准，本次未修改技术栈或升级依赖。
+
 ## 规格与历史
 
 [现行规格](openspec/README.md)、[架构设计](openspec/design.md)、[已知缺口](openspec/known-gaps.md)。已合并的修复记录不再保留独立 `change_record/`；原文仍可从 Git 历史追溯，现行规格索引提供命令。文件整理不表示这些已知缺口已经修复。

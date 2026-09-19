@@ -19,10 +19,10 @@ Wails v2（Go + Vue 3 + TypeScript + Tailwind CSS v4 + Volt + Lucide Icons + 按
 修复分支合并且规格吸收裁决后，不再维护 `change_record/` 或其 tmp 符号链接。现行约束看主 specs，未完成项看 known-gaps；如需核对下表的历史节号，可从合并提交读取原记录：
 
 ```sh
-git show 6bc53b2:change_record/v1-deviations.md
+git show 65aafcc:change_record/v1-deviations.md
 ```
 
-此命令读取 Git 历史，不依赖已删除的工作树文件。历史归档中的原始规划仍保留，不随本次文件整理重写。
+此命令读取 Git 历史，不依赖已删除的工作树文件。上方哈希已按清除自动生成文件后的历史更新。历史归档中的原始规划仍保留，不随文件整理重写。
 
 ## 能力索引与偏差映射
 
