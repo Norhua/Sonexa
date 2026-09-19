@@ -14,5 +14,5 @@
 
 精简仅保留目标曲目及必要发行字段，移除了另外 7 首与图片、空标签等无关字段；
 `track-count: 8` 保持原值，因此该夹具是截断清单，不得标为 complete。
-与 `enrich_identity_test.go` 的**人工构造** `enrichmentRelease` 区分：后者故意包含
+与 `internal/app/enrich_identity_test.go` 的**人工构造** `enrichmentRelease` 区分：后者故意包含
 vocal / composer 关系来验证串曲保护，不能当作此真实录音具有这些关系的证据。

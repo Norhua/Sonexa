@@ -1,19 +1,51 @@
+# 本机配置与系统元数据
 .claude/settings.local.json
-tmp/
+.DS_Store
+Thumbs.db
+Desktop.ini
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.template
 
-# 构建产物
-build/bin/
-frontend/dist/*
-!/frontend/dist/gitkeep
-frontend/package.json.md5
-frontend/test-results/
-frontend/playwright-report/
+# 本地调试资料（临时 Go 程序放 tmp/_scratch/，避免被 go test ./... 扫描）
+/tmp/
+/scratch/
 
-# 依赖
-frontend/node_modules/
+# Wails / Go 构建产物；build/ 中图标和打包配置仍需跟踪
+/build/bin/
+/sonexa
+/sonexa.exe
+*.test
+*.test.exe
+/coverage.out
+/coverage.html
 
+# 前端构建、依赖与测试报告；wailsjs/ 是需要跟踪的生成接口
+/frontend/dist/
+/frontend/package.json.md5
+/frontend/node_modules/
+/frontend/test-results/
+/frontend/playwright-report/
+/frontend/blob-report/
+/frontend/coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# 运行时
+# 本地运行数据与 SQLite 旁文件（不是测试金样例）
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.sqlite3-journal

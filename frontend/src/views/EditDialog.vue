@@ -22,7 +22,7 @@ const props = defineProps<{ trackId: number }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 
 const settings = useSettingsStore()
-const session = ref<Models.main.EditSession | null>(null)
+const session = ref<Models.app.EditSession | null>(null)
 /** 每个字段是否勾选填充。 */
 const fill = ref<Record<string, boolean>>({})
 /** 用户手动改写的值。 */
@@ -38,7 +38,7 @@ const error = ref('')
  * 歌集是共享实体：改名默认影响该歌集下的全部曲目。只有一首时没有歧义，
  * 直接改；不止一首时必须让用户先看见影响范围再选处置方式。
  */
-const renamePlan = ref<Models.main.AlbumRenamePlan | null>(null)
+const renamePlan = ref<Models.app.AlbumRenamePlan | null>(null)
 const pendingAlbumTitle = ref('')
 
 const basicFields = computed(() => session.value?.fields.filter((f) => f.group === 'basic') ?? [])

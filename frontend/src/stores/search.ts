@@ -42,7 +42,7 @@ export const useSearchStore = defineStore('search', () => {
   const conditions = ref<Condition[]>([])
 
   const libraryRows = ref<Models.store.TrackView[]>([])
-  const upstreamRows = ref<Models.main.CandidateRow[]>([])
+  const upstreamRows = ref<Models.app.CandidateRow[]>([])
   const upstreamCaps = ref<string[]>([])
   const loading = ref(false)
   const error = ref('')

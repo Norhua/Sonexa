@@ -60,7 +60,7 @@ test('larger drawer cover and inline icon preserve cover search, errors and adop
     body: '<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500"><rect width="500" height="500" fill="#bd7546"/><circle cx="250" cy="220" r="150" fill="#f3dcb9"/><text x="250" y="435" text-anchor="middle" font-size="32" fill="white">Sonexa · cover fixture</text></svg>',
   }))
   await page.evaluate(() => {
-    const api = (window as any).go.main.App, detail = api.GetTrackDetail
+    const api = (window as any).go.app.App, detail = api.GetTrackDetail
     let adopted = ''
     api.GetTrackDetail = async (id: number) => ({
       ...await detail(id), coverProvider: 'musicbrainz', coverRef: 'test-release', adoptedCoverPath: adopted,
@@ -104,7 +104,7 @@ test('larger drawer cover and inline icon preserve cover search, errors and adop
   await expect(drawer.getByText('Error: 封面查询失败', { exact: true })).toBeVisible()
   expect(await page.evaluate(() => (window as any).__coverQuery)).toEqual(['綿雪の夢', 'ハトリアヤ', '狼と巫女とお菓子の家'])
   await page.evaluate(() => {
-    ;(window as any).go.main.App.SearchCovers = async () => [{
+    ;(window as any).go.app.App.SearchCovers = async () => [{
       provider: 'itunes', sourceRef: 'test', title: '测试封面', constructed: true,
       variants: [{ url: 'https://example.test/600.jpg', label: '600px' }, { url: 'https://example.test/300.jpg', label: '300px' }],
     }]
@@ -118,7 +118,7 @@ test('larger drawer cover and inline icon preserve cover search, errors and adop
   await expect(image).toHaveAttribute('src', /adopted=/)
   // 长标题/署名可换行，不能把右侧图标挤到抽屉外。
   await page.evaluate(() => {
-    const api = (window as any).go.main.App, detail = api.GetTrackDetail
+    const api = (window as any).go.app.App, detail = api.GetTrackDetail
     api.GetTrackDetail = async (id: number) => {
       const result = await detail(id)
       return { ...result, track: { ...result.track, title: 'LongTitleWithoutSpaces'.repeat(5), artist: 'ArtistWithALongName'.repeat(5) } }
@@ -142,7 +142,7 @@ test('cover images start lazy requests while placeholders stay visible and failu
     }
   })
   await page.evaluate(() => {
-    const api = (window as any).go.main.App, list = api.ListTracks
+    const api = (window as any).go.app.App, list = api.ListTracks
     api.ListTracks = async (...args: any[]) => {
       const result = await list(...args)
       return { ...result, tracks: result.tracks.map((track: any) => track.id <= 3 ? {

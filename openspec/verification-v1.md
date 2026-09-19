@@ -49,16 +49,18 @@ Vite 主包为 911.76 kB，gzip 229.97 kB；CSS 102.12 kB。不能写零告警�
 
 ## 代码/回归证据索引
 
+以下文件路径已随后续目录整理更新为 internal/app；本报告的测试结果与工作区描述仍为归档时的历史证据，不冒充目录整理后的新验证。
+
 | 核对范围 | 生产入口及回归 |
 | --- | --- |
-| 入库与缺失值 | `internal/store/admit.go`、`bindings_upstream.go`、`bindings_review.go`、`admit_test.go`；完整相等测试不扩张至灰色行未传入字段 |
+| 入库与缺失值 | `internal/store/admit.go`、`internal/app/bindings_upstream.go`、`internal/app/bindings_review.go`、`internal/app/admit_test.go`；完整相等测试不扩张至灰色行未传入字段 |
 | 严格分流、三级阶梯、两道展示闸门 | `internal/matching/{variants,pipeline,confidence,dispatch}.go` 及对应单测，`internal/acceptance/csv_import_test.go`（4/3/3） |
 | 两层重试与交互优先 | `internal/provider/{client,retry,limiter,priority}.go` 及对应测试 |
-| 零同步请求接受、补全调度 | `enrich_worker.go`、`enrich_worker_test.go`、`internal/store/enrichstate.go` |
-| 非首曲身份、同发行缓存、完整/截断清单 | `bindings_enrich.go`、`enrich_identity_test.go`、`internal/provider/musicbrainz/detail_target_test.go` |
-| 结构化署名、完整 CV、真实角色与空态 | `artist_credit_test.go`、`participants_missing_test.go`、`vocaloid_view_test.go`、`internal/matching/cv_test.go`、真实 JSON 金样例 |
-| 标签名单交集、代表发行、首次加入时间 | `view_tag_filter_test.go`、`added_time_test.go`、`internal/store/browse_test.go` |
-| 封面 Front/索引与错误区分 | `bindings_cover_album_test.go`、`wiring_test.go`、`internal/covers/*_test.go`、CAA 金样例 |
+| 零同步请求接受、补全调度 | `internal/app/enrich_worker.go`、`internal/app/enrich_worker_test.go`、`internal/store/enrichstate.go` |
+| 非首曲身份、同发行缓存、完整/截断清单 | `internal/app/bindings_enrich.go`、`internal/app/enrich_identity_test.go`、`internal/provider/musicbrainz/detail_target_test.go` |
+| 结构化署名、完整 CV、真实角色与空态 | `internal/app/artist_credit_test.go`、`internal/app/participants_missing_test.go`、`internal/app/vocaloid_view_test.go`、`internal/matching/cv_test.go`、真实 JSON 金样例 |
+| 标签名单交集、代表发行、首次加入时间 | `internal/app/view_tag_filter_test.go`、`internal/app/added_time_test.go`、`internal/store/browse_test.go` |
+| 封面 Front/索引与错误区分 | `internal/app/bindings_cover_album_test.go`、`internal/app/wiring_test.go`、`internal/covers/*_test.go`、CAA 金样例 |
 | 选择、排序、列偏好、文本划选 | `frontend/tests/unit/`、`frontend/tests/e2e/{shell,list-edges,table-refinements,view-options}.spec.ts` |
 | 标题行按钮、子菜单、280px 封面、真实 lazy 图片 | `frontend/tests/e2e/image11-refinements.spec.ts` |
 | 请求乱序、角色空态、模态及样式 | `frontend/tests/e2e/{artist-loading,screenshot-review,visual-controls}.spec.ts` |

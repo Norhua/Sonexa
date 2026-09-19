@@ -44,7 +44,7 @@ test('late detail responses cannot override latest selection or reopen a closed 
   await cell(page, 0).dblclick()
   await expect(drawer(page)).toBeVisible()
   await page.evaluate(() => {
-    const api = (window as any).go.main.App
+    const api = (window as any).go.app.App
     const original = api.GetTrackDetail
     api.GetTrackDetail = (id: number) => id === 2 ? new Promise(resolve => {
       ;(window as any).__resolveDetail = async () => resolve(await original(id))
@@ -142,7 +142,7 @@ test('drawer follows local-search and album owned rows but never ghost versions'
   await expect(page.getByRole('menuitem', { name: '加入曲库', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await page.evaluate(() => {
-    const api = (window as any).go.main.App
+    const api = (window as any).go.app.App
     api.ListArtists = async () => [{ id: 30, name: '测试艺术家', trackCount: 7 }]
     api.GetArtistHeader = async () => ({ title: '测试艺术家', facets: [] })
   })
@@ -154,7 +154,7 @@ test('drawer follows local-search and album owned rows but never ghost versions'
 
 test('switching or closing details clears the cover picker and ignores its late search result', async ({ page }) => {
   await page.evaluate(() => {
-    ;(window as any).go.main.App.SearchCovers = () => new Promise(resolve => {
+    ;(window as any).go.app.App.SearchCovers = () => new Promise(resolve => {
       ;(window as any).__resolveCovers = () => resolve([])
     })
   })

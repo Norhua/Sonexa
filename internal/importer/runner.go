@@ -45,7 +45,7 @@ type Runner struct {
 	fetchOnMatch bool
 
 	// enricher 在「匹配时拉取」开启时被调用，把详情落到刚入库的曲目上。
-	// 由绑定层注入，避免 importer 反向依赖 main 包。
+	// 由应用层注入，避免 importer 反向依赖 internal/app。
 	enricher func(trackID int64, providerID, releaseRef string)
 
 	mu      sync.Mutex

@@ -17,7 +17,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript({ path: fileURLToPath(new URL('./wails-stub.js', import.meta.url)) })
   await page.addInitScript(() => {
     localStorage.setItem('sonexa.theme', 'light')
-    const api = (window as any).go.main.App
+    const api = (window as any).go.app.App
     const list = api.ListTracks, collections = api.ListCollections, album = api.GetAlbumDetail
     api.ListTracks = async (filter: any) => {
       ;(window as any).__lastFilter = filter
@@ -138,7 +138,7 @@ test('tag filters artist/album lists and current tracks without losing browse co
 
 test('tag menu empty state, keyboard selection and stale list responses', async ({ page }) => {
   await page.evaluate(() => {
-    const api = (window as any).go.main.App
+    const api = (window as any).go.app.App
     const original = api.ListArtistsForTag
     api.ListArtistsForTag = (id: number) => id === 21 ? new Promise(resolve => {
       ;(window as any).__resolveArtists = async () => resolve(await original(id))
@@ -160,7 +160,7 @@ test('tag menu empty state, keyboard selection and stale list responses', async 
   await page.keyboard.press('Enter')
   await expect(page.getByRole('button', { name: /Artist A/ })).toBeVisible()
   await page.evaluate(() => {
-    ;(window as any).go.main.App.ListCollections = async () => []
+    ;(window as any).go.app.App.ListCollections = async () => []
     ;(window as any).runtime.EventsEmit('library:changed')
   })
   await expect(page.locator('nav').getByText('还没有标签', { exact: true })).toBeVisible()
@@ -170,7 +170,7 @@ test('tag menu empty state, keyboard selection and stale list responses', async 
   await page.getByRole('searchbox').click()
   await expect(page.getByRole('menuitemradio')).toHaveCount(0)
   await page.evaluate(() => {
-    ;(window as any).go.main.App.ListTracks = async () => { throw new Error('标签筛选读取失败') }
+    ;(window as any).go.app.App.ListTracks = async () => { throw new Error('标签筛选读取失败') }
   })
   await page.getByRole('button', { name: '全部曲目', exact: true }).click()
   await expect(page.getByText('Error: 标签筛选读取失败', { exact: true })).toBeVisible()
@@ -201,7 +201,7 @@ test('tag submenu supports keyboard return, right-side placement and scrolling m
   await page.keyboard.press('Escape')
   await expect(options(page)).toBeFocused()
   await page.evaluate(() => {
-    const api = (window as any).go.main.App
+    const api = (window as any).go.app.App
     api.ListCollections = async (kind: string) => kind === 'tag' ? Array.from({ length: 60 }, (_, i) => ({
       id: i + 100, kind: 'tag', name: `长标签 ${i + 1} ${'LongName'.repeat(5)}`, trackCount: 1,
     })) : []
@@ -251,7 +251,7 @@ test('added time is hidden by default, survives reload, sorts and reaches local 
 
 test('drawer aligns values within each section only and wraps long content', async ({ page }, testInfo) => {
   await page.evaluate(() => {
-    const api = (window as any).go.main.App, original = api.GetTrackDetail
+    const api = (window as any).go.app.App, original = api.GetTrackDetail
     api.GetTrackDetail = async (id: number) => ({
       ...await original(id),
       participants: [

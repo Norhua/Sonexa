@@ -88,7 +88,7 @@ test('import errors before preview are visible, success shows mapping and submis
   await page.getByRole('button', { name: '导入表格', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: /^导入/ })
   await page.evaluate(() => {
-    const api = (window as any).go.main.App
+    const api = (window as any).go.app.App
     const analyze = api.AnalyzeImportFile
     api.AnalyzeImportFile = async () => { api.AnalyzeImportFile = analyze; throw new Error('解析失败测试') }
   })
@@ -106,7 +106,7 @@ test('edit nested rename dialog only closes the top modal with Escape', async ({
   const editor = page.getByRole('dialog', { name: '编辑 / 重新匹配', exact: true })
   await expect(editor).toBeVisible()
   await page.evaluate(() => {
-    ;(window as any).go.main.App.PlanAlbumRename = async () => ({ needsConfirm: true, trackCount: 3, currentTitle: 'old', existingReleaseId: 0 })
+    ;(window as any).go.app.App.PlanAlbumRename = async () => ({ needsConfirm: true, trackCount: 3, currentTitle: 'old', existingReleaseId: 0 })
   })
   await editor.locator('tr').filter({ hasText: '歌集名' }).getByRole('textbox').fill('new album')
   await editor.getByRole('button', { name: '保存', exact: true }).click()

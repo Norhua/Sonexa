@@ -22,7 +22,7 @@ import { useLibraryStore } from '@/stores/library'
 defineProps<{ drawerOpen?: boolean }>()
 const library = useLibraryStore()
 const albums = ref<Models.store.AlbumListItem[]>([])
-const detail = ref<Models.main.AlbumDetail | null>(null)
+const detail = ref<Models.app.AlbumDetail | null>(null)
 const loading = ref(false)
 const fetching = ref(false)
 const error = ref('')

@@ -2,7 +2,7 @@
 
 ## 状态与边界
 
-本表承接 [v1-deviations.md](../change_record/v1-deviations.md) 的 19.6、19.10、20.8、21.3–21.4 及后续限制。2026-09-19 的文档同步静态核对了关键生产路径；本次不修业务代码，不以测试全绿或任务勾选消除缺口。
+本表承接历史 v1 偏差的 19.6、19.10、20.8、21.3–21.4 及后续限制，已完整保留未解决项。原记录完成同步后已删除，节号追溯见 [规格索引](README.md)。2026-09-19 的文档同步静态核对了关键生产路径；后续文件整理仅移动应用包与修正路径，不以测试全绿或任务勾选消除缺口。
 
 用户明确允许「同步后归档，保留已知缺口」。主规格中的相关 SHALL 是仍应满足的目标，不是已完成的承诺；各受影响规格的 Implementation status 指向本表。这里的修复建议不是另一个已完成任务清单。
 
@@ -20,7 +20,7 @@
 
 **影响**：library/track-library、library/browse-views、matching/provenance。
 
-- `bindings_albums.go:364` 的 `AddGhostRowToLibrary` 只接受来源、track ref、曲名、署名、时长、recording ref，未带已知发行、碟号和音轨号。
+- `internal/app/bindings_albums.go:364` 的 `AddGhostRowToLibrary` 只接受来源、track ref、曲名、署名、时长、recording ref，未带已知发行、碟号和音轨号。
 - 虽经统一 `AdmitCandidate`，新曲目仍可能 `release_id = NULL`、补全为 absent；清单依 match_ref 识别拥有不等于真实歌集归属、计数与后台工作集正确。
 - `TestAllAdmissionPathsWriteIdenticalTracks` 的完整曲目+歌集相等只覆盖导入/搜索/复核；灰色行只核对共有曲目字段，不能证明四路完整一致。
 
@@ -30,7 +30,7 @@
 
 **影响**：editing/track-editing、matching/provenance、library/track-library。
 
-- `bindings_edit.go` 展示 year，但保存白名单未映射为歌集 releaseDate，因此年份修改不落盘。
+- `internal/app/bindings_edit.go` 展示 year，但保存白名单未映射为歌集 releaseDate，因此年份修改不落盘。
 - `RematchTrack` 用候选填字段，`buildEditSession` 仍返回旧匹配身份；普通更换后保存可能不更换溯源，跨源字段可能记旧来源。
 - `frontend/src/views/EditDialog.vue:156` 清空溯源立即调用持久化 API，不等保存；随后取消不能恢复。
 - `ApplyEdits` 先逐步写字段，再校验标识/共享改名，后续失败不能整体回滚。对话框测试只证明交互，不证明生产事务。
@@ -123,7 +123,7 @@
 - 补全状态当前只显示聚合进度，无逐曲目状态列；不因记录状态机而恢复已删除的状态列。
 - `scope=playlist` 后端继续兼容，界面已合为当前列表；不需为文档合并删兼容 API。
 - 旧候选快照不自动重走新闸门，旧污染开发库无自动迁移或修复；不因归档清理用户数据。
-- 补全工作器与详情应用仍在 main 包；整体写入不保证跨所有步骤的原子事务。
+- 补全工作器与详情应用已随绑定层整体移入 internal/app；这是包位置调整，不表示整体写入已具备跨所有步骤的原子事务。
 - 原生 Wails 的红绿灯/拖窗口、输入法、系统缩放、文件对话框与真实规模仍需单独验收；WebKit 自动化只覆盖 Wails 桩件中的浏览器行为。
 
 ## 已关闭的历史缺口

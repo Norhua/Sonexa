@@ -44,7 +44,7 @@ const ui = useUiStore()
 useThemeStore()
 
 const drawerOpen = ref(false)
-const detail = ref<Models.main.TrackDetail | null>(null)
+const detail = ref<Models.app.TrackDetail | null>(null)
 const editing = ref<number | null>(null)
 const notice = ref('')
 /** 离线态：在统一的全局提示位显示，页面内不重复弹出相同错误。 */
@@ -290,7 +290,7 @@ async function exportScope(scope: 'playlist' | 'filtered' | 'selection' | 'all')
       depth: 'full',
       filter: library.baseFilter(),
       trackIds: searchResult ? search.libraryRows.map(row => row.id) : selectedIds.value,
-    } as Models.main.ExportRequest)
+    } as Models.app.ExportRequest)
     if (res) notice.value = `已导出 ${res.count} 条到 ${res.path}`
   } catch (e) {
     notice.value = String(e)

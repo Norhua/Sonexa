@@ -26,7 +26,7 @@ const ui = useUiStore()
 
 const emit = defineEmits<{ goReview: [] }>()
 
-const batches = ref<Models.main.ImportBatchView[]>([])
+const batches = ref<Models.app.ImportBatchView[]>([])
 const loading = ref(false)
 const error = ref('')
 const logBox = ref<HTMLElement | null>(null)

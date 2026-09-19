@@ -27,7 +27,7 @@ const search = useSearchStore()
 
 const emit = defineEmits<{ jumpLocal: [trackId: number]; goSettings: [] }>()
 
-const queue = ref<Models.main.ReviewQueue | null>(null)
+const queue = ref<Models.app.ReviewQueue | null>(null)
 const index = ref(0)
 const loading = ref(false)
 const error = ref('')
@@ -38,8 +38,8 @@ const research = ref({ title: '', artist: '', album: '' })
 /** 上游为单选下拉，默认 MusicBrainz。 */
 const researchProvider = ref('musicbrainz')
 const country = ref('')
-const countries = ref<Models.main.CountryOption[]>([])
-const hint = ref<Models.main.CountryHint | null>(null)
+const countries = ref<Models.app.CountryOption[]>([])
+const hint = ref<Models.app.CountryHint | null>(null)
 const researching = ref(false)
 /** 本条目是否已经手动搜过一次——决定改选上游要不要自动重搜。 */
 const searched = ref(false)
@@ -162,7 +162,7 @@ async function act(fn: () => Promise<unknown>) {
 }
 
 /** 接受：采用该上游候选入库并写入溯源。 */
-function accept(row: Models.main.CandidateRow) {
+function accept(row: Models.app.CandidateRow) {
   if (!current.value) return
   // 带本地徽章的候选走「合并」：不新建曲目
   if (row.localTrackId) {

@@ -10,7 +10,7 @@ async function toggleTrackNumber(page: Page) {
 test.beforeEach(async ({ page }) => {
   await page.addInitScript({ path: fileURLToPath(new URL('./wails-stub.js', import.meta.url)) })
   await page.addInitScript(() => {
-    const api = (window as any).go.main.App
+    const api = (window as any).go.app.App
     api.ListCollections = async () => []
     const listProviders = api.ListProviders
     api.ListProviders = async () => (await listProviders()).map((p: any) => ({
@@ -76,7 +76,7 @@ test('track number defaults to album only; explicit preferences survive view cha
 
 test('drawer shows one complete vocal group, single-column release data and no field sources', async ({ page }, testInfo) => {
   await page.evaluate(() => {
-    const api = (window as any).go.main.App
+    const api = (window as any).go.app.App
     const original = api.GetTrackDetail
     api.GetTrackDetail = async (id: number) => ({
       ...await original(id),
@@ -114,7 +114,7 @@ test('drawer shows one complete vocal group, single-column release data and no f
 test('review removes marked text, moves actions below inputs and restores only the search draft', async ({ page }, testInfo) => {
   // 用能力齐全的上游证明列被移除，而不是因为假数据未声明能力才隐藏。
   await page.evaluate(() => {
-    const api = (window as any).go.main.App
+    const api = (window as any).go.app.App
     const original = api.GetReviewQueue
     api.GetReviewQueue = async () => {
       const queue = await original()
@@ -163,7 +163,7 @@ test('review removes marked text, moves actions below inputs and restores only t
 
 test('late review research cannot overwrite the next item', async ({ page }) => {
   await page.evaluate(() => {
-    ;(window as any).go.main.App.ResearchReviewItem = () => new Promise(resolve => {
+    ;(window as any).go.app.App.ResearchReviewItem = () => new Promise(resolve => {
       ;(window as any).__resolveResearch = () => resolve([{ title: 'STALE', badges: [], action: '接受', confidence: 1 }])
     })
   })

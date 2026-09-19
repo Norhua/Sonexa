@@ -1,6 +1,6 @@
-package main
+package app
 
-// 本文件与 wiring_test.go 同在 main 包：测的是「接受候选」与后台补全任务
+// 本文件与 wiring_test.go 同在 app 包：测的是「接受候选」与后台补全任务
 // 在真实生产入口上的行为，而不是零件各自能不能用。
 
 import (

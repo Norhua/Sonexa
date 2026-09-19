@@ -23,7 +23,7 @@ const settings = useSettingsStore()
 const emit = defineEmits<{ close: []; submitted: [batchId: number]; goSettings: [] }>()
 
 const path = ref('')
-const preview = ref<Models.main.ImportPreview | null>(null)
+const preview = ref<Models.app.ImportPreview | null>(null)
 const sheetName = ref('')
 const manualOpen = ref(false)
 const loading = ref(false)

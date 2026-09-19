@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator('.track-list [data-row-key]')).toHaveCount(7)
   await page.evaluate(() => {
     document.documentElement.classList.remove('dark')
-    const w = window as any, api = w.go.main.App
+    const w = window as any, api = w.go.app.App
     api.ListArtists = async () => [{ id: 30, name: 'Artist A', trackCount: 1 }, { id: 31, name: 'Artist B', trackCount: 1 }]
     w.__headers = {}; w.__tracks = {}
     api.GetArtistHeader = (id: number) => new Promise(resolve => {
@@ -57,7 +57,7 @@ test('artist table loading stays light and only the latest selection can update 
 
 test('missing roles show known credit without inventing vocal or duplicating complete participants', async ({ page }, testInfo) => {
   await page.evaluate(() => {
-    const api = (window as any).go.main.App
+    const api = (window as any).go.app.App
     api.GetTrackDetail = async (id: number) => ({
       track: { id, title: '綿雪の夢', artist: id === 3 ? null : 'ハトリアヤ' },
       creditText: id === 3 ? '' : 'ハトリアヤ',

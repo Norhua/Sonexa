@@ -10,8 +10,8 @@ import { App, type Models } from '@/api'
  */
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<Models.config.Settings | null>(null)
-  const providers = ref<Models.main.ProviderInfo[]>([])
-  const gate = ref<Models.main.OutboundGate>({
+  const providers = ref<Models.app.ProviderInfo[]>([])
+  const gate = ref<Models.app.OutboundGate>({
     allowed: false,
     reason: '',
     settingsAnchor: 'upstream',

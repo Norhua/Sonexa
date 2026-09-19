@@ -58,7 +58,7 @@
   }
 
   window.go = {
-    main: {
+    app: {
       App: {
         GetSettings: async () => settings,
         DefaultSettings: async () => settings,
@@ -156,7 +156,7 @@
             rows: TITLES.map(([title, artist, album], i) => ({
               index: i, title, artist, album, year: null, trackNo: null, skipReason: '' })) },
         }),
-        RemapImportColumns: async (...a) => window.go.main.App.AnalyzeImportFile(...a),
+        RemapImportColumns: async (...a) => window.go.app.App.AnalyzeImportFile(...a),
         SubmitImport: async () => 2,
         GetEditSession: async (trackId) => ({
           matchLabel: 'MusicBrainz · rec-1', matchSource: 'musicbrainz', matchRef: 'trk-1',

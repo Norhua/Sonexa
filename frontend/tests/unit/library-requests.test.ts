@@ -10,7 +10,7 @@ function deferred<T>() {
   const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
   return { promise, resolve, reject }
 }
-const page = (id: number) => ({ tracks: [{ id, title: `Track ${id}` }], total: 1 }) as Models.main.TrackPage
+const page = (id: number) => ({ tracks: [{ id, title: `Track ${id}` }], total: 1 }) as Models.app.TrackPage
 beforeEach(() => { setActivePinia(createPinia()); vi.resetAllMocks() })
 
 describe('tag filters', () => {
@@ -55,7 +55,7 @@ describe('tag filters', () => {
 
 describe('library request ownership', () => {
   it('keeps rows, count and loading owned by the latest artist request', async () => {
-    const a = deferred<Models.main.TrackPage>(), b = deferred<Models.main.TrackPage>()
+    const a = deferred<Models.app.TrackPage>(), b = deferred<Models.app.TrackPage>()
     vi.mocked(App.ListTracks).mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise)
     const lib = useLibraryStore()
     const first = lib.goTo('artist', { id: 1 })
@@ -71,7 +71,7 @@ describe('library request ownership', () => {
   })
   it('ignores late successes and errors, including after leaving the table view', async () => {
     for (const reject of [false, true]) {
-      const a = deferred<Models.main.TrackPage>()
+      const a = deferred<Models.app.TrackPage>()
       vi.mocked(App.ListTracks).mockReturnValueOnce(a.promise).mockResolvedValueOnce(page(2))
       const lib = useLibraryStore()
       const first = lib.goTo('artist', { id: 1 })
@@ -82,7 +82,7 @@ describe('library request ownership', () => {
       expect(lib.tracks.map(t => t.id)).toEqual([2])
       expect(lib.error).toBe('')
     }
-    const pending = deferred<Models.main.TrackPage>()
+    const pending = deferred<Models.app.TrackPage>()
     vi.mocked(App.ListTracks).mockReturnValueOnce(pending.promise)
     const lib = useLibraryStore()
     const load = lib.goTo('artist', { id: 3 })
@@ -97,12 +97,12 @@ describe('library request ownership', () => {
     vi.mocked(App.ListTracks).mockResolvedValueOnce(page(1))
     const lib = useLibraryStore()
     await lib.goTo('artist', { id: 1 })
-    const refresh = deferred<Models.main.TrackPage>()
+    const refresh = deferred<Models.app.TrackPage>()
     vi.mocked(App.ListTracks).mockReturnValueOnce(refresh.promise)
     const reloading = lib.loadTracks()
     expect(lib.tracks.map(t => t.id)).toEqual([1])
     refresh.resolve(page(1)); await reloading
-    const change = deferred<Models.main.TrackPage>()
+    const change = deferred<Models.app.TrackPage>()
     vi.mocked(App.ListTracks).mockReturnValueOnce(change.promise)
     const switching = lib.goTo('artist', { id: 2 })
     expect(lib.tracks).toEqual([])

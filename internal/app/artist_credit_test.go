@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -81,7 +81,7 @@ func TestStructuredCreditsAndRolesStaySeparate(t *testing.T) {
 func TestCVDetailUsesOneArtistWithoutVoiceLookup(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
-	body, err := os.ReadFile("testdata/golden/responses/musicbrainz/release_detail.json")
+	body, err := os.ReadFile("../../testdata/golden/responses/musicbrainz/release_detail.json")
 	if err != nil {
 		t.Fatal(err)
 	}

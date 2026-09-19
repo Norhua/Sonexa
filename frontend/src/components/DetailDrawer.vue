@@ -19,7 +19,7 @@ import Tag from '@/volt/Tag.vue'
 import type { Models } from '@/api'
 
 const props = defineProps<{
-  detail: Models.main.TrackDetail | null
+  detail: Models.app.TrackDetail | null
   open: boolean
 }>()
 
@@ -32,7 +32,7 @@ const emit = defineEmits<{
 
 /** 手动重新获取封面的状态。 */
 const coverPickerOpen = ref(false)
-const coverCandidates = ref<Models.main.CoverCandidate[]>([])
+const coverCandidates = ref<Models.app.CoverCandidate[]>([])
 const coverLoading = ref(false)
 const coverError = ref('')
 

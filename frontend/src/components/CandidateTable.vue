@@ -24,7 +24,7 @@ import type { Models } from '@/api'
  * 降级链由那个地址构造，因此把它当作来源标识。这与后端 BuildCoverRefs
  * 算缓存键时的取源必须一致，否则预取暖好的图对不上号、会被重下一遍。
  */
-function coverSourceOf(row: Models.main.CandidateRow) {
+function coverSourceOf(row: Models.app.CandidateRow) {
   return {
     provider: row.provider,
     ref: row.releaseRef || row.artworkUrl,
@@ -34,7 +34,7 @@ function coverSourceOf(row: Models.main.CandidateRow) {
 
 const props = withDefaults(
   defineProps<{
-    rows: Models.main.CandidateRow[]
+    rows: Models.app.CandidateRow[]
     /**
      * 当次结果涉及的上游集合的能力并集。
      *
@@ -53,7 +53,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  act: [row: Models.main.CandidateRow]
+  act: [row: Models.app.CandidateRow]
   jumpLocal: [trackId: number]
   showAll: []
 }>()
@@ -70,13 +70,13 @@ const showCountry = computed(() => columnVisible('Country'))
 const showPrimaryType = computed(() => columnVisible('PrimaryType'))
 
 /** 某一行是否支持某列——不支持时填占位短横线。 */
-function rowSupports(row: Models.main.CandidateRow, cap: string): boolean {
+function rowSupports(row: Models.app.CandidateRow, cap: string): boolean {
   const caps = props.providerCapabilities[row.provider]
   if (!caps) return true
   return caps.includes(cap)
 }
 
-function cell(row: Models.main.CandidateRow, cap: string, value: unknown): string {
+function cell(row: Models.app.CandidateRow, cap: string, value: unknown): string {
   if (!rowSupports(row, cap)) return DASH
   return display(value as string | number | null | undefined)
 }
@@ -88,7 +88,7 @@ const visibleRows = computed(() => {
 
 const truncated = computed(() => props.limit > 0 && !expanded.value && props.rows.length > props.limit)
 
-function onAct(row: Models.main.CandidateRow) {
+function onAct(row: Models.app.CandidateRow) {
   // 「已在库中」为禁用态，但点击可跳转到该曲目
   if (row.action === '已在库中') {
     if (row.localTrackId) emit('jumpLocal', row.localTrackId)

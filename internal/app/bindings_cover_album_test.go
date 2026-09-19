@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"io"
@@ -20,7 +20,7 @@ func (f coverReplayTransport) RoundTrip(r *http.Request) (*http.Response, error)
 
 func TestTetraCoverHandlerReplaysMediumOnlyIndex(t *testing.T) {
 	// Pool 的客户端默认使用 DefaultTransport；测试不并行，并拒绝一切真实出网。
-	body, err := os.ReadFile("testdata/golden/responses/musicbrainz/caa_lines.json")
+	body, err := os.ReadFile("../../testdata/golden/responses/musicbrainz/caa_lines.json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,7 +12,7 @@ import { App, Events, EventsOn, type Models } from '@/api'
  * 状态由后端推送，前端不轮询——几百条的任务上轮询只会产生无谓的 IPC 调用。
  */
 export const useEnrichStore = defineStore('enrich', () => {
-  const status = ref<Models.main.EnrichStatus | null>(null)
+  const status = ref<Models.app.EnrichStatus | null>(null)
   const error = ref('')
   let unsubscribe: (() => void) | null = null
 
@@ -40,7 +40,7 @@ export const useEnrichStore = defineStore('enrich', () => {
 
   function subscribe() {
     if (unsubscribe) return
-    unsubscribe = EventsOn(Events.EnrichProgress, (s: Models.main.EnrichStatus) => {
+    unsubscribe = EventsOn(Events.EnrichProgress, (s: Models.app.EnrichStatus) => {
       status.value = s
     })
   }

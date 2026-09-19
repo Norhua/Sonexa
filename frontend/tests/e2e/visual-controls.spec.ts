@@ -39,7 +39,7 @@ test('table keeps styles under PT overrides; sticky header, no horizontal viewpo
   const table = page.getByRole('table', { name: '曲目列表' })
   expect(await table.locator('td').first().evaluate(el => getComputedStyle(el).paddingLeft)).toBe('8px')
   await page.evaluate(() => {
-    const api = (window as any).go.main.App
+    const api = (window as any).go.app.App
     const original = api.ListTracks
     api.ListTracks = async (filter: unknown) => {
       const { tracks } = await original(filter)
@@ -62,11 +62,11 @@ test('table keeps styles under PT overrides; sticky header, no horizontal viewpo
 })
 test('already-owned candidate jumps to library without admitting again', async ({ page }) => {
   await page.evaluate(() => {
-    ;(window as any).go.main.App.SearchUpstream = async () => ({ byProvider: [{
+    ;(window as any).go.app.App.SearchUpstream = async () => ({ byProvider: [{
       capabilities: [], rows: [{ provider: 'musicbrainz', matchRef: 'test', badges: ['本地', 'MB'],
         title: '已有曲目', action: '已在库中', localTrackId: 1, confidence: 90 }],
     }] })
-    ;(window as any).go.main.App.AddToLibrary = async () => { throw new Error('must not admit twice') }
+    ;(window as any).go.app.App.AddToLibrary = async () => { throw new Error('must not admit twice') }
   })
   await page.locator('nav').getByRole('button', { name: '搜索', exact: true }).click()
   await page.getByRole('combobox').click()

@@ -18,7 +18,7 @@ const library = useLibraryStore()
 const artists = ref<Models.store.ArtistListItem[]>([])
 /** 中列的就地过滤：这一列是艺术家名单，不是曲目，因此不走曲目筛选。 */
 const filter = ref('')
-const header = ref<Models.main.ArtistHeader | null>(null)
+const header = ref<Models.app.ArtistHeader | null>(null)
 const activeRole = computed(() => library.filter.role ?? '')
 const loading = ref(false)
 const error = ref('')

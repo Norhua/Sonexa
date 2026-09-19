@@ -1,8 +1,9 @@
-package main
+package app
 
-// 本文件在 main 包内，因此能构造真实的 App 并调用真正的绑定方法。
+// 测试与 App 同包，因此能构造真实应用并调用真正的绑定方法。
+// 目录迁移不改变生产入口回归的覆盖范围，也不为测试导出内部字段。
 //
-// 放在 main 包是刻意的：此前把验收测试写在 internal/acceptance 里、
+// 与实现同包是刻意的：此前把验收测试写在 internal/acceptance 里、
 // 由测试自己手工调用 store 原语，结果测的是「零件能不能用」而不是
 // 「应用有没有把它们接起来」——艺术家子系统整块没接进生产路径，
 // 而测试全绿。测试必须打到真实的生产入口上。
@@ -89,7 +90,7 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 	defer cleanup()
 
 	// 用金样例详情响应（生产路径就是从这类响应解析的）
-	body, err := os.ReadFile(filepath.Join("testdata", "golden",
+	body, err := os.ReadFile(filepath.Join("..", "..", "testdata", "golden",
 		"responses", "musicbrainz", "release_detail.json"))
 	if err != nil {
 		t.Fatalf("读取金样例失败: %v", err)

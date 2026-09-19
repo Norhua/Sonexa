@@ -41,8 +41,8 @@ const emit = defineEmits<{
   goSettings: []
 }>()
 
-const countries = ref<Models.main.CountryOption[]>([])
-const hint = ref<Models.main.CountryHint | null>(null)
+const countries = ref<Models.app.CountryOption[]>([])
+const hint = ref<Models.app.CountryHint | null>(null)
 const countryTouched = ref(false)
 
 /**
@@ -121,7 +121,7 @@ async function run() {
   await search.run()
 }
 
-async function addToLibrary(row: Models.main.CandidateRow) {
+async function addToLibrary(row: Models.app.CandidateRow) {
   try {
     const id = await App.AddToLibrary(row)
     row.localTrackId = id

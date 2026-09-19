@@ -3,7 +3,7 @@
 // 前端不自行发出任何出网请求——全部出网经由这些绑定方法，
 // 以便统一管控 User-Agent 与限流。封面图片是唯一特例：
 // 仍由 Go 取得，但以本地地址供 <img> 加载（见 coverUrl）。
-export * as App from '../../wailsjs/go/main/App'
+export * as App from '../../wailsjs/go/app/App'
 export { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
 export type * as Models from '../../wailsjs/go/models'
 

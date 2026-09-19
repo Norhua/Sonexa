@@ -105,7 +105,9 @@ Dialog 限制尺寸、内部滚动，dialogStack 控制 Escape 只关顶层，Se
 - FTS5 contentless 表 + 影子表保留，删除使用原索引值；关系与索引同步。快速搜索 2000 身份上限与无分页限制见 G07。
 - 原始 provider 响应先落盘后解析，可离线重放；iTunes 原始响应与清单 TTL 保留，已收藏元数据尚不具备统一生命周期。
 - XLSX 用 excelize，编码转换用 x/text，探测使用假名/CJK/罕用字/非法字等领域信号；Jaro-Winkler 本地实现。相关金样例继续维护。
-- 模块主线仍为 internal/store、provider、matching、importer、covers、export 与 frontend 的 components/views/stores/api/volt。`enrichWorker` 与详情应用目前位于 main 包，绑定层不全是薄转换，不假称已抽入 internal。
+- 模块主线为 internal/app（应用协调、Wails 绑定、后台补全及同包测试）、internal/store、provider、matching、importer、covers、export，以及 frontend 的 components/views/stores/api/volt。根目录 main.go 仅嵌入前端资源并启动 Wails，`internal/app.DesktopOptions` 负责装配同一个 App 的生命周期、封面 handler 与绑定，内部生命周期不导出为前端方法。
+- App 的 Go 包名从 main 改为 app 后，Wails 生成接口位于 `frontend/wailsjs/go/app/`，DTO 命名空间为 `Models.app`；前端统一入口和测试桩同步使用 `window.go.app.App`。方法名、参数及数据字段不变；生成接口仍受版本控制，md5、dist、测试报告等产物忽略。
+- Go 回归测试与实现同包放置，不把 *_test.go 移入不受 Go 工具扫描的目录；共享金样例继续在根 testdata/。临时手动调试程序放被忽略的 tmp/_scratch/（下划线目录不被 Go 递归发现），不能替代正式回归。详见 [仓库目录说明](../README.md)。
 
 ## 验证原则
 

@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ func TestSnowCreditSurvivesEnrichmentWithoutInventedParticipants(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
 	app.enricher.Pause()
-	body, err := os.ReadFile("testdata/golden/responses/musicbrainz/release_snow_no_roles.json")
+	body, err := os.ReadFile("../../testdata/golden/responses/musicbrainz/release_snow_no_roles.json")
 	if err != nil {
 		t.Fatal(err)
 	}

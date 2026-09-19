@@ -2,7 +2,7 @@
 
 ## 文档权威与阅读顺序
 
-- `specs/**/spec.md`：现行行为契约，已合并 [v1 偏差记录](../change_record/v1-deviations.md) 第一至二十七节的确定裁决；同主题以后期条目为准。
+- `specs/**/spec.md`：现行行为契约，已合并历史 v1 偏差记录第一至二十七节的确定裁决；同主题以后期条目为准。原记录已完成同步并从工作树删除，追溯方式见下方。
 - [design.md](design.md)：当前技术栈、数据模型与实现约定，替代归档设计中的旧架构决策。
 - [known-gaps.md](known-gaps.md)：仍未满足的要求、当前生产链路限制及建议回归。**不通过删除目标要求来掩盖实现缺陷。**
 - [v1 文档核验](verification-v1.md)：本次归档/同步的覆盖、实测命令与验证边界。
@@ -13,6 +13,16 @@
 ## 现行技术栈
 
 Wails v2（Go + Vue 3 + TypeScript + Tailwind CSS v4 + Volt + Lucide Icons + 按需 Pinia）。Volt 使用本地组件源码与 unstyled PrimeVue；不再使用 shadcn-vue。技术版本与来源依据依赖锁文件、[Volt 组件说明](../frontend/src/volt/README.md)和[迁移记录](../frontend/docs/volt-migration.md)。
+
+## 历史偏差的追溯
+
+修复分支合并且规格吸收裁决后，不再维护 `change_record/` 或其 tmp 符号链接。现行约束看主 specs，未完成项看 known-gaps；如需核对下表的历史节号，可从合并提交读取原记录：
+
+```sh
+git show 6bc53b2:change_record/v1-deviations.md
+```
+
+此命令读取 Git 历史，不依赖已删除的工作树文件。历史归档中的原始规划仍保留，不随本次文件整理重写。
 
 ## 能力索引与偏差映射
 

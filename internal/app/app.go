@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// App 是 Wails 的绑定层：只做参数转换与事件发射，业务逻辑在 internal/ 各包中。
+// App 协调应用用例并提供 Wails 绑定；存储、匹配与上游原语在各领域包中。
 type App struct {
 	ctx     context.Context
 	version string
