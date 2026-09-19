@@ -1,0 +1,42 @@
+{
+  "id": "54953b76-c791-4415-8092-1f5487cb8df9",
+  "title": "狼と巫女とお菓子の家",
+  "date": "2013-12-29",
+  "country": "JP",
+  "status": "Official",
+  "relations": [],
+  "artist-credit": [{
+    "name": "Crest", "joinphrase": "",
+    "artist": { "id": "cf355f11-58c0-4e89-aa08-a9c1e07ed92f", "name": "Crest", "type": "Group" }
+  }],
+  "label-info": [{ "catalog-number": "CRAD-0013", "label": { "name": "Crest" } }],
+  "release-group": {
+    "id": "b5fca0ba-12a4-413a-aabc-d026ccefe47f",
+    "title": "狼と巫女とお菓子の家", "primary-type": "Album", "first-release-date": "2013-12-29"
+  },
+  "media": [{
+    "position": 1, "format": "CD", "track-count": 8,
+    "tracks": [{
+      "id": "3d9c04e3-2f21-4e1f-a307-e40a96ff82cf",
+      "position": 4, "number": "4", "title": "綿雪の夢", "length": 321000,
+      "artist-credit": [{
+        "name": "ハトリアヤ", "joinphrase": "",
+        "artist": {
+          "id": "8727e60e-c1b4-4800-b59a-4e8574907b04", "name": "ハトリアヤ",
+          "type": "Person", "sort-name": "Hatori Aya", "disambiguation": "Doujin singer; Crest member"
+        }
+      }],
+      "recording": {
+        "id": "7f4f192d-efb5-4d52-9005-74a435b1fd00", "title": "綿雪の夢", "length": 321000,
+        "relations": [], "isrcs": [],
+        "artist-credit": [{
+          "name": "ハトリアヤ", "joinphrase": "",
+          "artist": {
+            "id": "8727e60e-c1b4-4800-b59a-4e8574907b04", "name": "ハトリアヤ",
+            "type": "Person", "sort-name": "Hatori Aya", "disambiguation": "Doujin singer; Crest member"
+          }
+        }]
+      }
+    }]
+  }]
+}

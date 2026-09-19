@@ -1,0 +1,140 @@
+@import "tailwindcss";
+@import "tailwindcss-primeui";
+
+/*
+ * 主题令牌：全应用唯一的调色板。
+ *
+ * Volt 组件（src/volt/*）与手写标记共用这一套 --p-* 变量——
+ * 两套调色板并存时，改一次风格要改两处，而两处必然漂移。
+ * 变量名与取值域由 tailwindcss-primeui 规定：
+ * surface-* 是中性面，primary-* 是强调色，其余是语义令牌。
+ *
+ * 本应用是单色设计：primary 与 surface 用同一条中性色阶，
+ * 因此按钮在浅色下近黑、深色下近白——与 Volt 默认的翠绿主色不同，
+ * 但换色只需改下面这一条色阶。
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* 色阶：Tailwind neutral。单色设计下 primary 与 surface 同源 */
+  --p-primary-50: var(--p-surface-50);
+  --p-primary-100: var(--p-surface-100);
+  --p-primary-200: var(--p-surface-200);
+  --p-primary-300: var(--p-surface-300);
+  --p-primary-400: var(--p-surface-400);
+  --p-primary-500: var(--p-surface-500);
+  --p-primary-600: var(--p-surface-600);
+  --p-primary-700: var(--p-surface-700);
+  --p-primary-800: var(--p-surface-800);
+  --p-primary-900: var(--p-surface-900);
+  --p-primary-950: var(--p-surface-950);
+  --p-surface-0: #ffffff;
+  --p-surface-50: #fafafa;
+  --p-surface-100: #f5f5f5;
+  --p-surface-200: #e5e5e5;
+  --p-surface-300: #d4d4d4;
+  --p-surface-400: #a3a3a3;
+  --p-surface-500: #737373;
+  --p-surface-600: #525252;
+  --p-surface-700: #404040;
+  --p-surface-800: #262626;
+  --p-surface-900: #171717;
+  --p-surface-950: #0a0a0a;
+  --p-content-border-radius: 6px;
+}
+
+/* 浅色 */
+:root {
+  --p-primary-color: var(--p-primary-800);
+  --p-primary-contrast-color: var(--p-surface-0);
+  --p-primary-hover-color: var(--p-primary-700);
+  --p-primary-active-color: var(--p-primary-900);
+  --p-content-border-color: var(--p-surface-200);
+  --p-content-hover-background: var(--p-surface-100);
+  --p-content-hover-color: var(--p-surface-800);
+  /*
+   * 选中态（highlight）必须明显强于悬停态（content-hover）：
+   * 曲目表格没有勾选框列，整行底色是选中状态的唯一信号，
+   * 两者取同一个值时「已选中」与「鼠标恰好停在这一行」就分不开了。
+   */
+  --p-highlight-background: var(--p-surface-200);
+  --p-highlight-color: var(--p-surface-900);
+  --p-highlight-focus-background: var(--p-surface-300);
+  --p-highlight-focus-color: var(--p-surface-950);
+  --p-text-color: var(--p-surface-800);
+  --p-text-hover-color: var(--p-surface-900);
+  --p-text-muted-color: var(--p-surface-500);
+  --p-text-hover-muted-color: var(--p-surface-600);
+  /* 应用自有令牌 */
+  --p-app-background: var(--p-surface-0);
+  --p-app-chrome-background: var(--p-surface-50);
+  /* 灰色行（未入库曲目）：降低对比度，不加删除线 */
+  --p-ghost-color: var(--p-surface-400);
+  --p-danger-color: #dc2626;
+}
+
+.dark {
+  --p-primary-color: var(--p-primary-100);
+  --p-primary-contrast-color: var(--p-surface-900);
+  --p-primary-hover-color: var(--p-primary-200);
+  --p-primary-active-color: var(--p-primary-300);
+  --p-content-border-color: var(--p-surface-700);
+  --p-content-hover-background: var(--p-surface-800);
+  --p-content-hover-color: var(--p-surface-0);
+  --p-highlight-background: var(--p-surface-700);
+  --p-highlight-color: var(--p-surface-0);
+  --p-highlight-focus-background: var(--p-surface-600);
+  --p-highlight-focus-color: var(--p-surface-0);
+  --p-text-color: var(--p-surface-0);
+  --p-text-hover-color: var(--p-surface-0);
+  --p-text-muted-color: var(--p-surface-400);
+  --p-text-hover-muted-color: var(--p-surface-300);
+  --p-app-background: var(--p-surface-900);
+  --p-app-chrome-background: var(--p-surface-800);
+  --p-ghost-color: var(--p-surface-500);
+  --p-danger-color: #f87171;
+}
+
+@theme inline {
+  --color-app: var(--p-app-background);
+  --color-app-chrome: var(--p-app-chrome-background);
+  --color-ghost: var(--p-ghost-color);
+  --color-danger: var(--p-danger-color);
+}
+
+/** 灰色行的文字色。命名对齐 tailwindcss-primeui 的 text-muted-color。 */
+@utility text-ghost-color {
+  color: var(--p-ghost-color);
+}
+
+/** 破坏性动作的文字色。 */
+@utility text-danger-color {
+  color: var(--p-danger-color);
+}
+
+@layer base {
+  /*
+   * 裸 border / border-b 取内容边框色。
+   * Tailwind v4 的默认边框色是 currentColor，不兜底的话每处都要写一遍颜色。
+   */
+  * {
+    border-color: var(--p-content-border-color);
+  }
+  /* 原生滚动条/输入装饰随主题，业务控件不继承窗口拖拽。 */
+  :root { color-scheme: light; }
+  .dark { color-scheme: dark; }
+  button, input, textarea, select, [role="combobox"] { --wails-draggable: no-drag; }
+  button:focus-visible { outline: 1px solid var(--p-primary-color); outline-offset: -1px; }
+  html, body, #app {
+    height: 100%;
+  }
+  body {
+    background-color: var(--p-app-background);
+    color: var(--p-text-color);
+    font-family: system-ui, -apple-system, "PingFang SC", "Hiragino Sans",
+      "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    margin: 0;
+    overflow: hidden;
+  }
+}

@@ -1,0 +1,295 @@
+package matching
+
+import (
+	"testing"
+
+	"github.com/norhua/sonexa/internal/provider"
+)
+
+func sptr(s string) *string { return &s }
+func iptr(i int) *int       { return &i }
+
+// TestCompareTextThreeLevels 覆盖 4.1：精确 / 模糊 / 不匹配三级判定。
+func TestCompareTextThreeLevels(t *testing.T) {
+	w := DefaultWeights()
+	cases := []struct {
+		name string
+		a, b string
+		want MatchDegree
+	}{
+		{"标准化后相等即精确", "That Girl", "ＴＨＡＴ　ＧＩＲＬ", MatchExact},
+		{"假名精确", "ハルヒ", "はるひ", MatchExact},
+		{"词元包含即模糊", "God knows", "God knows Live", MatchFuzzy},
+		{"前缀截断即模糊", "Instrumental Version", "Instrument", MatchFuzzy},
+		{"高相似度即模糊", "Natalia Lesz", "Natalia Leszh", MatchFuzzy},
+		{"完全不同即不匹配", "That Girl", "冒険でしょでしょ", MatchNone},
+		{"空串不匹配", "", "anything", MatchNone},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := w.CompareText(c.a, c.b); got != c.want {
+				t.Errorf("CompareText(%q,%q) = %d, 期望 %d", c.a, c.b, got, c.want)
+			}
+		})
+	}
+}
+
+// TestTitleMismatchDiscarded 覆盖 4.2：曲名不匹配即丢弃，不计分。
+func TestTitleMismatchDiscarded(t *testing.T) {
+	w := DefaultWeights()
+	q := provider.Query{Title: "That Girl", Artist: "Liu", Album: "That Girl"}
+	c := provider.Candidate{
+		Title:      sptr("完全不同的曲名"),
+		ArtistName: sptr("Liu"),
+		AlbumTitle: sptr("That Girl"),
+	}
+	got := w.ScoreCandidate(q, c)
+	if !got.Rejected {
+		t.Error("曲名不匹配的候选应被丢弃")
+	}
+	if got.Total != 0 {
+		t.Errorf("被丢弃的候选不应计分, 得到 %v", got.Total)
+	}
+}
+
+// TestMusicBrainzScoringFullMarks 覆盖 4.3：MB 满分 100。
+func TestMusicBrainzScoringFullMarks(t *testing.T) {
+	w := DefaultWeights()
+	q := provider.Query{Title: "That Girl", Artist: "Natalia Lesz", Album: "That Girl"}
+	c := provider.Candidate{
+		Provider:      "musicbrainz",
+		Title:         sptr("That Girl"),
+		ArtistName:    sptr("Natalia Lesz"),
+		AlbumTitle:    sptr("That Girl"),
+		UpstreamScore: iptr(100), // 100 × 0.05 = 5，恰好封顶
+	}
+	got := w.ScoreCandidate(q, c)
+	if got.Total != 100 {
+		t.Errorf("MB 满分候选得分 = %v, 期望 100", got.Total)
+	}
+	if !got.HighConf {
+		t.Error("曲名+署名+歌集全精确应为高置信")
+	}
+}
+
+// TestMusicBrainzUpstreamScoreCap 覆盖 4.9/6.9：上游 score × 0.05，上限 5。
+func TestMusicBrainzUpstreamScoreCap(t *testing.T) {
+	w := DefaultWeights()
+	q := provider.Query{Title: "X", Artist: "Y", Album: "Z"}
+	base := provider.Candidate{Title: sptr("X"), ArtistName: sptr("Y"), AlbumTitle: sptr("Z")}
+
+	base.UpstreamScore = iptr(60) // 60 × 0.05 = 3
+	if got := w.ScoreCandidate(q, base); got.Total != 95+3 {
+		t.Errorf("score=60 时得分 = %v, 期望 98", got.Total)
+	}
+	base.UpstreamScore = iptr(200) // 200 × 0.05 = 10，封顶为 5
+	if got := w.ScoreCandidate(q, base); got.Total != 100 {
+		t.Errorf("score=200 时得分 = %v, 期望 100（封顶 5）", got.Total)
+	}
+}
+
+// TestITunesScoringWithDuration 覆盖 4.4：iTunes 用时长补足那 5 分，满分同为 100。
+func TestITunesScoringWithDuration(t *testing.T) {
+	w := DefaultWeights()
+	q := provider.Query{
+		Title: "That Girl", Artist: "Natalia Lesz", Album: "That Girl",
+		DurationMS: iptr(221000),
+	}
+	c := provider.Candidate{
+		Provider:   "itunes",
+		Title:      sptr("That Girl"),
+		ArtistName: sptr("Natalia Lesz"),
+		AlbumTitle: sptr("That Girl"),
+		DurationMS: iptr(222000), // Δ = 1s ≤ 3s，得 5
+	}
+	got := w.ScoreCandidate(q, c)
+	if got.Total != 100 {
+		t.Errorf("iTunes 满分候选得分 = %v, 期望 100", got.Total)
+	}
+
+	// Δ 在 3~10s 得 2
+	c.DurationMS = iptr(228000) // Δ = 7s
+	if got := w.ScoreCandidate(q, c); got.Total != 97 {
+		t.Errorf("Δ=7s 得分 = %v, 期望 97", got.Total)
+	}
+	// Δ > 10s 不得分
+	c.DurationMS = iptr(240000) // Δ = 19s
+	if got := w.ScoreCandidate(q, c); got.Total != 95 {
+		t.Errorf("Δ=19s 得分 = %v, 期望 95", got.Total)
+	}
+}
+
+// TestITunesNoDurationNoBonus 覆盖 4.4：输入无时长时时长项不计分，也不扣分。
+func TestITunesNoDurationNoBonus(t *testing.T) {
+	w := DefaultWeights()
+	q := provider.Query{Title: "X", Artist: "Y", Album: "Z"} // 无时长
+	c := provider.Candidate{
+		Provider: "itunes", Title: sptr("X"), ArtistName: sptr("Y"),
+		AlbumTitle: sptr("Z"), DurationMS: iptr(200000),
+	}
+	if got := w.ScoreCandidate(q, c); got.Total != 95 {
+		t.Errorf("输入无时长时得分 = %v, 期望 95（不计时长分也不扣分）", got.Total)
+	}
+}
+
+// TestHighConfidenceIsStructural 覆盖 4.5：
+// 79 分双模糊判为非高置信，75 分署名精确判为高置信。
+func TestHighConfidenceIsStructural(t *testing.T) {
+	w := DefaultWeights()
+
+	// 79 分：曲名匹配 + 署名模糊(12) + 歌集模糊(12)，两处都只是模糊
+	//
+	// 署名这一侧不能用 `X` vs `X feat Y` 当模糊样例——那是同一个主署名的两种写法，
+	// CompareCredit 判它精确（见 TestCompareCreditFormsOfSameArtist）。
+	// 这里要的是「像但说不准是不是同一个」，因此用多一个词的乐队写法。
+	q1 := provider.Query{Title: "God knows", Artist: "Suzumiya Haruhi", Album: "TV animation"}
+	c1 := provider.Candidate{
+		Title:      sptr("God knows"),
+		ArtistName: sptr("Suzumiya Haruhi Band"),    // 词元包含 → 模糊
+		AlbumTitle: sptr("TV animation soundtrack"), // 词元包含 → 模糊
+	}
+	got1 := w.ScoreCandidate(q1, c1)
+	if got1.CreditMatch != MatchFuzzy || got1.AlbumMatch != MatchFuzzy {
+		t.Fatalf("前置条件不成立: credit=%d album=%d", got1.CreditMatch, got1.AlbumMatch)
+	}
+	if got1.Total != 79 {
+		t.Fatalf("双模糊得分 = %v, 期望 79", got1.Total)
+	}
+	if got1.HighConf {
+		t.Error("79 分双模糊不应判为高置信——这是结构性条件而非分数线")
+	}
+
+	// 75 分：曲名匹配 + 署名精确(20)，无歌集
+	q2 := provider.Query{Title: "That Girl", Artist: "Natalia Lesz", Album: ""}
+	c2 := provider.Candidate{
+		Title:      sptr("That Girl"),
+		ArtistName: sptr("Natalia Lesz"), // 精确
+	}
+	got2 := w.ScoreCandidate(q2, c2)
+	if got2.Total != 75 {
+		t.Fatalf("署名精确得分 = %v, 期望 75", got2.Total)
+	}
+	if !got2.HighConf {
+		t.Error("75 分署名精确应判为高置信")
+	}
+}
+
+// TestJaroWinkler 校准相似度实现，锚定金样例期望。
+func TestJaroWinkler(t *testing.T) {
+	cases := []struct {
+		a, b string
+		min  float64
+	}{
+		{"martha", "marhta", 0.96},
+		{"dixon", "dicksonx", 0.81},
+		{"natalialesz", "natalialeszh", 0.95},
+	}
+	for _, c := range cases {
+		got := jaroWinkler(c.a, c.b)
+		if got < c.min {
+			t.Errorf("jaroWinkler(%q,%q) = %.4f, 期望 ≥ %.2f", c.a, c.b, got, c.min)
+		}
+	}
+	if jaroWinkler("abc", "xyz") > 0.5 {
+		t.Error("完全不同的串相似度应很低")
+	}
+}
+
+// TestCompareCreditFormsOfSameArtist 覆盖署名的三种常见异写。
+//
+// 导出表格里署名的写法差异几乎总是这三种之一，而它们说的都是同一位艺术家。
+// 判成不匹配会让一批本该直接入库的行白白落进复核队列——实测用户那份 CSV 里
+// 有三条正是卡在这里（Tetra. / you / By the Seaside）。
+func TestCompareCreditFormsOfSameArtist(t *testing.T) {
+	w := DefaultWeights()
+	cases := []struct {
+		name             string
+		query, candidate string
+		want             MatchDegree
+	}{
+		{"括号里是另一种写法", "原田瞳（原田ひとみ）", "原田ひとみ", MatchExact},
+		{"括号里是另一种写法（反向）", "原田ひとみ", "原田瞳（原田ひとみ）", MatchExact},
+		{"读音注释", "3L（スリーエル）", "3L", MatchExact},
+		{"括号里是声优", "茅野愛衣", "霞ヶ丘詩羽(CV.茅野愛衣)", MatchExact},
+		{"末尾 feat. 从句", "Kirara Magic", "Kirara Magic feat. Kitsui Akira", MatchExact},
+		{"末尾 feat. 从句（反向）", "Kirara Magic feat. Kitsui Akira", "Kirara Magic", MatchExact},
+		{"完全相同", "reche", "reche", MatchExact},
+
+		// 放宽只针对「同一位艺术家的不同写法」，不是把署名判定整体变松
+		{"不同艺术家", "Kirara Magic", "Lone Alpha", MatchNone},
+		{"多一个词的乐队写法仍只算模糊", "Suzumiya Haruhi", "Suzumiya Haruhi Band", MatchFuzzy},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := w.CompareCredit(c.query, c.candidate); got != c.want {
+				t.Errorf("CompareCredit(%q, %q) = %v, 期望 %v", c.query, c.candidate, got, c.want)
+			}
+		})
+	}
+}
+
+// TestPlausibleNeedsOneCorroboration 覆盖「值得摆出来」那道闸。
+//
+// 用户报告：`ツバサ（羽翼）· 4円（ヨエン）· side-c` 在 MusicBrainz 上并不存在，
+// 但同名录音有 43 条，它们曲名全过闸，于是整批被摆进复核队列。
+// 曲名之外必须有一处**可比的**旁证对得上，才算值得摆出来。
+func TestPlausibleNeedsOneCorroboration(t *testing.T) {
+	w := DefaultWeights()
+	cases := []struct {
+		name string
+		q    provider.Query
+		c    provider.Candidate
+		want bool
+	}{
+		{
+			name: "曲名相符但署名歌集全不相干",
+			q:    provider.Query{Title: "ツバサ（羽翼）", Artist: "4円（ヨエン）", Album: "side-c"},
+			c: provider.Candidate{Title: sptr("つばさ"), ArtistName: sptr("熊木杏里"),
+				AlbumTitle: sptr("君の名前")},
+			want: false,
+		},
+		{
+			name: "署名对上即可摆出来",
+			q:    provider.Query{Title: "3253212", Artist: "reche", Album: "3253212"},
+			c: provider.Candidate{Title: sptr("3253212"), ArtistName: sptr("reche"),
+				AlbumTitle: sptr("reche GaLLERy#101 on live")},
+			want: true,
+		},
+		{
+			name: "歌集对上即可摆出来（署名是碟的署名而非录音署名）",
+			q:    provider.Query{Title: "綿雪の夢", Artist: "Crest", Album: "狼と巫女とお菓子の家"},
+			c: provider.Candidate{Title: sptr("綿雪の夢"), ArtistName: sptr("ハトリアヤ"),
+				AlbumTitle: sptr("狼と巫女とお菓子の家")},
+			want: true,
+		},
+		{
+			// 一侧空着是「没有这个信息」，不是「对不上」
+			name: "候选没给歌集时只看署名",
+			q:    provider.Query{Title: "That Girl", Artist: "Natalia Lesz", Album: "That Girl"},
+			c:    provider.Candidate{Title: sptr("That Girl"), ArtistName: sptr("Natalia Lesz")},
+			want: true,
+		},
+		{
+			name: "表格只有曲名一列时曲名自己就够",
+			q:    provider.Query{Title: "夕立"},
+			c: provider.Candidate{Title: sptr("夕立"), ArtistName: sptr("CROW'SCLAW"),
+				AlbumTitle: sptr("アコースティック・エピソード")},
+			want: true,
+		},
+		{
+			name: "曲名不过闸的永远不摆出来",
+			q:    provider.Query{Title: "Tetra.", Artist: "原田ひとみ", Album: "LINES"},
+			c: provider.Candidate{Title: sptr("Tetra. (off vocal)"), ArtistName: sptr("原田ひとみ"),
+				AlbumTitle: sptr("LINES")},
+			want: false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := w.ScoreCandidate(c.q, c.c)
+			if got.Plausible != c.want {
+				t.Errorf("Plausible = %v, 期望 %v（评分 %+v）", got.Plausible, c.want, got)
+			}
+		})
+	}
+}

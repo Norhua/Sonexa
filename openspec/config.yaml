@@ -1,5 +1,14 @@
 schema: spec-driven
 
+context: |
+  Sonexa 是以音乐收藏为中心的桌面应用，不依赖本地音频文件。
+  当前技术栈：Wails v2（Go + Vue 3 + TypeScript + Tailwind CSS v4 + Volt + Lucide Icons + 按需 Pinia）。
+  Volt 是本地组件源码，基于 unstyled PrimeVue；不使用 shadcn-vue。
+  现行行为契约见 openspec/specs/，现行架构见 openspec/design.md。
+  add-sonexa-v1 已归档；归档 proposal/design/tasks 保留历史，不作为现行技术决策。
+  已知未完成实现见 openspec/known-gaps.md，不通过删减目标要求掩盖缺陷。
+  提交信息使用中文，并详细说明范围、原因、验证与残余风险。
+
 # Project context (optional)
 # This is shown to AI when creating artifacts.
 # Add your tech stack, conventions, style guides, domain knowledge, etc.

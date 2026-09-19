@@ -1,0 +1,42 @@
+{
+  "resultCount": 2,
+  "results": [
+    {
+      "wrapperType": "track",
+      "kind": "song",
+      "artistId": 12345,
+      "collectionId": 534038847,
+      "trackId": 534038851,
+      "artistName": "平野綾",
+      "collectionName": "涼宮ハルヒの詰合",
+      "trackName": "God knows...",
+      "collectionPrice": 1800,
+      "trackNumber": 2,
+      "trackCount": 12,
+      "discNumber": 1,
+      "discCount": 1,
+      "trackTimeMillis": 332000,
+      "releaseDate": "2006-12-18T08:00:00Z",
+      "primaryGenreName": "アニメ",
+      "country": "JPN",
+      "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music/abc/100x100bb.jpg",
+      "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Music/abc/60x60bb.jpg"
+    },
+    {
+      "wrapperType": "track",
+      "kind": "song",
+      "collectionId": 534038847,
+      "trackId": 534038852,
+      "artistName": "平野綾",
+      "collectionName": "涼宮ハルヒの詰合",
+      "trackName": "冒険でしょでしょ?",
+      "trackNumber": 1,
+      "trackCount": 12,
+      "discNumber": 1,
+      "trackTimeMillis": 248000,
+      "releaseDate": "2006-12-18T08:00:00Z",
+      "primaryGenreName": "アニメ",
+      "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music/abc/100x100bb.jpg"
+    }
+  ]
+}

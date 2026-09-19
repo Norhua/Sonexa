@@ -1,0 +1,157 @@
+<script setup lang="ts">
+/**
+ * 艺术家浏览：中列列出全部艺术家 + 曲目数，选中后主区显示该艺术家的曲目表格。
+ *
+ * 艺术家视图是按 artist_id 过滤的标准曲目表格，不是结构不同的独立页面。
+ */
+import { computed, ref, watch } from 'vue'
+import { App, type Models } from '@/api'
+import PaneHeader from '@/components/PaneHeader.vue'
+import ViewOptionsMenu from '@/components/ViewOptionsMenu.vue'
+import FilterChips from '@/components/FilterChips.vue'
+import ViewSearchBox from '@/components/ViewSearchBox.vue'
+import Message from '@/volt/Message.vue'
+import SecondaryButton from '@/volt/SecondaryButton.vue'
+import { useLibraryStore } from '@/stores/library'
+
+const library = useLibraryStore()
+const artists = ref<Models.store.ArtistListItem[]>([])
+/** 中列的就地过滤：这一列是艺术家名单，不是曲目，因此不走曲目筛选。 */
+const filter = ref('')
+const header = ref<Models.main.ArtistHeader | null>(null)
+const activeRole = computed(() => library.filter.role ?? '')
+const loading = ref(false)
+const error = ref('')
+
+const emit = defineEmits<{ selected: [] }>()
+
+watch(() => library.filter.tagId, async (tagId, _, onCleanup) => {
+  let cancelled = false
+  onCleanup(() => { cancelled = true })
+  loading.value = true
+  error.value = ''
+  artists.value = []
+  try {
+    const result = tagId ? await App.ListArtistsForTag(tagId) : await App.ListArtists()
+    if (!cancelled) artists.value = result ?? []
+  } catch (e) {
+    if (!cancelled) error.value = String(e)
+  } finally {
+    if (!cancelled) loading.value = false
+  }
+}, { immediate: true })
+
+/** 角色艺术家的视图标题从配音关系渲染为「涼宮ハルヒ (CV: 平野綾)」。 */
+function titleOf(a: Models.store.ArtistListItem): string {
+  return a.voiceActor ? `${a.name} (CV: ${a.voiceActor})` : a.name
+}
+
+// 头部跟随当前导航，而不是等请求完成后才导航；旧请求不能覆盖分面或抢回视图。
+watch(
+  () => [library.view, library.contextId] as const,
+  async ([view, id], _, onCleanup) => {
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    header.value = null
+    error.value = ''
+    if (view !== 'artist' || !id) return
+    try {
+      const result = await App.GetArtistHeader(id)
+      if (cancelled) return
+      header.value = result
+      if (result.title) library.contextTitle = result.title
+    } catch (e) {
+      if (!cancelled) error.value = String(e)
+    }
+  },
+  { immediate: true },
+)
+
+const visibleArtists = computed(() => {
+  const q = filter.value.trim().toLowerCase()
+  const list = q
+    ? artists.value.filter((a) => titleOf(a).toLowerCase().includes(q))
+    : [...artists.value]
+
+  return list.sort((a, b) => titleOf(a).localeCompare(titleOf(b), 'zh-Hans-CN'))
+})
+
+async function select(a: Models.store.ArtistListItem) {
+  await library.goTo('artist', { id: a.id, title: titleOf(a) })
+  if (library.view === 'artist' && library.contextId === a.id) emit('selected')
+}
+
+/** 按 role 的分面筛选：在同一张表格内收窄。 */
+async function pickFacet(role: string) {
+  await library.applyFilter({ role }, role ? [{ key: 'role', label: `角色=${role}` }] : [])
+}
+
+defineExpose({ header, activeRole, pickFacet })
+</script>
+
+<template>
+  <div class="flex min-h-0 flex-1">
+    <!-- 中列：固定的栏目标题，不随选中艺术家变化 -->
+    <div class="flex w-64 shrink-0 flex-col border-r">
+      <PaneHeader>
+        <h2 class="truncate text-sm font-normal text-muted-color">艺术家</h2>
+      </PaneHeader>
+      <div class="min-h-0 flex-1 overflow-auto">
+      <button
+        v-for="a in visibleArtists"
+        :key="a.id"
+        :class="[
+          'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm',
+          library.view === 'artist' && library.contextId === a.id
+            ? 'bg-highlight font-medium'
+            : 'hover:bg-emphasis',
+        ]"
+        :aria-current="library.view === 'artist' && library.contextId === a.id ? 'true' : undefined"
+        @click="select(a)"
+      >
+        <span class="flex-1 truncate">{{ titleOf(a) }}</span>
+        <span class="text-xs text-muted-color">{{ a.trackCount }}</span>
+      </button>
+      <p v-if="visibleArtists.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-color">
+        {{ filter || library.filter.tagId ? '没有匹配的艺术家' : '还没有艺术家' }}
+      </p>
+      </div>
+    </div>
+
+    <!-- 主区：操作区在右上角，与中间栏标题同一水平线 -->
+    <div class="flex min-w-0 flex-1 flex-col">
+      <PaneHeader>
+        <div class="flex-1" />
+        <ViewOptionsMenu />
+        <ViewSearchBox v-model="filter" placeholder="在艺术家中查找" />
+      </PaneHeader>
+
+      <FilterChips />
+      <div v-if="header" class="shrink-0 px-4 pb-2">
+        <div class="flex flex-wrap gap-1">
+          <SecondaryButton
+            v-for="f in header.facets"
+            :key="f.role || 'all'"
+            variant="outlined"
+            rounded
+            size="small"
+            :class="activeRole === f.role ? 'bg-highlight! font-medium' : ''"
+            @click="pickFacet(f.role)"
+          >
+            {{ f.label }} {{ f.count }}
+          </SecondaryButton>
+        </div>
+      </div>
+
+      <Message v-if="error || library.error" severity="error" size="small" class="shrink-0 rounded-none">
+        {{ error || library.error }}
+      </Message>
+      <!-- 未选中艺术家时不显示曲目表格：这一屏还没有「该艺术家的曲目」可言，
+           沿用上一个视图残留的行会让人以为它们属于某位艺术家 -->
+      <slot v-if="library.view === 'artist'" />
+      <div v-else class="flex flex-1 items-center justify-center text-sm text-muted-color">
+        从左侧选择一位艺术家
+      </div>
+    </div>
+  </div>
+</template>

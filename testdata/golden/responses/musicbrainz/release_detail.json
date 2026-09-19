@@ -1,0 +1,108 @@
+{
+  "id": "rel-cd-jp",
+  "title": "涼宮ハルヒの詰合",
+  "status": "Official",
+  "date": "2006-12-18",
+  "country": "JP",
+  "annotation": "TV animation soundtrack",
+  "medium-count": 1,
+  "artist-credit": [
+    { "name": "涼宮ハルヒ", "joinphrase": " feat. ", "artist": { "id": "art-haruhi", "name": "涼宮ハルヒ", "type": "Character" } },
+    { "name": "平野綾", "joinphrase": "", "artist": { "id": "art-hirano", "name": "平野綾", "type": "Person" } }
+  ],
+  "genres": [
+    { "name": "anime", "count": 12 },
+    { "name": "j-pop", "count": 3 }
+  ],
+  "label-info": [
+    { "catalog-number": "LACA-15113", "label": { "id": "lbl-lantis", "name": "Lantis" } }
+  ],
+  "release-group": {
+    "id": "rg-haruhi",
+    "title": "涼宮ハルヒの詰合",
+    "primary-type": "Album",
+    "secondary-types": ["Soundtrack"],
+    "first-release-date": "2006-12-18"
+  },
+  "cover-art-archive": { "artwork": true, "front": true, "count": 4 },
+  "media": [
+    {
+      "position": 1,
+      "format": "CD",
+      "track-count": 3,
+      "tracks": [
+        {
+          "id": "trk-cd-jp-01",
+          "position": 1,
+          "number": "1",
+          "title": "冒険でしょでしょ?",
+          "length": 248000,
+          "recording": { "id": "rec-0002", "title": "冒険でしょでしょ?", "length": 248000 }
+        },
+        {
+          "id": "trk-cd-jp-02",
+          "position": 2,
+          "number": "2",
+          "title": "God knows...",
+          "length": 332000,
+          "artist-credit": [
+            { "name": "涼宮ハルヒ(CV:平野綾)", "joinphrase": "", "artist": { "id": "art-haruhi", "name": "涼宮ハルヒ", "type": "Character" } }
+          ],
+          "recording": {
+            "id": "rec-0001-god-knows",
+            "title": "God knows...",
+            "length": 332000,
+            "isrcs": ["JPPL00600123"],
+            "artist-credit": [
+              { "name": "涼宮ハルヒ(CV:平野綾)", "joinphrase": "", "artist": { "id": "art-haruhi", "name": "涼宮ハルヒ", "type": "Character" } }
+            ],
+            "relations": [
+              {
+                "type": "vocal",
+                "direction": "backward",
+                "target-type": "artist",
+                "artist": { "id": "art-hirano", "name": "平野綾", "sort-name": "Hirano, Aya", "type": "Person" }
+              },
+              {
+                "type": "instrument",
+                "direction": "backward",
+                "target-type": "artist",
+                "attributes": ["guitar"],
+                "artist": { "id": "art-guitarist", "name": "須藤賢一", "type": "Person" }
+              },
+              {
+                "type": "performance",
+                "direction": "forward",
+                "target-type": "work",
+                "work": {
+                  "id": "work-god-knows",
+                  "title": "God knows...",
+                  "relations": [
+                    {
+                      "type": "composer",
+                      "target-type": "artist",
+                      "artist": { "id": "art-tanaka", "name": "田中公平", "sort-name": "Tanaka, Kohei", "type": "Person" }
+                    },
+                    {
+                      "type": "lyricist",
+                      "target-type": "artist",
+                      "artist": { "id": "art-mori", "name": "森由里子", "sort-name": "Mori, Yuriko", "type": "Person" }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "trk-cd-jp-03",
+          "position": 3,
+          "number": "3",
+          "title": "ハレ晴レユカイ",
+          "length": 242000,
+          "recording": { "id": "rec-0003", "title": "ハレ晴レユカイ", "length": 242000 }
+        }
+      ]
+    }
+  ]
+}

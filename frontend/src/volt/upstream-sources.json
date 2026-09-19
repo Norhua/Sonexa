@@ -1,0 +1,23 @@
+{
+  "source": "https://github.com/primefaces/primevue/tree/4.5.5/apps/volt/volt",
+  "version": "4.5.5",
+  "sha256": {
+    "InputText.vue": "523d301e53804ebf1e2e9ed81e9a7b7128e72e5297eb8d1d75f3caba3648d8b7",
+    "Popover.vue": "b541bba28b7ba381b4a7dab748b8aa7c6353881dc6e91f403316b4a6ffe90b10",
+    "utils.ts": "b95f17045024a86de0b3347cf589025cdffc144deab3b6761f5306d60e2e6a60",
+    "ProgressBar.vue": "41fac6d28e86372fd215e5d056c3ea8c454fe4c25549afe7d148713f326da5e3",
+    "Tag.vue": "726dfa9043d937a50dd5ef0e4b201bb40feff21c56805a6bc425333ebbd829f0",
+    "Chip.vue": "27b3bf144daf7e2cdec4b969bd34f632a4807624cad39f6fd048fc7c8f838feb",
+    "DataTable.vue": "8bfd10d2ca3fb968acecf5ecd15681b4e298249863916852b90c908e068d2581",
+    "Menu.vue": "a5761f4277759fbf3b7f3228a505af89e7627f75b3af4dc66f5301c893ccbda0",
+    "Dialog.vue": "dd32559f975f59669a3b87ee9b286104e9e4f7cc8fa3bc93510b9119af4db373",
+    "Message.vue": "4e103aeb221a4a81907e6fc8e551149177edb7aa30c5e6c555a8e426e989a683",
+    "Badge.vue": "af50d2d21babf9dd844163a1dd56eeffef640e659bb666fc44d906f74863d463",
+    "Button.vue": "3025a02cafe0254b870ad4df9e17ec25f4ceda1695e0f1fdecc1afc4c424e891",
+    "Checkbox.vue": "59e66e5b68d9d080a60c7e87531cc7c1688989b3a6a5cc21ecaf6ff1aa4f5e4d",
+    "Select.vue": "3d6f56d0d69f2069efab1d840e39ae9c4f989698117b000801cdb27cb458ce6c",
+    "InputNumber.vue": "dc78add0d1892e9e74d7549848ca19c4e00acdabf972fb31cd06d76a28f4767c",
+    "SecondaryButton.vue": "751bcf813bd7fd11e72b0bd86fca0182bda49fb4e64013a3ae708d26f7d04556",
+    "DangerButton.vue": "6cc9206b9343c00bec70c219e878f8021490ce3ec30819826ac60bc9b2a5f0c9"
+  }
+}

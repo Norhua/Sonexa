@@ -180,9 +180,9 @@ GET /ws/2/artist/{mbid}?fmt=json&inc=artist-rels
 - `country` 取值优先级：
 
 ```
-用户手动选择  >  脚本探测建议  >  设置中的默认地区（默认跟随系统 locale）
+用户手动选择  >  文字系统探测建议  >  设置中的默认地区（默认跟随系统 locale）
 
-脚本探测规则（仅作建议，需在 UI 上明示）：
+文字系统探测规则（仅作建议，需在 UI 上明示）：
   含平假名/片假名        -> jp
   含谚文                 -> kr
   含简体特有字           -> cn
@@ -195,7 +195,7 @@ GET /ws/2/artist/{mbid}?fmt=json&inc=artist-rels
 **通用重试策略**
 
 - 429 / 5xx / 超时 → 指数退避重排队，尊重 `Retry-After` 头。
-- 同一条目累计失败 **5 次**后标记为失败态，不再自动重排。
+- 同一条目累计失败 **5 次**后标记为失败状态，不再自动重排。
 
 ### 3.4 封面策略
 
@@ -297,7 +297,7 @@ CREATE TABLE track (
   title         TEXT NOT NULL,
   artist        TEXT,              -- 纯字符串，用户看到与编辑的那个
   album         TEXT,
-  title_locked  INTEGER NOT NULL DEFAULT 0,   -- 用户手改过则加锁
+  title_locked  INTEGER NOT NULL DEFAULT 0,   -- 用户手动修改过则加锁
   artist_locked INTEGER NOT NULL DEFAULT 0,
   album_locked  INTEGER NOT NULL DEFAULT 0,
   created_at    DATETIME NOT NULL,
@@ -378,7 +378,7 @@ CREATE TABLE track_metadata (
 );
 ```
 
-**`provenance_json` 的取值**：provider id（`musicbrainz` / `itunes` / …）、`user`（用户手改）、`import`（来自导入文件原值）。
+**`provenance_json` 的取值**：provider id（`musicbrainz` / `itunes` / …）、`user`（用户手动修改）、`import`（来自导入文件原值）。
 
 **为什么用 JSON 存 provenance 而不是每字段一列**：字段集合会演进，加字段时不必改 schema；且详情页需要的是「逐字段显示来源徽标」，天然是一次整体读取。
 
@@ -682,7 +682,7 @@ release_track.track_ref = track_metadata.match_ref
 | `Song (feat. Someone)` | 附加艺术家 | 从曲名剥离，并入艺术家 |
 | `Artist (US)` | 歧义消解 | 保留为 `disambiguation` |
 
-> **无脑剥离括号会把 `That Girl (DJLIU Remix)` 搜成 `That Girl`，从而匹配到完全不相关的歌。** 判定顺序必须写死：
+> **盲目剥离括号会把 `That Girl (DJLIU Remix)` 搜成 `That Girl`，从而匹配到完全不相关的歌。** 判定顺序必须写死：
 
 ```
 1. 内层匹配 CV 模式 -> 走 5.4 角色/声优拆分
@@ -750,7 +750,7 @@ release_track.track_ref = track_metadata.match_ref
 
 需覆盖的形态：全角/半角括号、分隔符 `: ： . 。`、前缀 `CV / cv / ＣＶ / C.V. / 声 / 声優 / 声优 / 配音 / Vo.`。
 
-**拆分不确定时不拆**，保留原串并标记，进复核队列由用户处理。解析规则应实现为可配置的正则表 + 一组金样例测试。
+**拆分不确定时不拆**，保留原串并标记，进复核队列由用户处理。解析规则应实现为可配置的正则表 + 一组基准测试样例（Golden Tests）。
 
 ### 5.5 置信度
 
@@ -911,7 +911,7 @@ gate: 曲名不匹配 -> 丢弃
       v
   [E] 任一步 429/5xx/超时
       -> 指数退避重排队（尊重 Retry-After）
-      -> 累计 5 次失败 -> 标记失败态，不再自动重排
+      -> 累计 5 次失败 -> 标记失败状态，不再自动重排
 ```
 
 **队列语义要求**
@@ -1187,7 +1187,7 @@ character 不单独成组，它只出现在 track_credit 的可点击片段中�
 - 其余字段：**默认勾选**填充
 - `[全部填充]` 默认跳过用户锁定项
 - 填充后该字段来源改为对应 provider 并清除用户锁
-- 用户手改字段 → 来源置为 `user` 并加锁
+- 用户手动修改字段 → 来源置为 `user` 并加锁
 - 匹配溯源可在此手动修改或清空
 
 ### 7.8 上游搜索页
@@ -1270,7 +1270,7 @@ character 不单独成组，它只出现在 track_credit 的可点击片段中�
 |                                                                     |
 |  MB 返回 12 条，已按置信度排序，显示前 10 条    [显示全部] [无一匹配]  |
 +---------------------------------------------------------------------+
-|  状态说明（仅失败态显示）                                             |
+|  状态说明（仅失败状态显示）                                             |
 |  已重试 5 次 · 最后错误: 503 Service Unavailable · 14:32:07          |
 |                                              [立即重试] [查看日志]   |
 +=====================================================================+
@@ -1285,7 +1285,7 @@ character 不单独成组，它只出现在 track_credit 的可点击片段中�
 | `[接受]` | 采用该上游候选入库，写入 `match_source` / `match_ref` |
 | `[合并]` | 该条目就是库中已有的那首歌：不新建曲目，标记 `merged_into` 后丢弃条目 |
 | `[无一匹配]` | 不接受当前结果但保留在队列，可换上游再试（区别于 `[无需匹配]`） |
-| `[立即重试]` | 失败态重新进入匹配 |
+| `[立即重试]` | 失败状态重新进入匹配 |
 
 **上游为单选下拉，默认 MusicBrainz**；地区下拉仅在选择 iTunes 时出现（选 MB 时它无意义，常显会误导）。
 
