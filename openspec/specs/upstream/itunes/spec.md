@@ -4,6 +4,10 @@
 
 接入 iTunes Search API 作为免费无鉴权的补充上游。它的字段远少于 MusicBrainz，地区参数直接决定返回的标题语言，且其数据受条款约束不得长期留存。
 
+## Implementation status
+
+原始响应与清单已有 TTL；已入库的 track/release 元数据尚无统一过期重取/清理机制，见 [G10](../../../known-gaps.md)。短期留存是保留的项目目标，不代表本次已完成当前条款的法律核验或全部生命周期实现。
+
 ## Requirements
 
 ### Requirement: 无鉴权与速率限制
@@ -56,9 +60,9 @@ iTunes 请求 SHALL 传递地区参数，SHALL NOT 传递语言参数——决�
 ### Requirement: 能力声明反映字段缺口
 iTunes 的能力声明 SHALL 如实反映它不提供的字段：次要类型、演唱者与器乐演奏者、作曲、作词、角色与配音关系、主要类型、国家或地区、载体格式、厂牌、目录号、ISRC、上游相关度分值。
 
-#### Scenario: 不支持的列填占位
-- **WHEN** 上游搜索聚合了 MusicBrainz 与 iTunes 的结果
-- **THEN** 厂牌、目录号、载体等列对 iTunes 行显示占位短横线，而不是显示空字符串或猜测值
+#### Scenario: 不支持字段不伪造
+- **WHEN** 搜索页只选择 iTunes
+- **THEN** 依能力隐藏不支持的载体等已定义列，不伪造国家/角色；厂牌和目录号不是当前候选表格列，数据缺失仍保留为空
 
 #### Scenario: 风格字段的局限被如实处理
 - **WHEN** iTunes 返回一个被地区本地化的风格名称
@@ -70,6 +74,13 @@ iTunes 不提供相关度分值，系统 SHALL 改用其时长信息补足对应
 #### Scenario: 时长接近时加分
 - **WHEN** 导入输入含时长，且某 iTunes 候选的时长与之相差在 3 秒以内
 - **THEN** 该候选获得对应的加分
+
+### Requirement: 详情按地区与曲目标识精确定位
+iTunes 详情 SHALL 按 country:trackId 精确选择目标，拒绝地区不符或未命中的目标；不以 lookup 第一首代替。未指定目标的发行查询 SHALL 只作为清单获取。
+
+#### Scenario: 目标地区不符
+- **WHEN** 用不同地区的曲目标识请求已选发行
+- **THEN** 明确返回错误，不覆盖曲目原有身份或内容
 
 ### Requirement: 数据不得长期留存
 iTunes 的元数据仅可为性能目的短期缓存，SHALL NOT 作为长期事实来源留存。其缓存与来源为 iTunes 的发行清单 SHALL 设缓存有效期，过期即重取。其图片 SHALL NOT 随导出打包。关于页 SHALL 对其署名。
