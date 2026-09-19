@@ -34,7 +34,7 @@ test('click, modifier ranges, keyboard, right click and scoped select all', asyn
   await clickRow(page, 0); await page.keyboard.press('Enter')
   await expect(page.locator('aside')).toBeVisible()
 })
-test('sorting keeps stable anchor and menu state', async ({ page }) => {
+test('sorting keeps stable anchor and cycles back to default through the header', async ({ page }) => {
   await clickRow(page, 0)
   const anchor = await rows(page).nth(0).getAttribute('data-row-key')
   await page.getByRole('columnheader', { name: '标题' }).click()
@@ -44,13 +44,11 @@ test('sorting keeps stable anchor and menu state', async ({ page }) => {
   const target = from === 0 ? 2 : 0
   await clickRow(page, target, ['Shift'])
   await expect(selected(page)).toHaveCount(Math.abs(from - target) + 1)
-  await page.getByTitle('排序：标题').click()
-  await expect(page.getByRole('menuitem', { name: /标题/ })).toContainText('升序')
-  await page.getByRole('menuitem', { name: /默认顺序/ }).click()
+  await page.getByRole('columnheader', { name: '标题' }).click()
+  await expect(page.getByRole('columnheader', { name: '标题' })).toHaveAttribute('aria-sort', 'descending')
+  await page.getByRole('columnheader', { name: '标题' }).click()
   await expect(rows(page).first()).toHaveAttribute('data-row-key', 'track:1')
-  await page.getByTitle('排序：默认顺序').click()
-  await page.getByRole('menuitem', { name: /默认顺序/ }).click()
-  await expect(page.getByTitle('排序：默认顺序')).toBeVisible()
+  await expect(page.getByRole('columnheader', { name: '标题' })).toHaveAttribute('aria-sort', 'none')
 })
 test('text drag preserves selection and clipboard text; selected/hover differ in both themes', async ({ page }) => {
   await clickRow(page, 0)

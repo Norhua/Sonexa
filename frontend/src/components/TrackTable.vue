@@ -10,7 +10,7 @@ import SortIcon from '@/volt/SortIcon.vue'
 import ContextMenu from '@/volt/ContextMenu.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import CoverArt from '@/components/CoverArt.vue'
-import { display, duration } from '@/api'
+import { addedTime, display, duration } from '@/api'
 import { trackColumns, useTrackColumnsStore, type TrackColumnContext, type TrackColumnKey } from '@/stores/trackColumns'
 import { useEnrichStore } from '@/stores/enrich'
 import { listRows, sortRows, uniqueTracks, type ListRow, type Row } from '@/lib/trackRows'
@@ -94,7 +94,7 @@ onBeforeUnmount(() => emit('selectionChange', []))
 
 function onSort(event: DataTableSortEvent) {
   if (props.fixedOrder) return
-  sortKey.value = event.sortField === 'durationMs' ? 'duration' : String(event.sortField ?? 'default')
+  sortKey.value = !event.sortOrder ? 'default' : event.sortField === 'durationMs' ? 'duration' : String(event.sortField ?? 'default')
   sortDesc.value = event.sortOrder === -1
 }
 function rowElement(target: EventTarget | null) {
@@ -251,12 +251,12 @@ defineExpose({ selectedCount, trackCount, selectedRows })
       </div>
     </div>
     <!-- lazy 只关闭内部排序/过滤；无服务端分页。屏幕与选择共用同一份 orderedRows。 -->
-    <DataTable :value="orderedRows" data-key="key" lazy scrollable scroll-height="flex"
+    <DataTable :value="orderedRows" data-key="key" lazy scrollable scroll-height="flex" removable-sort
       :selection="selection.selectedRows.value" :pt="tablePT" :loading="loading"
       :sort-field="sortField" :sort-order="sortDesc ? -1 : 1"
       :table-style="{ minWidth: `${columns.widthFor(columnContext)}px`, tableLayout: 'fixed' }" @sort="onSort">
-      <Column v-if="hasColumn('cover')" header="封面" style="width: 48px"><template #body="{ data }"><CoverArt :source="data.coverSource" :adopted-path="data.adoptedCoverPath" class="size-8 rounded" /></template></Column>
       <Column v-if="hasColumn('trackNumber')" header="音轨号" style="width: 72px"><template #body="{ data }"><span class="select-text tabular-nums">{{ display(data.trackNumber) }}</span></template></Column>
+      <Column v-if="hasColumn('cover')" header="封面" style="width: 48px"><template #body="{ data }"><CoverArt :source="data.coverSource" :adopted-path="data.adoptedCoverPath" class="size-8 rounded" /></template></Column>
       <Column v-for="column in textColumns"
         :key="column.field" :field="column.field" :header="column.label" :sortable="!fixedOrder">
         <template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template>
@@ -266,6 +266,7 @@ defineExpose({ selectedCount, trackCount, selectedRows })
       <Column v-if="hasColumn('year')" field="year" header="年份" :sortable="!fixedOrder" style="width: 76px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ display(data.year) }}</span></template></Column>
       <Column v-if="hasColumn('medium')" header="载体" style="width: 80px"><template #body="{ data }"><span class="block select-text truncate" :title="data.mediumFormat">{{ display(data.mediumFormat) }}</span></template></Column>
       <Column v-if="hasColumn('country')" header="国家" style="width: 64px"><template #body="{ data }"><span class="select-text">{{ display(data.country) }}</span></template></Column>
+      <Column v-if="hasColumn('addedAt')" field="addedAt" header="加入时间" :sortable="!fixedOrder" style="width: 176px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ addedTime(data.addedAt) }}</span></template></Column>
       <template #empty><div class="py-10 text-center text-muted-color"><slot name="empty">{{ loading ? '正在加载曲目…' : '没有曲目' }}</slot></div></template>
     </DataTable>
     <ContextMenu ref="menu" :model="menuModel" />

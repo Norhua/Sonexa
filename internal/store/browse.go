@@ -33,15 +33,22 @@ const artistListMembers = `
 
 // ListArtists 列出应出现在艺术家列表中的艺术家，含曲目数。
 func (s *Store) ListArtists() ([]ArtistListItem, error) {
+	return s.ListArtistsForTag(0)
+}
+
+// ListArtistsForTag 按带标签的署名/演唱曲目限定名单，计数仍为完整收藏数。
+func (s *Store) ListArtistsForTag(tagID int64) ([]ArtistListItem, error) {
 	rows, err := s.db.Query(`
 		SELECT a.id, a.name, a.type,
 		       COUNT(DISTINCT x.track_id) AS track_count,
 		       (SELECT va.name FROM artist_link l JOIN artist va ON va.id = l.to_artist_id
 		        WHERE l.from_artist_id = a.id AND l.type = 'voice_of' LIMIT 1)
 		FROM artist a
-		JOIN (` + artistListMembers + `) x ON x.artist_id = a.id
+		JOIN (`+artistListMembers+`) x ON x.artist_id = a.id
 		GROUP BY a.id
-		ORDER BY track_count DESC, a.name`)
+		HAVING ? = 0 OR MAX(EXISTS (SELECT 1 FROM collection_item ci
+			WHERE ci.track_id = x.track_id AND ci.collection_id = ?))
+		ORDER BY track_count DESC, a.name`, tagID, tagID)
 	if err != nil {
 		return nil, err
 	}
@@ -248,6 +255,42 @@ func (s *Store) ListAlbums() ([]AlbumListItem, error) {
 		return nil, err
 	}
 	return s.mergeAlbumGroups(flat), nil
+}
+
+// ListAlbumsForTag 仅保留拥有带标签曲目的专辑；不改变代表版本、收藏数与清单总数。
+func (s *Store) ListAlbumsForTag(tagID int64) ([]AlbumListItem, error) {
+	albums, err := s.ListAlbums()
+	if err != nil || tagID == 0 {
+		return albums, err
+	}
+	rows, err := s.db.Query(`SELECT DISTINCT r.id, COALESCE(r.release_group_id, 0)
+		FROM release r JOIN track t ON t.release_id = r.id
+		JOIN collection_item ci ON ci.track_id = t.id WHERE ci.collection_id = ?`, tagID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	releases, groups := map[int64]bool{}, map[int64]bool{}
+	for rows.Next() {
+		var releaseID, groupID int64
+		if err := rows.Scan(&releaseID, &groupID); err != nil {
+			return nil, err
+		}
+		releases[releaseID] = true
+		if groupID != 0 {
+			groups[groupID] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := []AlbumListItem{}
+	for _, album := range albums {
+		if releases[album.ReleaseID] || groups[album.GroupID] {
+			out = append(out, album)
+		}
+	}
+	return out, nil
 }
 
 // mergeAlbumGroups 把同一发行组的多条 release 合并为一条，保持首次出现的顺序。

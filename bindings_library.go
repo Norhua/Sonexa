@@ -555,6 +555,14 @@ func (a *App) ListArtists() ([]store.ArtistListItem, error) {
 	return a.store.ListArtists()
 }
 
+// ListArtistsForTag 根据标签收窄艺术家名单；零表示不过滤。
+func (a *App) ListArtistsForTag(tagID int64) ([]store.ArtistListItem, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.store.ListArtistsForTag(tagID)
+}
+
 // ArtistHeader 是艺术家视图的头部信息。
 type ArtistHeader struct {
 	ID     int64             `json:"id"`
@@ -606,6 +614,14 @@ func (a *App) ListAlbums() ([]store.AlbumListItem, error) {
 		return nil, err
 	}
 	return a.store.ListAlbums()
+}
+
+// ListAlbumsForTag 根据标签收窄专辑名单；零表示不过滤。
+func (a *App) ListAlbumsForTag(tagID int64) ([]store.AlbumListItem, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.store.ListAlbumsForTag(tagID)
 }
 
 // notifyLibraryChanged 通知前端曲库已变更。

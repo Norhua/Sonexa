@@ -6,6 +6,8 @@ export interface Row {
   title: string
   artist?: string | null
   album?: string | null
+  /** 首次加入资料库的 RFC3339 时间；灰色行没有入库时间。 */
+  addedAt?: string | null
   year?: number | null
   trackNumber?: number | null
   discNumber?: number | null
@@ -34,13 +36,14 @@ export function listRows(rows: Row[]): ListRow[] {
 
 const collator = new Intl.Collator('zh-Hans-CN', { numeric: true, sensitivity: 'base' })
 const fields: Record<string, keyof Row> = {
-  title: 'title', artist: 'artist', album: 'album', year: 'year', duration: 'durationMs',
+  title: 'title', artist: 'artist', album: 'album', year: 'year', duration: 'durationMs', addedAt: 'addedAt',
 }
 export function sortRows(rows: ListRow[], key: string, desc: boolean): ListRow[] {
   const field = fields[key]
   if (!field) return rows
   return [...rows].sort((a, b) => {
-    const av = a[field], bv = b[field]
+    const av = field === 'addedAt' ? timestamp(a.addedAt) : a[field]
+    const bv = field === 'addedAt' ? timestamp(b.addedAt) : b[field]
     // 缺失值始终排在末尾，不把未知年份当成 0。
     if (av == null || av === '') return bv == null || bv === '' ? 0 : 1
     if (bv == null || bv === '') return -1
@@ -48,6 +51,11 @@ export function sortRows(rows: ListRow[], key: string, desc: boolean): ListRow[]
       ? av - bv : collator.compare(String(av), String(bv))
     return (desc ? -1 : 1) * value
   })
+}
+
+function timestamp(value: string | null | undefined) {
+  const time = value ? Date.parse(value) : NaN
+  return Number.isFinite(time) ? time : null
 }
 
 /** 对外批量操作面向曲目而非清单位置，同一 id 只传一次。 */

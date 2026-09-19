@@ -152,11 +152,11 @@ const releaseInfo = computed(() => [
       <!-- 参与者 -->
       <section>
         <h3 class="mb-2 text-xs font-medium text-muted-color">参与者</h3>
-        <dl class="space-y-1.5 text-sm">
+        <dl class="detail-fields text-sm">
           <!-- 全部参与角色统一分组，不把署名另列为演唱 -->
-          <div v-for="group in detail.participants" :key="group.role" class="flex gap-3">
-            <dt class="w-16 shrink-0 text-xs text-muted-color">{{ group.label }}</dt>
-            <dd class="flex-1">
+          <div v-for="group in detail.participants" :key="group.role" class="contents">
+            <dt class="text-xs text-muted-color">{{ group.label }}</dt>
+            <dd class="min-w-0 break-words">
               <template v-for="(artist, i) in group.artists" :key="artist.artistId">
                 <span v-if="i > 0">、</span>
                 <button
@@ -172,9 +172,9 @@ const releaseInfo = computed(() => [
 
           <template v-if="detail.participants.length === 0">
             <!-- 署名说明谁被署名，不推断演唱。仅在无角色时兜底，避免完整列表重复。 -->
-            <div v-if="fallbackCredit.length" class="flex gap-3">
-              <dt class="w-16 shrink-0 text-xs text-muted-color">署名</dt>
-              <dd class="min-w-0 flex-1 break-words">
+            <div v-if="fallbackCredit.length" class="contents">
+              <dt class="text-xs text-muted-color">署名</dt>
+              <dd class="min-w-0 break-words">
                 <template v-for="(part, i) in fallbackCredit" :key="i">
                   <button v-if="part.artistId"
                     class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
@@ -191,10 +191,10 @@ const releaseInfo = computed(() => [
       <!-- 发行信息 -->
       <section>
         <h3 class="mb-2 text-xs font-medium text-muted-color">发行信息</h3>
-        <dl class="grid grid-cols-1 gap-y-1.5 text-sm">
-          <div v-for="item in releaseInfo" :key="item.label" class="flex gap-2">
-            <dt class="w-16 shrink-0 text-xs text-muted-color">{{ item.label }}</dt>
-            <dd class="truncate">{{ item.value }}</dd>
+        <dl class="detail-fields text-sm">
+          <div v-for="item in releaseInfo" :key="item.label" class="contents">
+            <dt class="text-xs text-muted-color">{{ item.label }}</dt>
+            <dd class="min-w-0 break-words">{{ item.value }}</dd>
           </div>
         </dl>
       </section>
@@ -202,14 +202,14 @@ const releaseInfo = computed(() => [
       <!-- 厂牌与目录号 -->
       <section>
         <h3 class="mb-2 text-xs font-medium text-muted-color">厂牌与目录号</h3>
-        <dl class="space-y-1.5 text-sm">
-          <div class="flex gap-2">
-            <dt class="w-16 shrink-0 text-xs text-muted-color">厂牌</dt>
-            <dd>{{ display(meta?.label) }}</dd>
+        <dl class="detail-fields text-sm">
+          <div class="contents">
+            <dt class="text-xs text-muted-color">厂牌</dt>
+            <dd class="min-w-0 break-words">{{ display(meta?.label) }}</dd>
           </div>
-          <div class="flex gap-2">
-            <dt class="w-16 shrink-0 text-xs text-muted-color">目录号</dt>
-            <dd>{{ display(meta?.catalogNumber) }}</dd>
+          <div class="contents">
+            <dt class="text-xs text-muted-color">目录号</dt>
+            <dd class="min-w-0 break-words">{{ display(meta?.catalogNumber) }}</dd>
           </div>
         </dl>
       </section>
@@ -282,3 +282,14 @@ const releaseInfo = computed(() => [
     </footer>
   </aside>
 </template>
+
+<style scoped>
+/* 每个小标题独立计算标签宽度，不再用固定宽度强迫所有段落对齐。 */
+.detail-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.375rem 0.5rem;
+}
+.detail-fields button { text-align: left; overflow-wrap: anywhere; }
+</style>

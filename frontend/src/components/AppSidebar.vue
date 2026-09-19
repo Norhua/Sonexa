@@ -143,7 +143,7 @@ function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | '
           <span class="flex-1 truncate">{{ p.name }}</span>
           <span class="text-xs text-muted-color">{{ p.trackCount }}</span>
         </button>
-        <p v-if="library.playlists.length === 0" class="pl-12 pr-4 py-1 text-xs text-muted-color">
+        <p v-if="library.playlists.length === 0" class="pl-6 pr-4 py-1 text-xs text-muted-color">
           还没有歌单
         </p>
       </section>
@@ -173,7 +173,7 @@ function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | '
           <span class="flex-1 truncate">{{ t.name }}</span>
           <span class="text-xs text-muted-color">{{ t.trackCount }}</span>
         </button>
-        <p v-if="library.tags.length === 0" class="pl-12 pr-4 py-1 text-xs text-muted-color">
+        <p v-if="library.tags.length === 0" class="pl-6 pr-4 py-1 text-xs text-muted-color">
           还没有标签
         </p>
       </section>

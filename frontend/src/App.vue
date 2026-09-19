@@ -14,7 +14,6 @@ import AppSidebar from '@/components/AppSidebar.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
 import TrackTable, { type Row } from '@/components/TrackTable.vue'
-import type { SortOption } from '@/components/SortMenu.vue'
 import ViewHeader from '@/components/ViewHeader.vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -53,14 +52,6 @@ const offline = ref(false)
 const selectedIds = ref<number[]>([])
 
 /** 两栏页面的排序状态。就地排序，不为换个顺序再往返一次后端。 */
-const sortOptions: SortOption[] = [
-  { key: 'default', label: '默认顺序' },
-  { key: 'title', label: '标题' },
-  { key: 'artist', label: '艺术家' },
-  { key: 'album', label: '专辑' },
-  { key: 'year', label: '年份' },
-  { key: 'duration', label: '时长' },
-]
 const sortKey = ref('default')
 const sortDesc = ref(false)
 
@@ -105,6 +96,7 @@ const rows = computed<Row[]>(() =>
     artist: t.artist,
     album: t.album,
     year: t.year,
+    addedAt: t.addedAt,
     trackNumber: t.trackNumber,
     discNumber: t.discNumber,
     durationMs: t.durationMs,
@@ -348,6 +340,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
     await Api.DeleteCollection(id)
     await library.loadCollections()
     if (library.contextId === id) await library.goTo('all')
+    else await library.loadTracks()
   } catch (e) {
     notice.value = String(e)
   }
@@ -374,11 +367,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
       <main class="flex min-h-0 min-w-0 flex-1 flex-col">
         <!-- 标准曲目表格：全部曲目 / 最近添加 / 歌单 / 标签 -->
         <template v-if="showTrackTable">
-          <ViewHeader
-            v-model:sort-key="sortKey"
-            v-model:sort-desc="sortDesc"
-            :sort-options="sortOptions"
-          />
+          <ViewHeader />
           <TrackTable
             :drawer-open="drawerOpen"
             v-if="rows.length > 0"

@@ -3,8 +3,8 @@ import { defineStore } from 'pinia'
 
 /** 只控制既有列的可见性；不影响排序、选择、导出字段或歌单顺序。 */
 export const trackColumns = [
-  { key: 'cover', label: '封面', width: 48 },
   { key: 'trackNumber', label: '音轨号', width: 72 },
+  { key: 'cover', label: '封面', width: 48 },
   { key: 'title', label: '标题', width: 150 },
   { key: 'artist', label: '艺术家', width: 150 },
   { key: 'album', label: '专辑', width: 150 },
@@ -12,12 +12,14 @@ export const trackColumns = [
   { key: 'year', label: '年份', width: 76 },
   { key: 'medium', label: '载体', width: 80 },
   { key: 'country', label: '国家', width: 64 },
+  { key: 'addedAt', label: '加入时间', width: 176 },
 ] as const
 export type TrackColumnKey = typeof trackColumns[number]['key']
 export type TrackColumnContext = 'library' | 'album'
 const storageKey = 'sonexa.trackColumns'
 const defaults = (context: TrackColumnContext) => trackColumns
-  .filter(column => context === 'album' || column.key !== 'trackNumber').map(column => column.key)
+  .filter(column => column.key !== 'addedAt' && (context === 'album' || column.key !== 'trackNumber'))
+  .map(column => column.key)
 
 function load(context: TrackColumnContext): TrackColumnKey[] {
   try {

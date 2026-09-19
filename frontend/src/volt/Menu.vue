@@ -2,7 +2,7 @@
     <Menu
         ref="el"
         unstyled
-        :pt="theme"
+        :pt="mergedTheme"
         :ptOptions="{
             mergeProps: ptViewMerge
         }"
@@ -15,11 +15,14 @@
 
 <script setup lang="ts">
 import Menu, { type MenuPassThroughOptions, type MenuProps } from 'primevue/menu';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import { usePassThrough } from 'primevue/passthrough';
 import { ptViewMerge } from './utils';
 
-interface Props extends /* @vue-ignore */ MenuProps {}
-defineProps<Props>();
+interface Props extends /* @vue-ignore */ MenuProps {
+    pt?: MenuPassThroughOptions;
+}
+const props = defineProps<Props>();
 
 const theme = ref<MenuPassThroughOptions>({
     root: `bg-surface-0 dark:bg-surface-900
@@ -48,8 +51,11 @@ const theme = ref<MenuPassThroughOptions>({
     }
 });
 
+// 和 DataTable/ContextMenu 一样，外部 ARIA 与尺寸覆盖不能抹掉 Volt 的主题。
+const mergedTheme = computed(() => usePassThrough(theme.value, props.pt ?? {}, { mergeSections: true, mergeProps: true }));
 const el = ref();
 defineExpose({
-    toggle: (event: Event) => el.value.toggle(event)
+    toggle: (event: Event) => el.value.toggle(event),
+    hide: () => el.value.hide()
 });
 </script>

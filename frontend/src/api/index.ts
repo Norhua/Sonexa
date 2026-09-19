@@ -76,6 +76,18 @@ export function display(v: string | number | null | undefined): string {
   return String(v)
 }
 
+const addedTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+})
+
+/** 加入时间按本地时区显示；缺失或非法值不显示 Invalid Date。 */
+export function addedTime(value: string | null | undefined): string {
+  if (!value) return DASH
+  const date = new Date(value)
+  return Number.isFinite(date.getTime()) ? addedTimeFormatter.format(date) : DASH
+}
+
 /** 把毫秒渲染为 m:ss。 */
 export function duration(ms: number | null | undefined): string {
   if (ms === null || ms === undefined || ms <= 0) return DASH

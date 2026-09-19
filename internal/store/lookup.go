@@ -96,6 +96,8 @@ type ResolvedPosition struct {
 	State TracklistPosition `json:"state"`
 	// TrackID 是对应的库中曲目；未入库时为 0。
 	TrackID int64 `json:"trackId"`
+	// AddedAt 只属于已入库曲目，不使用发行时间或清单缓存时间冒充。
+	AddedAt *string `json:"addedAt"`
 }
 
 // ResolveTracklist 判定某发行清单中每个位置的状态。
@@ -114,11 +116,16 @@ func (s *Store) ResolveTracklist(releaseID int64, provider string) ([]ResolvedPo
 
 		// 已入库：标识等值比对（要求来源一致）
 		if t.TrackRef != nil && *t.TrackRef != "" {
-			id, err := s.FindByMatchRef(provider, *t.TrackRef)
-			if err != nil {
+			var id int64
+			var createdAt time.Time
+			err := s.db.QueryRow(`SELECT id, created_at FROM track WHERE match_source = ? AND match_ref = ?`,
+				provider, *t.TrackRef).Scan(&id, &createdAt)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return nil, err
 			}
-			if id != 0 {
+			if err == nil {
+				addedAt := createdAt.UTC().Format(time.RFC3339)
+				pos.AddedAt = &addedAt
 				pos.State, pos.TrackID = PositionOwned, id
 				out = append(out, pos)
 				continue

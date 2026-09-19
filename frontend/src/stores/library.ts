@@ -94,9 +94,19 @@ export const useLibraryStore = defineStore('library', () => {
     const [p, t] = await Promise.all([App.ListCollections('playlist'), App.ListCollections('tag')])
     playlists.value = p ?? []
     tags.value = t ?? []
+    const activeTag = filter.value.tagId
+    if (activeTag) {
+      // 删除/重命名标签后同步筛选说明；调用方随后重载当前曲目。
+      if (!tags.value.some(tag => tag.id === activeTag)) {
+        filter.value.tagId = 0
+        chips.value = chips.value.filter(chip => chip.key !== 'tagId')
+      } else {
+        chips.value = chips.value.map(chip => chip.key === 'tagId' ? tagChip(activeTag)[0] : chip)
+      }
+    }
   }
 
-  /** 切换视图。切换时清空筛选，避免上一视图的条件泄漏过来。 */
+  /** 切换视图清空筛选；同一三栏浏览页内换艺术家/专辑时保留标签条件。 */
   async function goTo(
     kind: ViewKind,
     opts?: { id?: number; groupId?: number; title?: string },
@@ -109,11 +119,18 @@ export const useLibraryStore = defineStore('library', () => {
       tracks.value = []
       total.value = 0
     }
+    const browseFamily = (value: ViewKind) => value === 'artist' ? 'artists' : value === 'album' ? 'albums' : value
+    const family = browseFamily(kind)
+    const tagId = ['artists', 'albums'].includes(family) && browseFamily(view.value) === family ? filter.value.tagId : 0
     view.value = kind
     contextId.value = opts?.id ?? 0
     contextGroupId.value = opts?.groupId ?? 0
     contextTitle.value = opts?.title ?? defaultTitle(kind)
     clearFilter()
+    if (tagId) {
+      filter.value.tagId = tagId
+      chips.value = tagChip(tagId)
+    }
     if (needsTracks(kind)) await loadTracks()
   }
 
@@ -137,15 +154,24 @@ export const useLibraryStore = defineStore('library', () => {
   /** 就地筛选，不跳页。 */
   async function applyFilter(next: Partial<Models.store.TrackFilter>, newChips: FilterChip[]) {
     filter.value = { ...filter.value, ...next } as Models.store.TrackFilter
-    chips.value = newChips
+    const keys = new Set(Object.keys(next))
+    chips.value = [...chips.value.filter(chip => !keys.has(chip.key)), ...newChips]
     await loadTracks()
   }
 
   /** 快速搜索：走 FTS，作用域跟随当前视图。 */
   async function quickSearch(query: string) {
     filter.value = { ...filter.value, query } as Models.store.TrackFilter
-    chips.value = query ? [{ key: 'query', label: `搜索="${query}"` }] : []
+    chips.value = [...chips.value.filter(chip => chip.key !== 'query'), ...(query ? [{ key: 'query', label: `搜索="${query}"` }] : [])]
     await loadTracks()
+  }
+
+  function tagChip(id: number): FilterChip[] {
+    return id ? [{ key: 'tagId', label: `标签=${tags.value.find(tag => tag.id === id)?.name ?? id}` }] : []
+  }
+
+  async function pickTag(id: number) {
+    await applyFilter({ tagId: id }, tagChip(id))
   }
 
   async function removeChip(key: string) {
@@ -171,6 +197,6 @@ export const useLibraryStore = defineStore('library', () => {
     playlists, tags, tracks, total, loading, error,
     filter, chips, searchPlaceholder, hasViewSearch,
     baseFilter, loadTracks, loadCollections, goTo,
-    applyFilter, quickSearch, removeChip, clearFilter, clearAllFilters,
+    applyFilter, quickSearch, pickTag, removeChip, clearFilter, clearAllFilters,
   }
 })

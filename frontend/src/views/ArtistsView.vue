@@ -4,10 +4,11 @@
  *
  * 艺术家视图是按 artist_id 过滤的标准曲目表格，不是结构不同的独立页面。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { App, type Models } from '@/api'
 import PaneHeader from '@/components/PaneHeader.vue'
-import SortMenu, { type SortOption } from '@/components/SortMenu.vue'
+import ViewOptionsMenu from '@/components/ViewOptionsMenu.vue'
+import FilterChips from '@/components/FilterChips.vue'
 import ViewSearchBox from '@/components/ViewSearchBox.vue'
 import Message from '@/volt/Message.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
@@ -18,24 +19,27 @@ const artists = ref<Models.store.ArtistListItem[]>([])
 /** 中列的就地过滤：这一列是艺术家名单，不是曲目，因此不走曲目筛选。 */
 const filter = ref('')
 const header = ref<Models.main.ArtistHeader | null>(null)
-const activeRole = ref('')
+const activeRole = computed(() => library.filter.role ?? '')
 const loading = ref(false)
 const error = ref('')
 
 const emit = defineEmits<{ selected: [] }>()
 
-onMounted(load)
-
-async function load() {
+watch(() => library.filter.tagId, async (tagId, _, onCleanup) => {
+  let cancelled = false
+  onCleanup(() => { cancelled = true })
   loading.value = true
+  error.value = ''
+  artists.value = []
   try {
-    artists.value = (await App.ListArtists()) ?? []
+    const result = tagId ? await App.ListArtistsForTag(tagId) : await App.ListArtists()
+    if (!cancelled) artists.value = result ?? []
   } catch (e) {
-    error.value = String(e)
+    if (!cancelled) error.value = String(e)
   } finally {
-    loading.value = false
+    if (!cancelled) loading.value = false
   }
-}
+}, { immediate: true })
 
 /** 角色艺术家的视图标题从配音关系渲染为「涼宮ハルヒ (CV: 平野綾)」。 */
 function titleOf(a: Models.store.ArtistListItem): string {
@@ -49,7 +53,6 @@ watch(
     let cancelled = false
     onCleanup(() => { cancelled = true })
     header.value = null
-    activeRole.value = ''
     error.value = ''
     if (view !== 'artist' || !id) return
     try {
@@ -64,37 +67,22 @@ watch(
   { immediate: true },
 )
 
-/** 中间栏的排序维度。 */
-const sortOptions: SortOption[] = [
-  { key: 'name', label: '名称' },
-  { key: 'count', label: '曲目数' },
-]
-const sortKey = ref('name')
-const sortDesc = ref(false)
-
 const visibleArtists = computed(() => {
   const q = filter.value.trim().toLowerCase()
   const list = q
     ? artists.value.filter((a) => titleOf(a).toLowerCase().includes(q))
     : [...artists.value]
 
-  const dir = sortDesc.value ? -1 : 1
-  return list.sort((a, b) =>
-    sortKey.value === 'count'
-      ? dir * (a.trackCount - b.trackCount)
-      : dir * titleOf(a).localeCompare(titleOf(b), 'zh-Hans-CN'),
-  )
+  return list.sort((a, b) => titleOf(a).localeCompare(titleOf(b), 'zh-Hans-CN'))
 })
 
 async function select(a: Models.store.ArtistListItem) {
-  activeRole.value = ''
   await library.goTo('artist', { id: a.id, title: titleOf(a) })
   if (library.view === 'artist' && library.contextId === a.id) emit('selected')
 }
 
 /** 按 role 的分面筛选：在同一张表格内收窄。 */
 async function pickFacet(role: string) {
-  activeRole.value = role
   await library.applyFilter({ role }, role ? [{ key: 'role', label: `角色=${role}` }] : [])
 }
 
@@ -125,7 +113,7 @@ defineExpose({ header, activeRole, pickFacet })
         <span class="text-xs text-muted-color">{{ a.trackCount }}</span>
       </button>
       <p v-if="visibleArtists.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-color">
-        {{ filter ? '没有匹配的艺术家' : '还没有艺术家' }}
+        {{ filter || library.filter.tagId ? '没有匹配的艺术家' : '还没有艺术家' }}
       </p>
       </div>
     </div>
@@ -134,10 +122,11 @@ defineExpose({ header, activeRole, pickFacet })
     <div class="flex min-w-0 flex-1 flex-col">
       <PaneHeader>
         <div class="flex-1" />
-        <SortMenu v-model:sort-key="sortKey" v-model:desc="sortDesc" :options="sortOptions" />
+        <ViewOptionsMenu />
         <ViewSearchBox v-model="filter" placeholder="在艺术家中查找" />
       </PaneHeader>
 
+      <FilterChips />
       <div v-if="header" class="shrink-0 px-4 pb-2">
         <div class="flex flex-wrap gap-1">
           <SecondaryButton

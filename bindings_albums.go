@@ -21,6 +21,7 @@ type AlbumRow struct {
 	Title       string  `json:"title"`
 	Credit      *string `json:"credit"`
 	DurationMS  *int    `json:"durationMs"`
+	AddedAt     *string `json:"addedAt"`
 
 	// State 为 owned | missing。
 	State string `json:"state"`
@@ -173,6 +174,7 @@ func rowsFromPositions(positions []store.ResolvedPosition) []AlbumRow {
 			DurationMS:  p.Track.DurationMS,
 			State:       string(p.State),
 			TrackID:     p.TrackID,
+			AddedAt:     p.AddedAt,
 			// 未入库即灰色行
 			Ghost:        p.State == store.PositionMissing,
 			TrackRef:     p.Track.TrackRef,
@@ -214,7 +216,7 @@ func (a *App) ownedRowsFor(rel *store.Release) ([]AlbumRow, error) {
 		row := AlbumRow{
 			Title: t.Title, Credit: t.Artist, DurationMS: t.DurationMS,
 			State: string(store.PositionOwned), TrackID: t.ID,
-			TrackRef: t.MatchRef,
+			TrackRef: t.MatchRef, AddedAt: &t.AddedAt,
 		}
 		if t.DiscNumber != nil {
 			row.DiscNumber = *t.DiscNumber

@@ -29,11 +29,11 @@ test.beforeEach(async ({ page }) => {
 test('empty navigation is indented and middle headings stay small and fixed', async ({ page }, testInfo) => {
   for (const name of ['歌单', '标签']) {
     const section = page.locator('nav section').filter({ has: page.getByRole('heading', { name, exact: true }) })
-    const heading = (await section.getByRole('heading').boundingBox())!
     const empty = section.getByText(`还没有${name}`, { exact: true })
     const inset = await empty.evaluate(el => Number.parseFloat(getComputedStyle(el).paddingLeft))
-    expect(inset).toBe(48)
-    expect((await empty.boundingBox())!.x + inset).toBeGreaterThan(heading.x)
+    expect(inset).toBe(24)
+    const icon = (await page.locator('nav').getByRole('button', { name: '全部曲目', exact: true }).locator('svg').boundingBox())!
+    expect((await empty.boundingBox())!.x + inset).toBe(icon.x)
   }
   await page.getByRole('button', { name: '艺术家', exact: true }).click()
   const heading = page.getByRole('heading', { name: '艺术家', exact: true })
@@ -55,11 +55,13 @@ test('track number defaults to album only; explicit preferences survive view cha
   await expect(column(page)).toHaveCount(0)
   await toggleTrackNumber(page)
   await expect(column(page)).toBeVisible()
-  await expect(rows(page).first().locator('td').nth(1)).toHaveText('1')
+  await expect(rows(page).first().locator('td').first()).toHaveText('1')
+  await expect(page.locator('.track-list thead th').first()).toHaveText('音轨号')
+  await expect(page.locator('.track-list thead th').nth(1)).toHaveText('封面')
   await page.getByRole('button', { name: '专辑', exact: true }).click()
   await page.getByRole('button', { name: /测试专辑/ }).click()
   await expect(column(page)).toBeVisible()
-  await expect(rows(page).nth(1).locator('td').nth(1)).toHaveText('2') // ghost position
+  await expect(rows(page).nth(1).locator('td').first()).toHaveText('2') // ghost position
   await toggleTrackNumber(page)
   await expect(column(page)).toHaveCount(0)
   await page.getByRole('button', { name: '全部曲目', exact: true }).click()

@@ -45,10 +45,8 @@ type TrackView struct {
 	ReleaseRef      *string `json:"releaseRef"`
 	ReleaseGroupRef *string `json:"releaseGroupRef"`
 
-	// CreatedAt 不导出给前端：界面上没有用到它，而 Wails 的 TS 模型生成器
-	// 不认识 time.Time——留着只会在每次构建时打印 `Not found: time.Time`。
-	// 「最近添加」的排序在 SQL 里做，不靠前端读这个字段。
-	CreatedAt time.Time `json:"-"`
+	// AddedAt 为首次入库时间，以 RFC3339 字符串导出，避免 Wails 生成 time.Time 告警。
+	AddedAt string `json:"addedAt"`
 }
 
 // TrackFilter 描述一次曲目查询的条件。
@@ -94,6 +92,7 @@ const trackSelectColumns = `
 
 func scanTrackView(sc interface{ Scan(...any) error }) (*TrackView, error) {
 	var v TrackView
+	var createdAt time.Time
 	var lockedJSON *string
 	var releaseDate, firstReleaseDate *string
 	if err := sc.Scan(&v.ID, &v.Title, &v.Artist, &v.Album,
@@ -102,9 +101,10 @@ func scanTrackView(sc interface{ Scan(...any) error }) (*TrackView, error) {
 		&v.TrackNumber, &v.TrackTotal, &v.DiscNumber, &v.DurationMS,
 		&v.Genre, &v.MediumFormat, &v.Country, &v.PrimaryType,
 		&v.CoverPath, &v.MatchSource, &v.MatchRef,
-		&v.ReleaseID, &v.ReleaseRef, &v.ReleaseGroupRef, &v.CreatedAt); err != nil {
+		&v.ReleaseID, &v.ReleaseRef, &v.ReleaseGroupRef, &createdAt); err != nil {
 		return nil, err
 	}
+	v.AddedAt = createdAt.UTC().Format(time.RFC3339)
 	v.Year = (&Release{ReleaseDate: releaseDate, FirstReleaseDate: firstReleaseDate}).Year()
 	locks := ParseLocks(lockedJSON)
 	v.TitleLocked, v.ArtistLocked, v.AlbumLocked = locks["title"], locks["credit"], locks["album"]

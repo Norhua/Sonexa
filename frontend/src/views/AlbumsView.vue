@@ -6,12 +6,13 @@
  * 至少拥有一首才会出现在列表里：灰色行是「补全你已开始收藏的专辑」，
  * 不是上游目录浏览器。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { App, COVER_THUMB_SIZE, display, type Models } from '@/api'
 import type { Row } from '@/components/TrackTable.vue'
 import CoverArt from '@/components/CoverArt.vue'
 import PaneHeader from '@/components/PaneHeader.vue'
-import SortMenu, { type SortOption } from '@/components/SortMenu.vue'
+import ViewOptionsMenu from '@/components/ViewOptionsMenu.vue'
+import FilterChips from '@/components/FilterChips.vue'
 import TrackTable from '@/components/TrackTable.vue'
 import ViewSearchBox from '@/components/ViewSearchBox.vue'
 import Message from '@/volt/Message.vue'
@@ -31,15 +32,6 @@ const onlyOwned = ref(localStorage.getItem('sonexa.onlyOwned') === '1')
 /** 中列的就地过滤：这一列是专辑名单，不是曲目，因此不走曲目筛选。 */
 const filter = ref('')
 
-/** 中间栏的排序维度。 */
-const sortOptions: SortOption[] = [
-  { key: 'title', label: '专辑名' },
-  { key: 'credit', label: '艺术家' },
-  { key: 'owned', label: '已有曲目数' },
-]
-const sortKey = ref('title')
-const sortDesc = ref(false)
-
 const visibleAlbums = computed(() => {
   const q = filter.value.trim().toLowerCase()
   const list = q
@@ -49,17 +41,7 @@ const visibleAlbums = computed(() => {
       )
     : [...albums.value]
 
-  const dir = sortDesc.value ? -1 : 1
-  return list.sort((a, b) => {
-    switch (sortKey.value) {
-      case 'owned':
-        return dir * (a.ownedCount - b.ownedCount)
-      case 'credit':
-        return dir * (a.credit ?? '').localeCompare(b.credit ?? '', 'zh-Hans-CN')
-      default:
-        return dir * (a.title ?? '').localeCompare(b.title ?? '', 'zh-Hans-CN')
-    }
-  })
+  return list.sort((a, b) => (a.title ?? '').localeCompare(b.title ?? '', 'zh-Hans-CN'))
 })
 
 const emit = defineEmits<{
@@ -74,16 +56,23 @@ const emit = defineEmits<{
   selectionChange: [ids: number[]]
 }>()
 
-onMounted(load)
+let listRequest = 0
+onBeforeUnmount(() => { listRequest++ })
+watch(() => library.filter.tagId, load, { immediate: true })
 
 async function load() {
+  const request = ++listRequest
   loading.value = true
+  error.value = ''
+  albums.value = []
   try {
-    albums.value = (await App.ListAlbums()) ?? []
+    const tagId = library.filter.tagId
+    const result = tagId ? await App.ListAlbumsForTag(tagId) : await App.ListAlbums()
+    if (request === listRequest) albums.value = result ?? []
   } catch (e) {
-    error.value = String(e)
+    if (request === listRequest) error.value = String(e)
   } finally {
-    loading.value = false
+    if (request === listRequest) loading.value = false
   }
 }
 
@@ -163,8 +152,9 @@ function toggleOnlyOwned() {
 /** 把专辑详情的行转为曲目表格的行。灰色行与普通行共用同一组件。 */
 function toRows(): Row[] {
   if (!detail.value) return []
+  const taggedIds = new Set(library.tracks.map(track => track.id))
   return detail.value.rows
-    .filter((r) => !onlyOwned.value || !r.ghost)
+    .filter((r) => (!onlyOwned.value || !r.ghost) && (!library.filter.tagId || (!r.ghost && taggedIds.has(r.trackId))))
     .map((r) => ({
       id: r.trackId,
       rowKey: `release:${detail.value?.releaseId}:${r.discNumber}:${r.trackNumber}:${r.trackRef ?? ''}`,
@@ -172,6 +162,7 @@ function toRows(): Row[] {
       artist: r.credit,
       album: detail.value?.title,
       durationMs: r.durationMs,
+      addedAt: r.addedAt,
       trackNumber: r.trackNumber,
       discNumber: r.discNumber,
       ghost: r.ghost,
@@ -230,7 +221,7 @@ async function addGhost(row: Row) {
         <span class="shrink-0 text-xs tabular-nums text-muted-color">{{ countLabel(a) }}</span>
       </button>
       <p v-if="visibleAlbums.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-color">
-        {{ filter ? '没有匹配的专辑' : '还没有专辑' }}
+        {{ filter || library.filter.tagId ? '没有匹配的专辑' : '还没有专辑' }}
       </p>
       </div>
     </div>
@@ -239,10 +230,11 @@ async function addGhost(row: Row) {
     <div class="flex min-w-0 flex-1 flex-col">
       <PaneHeader>
         <div class="flex-1" />
-        <SortMenu v-model:sort-key="sortKey" v-model:desc="sortDesc" :options="sortOptions" />
+        <ViewOptionsMenu />
         <ViewSearchBox v-model="filter" placeholder="在专辑中查找" />
       </PaneHeader>
 
+      <FilterChips />
       <div v-if="detail" class="flex shrink-0 gap-3 px-4 pb-2">
         <CoverArt
           :source="coverSourceOf(detail)"
@@ -298,6 +290,7 @@ async function addGhost(row: Row) {
         v-if="detail"
         :drawer-open="drawerOpen"
         :rows="toRows()"
+        :loading="library.loading"
         :context-key="`album:${detail.releaseId}`"
         column-context="album"
         fixed-order
@@ -336,8 +329,8 @@ async function addGhost(row: Row) {
       <div v-if="!detail" class="flex flex-1 items-center justify-center text-sm text-muted-color">
         从左侧选择一张专辑
       </div>
-      <Message v-if="error" severity="error" size="small" class="shrink-0 rounded-none">
-        {{ error }}
+      <Message v-if="error || library.error" severity="error" size="small" class="shrink-0 rounded-none">
+        {{ error || library.error }}
       </Message>
     </div>
   </div>

@@ -80,6 +80,7 @@ const rows = computed<Row[]>(() =>
     artist: t.artist,
     album: t.album,
     year: t.year,
+    addedAt: t.addedAt,
     trackNumber: t.trackNumber,
     discNumber: t.discNumber,
     durationMs: t.durationMs,
