@@ -12,7 +12,7 @@ export const trackColumns = [
   { key: 'year', label: '年份', width: 76 },
   { key: 'medium', label: '载体', width: 80 },
   { key: 'country', label: '国家', width: 64 },
-  { key: 'addedAt', label: '加入时间', width: 176 },
+  { key: 'addedAt', label: '加入时间', width: 112 },
 ] as const
 export type TrackColumnKey = typeof trackColumns[number]['key']
 export type TrackColumnContext = 'library' | 'album'

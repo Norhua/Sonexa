@@ -266,7 +266,7 @@ defineExpose({ selectedCount, trackCount, selectedRows })
       <Column v-if="hasColumn('year')" field="year" header="年份" :sortable="!fixedOrder" style="width: 76px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ display(data.year) }}</span></template></Column>
       <Column v-if="hasColumn('medium')" header="载体" style="width: 80px"><template #body="{ data }"><span class="block select-text truncate" :title="data.mediumFormat">{{ display(data.mediumFormat) }}</span></template></Column>
       <Column v-if="hasColumn('country')" header="国家" style="width: 64px"><template #body="{ data }"><span class="select-text">{{ display(data.country) }}</span></template></Column>
-      <Column v-if="hasColumn('addedAt')" field="addedAt" header="加入时间" :sortable="!fixedOrder" style="width: 176px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ addedTime(data.addedAt) }}</span></template></Column>
+      <Column v-if="hasColumn('addedAt')" field="addedAt" header="加入时间" :sortable="!fixedOrder" style="width: 112px"><template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template><template #body="{ data }"><span class="select-text tabular-nums">{{ addedTime(data.addedAt) }}</span></template></Column>
       <template #empty><div class="py-10 text-center text-muted-color"><slot name="empty">{{ loading ? '正在加载曲目…' : '没有曲目' }}</slot></div></template>
     </DataTable>
     <ContextMenu ref="menu" :model="menuModel" />
