@@ -22,7 +22,8 @@ Desktop.ini
 /coverage.out
 /coverage.html
 
-# 前端构建、依赖与测试报告；wailsjs/ 是需要跟踪的生成接口
+# 前端构建、生成绑定、依赖与测试报告
+/frontend/wailsjs/
 /frontend/dist/
 /frontend/package.json.md5
 /frontend/node_modules/

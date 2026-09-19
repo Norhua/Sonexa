@@ -20,7 +20,7 @@ internal/
 frontend/
   src/                   Vue 页面、业务组件、Volt、按需 Pinia
   tests/                 Vitest 单测与 Playwright / Wails 桩件
-  wailsjs/               Wails 生成接口与运行时（纳入版本控制）
+  wailsjs/               Wails 自动生成的接口与运行时（忽略，首次使用前生成）
   docs/                  前端设计记录
 build/                   图标、平台配置和安装器源码（需跟踪）
   bin/                   打包产物（忽略）
@@ -40,26 +40,30 @@ prompt/                  初始产品需求材料
 需要 Go、Node.js/npm、Wails v2，以及目标平台的 Wails 构建依赖。
 
 ```sh
-# 初次检出：安装前端依赖、生成可嵌入的 dist
+# 初次检出：先安装依赖，再让 Wails 按正确顺序生成绑定、构建前端并打包
 cd frontend
 npm ci
-npm run build
 cd ..
+wails build
 
-# Go 回归（不依赖 dist、不启动桌面或读取用户库）
+# Go 回归（internal 包不依赖 dist、不启动桌面或读取用户库）
 go test -count=1 -race ./internal/...
 go vet ./...
 
-# 原生开发 / 打包
+# 原生开发
 wails dev
-wails build
 ```
 
-Wails 生成的 Go 绑定保持跟踪，使纯前端类型检查与测试不依赖临时启动原生应用。修改导出 API 或包名后，先重新生成，再提交生成接口与调用方：
+`frontend/wailsjs/` 与 `frontend/package.json.md5` 是可重建产物，不再受版本控制，旧分支历史中也已清除。修改 Go 导出 API、包名或切换分支后，重新执行 `wails build` 或 `wails generate module`，不提交生成文件。
+
+单独运行前端构建/测试也需要先生成绑定。`wails build` 会自动处理 embed 目录；若仅生成绑定、还没有 dist，可在仓库根目录执行以下初始化（占位文件不是实际页面，会在 Vite 构建时替换）：
 
 ```sh
+mkdir -p frontend/dist
+touch frontend/dist/.gitkeep
 wails generate module
 cd frontend
+npm ci
 npm test
 npm run build
 npx playwright install chromium webkit
@@ -70,9 +74,9 @@ SONEXA_E2E_PREVIEW=1 npm run test:e2e
 
 ## 跟踪与忽略边界
 
-跟踪源码、`*_test.go`、测试金样例、依赖锁文件、Wails 生成接口、平台打包资源及 OpenSpec 工具配置。
+跟踪手写源码、`*_test.go`、测试金样例、依赖锁文件、平台打包资源及 OpenSpec 工具配置。
 
-忽略 `.DS_Store` 等系统文件、本机配置和 `.env`、依赖目录、dist/bin、Wails 的 `package.json.md5`、覆盖率和浏览器报告、SQLite 本地数据与旁文件、临时资料。`.env.example`/模板仍可跟踪。不要忽略整个 `build/`、所有生成代码、测试或项目级 `.pi/`/`.agents/`/`.claude/`。
+忽略 `.DS_Store` 等系统文件、本机配置和 `.env`、依赖目录、dist/bin、Wails 生成的整个 `frontend/wailsjs/`（含 models.ts、App 接口与 runtime）及 `package.json.md5`、覆盖率和浏览器报告、SQLite 本地数据与旁文件、临时资料。`.env.example`/模板仍可跟踪。不要忽略生产用的 `internal/app/bindings_*.go`、整个 `build/`、测试或项目级 `.pi/`/`.agents/`/`.claude/`。
 
 ## 整理后的验证（2026-09-19）
 
