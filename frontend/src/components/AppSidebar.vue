@@ -120,13 +120,15 @@ function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | '
 
       <!-- 歌单 -->
       <section class="mt-4">
-        <div class="flex items-center justify-between px-4 pb-1">
+        <div class="sidebar-section-header flex items-center justify-between px-4 pb-1">
           <h2 class="text-xs font-medium text-muted-color">歌单</h2>
           <SecondaryButton
+            class="sidebar-section-action"
             variant="text"
             rounded
             size="small"
             title="新建歌单"
+            aria-label="新建歌单"
             @click="emit('newCollection', 'playlist')"
           >
             <Plus class="size-3.5" />
@@ -150,13 +152,15 @@ function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | '
 
       <!-- 标签 -->
       <section class="mt-4">
-        <div class="flex items-center justify-between px-4 pb-1">
+        <div class="sidebar-section-header flex items-center justify-between px-4 pb-1">
           <h2 class="text-xs font-medium text-muted-color">标签</h2>
           <SecondaryButton
+            class="sidebar-section-action"
             variant="text"
             rounded
             size="small"
             title="新建标签"
+            aria-label="新建标签"
             @click="emit('newCollection', 'tag')"
           >
             <Plus class="size-3.5" />
@@ -229,3 +233,16 @@ function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | '
     <ContextMenu ref="menu" :model="menuModel" />
   </nav>
 </template>
+
+<style scoped>
+/* 仅标题行触发，不因悬停整个分组而显现；保留占位避免布局跳动。
+   不用 visibility/display 隐藏，键盘仍可 Tab 聚焦；无 hover 的设备保留入口。 */
+@media (hover: hover) {
+  .sidebar-section-action { opacity: 0; pointer-events: none; }
+  .sidebar-section-header:hover .sidebar-section-action,
+  .sidebar-section-header:focus-within .sidebar-section-action {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+</style>

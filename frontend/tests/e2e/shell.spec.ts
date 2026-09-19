@@ -74,6 +74,7 @@ test('text drag preserves selection and clipboard text; selected/hover differ in
 })
 test('prompt autofocus and Escape cancellation never edits the background list', async ({ page }) => {
   await clickRow(page, 0)
+  await page.locator('nav').getByRole('heading', { name: '歌单', exact: true }).hover()
   await page.getByTitle('新建歌单').click()
   const dialog = page.getByRole('dialog', { name: '新建歌单', exact: true })
   await expect(dialog.getByRole('textbox')).toBeFocused()

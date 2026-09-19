@@ -133,20 +133,19 @@ const releaseInfo = computed(() => [
           :adopted-path="detail.adoptedCoverPath"
           icon-class="size-10"
           label-class="text-sm"
-          class="aspect-square w-56 rounded-md shadow"
+          class="aspect-square w-full max-w-[280px] rounded-md shadow"
         />
       </div>
-      <div class="flex justify-center">
-        <SecondaryButton variant="outlined" size="small" @click="openCoverPicker">
-          <ImagePlus class="size-3.5" />
-          重新获取封面
+      <!-- 歌名与艺术家，重新获取封面的图标放在文字块右侧 -->
+      <div class="flex items-center gap-3">
+        <div class="min-w-0 flex-1 break-words">
+          <h2 class="text-lg font-semibold leading-tight">{{ detail.track.title }}</h2>
+          <p class="mt-1 text-sm text-muted-color">{{ display(detail.track.artist) }}</p>
+        </div>
+        <SecondaryButton variant="text" rounded size="small" class="shrink-0"
+          title="重新获取封面" aria-label="重新获取封面" @click="openCoverPicker">
+          <ImagePlus class="size-4" aria-hidden="true" />
         </SecondaryButton>
-      </div>
-
-      <!-- 歌名与艺术家 -->
-      <div>
-        <h2 class="text-lg font-semibold leading-tight">{{ detail.track.title }}</h2>
-        <p class="mt-1 text-sm text-muted-color">{{ display(detail.track.artist) }}</p>
       </div>
 
       <!-- 参与者 -->

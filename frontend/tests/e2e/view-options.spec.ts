@@ -4,6 +4,7 @@ const rows = (page: Page) => page.locator('.track-list [data-row-key]')
 const options = (page: Page) => page.getByRole('button', { name: '视图选项', exact: true })
 async function pickTag(page: Page, name: string) {
   await options(page).click()
+  await page.getByRole('menuitem', { name: '按标签', exact: true }).click()
   await page.getByRole('menuitemradio', { name, exact: true }).click()
 }
 async function showAddedTime(page: Page) {
@@ -15,6 +16,7 @@ async function showAddedTime(page: Page) {
 test.beforeEach(async ({ page }) => {
   await page.addInitScript({ path: fileURLToPath(new URL('./wails-stub.js', import.meta.url)) })
   await page.addInitScript(() => {
+    localStorage.setItem('sonexa.theme', 'light')
     const api = (window as any).go.main.App
     const list = api.ListTracks, collections = api.ListCollections, album = api.GetAlbumDetail
     api.ListTracks = async (filter: any) => {
@@ -46,12 +48,18 @@ test.beforeEach(async ({ page }) => {
 
 test('view options has only tag filters, accessible checked state and composable search scope', async ({ page }, testInfo) => {
   await options(page).click()
-  await expect(page.getByText('按标签筛选曲目', { exact: true })).toBeVisible()
+  const tagMenu = page.getByRole('menuitem', { name: '按标签', exact: true })
+  await expect(tagMenu).toHaveAttribute('aria-haspopup', 'menu')
+  await expect(tagMenu).toHaveAttribute('aria-expanded', 'false')
+  await expect(tagMenu.locator('svg.lucide-chevron-right')).toHaveCount(1)
+  await expect(page.getByRole('menuitemradio')).toHaveCount(0)
+  await tagMenu.click()
+  await expect(tagMenu).toHaveAttribute('aria-expanded', 'true')
   await expect(page.getByRole('menuitemradio', { name: '全部标签', exact: true })).toHaveAttribute('aria-checked', 'true')
   await expect(page.getByText('默认顺序', { exact: true })).toHaveCount(0)
   await expect(options(page).locator('svg.lucide-list-filter')).toHaveCount(1)
   await expect(options(page)).toHaveAttribute('aria-expanded', 'true')
-  const menu = page.locator('[data-pc-name="menu"]')
+  const menu = page.locator('[data-pc-name="tieredmenu"]')
   for (const dark of [false, true]) {
     await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), dark)
     await expect.poll(() => menu.evaluate(el => getComputedStyle(el).backgroundColor)).toBe(dark ? 'rgb(23, 23, 23)' : 'rgb(255, 255, 255)')
@@ -60,10 +68,17 @@ test('view options has only tag filters, accessible checked state and composable
     expect(await menu.locator('a').first().evaluate(el => getComputedStyle(el).paddingLeft)).toBe('12px')
     const bounds = (await menu.boundingBox())!
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(1440)
-    await page.screenshot({ path: testInfo.outputPath(`view-options-${dark ? 'dark' : 'light'}.png`) })
+    const submenu = menu.locator('[data-pc-section="submenu"]')
+    const childBounds = (await submenu.boundingBox())!, parentBounds = (await tagMenu.boundingBox())!
+    expect(childBounds.x).toBeGreaterThanOrEqual(0)
+    expect(childBounds.x + childBounds.width).toBeLessThanOrEqual(parentBounds.x + 1)
+    expect(await submenu.evaluate(el => getComputedStyle(el).backgroundColor)).toBe(dark ? 'rgb(23, 23, 23)' : 'rgb(255, 255, 255)')
+    await expect.poll(() => submenu.locator('a').first().evaluate(el => getComputedStyle(el).color)).toBe(dark ? 'rgb(255, 255, 255)' : 'rgb(64, 64, 64)')
+    await page.screenshot({ path: testInfo.outputPath(`view-options-${dark ? 'dark' : 'light'}.png`), animations: 'disabled' })
   }
   await page.keyboard.press('Escape')
   await expect(options(page)).toHaveAttribute('aria-expanded', 'false')
+  await expect(options(page)).toBeFocused()
   await pickTag(page, '收藏')
   await expect(rows(page)).toHaveCount(2)
   await expect(page.getByLabel('当前筛选')).toContainText('标签=收藏')
@@ -86,6 +101,7 @@ test('view options has only tag filters, accessible checked state and composable
   await expect(rows(page)).toHaveCount(1)
   expect(await page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ collectionId: 10, tagId: 22 })
   await options(page).click()
+  await page.getByRole('menuitem', { name: '按标签', exact: true }).click()
   await expect(page.getByRole('menuitemradio', { name: '待听', exact: true })).toHaveAttribute('aria-checked', 'true')
   await page.getByRole('button', { name: '最近添加', exact: true }).click()
   await expect(page.getByRole('menuitemradio')).toHaveCount(0)
@@ -134,9 +150,13 @@ test('tag menu empty state, keyboard selection and stale list responses', async 
   await expect(page.getByRole('button', { name: /Artist B/ })).toBeVisible()
   await page.evaluate(() => (window as any).__resolveArtists())
   await expect(page.getByRole('button', { name: /Artist A/ })).toHaveCount(0)
+  await page.mouse.move(0, 0) // 避免展开后静止在旧子菜单位置的指针抢走键盘高亮
   await options(page).focus()
   await page.keyboard.press('Enter')
+  await expect(page.locator('[data-pc-section="rootlist"]')).toBeFocused()
   await page.keyboard.press('Home')
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('menuitemradio', { name: '全部标签', exact: true })).toBeVisible()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('button', { name: /Artist A/ })).toBeVisible()
   await page.evaluate(() => {
@@ -145,6 +165,7 @@ test('tag menu empty state, keyboard selection and stale list responses', async 
   })
   await expect(page.locator('nav').getByText('还没有标签', { exact: true })).toBeVisible()
   await options(page).click()
+  await page.getByRole('menuitem', { name: '按标签', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: '还没有标签', exact: true })).toHaveAttribute('aria-disabled', 'true')
   await page.getByRole('searchbox').click()
   await expect(page.getByRole('menuitemradio')).toHaveCount(0)
@@ -153,6 +174,53 @@ test('tag menu empty state, keyboard selection and stale list responses', async 
   })
   await page.getByRole('button', { name: '全部曲目', exact: true }).click()
   await expect(page.getByText('Error: 标签筛选读取失败', { exact: true })).toBeVisible()
+})
+
+test('tag submenu supports keyboard return, right-side placement and scrolling many tags', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1340, height: 733 })
+  await rows(page).first().locator('td').last().dblclick()
+  await page.mouse.move(0, 0)
+  await options(page).focus()
+  await page.keyboard.press('Enter')
+  const root = page.locator('[data-pc-section="rootlist"]')
+  const parent = page.getByRole('menuitem', { name: '按标签', exact: true })
+  await expect(root).toBeFocused()
+  await page.keyboard.press('Home')
+  await page.keyboard.press('ArrowRight')
+  await expect(parent).toHaveAttribute('aria-expanded', 'true')
+  const submenu = page.locator('[data-pc-name="tieredmenu"] [data-pc-section="submenu"]')
+  const childBounds = (await submenu.boundingBox())!, parentBounds = (await parent.boundingBox())!
+  expect(childBounds.x).toBeGreaterThanOrEqual(parentBounds.x + parentBounds.width - 1)
+  expect(childBounds.x + childBounds.width).toBeLessThanOrEqual(1340)
+  await page.screenshot({ path: testInfo.outputPath('tag-submenu-right-with-drawer.png') })
+  await page.keyboard.press('ArrowLeft')
+  await expect(parent).toHaveAttribute('aria-expanded', 'false')
+  await expect(options(page)).toHaveAttribute('aria-expanded', 'true')
+  await page.keyboard.press('Enter')
+  await expect(parent).toHaveAttribute('aria-expanded', 'true')
+  await page.keyboard.press('Escape')
+  await expect(options(page)).toBeFocused()
+  await page.evaluate(() => {
+    const api = (window as any).go.main.App
+    api.ListCollections = async (kind: string) => kind === 'tag' ? Array.from({ length: 60 }, (_, i) => ({
+      id: i + 100, kind: 'tag', name: `长标签 ${i + 1} ${'LongName'.repeat(5)}`, trackCount: 1,
+    })) : []
+    ;(window as any).runtime.EventsEmit('library:changed')
+  })
+  await expect(page.locator('nav').getByRole('button', { name: /长标签 60 / })).toHaveCount(1)
+  await options(page).click()
+  await parent.click()
+  expect(await submenu.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
+  const bounds = (await submenu.boundingBox())!
+  expect(bounds.y).toBeGreaterThanOrEqual(0)
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(733)
+  expect(await submenu.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+  await page.mouse.move(0, 0)
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('End')
+  await page.keyboard.press('Enter')
+  await expect(options(page)).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByLabel('当前筛选')).toContainText('标签=长标签 60')
 })
 
 test('added time is hidden by default, survives reload, sorts and reaches local search and album rows', async ({ page }) => {

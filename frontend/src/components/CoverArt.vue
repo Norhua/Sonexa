@@ -60,15 +60,16 @@ function onError() {
 </script>
 
 <template>
-  <div class="flex items-center justify-center overflow-hidden bg-surface-100 text-muted-color dark:bg-surface-800">
+  <div class="relative flex items-center justify-center overflow-hidden bg-surface-100 text-muted-color dark:bg-surface-800">
+    <!-- 保留图片的布局盒供 lazy 判断视口；display:none 会让 Chromium 永不发起加载。 -->
     <img
       v-if="src"
-      v-show="state === 'ok'"
+      :class="{ 'opacity-0': state !== 'ok' }"
       :key="src"
       :src="src"
       loading="lazy"
       alt=""
-      class="size-full object-cover"
+      class="absolute inset-0 size-full object-cover"
       @load="state = 'ok'"
       @error="onError"
     />
