@@ -1,7 +1,6 @@
 // Package itunes 接入 iTunes Search API 作为免费无鉴权的补充上游。
 //
-// 它的字段远少于 MusicBrainz，地区参数直接决定返回的标题语言，
-// 且其数据受 Apple 条款约束不得长期留存（必须设 TTL）。
+// 它按地区提供搜索与封面数据；本地保存不设置 iTunes 专属日期期限。
 package itunes
 
 import (
@@ -21,18 +20,11 @@ const BaseURL = "https://itunes.apple.com"
 // DefaultRatePerMin 是默认速率：约每分钟 20 次（按 IP），无鉴权无 API key。
 const DefaultRatePerMin = 20.0
 
-// DefaultTTLDays 是 iTunes 数据的默认缓存有效期。
-//
-// Apple 条款要求其元数据仅可为性能目的短期缓存，
-// 不得作为长期事实来源留存。
-const DefaultTTLDays = 30
-
 // Config 是 iTunes 的配置。
 type Config struct {
 	// DefaultCountry 为空时跟随系统区域设置。
 	DefaultCountry string
 	RatePerMin     float64
-	TTLDays        int
 }
 
 // Provider 是 iTunes 的 Provider 实现。
@@ -46,9 +38,6 @@ type Provider struct {
 func New(client *provider.Client, cfg Config, hashParams func(map[string]string) string) *Provider {
 	if cfg.RatePerMin <= 0 {
 		cfg.RatePerMin = DefaultRatePerMin
-	}
-	if cfg.TTLDays <= 0 {
-		cfg.TTLDays = DefaultTTLDays
 	}
 	return &Provider{client: client, cfg: cfg, hashParams: hashParams}
 }
@@ -87,11 +76,6 @@ func (p *Provider) RateLimit() (int, time.Duration) {
 // 避免用户误以为 MusicBrainz 也已配置完成——该判定由调用方统一施加。
 func (p *Provider) IsConfigured() error { return nil }
 
-// TTL 返回 iTunes 数据的缓存有效期。
-func (p *Provider) TTL() time.Duration {
-	return time.Duration(p.cfg.TTLDays) * 24 * time.Hour
-}
-
 // SearchTracks 调用 search 端点。
 //
 // 只传 country，不传 lang：lang 仅支持 en_us / ja_jp，
@@ -122,8 +106,8 @@ func (p *Provider) SearchTracks(ctx context.Context, q provider.Query) ([]provid
 		BaseURL:    BaseURL,
 		Params:     params,
 		ParamsHash: p.hash(params),
-		// iTunes 数据必须设 TTL，过期即重取
-		TTL: p.TTL(),
+		TTL:        0,
+		SkipCache:  q.SkipCache,
 	})
 	if err != nil {
 		return nil, err
@@ -164,7 +148,8 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 		BaseURL:    BaseURL,
 		Params:     params,
 		ParamsHash: p.hash(params),
-		TTL:        p.TTL(),
+		TTL:        0,
+		SkipCache:  ref.SkipCache,
 	})
 	if err != nil {
 		return nil, err

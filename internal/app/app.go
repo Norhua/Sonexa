@@ -25,14 +25,15 @@ type App struct {
 	ctx     context.Context
 	version string
 
-	paths    config.Paths
-	settings *config.Store
-	store    *store.Store
-	registry *provider.Registry
-	limiters *provider.Limiters
-	client   *provider.Client
-	coverSvc *covers.Service
-	runner   *importer.Runner
+	paths         config.Paths
+	settings      *config.Store
+	store         *store.Store
+	registry      *provider.Registry
+	limiters      *provider.Limiters
+	client        *provider.Client
+	coverSvc      *covers.Service
+	coverSessions map[string]*coverSession
+	runner        *importer.Runner
 	// enricher 是后台的「补全信息匹配」任务：入库不再同步补详情，
 	// 详情由它在空闲时按条补上（见 enrichWorker）。
 	enricher *enrichWorker
@@ -171,11 +172,17 @@ func (a *App) initialize() error {
 	a.limiters = provider.NewLimiters()
 	a.rebuildProviders(cur)
 
-	svc, err := newCoverService(a.paths, cur, a.version)
+	svc, err := newCoverService(a.store, a.paths, cur, a.version)
 	if err != nil {
 		return err
 	}
 	a.coverSvc = a.attachLadderBuilder(svc)
+	svc.EnableNetworkPolicy(func() error {
+		if gate := a.CheckOutbound(); !gate.Allowed {
+			return &covers.OutboundError{Reason: gate.Reason}
+		}
+		return nil
+	})
 
 	a.rebuildRunner(cur)
 	a.attachEnrichWorker()
@@ -216,7 +223,6 @@ func (a *App) rebuildProviders(cur config.Settings) {
 	it := itunes.New(a.client, itunes.Config{
 		DefaultCountry: cur.ITunes.DefaultCountry,
 		RatePerMin:     cur.ITunes.RatePerMin,
-		TTLDays:        cur.Cache.ITunesTracklistTTLd,
 	}, store.ParamsHash)
 
 	a.registry = provider.NewRegistry()
@@ -313,8 +319,16 @@ const (
 
 // shutdown 在应用退出时释放资源。
 func (a *App) shutdown(ctx context.Context) {
+	a.mu.Lock()
+	for _, session := range a.coverSessions {
+		session.cancel()
+	}
+	a.mu.Unlock()
 	if a.enricher != nil {
 		a.enricher.Stop()
+	}
+	if a.coverSvc != nil {
+		_ = a.coverSvc.Close()
 	}
 	if a.store != nil {
 		if err := a.store.Close(); err != nil {
@@ -348,13 +362,19 @@ func (a *App) userAgent(cur config.Settings) string {
 //
 // 抽成函数是有意的：改动封面缓存目录时要重建一套新的，
 // 与启动时用的是同一条构造路径，避免两处参数不一致。
-func newCoverService(paths config.Paths, cur config.Settings, version string) (*covers.Service, error) {
+func newCoverService(st *store.Store, paths config.Paths, cur config.Settings, version string) (*covers.Service, error) {
 	cache, err := covers.NewDiskCache(paths.CoverDir, cur.Cache.CoverMaxBytes, coverTTL(cur))
 	if err != nil {
 		return nil, err
 	}
-	return covers.NewService(cache, cur.Cache.CoverConcurrency,
-		provider.UserAgentFor(version, cur.MusicBrainz.Contact)), nil
+	svc := covers.NewService(cache, cur.Cache.CoverConcurrency, provider.UserAgentFor(version, cur.MusicBrainz.Contact))
+	if err := svc.AttachLibrary(st); err != nil {
+		return nil, err
+	}
+	for _, err := range svc.Library().MigrateLegacy(paths.CoverDir) {
+		log.Printf("旧封面暂未迁移，保留原文件并在下次启动重试: %v", err)
+	}
+	return svc, nil
 }
 
 // attachLadderBuilder 把降级链构造器接到封面服务上。

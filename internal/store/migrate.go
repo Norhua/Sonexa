@@ -20,10 +20,11 @@ var ErrDatabaseNewer = errors.New("数据库版本高于当前程序支持的版
 
 // migrations 是全部迁移，按 Version 升序应用。
 //
-// 开发阶段：v1 未发布，此前的 0002（review_reason）与 0003（enrich_state）
-// 已并回 0001，不再作为独立迁移存在。旧库不做兼容——测试前手动清库。
+// v1 的初始结构保持不变；后续变更以新增迁移兼容已有数据库。
 var migrations = []Migration{
 	{Version: 1, Name: "init", SQL: migration0001Init},
+	{Version: 2, Name: "cover_catalog", SQL: migration0002CoverCatalog},
+	{Version: 3, Name: "itunes_no_expiry", SQL: `UPDATE provider_cache SET ttl_seconds=0 WHERE provider='itunes';`},
 }
 
 // LatestVersion 返回本程序支持的最高 schema 版本。

@@ -189,41 +189,11 @@ func extOf(url string) string {
 	return ".jpg"
 }
 
-// imageDimensions 从 JPEG / PNG 字节中读出尺寸；无法判定时返回 nil。
+// imageDimensions 使用与导入相同的完整解码校验；无法判定时返回 nil。
 func imageDimensions(data []byte) (*int, *int) {
-	// PNG: 宽高在 IHDR 的固定偏移
-	if len(data) > 24 && data[0] == 0x89 && data[1] == 'P' {
-		w := int(data[16])<<24 | int(data[17])<<16 | int(data[18])<<8 | int(data[19])
-		h := int(data[20])<<24 | int(data[21])<<16 | int(data[22])<<8 | int(data[23])
-		if w > 0 && h > 0 {
-			return &w, &h
-		}
+	info, err := InspectImage(data)
+	if err != nil {
 		return nil, nil
 	}
-	// JPEG: 扫描 SOF 段
-	if len(data) > 4 && data[0] == 0xFF && data[1] == 0xD8 {
-		for i := 2; i+9 < len(data); {
-			if data[i] != 0xFF {
-				i++
-				continue
-			}
-			marker := data[i+1]
-			// SOF0..SOF3, SOF5..SOF7, SOF9..SOF11, SOF13..SOF15
-			if marker >= 0xC0 && marker <= 0xCF &&
-				marker != 0xC4 && marker != 0xC8 && marker != 0xCC {
-				h := int(data[i+5])<<8 | int(data[i+6])
-				w := int(data[i+7])<<8 | int(data[i+8])
-				if w > 0 && h > 0 {
-					return &w, &h
-				}
-				return nil, nil
-			}
-			segLen := int(data[i+2])<<8 | int(data[i+3])
-			if segLen <= 0 {
-				break
-			}
-			i += 2 + segLen
-		}
-	}
-	return nil, nil
+	return &info.Width, &info.Height
 }

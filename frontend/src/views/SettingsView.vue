@@ -356,15 +356,7 @@ defineExpose({ active })
             class="mt-1 block w-24"
           />
         </label>
-        <label class="block text-sm">iTunes 曲目清单有效期（天）
-          <InputNumber
-            v-model="draft.cache.itunesTracklistTtlDays"
-            :min="1"
-            size="small"
-            class="mt-1 block w-24"
-          />
-          <span class="ml-2 text-xs text-muted-color">Apple 条款要求，默认 30 天</span>
-        </label>
+        <p class="text-xs text-muted-color">iTunes 响应、曲目清单和已采用图片不按保存日期失效。</p>
         <SecondaryButton variant="outlined" size="small" @click="clearCache">
           清除缓存
         </SecondaryButton>

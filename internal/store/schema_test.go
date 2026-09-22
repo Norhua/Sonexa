@@ -16,6 +16,8 @@ func TestSchemaTablesExist(t *testing.T) {
 		"collection", "collection_item",
 		"import_batch", "import_item",
 		"provider_cache", "track_fts", "track_fts_shadow",
+		"cover_catalog", "cover_image", "cover_variant", "cover_file",
+		"release_cover_selection", "cover_legacy_migration",
 		"schema_version",
 	}
 	for _, table := range want {

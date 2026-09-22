@@ -1,7 +1,10 @@
 package covers
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -232,14 +235,11 @@ func TestImageDimensions(t *testing.T) {
 	}
 }
 
-// pngBytes 构造一个带指定尺寸 IHDR 的最小 PNG。
+// pngBytes 返回可被标准解码器验证的 PNG，而不是只有 IHDR 的伪造前缀。
 func pngBytes(w, h int) []byte {
-	b := []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}
-	b = append(b, 0, 0, 0, 13, 'I', 'H', 'D', 'R')
-	b = append(b,
-		byte(w>>24), byte(w>>16), byte(w>>8), byte(w),
-		byte(h>>24), byte(h>>16), byte(h>>8), byte(h),
-	)
-	b = append(b, make([]byte, 100)...)
-	return b
+	var b bytes.Buffer
+	if err := png.Encode(&b, image.NewRGBA(image.Rect(0, 0, w, h))); err != nil {
+		panic(err)
+	}
+	return b.Bytes()
 }

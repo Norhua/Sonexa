@@ -46,7 +46,7 @@
     },
     cache: {
       coverDir: '', coverMaxBytes: 536870912, coverConcurrency: 8,
-      providerCacheTtlHours: 24, itunesTracklistTtlDays: 30, coverTtlDays: 30,
+      providerCacheTtlHours: 24, coverTtlDays: 30,
     },
     onboardingDone: true,
   }

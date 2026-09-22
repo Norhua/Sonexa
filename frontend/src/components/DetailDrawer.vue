@@ -9,13 +9,16 @@
  * 缺失字段显示占位短横线，不报错、不出现空白区域。
  */
 import { computed, ref, watch } from 'vue'
-import { X, Pencil, ImagePlus } from 'lucide-vue-next'
+import { X, Pencil } from 'lucide-vue-next'
 import { App, display, duration, DASH } from '@/api'
 import CoverArt from '@/components/CoverArt.vue'
 import { creditParts } from '@/lib/creditParts'
 import Button from '@/volt/Button.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import Tag from '@/volt/Tag.vue'
+import ContextMenu from '@/volt/ContextMenu.vue'
+import { useSettingsStore } from '@/stores/settings'
+import { useCoverSearchStore } from '@/stores/coverSearch'
 import type { Models } from '@/api'
 
 const props = defineProps<{
@@ -30,65 +33,39 @@ const emit = defineEmits<{
   coverAdopted: []
 }>()
 
-/** 手动重新获取封面的状态。 */
-const coverPickerOpen = ref(false)
-const coverCandidates = ref<Models.app.CoverCandidate[]>([])
-const coverLoading = ref(false)
+/** 封面操作始终固定到打开菜单时的所属歌集。 */
+const menu = ref<InstanceType<typeof ContextMenu>>()
+const settings = useSettingsStore()
+const coverSearch = useCoverSearchStore()
 const coverError = ref('')
-
-let coverRequest = 0
-watch(() => props.open, open => {
-  if (!open) {
-    coverRequest++
-    coverPickerOpen.value = false
-    coverCandidates.value = []
-    coverLoading.value = false
-    coverError.value = ''
-  }
-})
-
-/**
- * 向**所有**上游查询封面，结果按置信度排序。
- *
- * 某首来自 MusicBrainz 的曲目没有封面时，iTunes 的结果也应出现在候选中——
- * 自动获取跟随来源，手动重选则跨源。
- */
-async function openCoverPicker() {
-  if (!props.detail) return
-  const request = ++coverRequest
-  coverPickerOpen.value = true
-  coverLoading.value = true
-  coverError.value = ''
+const menuItems = computed(() => [{
+  label: '更新歌曲图片',
+  items: [
+    { label: '从本地存储中选择', disabled: !props.detail?.track.releaseId, command: pickLocal },
+    { label: '从网络搜索', disabled: !props.detail?.track.releaseId || !settings.outboundAllowed, command: searchNetwork },
+  ],
+}])
+async function pickLocal() {
+  const releaseId = props.detail?.track.releaseId
+  if (!releaseId) return
   try {
-    const t = props.detail.track
-    const candidates = await App.SearchCovers(t.title, t.artist ?? '', t.album ?? '')
-    if (request === coverRequest) coverCandidates.value = candidates
-  } catch (e) {
-    if (request === coverRequest) coverError.value = String(e)
-  } finally {
-    if (request === coverRequest) coverLoading.value = false
+    const revision = await App.CoverRevision(releaseId)
+    const result = await App.PickAndAdoptCover(releaseId, revision)
+    if (!result.cancelled) emit('coverAdopted')
+  } catch (e) { coverError.value = String(e) }
+}
+function searchNetwork() {
+  if (props.detail?.track.releaseId) coverSearch.open(props.detail)
+}
+function showMenu(event: MouseEvent) { menu.value?.show(event) }
+function keyboardMenu(event: KeyboardEvent) {
+  if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+    event.preventDefault()
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    menu.value?.show(new MouseEvent('contextmenu', { clientX: rect.left + 20, clientY: rect.top + 20 }))
   }
 }
-
-/**
- * 采用某档规格。
- *
- * 构造型来源（iTunes）的档位可能失效，因此把同一结果的其他档位
- * 一并作为退档链交给后端，不可用时自动退到下一档。
- */
-async function adopt(provider: string, variant: Models.covers.Variant,
-  all: Models.covers.Variant[]) {
-  if (!props.detail) return
-  coverError.value = ''
-  try {
-    const fallback = all.filter((v) => v.url !== variant.url).map((v) => v.url)
-    await App.AdoptCover(props.detail.track.id, provider, variant.url, fallback)
-    coverPickerOpen.value = false
-    emit('coverAdopted')
-  } catch (e) {
-    coverError.value = String(e)
-  }
-}
+watch(() => props.detail?.track.id, () => { coverError.value = ''; menu.value?.hide() })
 
 const meta = computed(() => props.detail?.metadata ?? null)
 const fallbackCredit = computed(() => creditParts(
@@ -123,29 +100,31 @@ const releaseInfo = computed(() => [
 
     <div class="min-h-0 flex-1 space-y-4 overflow-auto p-4">
       <!-- 封面 -->
-      <div class="flex justify-center">
+      <div class="flex justify-center" tabindex="0" role="button" aria-label="更新歌曲图片"
+        @contextmenu.prevent="showMenu" @keydown="keyboardMenu">
         <CoverArt
           :source="{
+            releaseId: detail.track.releaseId,
             provider: detail.coverProvider,
             ref: detail.coverRef,
             rg: detail.coverGroupRef,
           }"
           :adopted-path="detail.adoptedCoverPath"
+          usage="detail"
           icon-class="size-10"
           label-class="text-sm"
           class="aspect-square w-full max-w-[280px] rounded-md shadow"
         />
       </div>
-      <!-- 歌名与艺术家，重新获取封面的图标放在文字块右侧 -->
+      <ContextMenu ref="menu" :model="menuItems" />
+      <p v-if="!detail.track.releaseId" class="text-xs text-muted-color">此曲目没有所属专辑，无法更新共享封面</p>
+      <p v-if="coverError" class="text-xs text-danger-color">{{ coverError }}</p>
+      <!-- 歌名与艺术家 -->
       <div class="flex items-center gap-3">
         <div class="min-w-0 flex-1 break-words">
           <h2 class="text-lg font-semibold leading-tight">{{ detail.track.title }}</h2>
           <p class="mt-1 text-sm text-muted-color">{{ display(detail.track.artist) }}</p>
         </div>
-        <SecondaryButton variant="text" rounded size="small" class="shrink-0"
-          title="重新获取封面" aria-label="重新获取封面" @click="openCoverPicker">
-          <ImagePlus class="size-4" aria-hidden="true" />
-        </SecondaryButton>
       </div>
 
       <!-- 参与者 -->
@@ -228,48 +207,6 @@ const releaseInfo = computed(() => [
         </div>
         <p v-else class="text-sm text-muted-color">{{ DASH }}</p>
       </section>
-    </div>
-
-    <!-- 封面候选：跨源结果，同一结果的多规格收拢为一条 -->
-    <div v-if="coverPickerOpen" class="shrink-0 border-t p-3">
-      <div class="mb-2 flex items-center justify-between">
-        <h3 class="text-xs font-medium">选择封面</h3>
-        <SecondaryButton variant="text" rounded size="small" @click="coverPickerOpen = false">
-          <X class="size-3.5" />
-        </SecondaryButton>
-      </div>
-      <p v-if="coverLoading" class="text-xs text-muted-color">正在向全部上游查询…</p>
-      <p v-else-if="coverError" class="text-xs text-danger-color">{{ coverError }}</p>
-      <p v-else-if="coverCandidates.length === 0" class="text-xs text-muted-color">
-        所有上游都没有返回封面
-      </p>
-      <div v-else class="max-h-64 space-y-2 overflow-auto">
-        <!-- 一条候选 = 一个结果；其可选规格在同一行内标注，不重复成行 -->
-        <div v-for="c in coverCandidates" :key="`${c.provider}-${c.sourceRef}`"
-          class="rounded border p-2">
-          <p class="truncate text-xs">
-            <Tag
-              severity="secondary"
-              :value="c.provider"
-              class="px-1 py-0 text-[10px] font-normal"
-            />
-            {{ c.title }}
-          </p>
-          <div class="mt-1.5 flex flex-wrap gap-1">
-            <SecondaryButton
-              v-for="v in c.variants"
-              :key="v.url"
-              variant="outlined"
-              size="small"
-              class="text-[10px]"
-              :title="c.constructed ? '构造型来源，采用时先验证，不可用自动退档' : v.type"
-              @click="adopt(c.provider, v, c.variants)"
-            >
-              {{ v.label }}
-            </SecondaryButton>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- 底部明确的编辑按钮——右键不应是进入编辑的唯一入口 -->

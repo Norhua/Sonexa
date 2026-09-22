@@ -117,7 +117,7 @@ func (a *App) SaveSettings(next config.Settings) error {
 		if err := newPaths.Ensure(); err != nil {
 			return fmt.Errorf("创建新的封面缓存目录失败: %w", err)
 		}
-		svc, err := newCoverService(newPaths, next, a.version)
+		svc, err := newCoverService(a.store, newPaths, next, a.version)
 		if err != nil {
 			return fmt.Errorf("重建封面缓存失败: %w", err)
 		}

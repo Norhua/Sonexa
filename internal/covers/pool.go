@@ -4,154 +4,190 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
-	"golang.org/x/sync/singleflight"
+	"github.com/norhua/sonexa/internal/provider"
 )
 
-// DefaultConcurrency 是封面工作池的默认并发数。
 const DefaultConcurrency = 8
-
-// MaxConcurrency 是建议的并发上限。
 const MaxConcurrency = 16
 
-// Fetcher 是一个封面获取任务的来源描述。
 type Fetcher struct {
-	// Key 是缓存键；同一张图在多行出现时键相同，请求被合并。
-	Key string
-	// URLs 是降级链；图片不可得时可由注入的解析器展开链尾索引。
-	URLs []string
+	Key  string   `json:"key"`
+	URLs []string `json:"urls"`
 }
 
-// IndexParser 识别 provider 的图片索引并提取实际图片地址。
-// 非索引地址返回 handled=false；仅由 Go 侧注入，不接受前端提供解析逻辑。
 type IndexParser func(url string, body []byte) (urls []string, handled bool, err error)
 
-// Pool 是进程级封面工作池。
-//
-// 取缩略图是延迟受限而非带宽受限的：单张常需数秒且 404 是常态，
-// 串行取图会让列表长时间空白，因此必须并发。
-//
-// 该池的请求不占用任何上游的 API 令牌桶——封面档案与图片 CDN
-// 都不是被限流的那个端点。因此「MB 1 req/s」与「封面 8 并发」并不矛盾。
+type sharedFetch struct {
+	ctx     context.Context
+	cancel  context.CancelFunc
+	done    chan struct{}
+	waiters int
+	value   any
+	err     error
+}
+
+// Pool 在目录/图片身份上合并消费者，在每次 HTTP 传输上获取共享并发槽。
+// 等待另一任务的目录解析不持有槽位，单消费者取消不杀死其他消费者。
 type Pool struct {
 	cache  *DiskCache
 	client *http.Client
-	group  singleflight.Group
 
 	mu          sync.Mutex
-	sem         chan struct{}
-	inflight    map[string]context.CancelFunc
+	limit       int
+	active      int
+	changed     chan struct{}
+	jobs        map[string]*sharedFetch
+	closed      bool
 	userAgent   string
 	indexParser IndexParser
+	gate        func() error
+	retry       provider.RetryPolicy
 }
 
-// NewPool 建立工作池。concurrency 超出上限时被截断。
+func boundedConcurrency(n int) int {
+	if n <= 0 {
+		return DefaultConcurrency
+	}
+	return min(n, MaxConcurrency)
+}
+
 func NewPool(cache *DiskCache, concurrency int, userAgent string) *Pool {
-	if concurrency <= 0 {
-		concurrency = DefaultConcurrency
-	}
-	if concurrency > MaxConcurrency {
-		concurrency = MaxConcurrency
-	}
-	return &Pool{
-		cache:     cache,
-		client:    &http.Client{Timeout: 30 * time.Second},
-		sem:       make(chan struct{}, concurrency),
-		inflight:  map[string]context.CancelFunc{},
-		userAgent: userAgent,
-	}
+	return &Pool{cache: cache, client: &http.Client{Timeout: 30 * time.Second}, limit: boundedConcurrency(concurrency),
+		changed: make(chan struct{}), jobs: map[string]*sharedFetch{}, userAgent: userAgent, retry: provider.RetryPolicy{MaxAttempts: 1}}
 }
 
-// SetIndexParser 在启动时注入索引解析器。索引与图片共用并发槽位和 singleflight。
 func (p *Pool) SetIndexParser(parser IndexParser) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.indexParser = parser
 }
 
-// SetConcurrency 调整并发上限。
-func (p *Pool) SetConcurrency(n int) {
-	if n <= 0 {
-		n = DefaultConcurrency
-	}
-	if n > MaxConcurrency {
-		n = MaxConcurrency
-	}
+func (p *Pool) SetGate(gate func() error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.sem = make(chan struct{}, n)
+	p.gate = gate
 }
 
-// Concurrency 返回当前并发上限。
+func (p *Pool) SetConcurrency(n int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.limit = boundedConcurrency(n)
+	p.signalLocked()
+}
+
+func (p *Pool) signalLocked() { close(p.changed); p.changed = make(chan struct{}) }
+
 func (p *Pool) Concurrency() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return cap(p.sem)
+	return p.limit
 }
 
-// ErrNotFound 表示降级链确认无图；网络/服务错误不能伪装成无图。
+func (p *Pool) acquire(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for {
+		if p.closed {
+			return context.Canceled
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if p.active < p.limit {
+			p.active++
+			return nil
+		}
+		changed := p.changed
+		p.mu.Unlock()
+		select {
+		case <-changed:
+		case <-ctx.Done():
+		}
+		p.mu.Lock()
+	}
+}
+
+func (p *Pool) release() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.active--
+	p.signalLocked()
+}
+
+// Shared 按键合并工作，不占用 HTTP 槽位；调用方必须确保键代表同一个操作。
+func (p *Pool) Shared(ctx context.Context, key string, work func(context.Context) (any, error)) (any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return nil, context.Canceled
+	}
+	job := p.jobs[key]
+	if job == nil {
+		jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		job = &sharedFetch{ctx: jobCtx, cancel: cancel, done: make(chan struct{})}
+		p.jobs[key] = job
+		go func() {
+			value, err := work(job.ctx)
+			p.mu.Lock()
+			job.value, job.err = value, err
+			if p.jobs[key] == job {
+				delete(p.jobs, key)
+			}
+			close(job.done)
+			job.cancel()
+			p.mu.Unlock()
+		}()
+	}
+	job.waiters++
+	p.mu.Unlock()
+	select {
+	case <-job.done:
+		return job.value, job.err
+	case <-ctx.Done():
+		p.mu.Lock()
+		job.waiters--
+		if job.waiters == 0 {
+			job.cancel()
+			if p.jobs[key] == job {
+				delete(p.jobs, key)
+			}
+		}
+		p.mu.Unlock()
+		return nil, ctx.Err()
+	}
+}
+
 var ErrNotFound = errors.New("封面不可得")
 
-// Fetch 取一张封面。
-//
-// 按缓存键合并并发请求：同一张图在多行出现时只获取一次，
-// 后到的请求等待同一个结果。
 func (p *Pool) Fetch(ctx context.Context, f Fetcher) ([]byte, error) {
-	// 已在盘则直接命中
 	if data := p.cache.Get(f.Key); data != nil {
 		return data, nil
 	}
-
-	// singleflight：同一键的并发请求共享一次获取
-	v, err, _ := p.group.Do(f.Key, func() (any, error) {
-		// 进入临界区后再查一次：等待期间可能已被别的请求写入
+	value, err := p.Shared(ctx, "legacy:"+f.Key, func(ctx context.Context) (any, error) {
 		if data := p.cache.Get(f.Key); data != nil {
 			return data, nil
 		}
-
-		fetchCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-		p.mu.Lock()
-		p.inflight[f.Key] = cancel
-		sem := p.sem
-		p.mu.Unlock()
-
-		defer func() {
-			cancel()
-			p.mu.Lock()
-			delete(p.inflight, f.Key)
-			p.mu.Unlock()
-		}()
-
-		// 取并发槽位
-		select {
-		case sem <- struct{}{}:
-			defer func() { <-sem }()
-		case <-fetchCtx.Done():
-			return nil, fetchCtx.Err()
-		}
-
-		data, err := p.fetchLadder(fetchCtx, f.URLs)
+		data, err := p.fetchLadder(ctx, f.URLs)
 		if err != nil {
 			return nil, err
 		}
-		if err := p.cache.Put(f.Key, data); err != nil {
-			// 缓存写入失败不影响本次结果
-			return data, nil
-		}
+		_ = p.cache.Put(f.Key, data)
 		return data, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return v.([]byte), nil
+	return value.([]byte), nil
 }
 
-// fetchLadder 先尝试直接图片，必要时解析链尾索引。
-// 只有全为 404 / 空索引才返回 ErrNotFound；保留其余错误供 UI 区分。
 func (p *Pool) fetchLadder(ctx context.Context, urls []string) ([]byte, error) {
 	p.mu.Lock()
 	parser := p.indexParser
@@ -168,7 +204,6 @@ func (p *Pool) fetchURLs(ctx context.Context, urls []string, parser IndexParser)
 			if handled {
 				err = parseErr
 				if err == nil {
-					// 索引只展开一层，不递归跟随任意 JSON。
 					data, err = p.fetchURLs(ctx, images, nil)
 				}
 			}
@@ -190,64 +225,105 @@ func (p *Pool) fetchURLs(ctx context.Context, urls []string, parser IndexParser)
 }
 
 func (p *Pool) fetchOne(ctx context.Context, url string) ([]byte, error) {
+	var last error
+	for attempt := 1; attempt <= max(p.retry.MaxAttempts, 1); attempt++ {
+		data, err := p.fetchOnce(ctx, url)
+		if err == nil {
+			return data, nil
+		}
+		last = err
+		if !provider.IsRetryable(err) || attempt >= p.retry.MaxAttempts {
+			break
+		}
+		timer := time.NewTimer(p.retry.JitteredBackoff(attempt, err))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, last
+}
+
+func (p *Pool) fetchOnce(ctx context.Context, url string) ([]byte, error) {
+	if err := p.acquire(ctx); err != nil {
+		return nil, err
+	}
+	defer p.release()
+	p.mu.Lock()
+	gate, ua := p.gate, p.userAgent
+	p.mu.Unlock()
+	if gate != nil {
+		if err := gate(); err != nil {
+			return nil, err
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	if p.userAgent != "" {
-		req.Header.Set("User-Agent", p.userAgent)
+	if ua != "" {
+		req.Header.Set("User-Agent", ua)
 	}
-
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, ErrNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("取图返回 %s", resp.Status)
+		seconds, _ := strconv.Atoi(resp.Header.Get("Retry-After"))
+		delay := time.Duration(seconds) * time.Second
+		if when, err := http.ParseTime(resp.Header.Get("Retry-After")); err == nil && time.Until(when) > delay {
+			delay = time.Until(when)
+		}
+		return nil, &provider.HTTPError{StatusCode: resp.StatusCode, Status: fmt.Sprintf("HTTP %d", resp.StatusCode), RetryAfter: delay}
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	return ReadImageBytes(resp.Body)
 }
 
-// Cancel 取消某个尚未完成的获取任务。
-//
-// 滚出视口且尚未开始的任务被取消，工作池转而服务当前视口内的行。
 func (p *Pool) Cancel(key string) {
 	p.mu.Lock()
-	cancel, ok := p.inflight[key]
-	p.mu.Unlock()
-	if ok {
-		cancel()
-	}
-}
-
-// CancelAllExcept 取消除指定键之外的全部进行中任务。
-// 用于快速滚动时把工作池让给当前视口。
-func (p *Pool) CancelAllExcept(keep map[string]bool) {
-	p.mu.Lock()
-	var toCancel []context.CancelFunc
-	for key, cancel := range p.inflight {
-		if !keep[key] {
-			toCancel = append(toCancel, cancel)
+	defer p.mu.Unlock()
+	for _, k := range []string{key, "legacy:" + key} {
+		if job := p.jobs[k]; job != nil {
+			job.cancel()
 		}
 	}
-	p.mu.Unlock()
+}
 
-	for _, cancel := range toCancel {
-		cancel()
+func (p *Pool) CancelAllExcept(keep map[string]bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for key, job := range p.jobs {
+		if !keep[key] && !(len(key) > 7 && key[:7] == "legacy:" && keep[key[7:]]) {
+			job.cancel()
+		}
 	}
 }
 
-// InflightCount 返回进行中的任务数，供测试与诊断使用。
+func (p *Pool) Close() {
+	p.mu.Lock()
+	p.closed = true
+	jobs := make([]*sharedFetch, 0, len(p.jobs))
+	for _, job := range p.jobs {
+		job.cancel()
+		jobs = append(jobs, job)
+	}
+	p.signalLocked()
+	p.mu.Unlock()
+	for _, job := range jobs {
+		<-job.done
+	}
+}
+
 func (p *Pool) InflightCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return len(p.inflight)
+	return len(p.jobs)
 }
 
-// Cache 暴露磁盘缓存，供 handler 与设置页使用。
 func (p *Pool) Cache() *DiskCache { return p.cache }

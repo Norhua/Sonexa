@@ -9,6 +9,8 @@ type Query struct {
 	Album   string
 	Country string // iTunes 用；MB 忽略
 	Limit   int
+	// SkipCache 仅用于用户明确要求重新获取，不改变普通缓存命中行为。
+	SkipCache bool
 	// DurationMS 是导入输入的时长，用于 iTunes 的时长接近度补分；无时长时为 nil。
 	DurationMS *int
 	// ArtistAlternates 是艺术家的备选写法（括号里那种），作为并联锚点之一。
@@ -20,7 +22,8 @@ type Query struct {
 
 // Ref 定位一条可拉取详情的上游对象。
 type Ref struct {
-	Provider ProviderID
+	SkipCache bool
+	Provider  ProviderID
 	// ID 是详情请求的主标识（MB 用 release MBID，iTunes 用 collectionId）。
 	ID string
 	// TrackRef 是曲目粒度标识（MB 用 track MBID，iTunes 用 {country}:{trackId}）。

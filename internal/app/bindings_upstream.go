@@ -317,6 +317,17 @@ func (a *App) CancelCovers(visibleKeys []string) {
 func (a *App) BuildCoverRefs(rows []CandidateRow) []covers.Ref {
 	out := make([]covers.Ref, 0, len(rows))
 	for _, r := range rows {
+		if a.coverSvc != nil && a.coverSvc.Library() != nil {
+			if r.ReleaseRef == nil || *r.ReleaseRef == "" {
+				continue
+			}
+			target := covers.Target{Provider: r.Provider, Ref: *r.ReleaseRef}
+			if r.ReleaseGroupRef != nil {
+				target.GroupRef = *r.ReleaseGroupRef
+			}
+			out = append(out, covers.Ref{Key: target.Key(covers.Thumbnail, 0), Target: target, Usage: covers.Thumbnail})
+			continue
+		}
 		// iTunes 的候选没有 release 级标识，只有 artworkUrl；
 		// 只要有一个可用于构造降级链的来源就应预取。
 		hasRef := r.ReleaseRef != nil && *r.ReleaseRef != ""

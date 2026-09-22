@@ -208,9 +208,9 @@ func TestRefIncludesCountry(t *testing.T) {
 // TestScriptDetectionGolden 覆盖 7.4 的各文字系统金样例。
 func TestScriptDetectionGolden(t *testing.T) {
 	cases := []struct {
-		name    string
-		text    string
-		want    string
+		name     string
+		text     string
+		want     string
 		detected bool
 	}{
 		{"假名建议日本", "ハレ晴レユカイ", "jp", true},
@@ -358,24 +358,14 @@ func TestSearchAndLookupShareOneBucket(t *testing.T) {
 	}
 }
 
-// TestTTLIsSet 覆盖 7.7：iTunes 数据必须设缓存有效期，默认 30 天。
-func TestTTLIsSet(t *testing.T) {
-	p := New(nil, Config{}, nil)
-	if got := p.TTL(); got != 30*24*time.Hour {
-		t.Errorf("TTL = %v, 期望 30 天", got)
-	}
-
-	custom := New(nil, Config{TTLDays: 7}, nil)
-	if got := custom.TTL(); got != 7*24*time.Hour {
-		t.Errorf("自定义 TTL = %v, 期望 7 天", got)
-	}
-}
-
 // TestArtworkURLConstruction 覆盖 9.6：四档尺寸的构造。
 func TestArtworkURLConstruction(t *testing.T) {
 	base := "https://is1-ssl.mzstatic.com/image/thumb/Music/abc/100x100bb.jpg"
 
-	cases := []struct{ size int; want string }{
+	cases := []struct {
+		size int
+		want string
+	}{
 		{3000, "https://is1-ssl.mzstatic.com/image/thumb/Music/abc/3000x3000bb.jpg"},
 		{1200, "https://is1-ssl.mzstatic.com/image/thumb/Music/abc/1200x1200bb.jpg"},
 		{600, "https://is1-ssl.mzstatic.com/image/thumb/Music/abc/600x600bb.jpg"},

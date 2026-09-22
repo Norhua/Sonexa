@@ -80,12 +80,11 @@ type ImportExportSettings struct {
 
 // CacheSettings 对应设置页的「缓存」分组。
 type CacheSettings struct {
-	CoverDir            string `json:"coverDir"`
-	CoverMaxBytes       int64  `json:"coverMaxBytes"`
-	CoverConcurrency    int    `json:"coverConcurrency"`
-	ProviderCacheTTLh   int    `json:"providerCacheTtlHours"`
-	ITunesTracklistTTLd int    `json:"itunesTracklistTtlDays"`
-	CoverTTLDays        int    `json:"coverTtlDays"`
+	CoverDir          string `json:"coverDir"`
+	CoverMaxBytes     int64  `json:"coverMaxBytes"`
+	CoverConcurrency  int    `json:"coverConcurrency"`
+	ProviderCacheTTLh int    `json:"providerCacheTtlHours"`
+	CoverTTLDays      int    `json:"coverTtlDays"`
 }
 
 // Settings 是全部用户可配置项。
@@ -140,12 +139,11 @@ func Defaults() Settings {
 			ExportUTF8BOM:    true,
 		},
 		Cache: CacheSettings{
-			CoverDir:            "",
-			CoverMaxBytes:       2 << 30, // 2 GiB
-			CoverConcurrency:    8,
-			ProviderCacheTTLh:   24 * 30,
-			ITunesTracklistTTLd: 30,
-			CoverTTLDays:        30,
+			CoverDir:          "",
+			CoverMaxBytes:     2 << 30, // 2 GiB
+			CoverConcurrency:  8,
+			ProviderCacheTTLh: 24 * 30,
+			CoverTTLDays:      30,
 		},
 	}
 }

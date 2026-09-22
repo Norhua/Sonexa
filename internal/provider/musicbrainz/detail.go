@@ -31,6 +31,7 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 		Params:     params,
 		ParamsHash: p.hash(mergeParams(params, map[string]string{"id": ref.ID})),
 		TTL:        0, // CC0，可长期留存
+		SkipCache:  ref.SkipCache,
 	})
 	if err != nil {
 		return nil, err

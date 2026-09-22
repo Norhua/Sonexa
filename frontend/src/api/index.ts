@@ -13,6 +13,8 @@ export const Events = {
   EnrichProgress: 'enrich:progress',
   SettingsSaved: 'settings:saved',
   LibraryChanged: 'library:changed',
+  CoverChanged: 'cover:changed',
+  CoverResults: 'cover:results',
   ProviderResults: 'upstream:providerResults',
 } as const
 
@@ -25,6 +27,8 @@ export const COVER_THUMB_SIZE = 250
  * MusicBrainz 用 ref 装 release MBID，iTunes 用它装基准图地址。
  */
 export interface CoverSource {
+  releaseId?: number | null
+  revision?: number
   provider?: string | null
   /** release MBID（MusicBrainz）或基准图地址（iTunes）。 */
   ref?: string | null
@@ -45,15 +49,17 @@ export interface CoverSource {
  */
 export function coverUrl(
   source: CoverSource | null | undefined,
-  size = COVER_THUMB_SIZE,
+  usage: 'thumbnail' | 'detail' = 'thumbnail',
 ): string {
-  if (!source?.provider || !source.ref) return ''
-  const q = new URLSearchParams({
-    provider: source.provider,
-    ref: source.ref,
-    size: String(size),
-  })
-  if (source.rg) q.set('rg', source.rg)
+  if (!source?.releaseId && (!source?.provider || !source.ref)) return ''
+  const q = new URLSearchParams({ usage })
+  if (source.releaseId) q.set('releaseId', String(source.releaseId))
+  else {
+    q.set('provider', source.provider ?? '')
+    q.set('ref', source.ref ?? '')
+    if (source.rg) q.set('rg', source.rg)
+  }
+  q.set('revision', String(source.revision ?? 0))
   return `/cover?${q.toString()}`
 }
 

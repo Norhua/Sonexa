@@ -23,6 +23,8 @@ import AlbumsView from '@/views/AlbumsView.vue'
 import SearchView from '@/views/SearchView.vue'
 import ImportQueueView from '@/views/ImportQueueView.vue'
 import ReviewView from '@/views/ReviewView.vue'
+import CoverSearchView from '@/views/CoverSearchView.vue'
+import { useCoverSearchStore } from '@/stores/coverSearch'
 /** 模态表单按需载入；首次浏览不解析设置、导入与编辑的控件代码。 */
 const SettingsDialog = defineAsyncComponent(() => import('@/views/SettingsDialog.vue'))
 const ImportWizard = defineAsyncComponent(() => import('@/views/ImportWizard.vue'))
@@ -41,6 +43,7 @@ const tasks = useTasksStore()
 const enrich = useEnrichStore()
 const search = useSearchStore()
 const ui = useUiStore()
+const coverSearch = useCoverSearchStore()
 useThemeStore()
 
 const drawerOpen = ref(false)
@@ -103,7 +106,7 @@ const rows = computed<Row[]>(() =>
     genre: t.genre,
     mediumFormat: t.mediumFormat,
     country: t.country,
-    coverSource: { provider: t.matchSource, ref: t.releaseRef, rg: t.releaseGroupRef },
+    coverSource: { releaseId: t.releaseId, provider: t.matchSource, ref: t.releaseRef, rg: t.releaseGroupRef },
     // 封面挂在歌集上：已采用的那张优先于临时缩略图
     adoptedCoverPath: t.coverPath,
   })),
@@ -364,7 +367,8 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
         @open-settings="ui.openSettings('upstream')"
       />
 
-      <main class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <CoverSearchView v-if="coverSearch.target" />
+      <main v-show="!coverSearch.target" class="flex min-h-0 min-w-0 flex-1 flex-col">
         <!-- 标准曲目表格：全部曲目 / 最近添加 / 歌单 / 标签 -->
         <template v-if="showTrackTable">
           <ViewHeader />
@@ -459,7 +463,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
     <DetailDrawer
       :key="detail?.track.id"
       :detail="detail"
-      :open="drawerOpen"
+      :open="drawerOpen && !coverSearch.target"
       @close="drawerOpen = false"
       @edit="(id) => (editing = id)"
       @view-artist="goToArtist"

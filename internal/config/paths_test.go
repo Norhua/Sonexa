@@ -95,9 +95,6 @@ func TestSettingsDefaultsRoundTrip(t *testing.T) {
 	if got.Cache.CoverConcurrency != 8 {
 		t.Errorf("封面并发 = %d, 期望 8", got.Cache.CoverConcurrency)
 	}
-	if got.Cache.ITunesTracklistTTLd != 30 {
-		t.Errorf("iTunes 清单 TTL = %d, 期望 30 天", got.Cache.ITunesTracklistTTLd)
-	}
 	if !got.ImportExport.ExportUTF8BOM {
 		t.Error("导出应默认使用带 BOM 的 UTF-8")
 	}

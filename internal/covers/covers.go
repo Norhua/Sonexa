@@ -17,8 +17,10 @@ type Ref struct {
 	SourceRef string `json:"sourceRef"`
 	// Size 是目标尺寸，列表缩略图用 250。
 	Size int `json:"size"`
-	// URLs 是降级链，由 Go 侧的 provider 逻辑生成。
-	URLs []string `json:"urls"`
+	// URLs 仅兼容旧工作池调用，专辑服务忽略客户端 URL。
+	URLs   []string `json:"urls"`
+	Target Target   `json:"target"`
+	Usage  Usage    `json:"usage"`
 }
 
 // LadderBuilder 由来源标识构造降级链。
@@ -48,7 +50,8 @@ const maxOutcomes = 4096
 
 // Service 把工作池、缓存与 handler 组装为一个整体。
 type Service struct {
-	pool *Pool
+	pool    *Pool
+	library *LibraryImages
 	// ladder 在 <img> 请求到达时按来源构造降级链。
 	//
 	// 早期实现要求前端先调 PrefetchCovers 把降级链登记进来，handler 只认登记过的键。
@@ -118,6 +121,14 @@ func (s *Service) Pool() *Pool { return s.pool }
 func (s *Service) Prefetch(ctx context.Context, refs []Ref) {
 	for _, r := range refs {
 		go func(ref Ref) {
+			if s.library != nil {
+				usage := ref.Usage
+				if usage == "" {
+					usage = Thumbnail
+				}
+				_, _ = s.Resolve(ctx, ref.Target, usage)
+				return
+			}
 			// 失败只影响该行，不向上传播
 			_, _ = s.pool.Fetch(ctx, Fetcher{Key: ref.Key, URLs: ref.URLs})
 		}(r)
@@ -146,6 +157,10 @@ func (s *Service) CancelOutOfView(visibleKeys []string) {
 // 这样 <img> 的懒加载、滚出视口自动取消、解码不占主线程等原生行为全部保留。
 func (s *Service) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.library != nil && r.URL.Query().Get("adopted") == "" {
+			s.serveLibrary(w, r)
+			return
+		}
 		// 已采用的封面按落盘路径直接读取；临时缩略图按来源标识取。
 		// 两条路径都要能走通，否则用户采用过的封面显示不出来。
 		if adoptedPath := r.URL.Query().Get("adopted"); adoptedPath != "" {

@@ -20,14 +20,12 @@ import type { Models } from '@/api'
 /**
  * 候选行的封面来源。
  *
- * MusicBrainz 的候选有 release 级标识，iTunes 没有——它只给一个基准图地址，
- * 降级链由那个地址构造，因此把它当作来源标识。这与后端 BuildCoverRefs
- * 算缓存键时的取源必须一致，否则预取暖好的图对不上号、会被重下一遍。
+ * 候选以发行身份读取已存在的本地图；只有 MusicBrainz 发行允许自动查询 CAA。
  */
 function coverSourceOf(row: Models.app.CandidateRow) {
   return {
     provider: row.provider,
-    ref: row.releaseRef || row.artworkUrl,
+    ref: row.releaseRef,
     rg: row.releaseGroupRef,
   }
 }

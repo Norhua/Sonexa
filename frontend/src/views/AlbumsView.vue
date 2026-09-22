@@ -111,12 +111,14 @@ async function open(a: Models.store.AlbumListItem) {
  * 用的是同一张图。本地歌集没有上游标识，返回 null 由 CoverArt 呈现缺省态。
  */
 function coverSourceOf(a: {
+  releaseId?: number
   provider?: string
   releaseGroupRef?: string
   representativeRef?: string
   releaseRef?: string
-}): { provider?: string | null; ref?: string | null; rg?: string | null } | null {
+}): { releaseId?: number; provider?: string | null; ref?: string | null; rg?: string | null } | null {
   const ref = a.representativeRef ?? a.releaseRef
+  if (a.releaseId) return { releaseId: a.releaseId }
   if (!a.provider || !ref) return null
   return { provider: a.provider, ref, rg: a.releaseGroupRef ?? null }
 }
@@ -239,7 +241,7 @@ async function addGhost(row: Row) {
         <CoverArt
           :source="coverSourceOf(detail)"
           :adopted-path="detail.coverPath"
-          :size="COVER_THUMB_SIZE"
+          usage="detail"
           class="size-20 shrink-0 rounded"
           icon-class="size-6"
         />

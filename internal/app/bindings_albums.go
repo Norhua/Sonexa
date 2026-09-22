@@ -132,8 +132,8 @@ func (a *App) GetAlbumDetail(releaseID int64) (*AlbumDetail, error) {
 		return detail, nil
 	}
 
-	// 清单过期判定收口在 EffectiveTracklistState：所有读取清单的路径都经过它
-	effective := a.staleConfig().EffectiveTracklistState(rel)
+	// 已存清单按真实状态读取，不因来源或获取日期作废。
+	effective := rel.TracklistState
 	detail.TracklistState = string(effective)
 
 	if effective != store.TracklistComplete {
@@ -273,14 +273,14 @@ func (a *App) FetchTracklist(providerID, releaseRef string, force bool) error {
 		return err
 	}
 	if rel != nil && !force {
-		// 清单已完整且未过期时无需重取
-		if a.staleConfig().EffectiveTracklistState(rel) == store.TracklistComplete {
+		// 完整清单不自动重取；显式 force 绕过状态与响应缓存。
+		if rel.TracklistState == store.TracklistComplete {
 			return nil
 		}
 	}
 
 	detail, err := p.FetchDetail(context.Background(), provider.Ref{
-		ID: releaseRef, Country: countryOf(releaseRef),
+		ID: releaseRef, Country: countryOf(releaseRef), SkipCache: force,
 	})
 	if err != nil {
 		// 标记失败，界面显示错误与重试动作
@@ -375,17 +375,6 @@ func (a *App) AddGhostRowToLibrary(providerID, trackRef, title string,
 		Provider: provider.ProviderID(providerID), MatchRef: trackRef,
 		Title: &title, ArtistName: credit, DurationMS: durationMS, RecordingRef: recordingRef,
 	})
-}
-
-func (a *App) staleConfig() store.StaleConfig {
-	cfg := store.DefaultStaleConfig()
-	if a.settings != nil {
-		days := a.settings.Get().Cache.ITunesTracklistTTLd
-		if days > 0 {
-			cfg.ITunesTTL = time.Duration(days) * 24 * time.Hour
-		}
-	}
-	return cfg
 }
 
 // countryOf 从 {country}:{id} 形态的标识中取出地区。
