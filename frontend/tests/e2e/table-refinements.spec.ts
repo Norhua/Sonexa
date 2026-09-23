@@ -152,24 +152,38 @@ test('drawer follows local-search and album owned rows but never ghost versions'
   await expect(drawer(page).getByRole('heading', { name: 'Tetra.', exact: true })).toBeVisible()
 })
 
-test('switching or closing details clears the cover picker and ignores its late search result', async ({ page }) => {
+test('returning from cover search cancels the session and ignores its late result', async ({ page }) => {
   await page.evaluate(() => {
-    ;(window as any).go.app.App.SearchCovers = () => new Promise(resolve => {
-      ;(window as any).__resolveCovers = () => resolve([])
-    })
+    const api = (window as any).go.app.App, original = api.GetTrackDetail
+    api.GetTrackDetail = async (id: number) => {
+      const result = await original(id)
+      return { ...result, track: { ...result.track, releaseId: id + 10 } }
+    }
+    api.StartCoverSearch = async (request: any) => {
+      ;(window as any).__lateCover = () => (window as any).runtime.EventsEmit('cover:results', {
+        generation: request.generation, searchId: request.searchId, releaseId: request.releaseId, source: request.sources[0], state: 'empty', cards: [], error: '',
+      })
+    }
+    api.CancelCoverSearch = async (id: string) => { (window as any).__cancelledCover = id }
   })
   await cell(page, 0).dblclick()
-  await drawer(page).getByRole('button', { name: '重新获取封面', exact: true }).click()
-  await expect(drawer(page).getByText('正在向全部上游查询…')).toBeVisible()
+  await drawer(page).getByRole('button', { name: '更新歌曲图片', exact: true }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '更新歌曲图片', exact: true }).hover()
+  await page.getByRole('menuitem', { name: '从网络搜索', exact: true }).click()
+  const search = page.getByRole('region', { name: '从网络搜索封面' })
+  await expect(search).toBeVisible()
+  await search.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect(search.getByText('正在查询封面…')).toBeVisible()
+  await page.getByRole('button', { name: '关闭封面搜索', exact: true }).click()
+  await expect(search).toHaveCount(0)
   await cell(page, 1).click()
   await expect(drawer(page).getByRole('heading', { name: '夕立', exact: true })).toBeVisible()
-  await page.evaluate(() => (window as any).__resolveCovers())
-  await expect(drawer(page).getByText('选择封面', { exact: true })).toHaveCount(0)
-  await drawer(page).getByRole('button', { name: '重新获取封面', exact: true }).click()
+  await page.evaluate(() => (window as any).__lateCover())
+  await expect(search).toHaveCount(0)
+  expect(await page.evaluate(() => !!(window as any).__cancelledCover)).toBe(true)
   await drawer(page).getByTitle('关闭', { exact: true }).click()
-  await page.evaluate(() => (window as any).__resolveCovers())
-  await cell(page, 1).dblclick()
-  await expect(drawer(page).getByText('选择封面', { exact: true })).toHaveCount(0)
+  await page.evaluate(() => (window as any).__lateCover())
+  await expect(drawer(page)).toHaveCount(0)
 })
 
 test('enrichment control is compact and still toggles', async ({ page }) => {

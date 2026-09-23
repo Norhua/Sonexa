@@ -33,6 +33,9 @@ type App struct {
 	client        *provider.Client
 	coverSvc      *covers.Service
 	coverSessions map[string]*coverSession
+	coverWorkers  sync.WaitGroup
+	coverClosing  bool
+	pickCoverFile func(context.Context, runtime.OpenDialogOptions) (string, error)
 	runner        *importer.Runner
 	// enricher 是后台的「补全信息匹配」任务：入库不再同步补详情，
 	// 详情由它在空闲时按条补上（见 enrichWorker）。
@@ -49,7 +52,8 @@ type App struct {
 	// 测试把它换成记账函数。
 	emit func(name string, data ...any)
 
-	mu sync.RWMutex
+	settingsMu sync.Mutex
+	mu         sync.RWMutex
 	// startupErr 记录启动失败的原因，供前端显示。
 	startupErr string
 }
@@ -177,12 +181,7 @@ func (a *App) initialize() error {
 		return err
 	}
 	a.coverSvc = a.attachLadderBuilder(svc)
-	svc.EnableNetworkPolicy(func() error {
-		if gate := a.CheckOutbound(); !gate.Allowed {
-			return &covers.OutboundError{Reason: gate.Reason}
-		}
-		return nil
-	})
+	svc.EnableNetworkPolicy(a.checkCoverOutbound)
 
 	a.rebuildRunner(cur)
 	a.attachEnrichWorker()
@@ -320,10 +319,12 @@ const (
 // shutdown 在应用退出时释放资源。
 func (a *App) shutdown(ctx context.Context) {
 	a.mu.Lock()
+	a.coverClosing = true
 	for _, session := range a.coverSessions {
 		session.cancel()
 	}
 	a.mu.Unlock()
+	a.coverWorkers.Wait()
 	if a.enricher != nil {
 		a.enricher.Stop()
 	}

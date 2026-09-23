@@ -27,6 +27,10 @@ type CandidateRow struct {
 	// LocalTrackID 非零时表示库中已有对应曲目，可跳转。
 	LocalTrackID int64 `json:"localTrackId"`
 
+	// 封面目标仅按同一发行身份关联，不能借文本疑似命中跨歌集取图。
+	ReleaseID     int64 `json:"releaseId"`
+	CoverRevision int64 `json:"coverRevision"`
+
 	ThumbKey      string  `json:"thumbKey"`
 	Title         *string `json:"title"`
 	Artist        *string `json:"artist"`
@@ -44,7 +48,7 @@ type CandidateRow struct {
 	// MatchedVariant 供复核队列显示该分值来自哪个变体。
 	MatchedVariant string `json:"matchedVariant"`
 
-	/** ArtworkURL 是 iTunes 的基准图地址；其大图尺寸靠构造，需据此生成降级链。 */
+	/** ArtworkURL 仅保留候选原始元信息；自动封面不使用它出网。 */
 	ArtworkURL *string `json:"artworkUrl"`
 
 	ReleaseRef      *string `json:"releaseRef"`
@@ -246,8 +250,7 @@ func rowFrom(sc matching.ScoredCandidate) CandidateRow {
 		ReleaseRef: c.ReleaseRef, ReleaseGroupRef: c.ReleaseGroupRef,
 		RecordingRef: c.RecordingRef, ISRC: c.ISRC,
 		ReleaseStatus: c.ReleaseStatus, FirstReleaseDate: c.FirstReleaseDate,
-		// iTunes 没有 release 级标识，只给一个基准图地址；不把它带出来
-		// 就等于把 iTunes 结果的缩略图整片丢掉。
+		// 保留原始信息用于无损入库，自动取图仅使用发行身份。
 		ArtworkURL: c.ThumbURL,
 	}
 	switch {
@@ -297,9 +300,7 @@ func (a *App) PrefetchCovers(refs []covers.Ref) error {
 	if a.coverSvc == nil {
 		return nil
 	}
-	if gate := a.CheckOutbound(); !gate.Allowed {
-		return nil // 出网禁用时静默跳过，不报错
-	}
+	// 本地预取不受出网设置影响；实际网络请求由共享工作池检查 gate。
 	a.coverSvc.Prefetch(context.Background(), refs)
 	return nil
 }
@@ -321,11 +322,11 @@ func (a *App) BuildCoverRefs(rows []CandidateRow) []covers.Ref {
 			if r.ReleaseRef == nil || *r.ReleaseRef == "" {
 				continue
 			}
-			target := covers.Target{Provider: r.Provider, Ref: *r.ReleaseRef}
+			target := covers.Target{ReleaseID: r.ReleaseID, Provider: r.Provider, Ref: *r.ReleaseRef}
 			if r.ReleaseGroupRef != nil {
 				target.GroupRef = *r.ReleaseGroupRef
 			}
-			out = append(out, covers.Ref{Key: target.Key(covers.Thumbnail, 0), Target: target, Usage: covers.Thumbnail})
+			out = append(out, covers.Ref{Key: target.Key(covers.Thumbnail, r.CoverRevision), Target: target, Usage: covers.Thumbnail})
 			continue
 		}
 		// iTunes 的候选没有 release 级标识，只有 artworkUrl；

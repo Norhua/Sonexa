@@ -8,6 +8,7 @@ type CoverTargetQuery struct {
 	Ref       string `json:"ref"`
 	GroupRef  string `json:"groupRef"`
 	Usage     string `json:"usage"`
+	Revision  int64  `json:"revision"`
 }
 
 func (a *App) CoverTargetOutcomes(queries []CoverTargetQuery) []string {
@@ -21,7 +22,7 @@ func (a *App) CoverTargetOutcomes(queries []CoverTargetQuery) []string {
 			continue
 		}
 		target := covers.Target{ReleaseID: q.ReleaseID, Provider: q.Provider, Ref: q.Ref, GroupRef: q.GroupRef}
-		results := svc.Outcomes([]string{target.Key(covers.Usage(q.Usage), 0)})
+		results := svc.Outcomes([]string{target.Key(covers.Usage(q.Usage), q.Revision)})
 		if len(results) > 0 && results[0] != covers.OutcomeUnknown {
 			out[i] = string(results[0])
 		}

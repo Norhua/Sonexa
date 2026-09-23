@@ -198,6 +198,7 @@ type AlbumListItem struct {
 	Provider          *string `json:"provider"`
 	ReleaseGroupRef   *string `json:"releaseGroupRef"`
 	// CoverPath / CoverSourceURL 供列表直接渲染封面。
+	CoverRevision  int64   `json:"coverRevision"`
 	CoverPath      *string `json:"coverPath"`
 	CoverSourceURL *string `json:"coverSourceUrl"`
 }
@@ -254,7 +255,17 @@ func (s *Store) ListAlbums() ([]AlbumListItem, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return s.mergeAlbumGroups(flat), nil
+	albums := s.mergeAlbumGroups(flat)
+	for i := range albums {
+		selection, err := s.GetCoverSelection(albums[i].ReleaseID)
+		if err != nil {
+			return nil, err
+		}
+		if selection != nil {
+			albums[i].CoverRevision = selection.Revision
+		}
+	}
+	return albums, nil
 }
 
 // ListAlbumsForTag 仅保留拥有带标签曲目的专辑；不改变代表版本、收藏数与清单总数。

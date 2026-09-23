@@ -15,6 +15,7 @@ import SecondaryButton from '@/volt/SecondaryButton.vue'
 import Tag from '@/volt/Tag.vue'
 import { display, duration, trackPosition, DASH } from '@/api'
 import CoverArt from '@/components/CoverArt.vue'
+import { useCandidateCovers } from '@/lib/useCandidateCovers'
 import type { Models } from '@/api'
 
 /**
@@ -24,6 +25,8 @@ import type { Models } from '@/api'
  */
 function coverSourceOf(row: Models.app.CandidateRow) {
   return {
+    releaseId: row.releaseId,
+    revision: row.coverRevision,
     provider: row.provider,
     ref: row.releaseRef,
     rg: row.releaseGroupRef,
@@ -84,6 +87,8 @@ const visibleRows = computed(() => {
   return props.rows
 })
 
+useCandidateCovers(visibleRows)
+
 const truncated = computed(() => props.limit > 0 && !expanded.value && props.rows.length > props.limit)
 
 function onAct(row: Models.app.CandidateRow) {
@@ -124,7 +129,7 @@ function onAct(row: Models.app.CandidateRow) {
       <Column class="w-12">
         <template #body="{ data }">
           <!-- 取图失败只影响该行：显示状态图标，标题等其余列照常渲染 -->
-          <CoverArt :source="coverSourceOf(data)" class="size-8 rounded" />
+          <CoverArt :source="coverSourceOf(data)" usage="thumbnail" class="size-8 rounded" />
         </template>
       </Column>
 

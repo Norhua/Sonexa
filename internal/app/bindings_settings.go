@@ -90,43 +90,32 @@ func (a *App) SaveSettings(next config.Settings) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	if err := a.settings.Save(next); err != nil {
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+	a.mu.RLock()
+	svc, paths := a.coverSvc, a.paths
+	a.mu.RUnlock()
+	newPaths := paths.WithCoverDir(next.Cache.CoverDir)
+	if newPaths.CoverDir != paths.CoverDir && svc != nil && svc.Library() != nil {
+		if err := svc.MoveRoot(newPaths.CoverDir, func() error { return a.settings.Save(next) }); err != nil {
+			return fmt.Errorf("迁移封面目录失败: %w", err)
+		}
+	} else if err := a.settings.Save(next); err != nil {
 		return err
 	}
-
+	if svc != nil {
+		svc.ConfigureNetwork(a.checkCoverOutbound, a.userAgent(next))
+		if err := svc.ConfigureCache(next.Cache.CoverMaxBytes, coverTTL(next)); err != nil {
+			return err
+		}
+		svc.Pool().SetConcurrency(next.Cache.CoverConcurrency)
+	}
 	a.mu.Lock()
-	// 上游配置改动后重建注册表与令牌桶
+	a.paths = newPaths
 	a.rebuildProviders(next)
 	a.rebuildRunner(next)
-	// 阶梯配置（偏好国家、载体优先级）改动后同步给 store，
-	// 否则专辑视图仍按旧配置选代表 release
 	a.store.SetLadderConfig(a.ladderConfig())
-	// 封面并发数改动后就地调整工作池
-	if a.coverSvc != nil {
-		a.coverSvc.Pool().SetConcurrency(next.Cache.CoverConcurrency)
-	}
 	a.mu.Unlock()
-
-	// 封面缓存目录改动后重建缓存与工作池——
-	// 此前只在启动时建一次，改目录要重启才生效
-	a.mu.RLock()
-	oldDir := a.paths.CoverDir
-	a.mu.RUnlock()
-	newPaths := a.paths.WithCoverDir(next.Cache.CoverDir)
-	if newPaths.CoverDir != oldDir {
-		if err := newPaths.Ensure(); err != nil {
-			return fmt.Errorf("创建新的封面缓存目录失败: %w", err)
-		}
-		svc, err := newCoverService(a.store, newPaths, next, a.version)
-		if err != nil {
-			return fmt.Errorf("重建封面缓存失败: %w", err)
-		}
-		a.mu.Lock()
-		a.paths = newPaths
-		a.coverSvc = a.attachLadderBuilder(svc)
-		a.mu.Unlock()
-	}
-
 	a.emitEvent(EventSettingsSaved, next)
 	return nil
 }
@@ -197,9 +186,18 @@ func (a *App) About() AboutInfo {
 			},
 			{
 				Name: "Apple / iTunes",
-				Text: "部分元数据来自 iTunes Search API。依据 Apple 的条款，" +
-					"这些数据仅为性能目的短期缓存，不作为长期事实来源留存；其图片同样不随导出分发。",
-				URL: "https://www.apple.com/itunes/",
+				Text: "部分元数据与封面来自 iTunes Search API。本地保存不按日期失效；封面图片不随导出分发。",
+				URL:  "https://www.apple.com/itunes/",
+			},
+			{
+				Name: "QQ 音乐",
+				Text: "用户选择的部分封面来自 QQ 音乐，保留来源信息，图片不随导出分发。",
+				URL:  "https://y.qq.com/",
+			},
+			{
+				Name: "网易云音乐",
+				Text: "用户选择的部分封面来自网易云音乐，保留来源信息，图片不随导出分发。",
+				URL:  "https://music.163.com/",
 			},
 		},
 	}
@@ -213,7 +211,7 @@ func (a *App) ClearCache() error {
 		return err
 	}
 	if a.coverSvc != nil {
-		if err := a.coverSvc.Pool().Cache().Clear(); err != nil {
+		if err := a.coverSvc.ClearCache(); err != nil {
 			return fmt.Errorf("清除封面缓存失败: %w", err)
 		}
 	}

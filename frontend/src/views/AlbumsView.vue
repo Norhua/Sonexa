@@ -7,7 +7,7 @@
  * 不是上游目录浏览器。
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { App, COVER_THUMB_SIZE, display, type Models } from '@/api'
+import { App, display, Events, EventsOn, type Models } from '@/api'
 import type { Row } from '@/components/TrackTable.vue'
 import CoverArt from '@/components/CoverArt.vue'
 import PaneHeader from '@/components/PaneHeader.vue'
@@ -57,7 +57,20 @@ const emit = defineEmits<{
 }>()
 
 let listRequest = 0
-onBeforeUnmount(() => { listRequest++ })
+let coverRequest = 0
+const offCover = EventsOn(Events.CoverChanged, async (event: { releaseId: number; revision: number }) => {
+  for (const album of albums.value) {
+    if (album.releaseId === event.releaseId) album.coverRevision = Math.max(album.coverRevision ?? 0, event.revision)
+  }
+  const current = detail.value?.releaseId
+  if (current !== event.releaseId || event.revision <= (detail.value?.coverRevision ?? 0)) return
+  const request = ++coverRequest
+  try {
+    const next = await App.GetAlbumDetail(current)
+    if (request === coverRequest && detail.value?.releaseId === current && next.coverRevision >= (detail.value?.coverRevision ?? 0)) detail.value = next
+  } catch (e) { if (request === coverRequest) error.value = String(e) }
+})
+onBeforeUnmount(() => { listRequest++; coverRequest++; offCover() })
 watch(() => library.filter.tagId, load, { immediate: true })
 
 async function load() {
@@ -112,13 +125,14 @@ async function open(a: Models.store.AlbumListItem) {
  */
 function coverSourceOf(a: {
   releaseId?: number
+  coverRevision?: number
   provider?: string
   releaseGroupRef?: string
   representativeRef?: string
   releaseRef?: string
-}): { releaseId?: number; provider?: string | null; ref?: string | null; rg?: string | null } | null {
+}): { releaseId?: number; revision?: number; provider?: string | null; ref?: string | null; rg?: string | null } | null {
   const ref = a.representativeRef ?? a.releaseRef
-  if (a.releaseId) return { releaseId: a.releaseId }
+  if (a.releaseId) return { releaseId: a.releaseId, revision: a.coverRevision }
   if (!a.provider || !ref) return null
   return { provider: a.provider, ref, rg: a.releaseGroupRef ?? null }
 }
@@ -211,8 +225,7 @@ async function addGhost(row: Row) {
       >
         <CoverArt
           :source="coverSourceOf(a)"
-          :adopted-path="a.coverPath"
-          :size="COVER_THUMB_SIZE"
+          usage="thumbnail"
           class="size-10 shrink-0 rounded"
           icon-class="size-4"
         />
@@ -240,7 +253,6 @@ async function addGhost(row: Row) {
       <div v-if="detail" class="flex shrink-0 gap-3 px-4 pb-2">
         <CoverArt
           :source="coverSourceOf(detail)"
-          :adopted-path="detail.coverPath"
           usage="detail"
           class="size-20 shrink-0 rounded"
           icon-class="size-6"

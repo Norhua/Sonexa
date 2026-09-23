@@ -23,18 +23,19 @@ type TrackView struct {
 	ArtistLocked bool `json:"artistLocked"`
 	AlbumLocked  bool `json:"albumLocked"`
 
-	Year         *int    `json:"year"`
-	TrackNumber  *int    `json:"trackNumber"`
-	TrackTotal   *int    `json:"trackTotal"`
-	DiscNumber   *int    `json:"discNumber"`
-	DurationMS   *int    `json:"durationMs"`
-	Genre        *string `json:"genre"`
-	MediumFormat *string `json:"mediumFormat"`
-	Country      *string `json:"country"`
-	PrimaryType  *string `json:"primaryType"`
-	CoverPath    *string `json:"coverPath"`
-	MatchSource  *string `json:"matchSource"`
-	MatchRef     *string `json:"matchRef"`
+	Year          *int    `json:"year"`
+	TrackNumber   *int    `json:"trackNumber"`
+	TrackTotal    *int    `json:"trackTotal"`
+	DiscNumber    *int    `json:"discNumber"`
+	DurationMS    *int    `json:"durationMs"`
+	Genre         *string `json:"genre"`
+	MediumFormat  *string `json:"mediumFormat"`
+	Country       *string `json:"country"`
+	PrimaryType   *string `json:"primaryType"`
+	CoverPath     *string `json:"coverPath"`
+	CoverRevision int64   `json:"coverRevision"`
+	MatchSource   *string `json:"matchSource"`
+	MatchRef      *string `json:"matchRef"`
 
 	// ReleaseID 是所属歌集，供编辑界面定位要改的那条 release。
 	ReleaseID *int64 `json:"releaseId"`
@@ -88,7 +89,8 @@ const trackSelectColumns = `
 	r.cover_path, t.match_source, t.match_ref,
 	t.release_id, r.provider_ref,
 	(SELECT rg.provider_ref FROM release_group rg WHERE rg.id = r.release_group_id),
-	t.created_at`
+	t.created_at,
+	COALESCE((SELECT revision FROM release_cover_selection WHERE release_id=t.release_id),0)`
 
 func scanTrackView(sc interface{ Scan(...any) error }) (*TrackView, error) {
 	var v TrackView
@@ -101,7 +103,7 @@ func scanTrackView(sc interface{ Scan(...any) error }) (*TrackView, error) {
 		&v.TrackNumber, &v.TrackTotal, &v.DiscNumber, &v.DurationMS,
 		&v.Genre, &v.MediumFormat, &v.Country, &v.PrimaryType,
 		&v.CoverPath, &v.MatchSource, &v.MatchRef,
-		&v.ReleaseID, &v.ReleaseRef, &v.ReleaseGroupRef, &createdAt); err != nil {
+		&v.ReleaseID, &v.ReleaseRef, &v.ReleaseGroupRef, &createdAt, &v.CoverRevision); err != nil {
 		return nil, err
 	}
 	v.AddedAt = createdAt.UTC().Format(time.RFC3339)

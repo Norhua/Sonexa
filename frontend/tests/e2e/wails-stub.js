@@ -62,12 +62,15 @@
       App: {
         GetSettings: async () => settings,
         DefaultSettings: async () => settings,
-        SaveSettings: async () => {},
+        SaveSettings: async next => {
+          Object.assign(settings, JSON.parse(JSON.stringify(next)))
+          emit('settings:saved', settings)
+        },
         ListProviders: async () => [
           { id: 'musicbrainz', displayName: 'MusicBrainz', configured: true, reason: '', capabilities: ['label'], needsCountry: false },
           { id: 'itunes', displayName: 'iTunes', configured: true, reason: '', capabilities: [], needsCountry: true },
         ],
-        CheckOutbound: async () => ({ allowed: true, reason: '', settingsAnchor: '' }),
+        CheckOutbound: async () => ({ allowed: !!settings.musicbrainz.contact.trim(), reason: settings.musicbrainz.contact.trim() ? '' : '需要设置联系方式', settingsAnchor: 'upstream' }),
         CheckReachable: async () => true,
         ListCollections: async kind => kind === 'playlist' ? [{ id: 10, kind, name: '测试歌单', trackCount: tracks.length }] : [],
         ListTracks: async filter => {
@@ -92,8 +95,23 @@
           track: tracks.find((t) => t.id === id) ?? tracks[0],
           participants: [], creditSpans: [], tags: [], provenance: {},
         }),
-        CoverOutcomes: async () => ({}),
+        CoverOutcomes: async queries => queries.map(() => 'empty'),
+        CoverTargetOutcomes: async queries => queries.map(() => 'empty'),
+        CoverRevision: async () => 0,
+        ListCoverSources: async () => [
+          { id: 'caa', name: 'CAA', needsCountry: false },
+          { id: 'itunes', name: 'iTunes', needsCountry: true },
+          { id: 'qq', name: 'QQ', needsCountry: false },
+          { id: '163', name: '网易云', needsCountry: false },
+        ],
+        StartCoverSearch: async request => {
+          for (const source of request.sources) emit('cover:results', { generation: request.generation, searchId: request.searchId, releaseId: request.releaseId, source, state: 'empty', cards: [], error: '' })
+        },
+        CoverSearchResults: async () => [],
+        CancelCoverSearch: async () => {},
+        PickAndAdoptCover: async () => ({ cancelled: true }),
         BuildCoverRefs: async () => [],
+        CancelCovers: async () => {},
         PrefetchCovers: async () => {},
         ListCountries: async () => [{ code: 'JP', name: '日本' }],
         SuggestCountry: async () => ({ detected: false, country: '', message: '' }),

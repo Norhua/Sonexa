@@ -78,7 +78,7 @@ type TrackDetail struct {
 	// Participants 是全部实际角色的分组，按固定顺序排列。
 	// character 不单独成组——它只出现在署名原串的可点击片段中。
 	Participants []ParticipantGroup `json:"participants"`
-	/** CoverProvider / CoverRef / CoverGroupRef 是临时缩略图的来源标识。 */
+	/** 兼容来源身份字段；本地目标和采用版本由 Track.ReleaseID/CoverRevision 提供。 */
 	CoverProvider string `json:"coverProvider"`
 	CoverRef      string `json:"coverRef"`
 	CoverGroupRef string `json:"coverGroupRef"`
@@ -138,9 +138,7 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 	if meta != nil && meta.CoverPath != nil {
 		detail.AdoptedCoverPath = *meta.CoverPath
 	}
-	// 临时缩略图给来源标识，由前端拼成 /cover 地址——handler 据此就地构造降级链。
-	// 详情与列表用同一个尺寸取图，由 <img> 的显示尺寸决定呈现大小：
-	// 换一个尺寸就是另一个缓存键，等于为同一张图再出网取一次。
+	// 前端显式传递 thumbnail/detail；歌集目标由后端重新解析身份和采用版本。
 	if meta != nil && meta.ReleaseRef != nil && meta.MatchSource != nil {
 		detail.CoverProvider = *meta.MatchSource
 		detail.CoverRef = *meta.ReleaseRef

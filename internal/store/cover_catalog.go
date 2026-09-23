@@ -19,12 +19,13 @@ type CoverCatalogKey struct {
 type CoverCatalog struct {
 	ID int64 `json:"id"`
 	CoverCatalogKey
-	State      string       `json:"state"`
-	CheckedAt  *time.Time   `json:"-"`
-	LastError  string       `json:"lastError"`
-	RetryAfter *time.Time   `json:"-"`
-	Version    int64        `json:"version"`
-	Images     []CoverImage `json:"images"`
+	State            string       `json:"state"`
+	CheckedAt        *time.Time   `json:"-"`
+	LastError        string       `json:"lastError"`
+	RetryAfter       *time.Time   `json:"-"`
+	Version          int64        `json:"version"`
+	ActualReleaseURL string       `json:"actualReleaseUrl"`
+	Images           []CoverImage `json:"images"`
 }
 
 type CoverImage struct {
@@ -166,9 +167,9 @@ func (s *Store) RecordCoverCatalogError(key CoverCatalogKey, message string, ret
 func (s *Store) GetCoverCatalog(key CoverCatalogKey) (*CoverCatalog, error) {
 	var catalog CoverCatalog
 	catalog.CoverCatalogKey = key
-	err := s.db.QueryRow(`SELECT id,state,checked_at,last_error,retry_after,version FROM cover_catalog
+	err := s.db.QueryRow(`SELECT id,state,checked_at,last_error,retry_after,version,actual_release_url FROM cover_catalog
 		WHERE source=? AND object_type=? AND source_ref=?`, key.Source, key.ObjectType, key.SourceRef).Scan(
-		&catalog.ID, &catalog.State, &catalog.CheckedAt, &catalog.LastError, &catalog.RetryAfter, &catalog.Version)
+		&catalog.ID, &catalog.State, &catalog.CheckedAt, &catalog.LastError, &catalog.RetryAfter, &catalog.Version, &catalog.ActualReleaseURL)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

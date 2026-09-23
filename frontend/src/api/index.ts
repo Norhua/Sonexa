@@ -18,19 +18,15 @@ export const Events = {
   ProviderResults: 'upstream:providerResults',
 } as const
 
-/** 列表与详情统一使用的缩略图尺寸。 */
-export const COVER_THUMB_SIZE = 250
+/** 封面解析用途与 CSS 展示尺寸分离。 */
+export type CoverUsage = 'thumbnail' | 'detail'
 
-/**
- * 一张封面的来源标识。
- *
- * MusicBrainz 用 ref 装 release MBID，iTunes 用它装基准图地址。
- */
+/** 库内歌集或稳定的上游发行身份；不接受远程图片 URL。 */
 export interface CoverSource {
   releaseId?: number | null
   revision?: number
   provider?: string | null
-  /** release MBID（MusicBrainz）或基准图地址（iTunes）。 */
+  /** MusicBrainz release MBID 或带地区的 iTunes 专辑身份。 */
   ref?: string | null
   /** release group MBID，降级链的最后一档要用。 */
   rg?: string | null
@@ -49,7 +45,7 @@ export interface CoverSource {
  */
 export function coverUrl(
   source: CoverSource | null | undefined,
-  usage: 'thumbnail' | 'detail' = 'thumbnail',
+  usage: CoverUsage = 'thumbnail',
 ): string {
   if (!source?.releaseId && (!source?.provider || !source.ref)) return ''
   const q = new URLSearchParams({ usage })
@@ -63,11 +59,7 @@ export function coverUrl(
   return `/cover?${q.toString()}`
 }
 
-/**
- * 构造已采用封面的本地地址。
- *
- * 采用后的图按内容哈希落在正式区，与临时缩略图是两条不同的读取路径。
- */
+/** 仅供已登记历史文件的迁移兼容入口。 */
 export function adoptedCoverUrl(path: string): string {
   if (!path) return ''
   return `/cover?adopted=${encodeURIComponent(path)}`

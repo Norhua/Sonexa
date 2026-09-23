@@ -53,80 +53,53 @@ test('sidebar actions reveal only for their heading row, keep layout and support
   await expect(page.getByRole('dialog', { name: '新建标签', exact: true }).getByRole('textbox')).toBeFocused()
 })
 
-test('larger drawer cover and inline icon preserve cover search, errors and adoption', async ({ page }, testInfo) => {
+test('drawer preserves cover layout and opens keyboard context menu without the old icon', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1340, height: 733 })
   await page.route('**/cover?*', route => route.fulfill({
     contentType: 'image/svg+xml',
-    body: '<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500"><rect width="500" height="500" fill="#bd7546"/><circle cx="250" cy="220" r="150" fill="#f3dcb9"/><text x="250" y="435" text-anchor="middle" font-size="32" fill="white">Sonexa · cover fixture</text></svg>',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200"><rect width="1200" height="1200" fill="#bd7546"/></svg>',
   }))
   await page.evaluate(() => {
     const api = (window as any).go.app.App, detail = api.GetTrackDetail
-    let adopted = ''
-    api.GetTrackDetail = async (id: number) => ({
-      ...await detail(id), coverProvider: 'musicbrainz', coverRef: 'test-release', adoptedCoverPath: adopted,
-    })
-    api.SearchCovers = async (...args: string[]) => {
-      ;(window as any).__coverQuery = args
-      throw new Error('封面查询失败')
-    }
-    api.AdoptCover = async (...args: any[]) => {
-      ;(window as any).__adoption = args
-      adopted = '/test/adopted-cover.png'
+    api.GetTrackDetail = async (id: number) => {
+      const value = await detail(id)
+      return { ...value, track: { ...value.track, releaseId: 20 } }
     }
   })
   const rows = page.locator('.track-list [data-row-key]')
   await rows.first().locator('td').last().dblclick()
-  const drawer = page.locator('aside')
-  const image = drawer.locator('img')
-  const icon = drawer.getByRole('button', { name: '重新获取封面', exact: true })
+  const drawer = page.locator('aside'), image = drawer.locator('img')
   const title = drawer.getByRole('heading', { name: '綿雪の夢', exact: true })
   await expect(image).toHaveCSS('opacity', '1')
-  await expect.poll(() => image.evaluate(el => (el as HTMLImageElement).naturalWidth)).toBe(500)
+  await expect(image).toHaveAttribute('src', /usage=detail/)
   const cover = (await image.boundingBox())!, bounds = (await drawer.boundingBox())!
   expect(bounds.width).toBe(340)
   expect(cover.width).toBe(280)
   expect(cover.height).toBe(280)
   expect(Math.abs(cover.x + cover.width / 2 - bounds.x - bounds.width / 2)).toBeLessThan(2)
   expect((await title.boundingBox())!.y - cover.y - cover.height).toBeLessThanOrEqual(20)
-  const titleBlock = (await title.locator('..').boundingBox())!, button = (await icon.boundingBox())!
-  expect(button.x).toBeGreaterThanOrEqual(titleBlock.x + titleBlock.width)
-  expect(Math.abs(button.y + button.height / 2 - titleBlock.y - titleBlock.height / 2)).toBeLessThan(1)
-  await expect(icon).toHaveText('')
-  await expect(icon).toHaveAttribute('title', '重新获取封面')
-  await expect(icon.locator('svg.lucide-image-plus')).toHaveCount(1)
+  await expect(drawer.getByRole('button', { name: '重新获取封面', exact: true })).toHaveCount(0)
+  const trigger = drawer.getByRole('button', { name: '更新歌曲图片', exact: true })
+  await trigger.focus()
+  await page.keyboard.press('Shift+F10')
+  await page.getByRole('menuitem', { name: '更新歌曲图片', exact: true }).hover()
+  await expect(page.getByRole('menuitem', { name: '从本地存储中选择', exact: true })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: '从网络搜索', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
   for (const dark of [false, true]) {
     await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), dark)
     await expect.poll(() => drawer.evaluate(el => getComputedStyle(el).backgroundColor)).toBe(dark ? 'rgb(38, 38, 38)' : 'rgb(250, 250, 250)')
-    await page.screenshot({ path: testInfo.outputPath(`drawer-inline-cover-${dark ? 'dark' : 'light'}.png`), animations: 'disabled' })
+    await page.screenshot({ path: testInfo.outputPath(`drawer-cover-${dark ? 'dark' : 'light'}.png`), animations: 'disabled' })
   }
-  await icon.focus()
-  await page.keyboard.press('Enter')
-  await expect(drawer.getByText('Error: 封面查询失败', { exact: true })).toBeVisible()
-  expect(await page.evaluate(() => (window as any).__coverQuery)).toEqual(['綿雪の夢', 'ハトリアヤ', '狼と巫女とお菓子の家'])
-  await page.evaluate(() => {
-    ;(window as any).go.app.App.SearchCovers = async () => [{
-      provider: 'itunes', sourceRef: 'test', title: '测试封面', constructed: true,
-      variants: [{ url: 'https://example.test/600.jpg', label: '600px' }, { url: 'https://example.test/300.jpg', label: '300px' }],
-    }]
-  })
-  await icon.click()
-  await drawer.getByRole('button', { name: '600px', exact: true }).click()
-  expect(await page.evaluate(() => (window as any).__adoption)).toEqual([
-    1, 'itunes', 'https://example.test/600.jpg', ['https://example.test/300.jpg'],
-  ])
-  await expect(drawer.getByRole('heading', { name: '选择封面', exact: true })).toHaveCount(0)
-  await expect(image).toHaveAttribute('src', /adopted=/)
-  // 长标题/署名可换行，不能把右侧图标挤到抽屉外。
   await page.evaluate(() => {
     const api = (window as any).go.app.App, detail = api.GetTrackDetail
     api.GetTrackDetail = async (id: number) => {
-      const result = await detail(id)
-      return { ...result, track: { ...result.track, title: 'LongTitleWithoutSpaces'.repeat(5), artist: 'ArtistWithALongName'.repeat(5) } }
+      const value = await detail(id)
+      return { ...value, track: { ...value.track, title: 'LongTitleWithoutSpaces'.repeat(5), artist: 'ArtistWithALongName'.repeat(5) } }
     }
   })
   await rows.nth(1).locator('td').last().click()
   await expect(drawer.locator('h2')).toHaveText('LongTitleWithoutSpaces'.repeat(5))
-  expect((await icon.boundingBox())!.x + (await icon.boundingBox())!.width).toBeLessThanOrEqual(bounds.x + bounds.width - 16)
   expect(await drawer.locator('div.overflow-auto').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
 })
 
@@ -149,7 +122,7 @@ test('cover images start lazy requests while placeholders stay visible and failu
         ...track, matchSource: 'musicbrainz', releaseRef: `cover-${track.id}`,
       } : track) }
     }
-    api.CoverOutcomes = async (sources: any[]) => sources.map(source => source.ref === 'cover-2' ? 'empty' : 'error')
+    api.CoverTargetOutcomes = async (sources: any[]) => sources.map(source => source.ref === 'cover-2' ? 'empty' : 'error')
     ;(window as any).runtime.EventsEmit('library:changed')
   })
   const covers = page.locator('.track-list [data-row-key] td:first-child')
@@ -158,12 +131,47 @@ test('cover images start lazy requests while placeholders stay visible and failu
   await expect.poll(() => typeof finishLoading).toBe('function')
   await expect(covers.nth(1).getByText('nil', { exact: true })).toBeVisible()
   await expect(covers.nth(2).locator('svg.lucide-image-off')).toBeVisible()
-  await expect(covers.nth(3).locator('svg.lucide-image')).toBeVisible()
+  await expect(covers.nth(3).getByText('nil', { exact: true })).toBeVisible()
   for (const i of [1, 2]) await expect(covers.nth(i).locator('img')).toHaveCSS('opacity', '0')
   finishLoading()
   await expect(covers.nth(0).locator('img')).toHaveCSS('opacity', '1')
   await expect(covers.nth(0).locator('svg')).toHaveCount(0)
   expect((await covers.nth(0).locator('img').boundingBox())!.width).toBe(32)
+})
+
+test('cover URL changes reset state and ignore late outcome responses', async ({ page }) => {
+  await page.route('**/cover?*', async route => {
+    const ref = new URL(route.request().url()).searchParams.get('ref')
+    if (ref === 'fresh') {
+      await route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="250" height="200"><rect width="250" height="200" fill="tan"/></svg>' })
+    } else await route.fulfill({ status: 403, body: '' })
+  })
+  await page.evaluate(() => {
+    const api = (window as any).go.app.App, list = api.ListTracks
+    ;(window as any).__coverRef = 'disabled'
+    api.ListTracks = async (...args: any[]) => {
+      const result = await list(...args)
+      return { ...result, tracks: result.tracks.map((track: any) => track.id === 1 ? {
+        ...track, matchSource: 'musicbrainz', releaseRef: (window as any).__coverRef,
+      } : track) }
+    }
+    api.CoverTargetOutcomes = async (queries: any[]) => {
+      if (queries.some(q => q.ref === 'pending')) return new Promise(resolve => { (window as any).__finishOutcome = () => resolve(queries.map(() => 'empty')) })
+      return queries.map(() => 'disabled')
+    }
+    ;(window as any).runtime.EventsEmit('library:changed')
+  })
+  const cell = page.locator('.track-list [data-row-key]').first().locator('td').first()
+  await expect(cell.getByText('出网已禁用', { exact: true })).toBeVisible()
+  await page.evaluate(() => { (window as any).__coverRef = 'pending'; (window as any).runtime.EventsEmit('library:changed') })
+  await expect.poll(() => page.evaluate(() => typeof (window as any).__finishOutcome)).toBe('function')
+  await page.evaluate(() => { (window as any).__coverRef = 'fresh'; (window as any).runtime.EventsEmit('library:changed') })
+  await expect(cell.locator('img')).toHaveAttribute('src', /usage=thumbnail/)
+  await expect(cell.locator('img')).toHaveAttribute('loading', 'lazy')
+  await expect(cell.locator('img')).toHaveCSS('opacity', '1')
+  await page.evaluate(() => (window as any).__finishOutcome())
+  await expect(cell.getByText('nil', { exact: true })).toHaveCount(0)
+  await expect(cell.locator('img')).toHaveCSS('opacity', '1')
 })
 
 test.describe('without hover input', () => {

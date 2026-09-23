@@ -56,7 +56,8 @@ type AlbumDetail struct {
 	// ReleaseGroupRef 与 Provider/ReleaseRef 一起构成封面地址的来源。
 	ReleaseGroupRef *string `json:"releaseGroupRef"`
 	// CoverPath 非空时是已采用封面的落盘路径，优先于临时缩略图。
-	CoverPath *string `json:"coverPath"`
+	CoverPath     *string `json:"coverPath"`
+	CoverRevision int64   `json:"coverRevision"`
 	// ReleaseCount 是该发行组下共有几个 release。
 	ReleaseCount *int `json:"releaseCount"`
 
@@ -100,7 +101,8 @@ func (a *App) GetAlbumDetail(releaseID int64) (*AlbumDetail, error) {
 	}
 
 	detail := &AlbumDetail{
-		ReleaseID: rel.ID, Title: rel.Title, Credit: rel.Credit,
+		CoverRevision: a.CoverRevision(rel.ID),
+		ReleaseID:     rel.ID, Title: rel.Title, Credit: rel.Credit,
 		PrimaryType: rel.PrimaryType, Year: rel.Year(),
 		MediumFormat: rel.MediumFormat, Country: rel.Country,
 		Label: rel.Label, CatalogNumber: rel.CatalogNumber,

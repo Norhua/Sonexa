@@ -1,6 +1,8 @@
 package covers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -8,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/norhua/sonexa/internal/store"
 )
@@ -15,9 +18,11 @@ import (
 // LibraryImages 串行化文件落盘和引用提交。调用方必须在网络/文件读取完成后
 // 交付字节；持锁期间不出网，不删除任何尚被引用的用户选择。
 type LibraryImages struct {
-	mu    sync.Mutex
-	files *AlbumFiles
-	store *store.Store
+	mu       sync.Mutex
+	files    *AlbumFiles
+	store    *store.Store
+	maxBytes int64
+	ttl      time.Duration
 }
 
 func NewLibraryImages(st *store.Store, dir string) (*LibraryImages, error) {
@@ -28,7 +33,7 @@ func NewLibraryImages(st *store.Store, dir string) (*LibraryImages, error) {
 	return &LibraryImages{files: files, store: st}, nil
 }
 
-func (l *LibraryImages) Close() error { return l.files.Close() }
+func (l *LibraryImages) Close() error { l.mu.Lock(); defer l.mu.Unlock(); return l.files.Close() }
 
 func (l *LibraryImages) SaveVariant(releaseID int64, variantID int64, data []byte, adopt bool, revision int64) (*store.CoverFile, *store.CoverSelection, error) {
 	l.mu.Lock()
@@ -49,7 +54,7 @@ func (l *LibraryImages) SaveVariant(releaseID int64, variantID int64, data []byt
 		return nil, nil, fmt.Errorf("没有所属歌集，无法采用封面")
 	}
 	saved, err := l.files.Save(FileIdentity{ReleaseID: releaseID, Source: key.Source, ObjectRef: key.ObjectType + ":" + key.SourceRef,
-		ImageID: image.SourceImageID, Type: image.PrimaryType, Original: variant.Spec == "original"}, data)
+		ImageID: image.SourceImageID, Type: image.PrimaryType, Original: variant.Spec == "original", VariantID: variant.ID}, data)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -83,13 +88,38 @@ func (l *LibraryImages) SaveVariant(releaseID int64, variantID int64, data []byt
 			}
 		}
 	}
+	if !adopt {
+		persisted, readErr := l.store.GetCoverFile(file.ID)
+		if readErr != nil {
+			return nil, nil, readErr
+		}
+		file = *persisted
+	}
+	if err := l.pruneLocked(false); err != nil {
+		return nil, selection, err
+	}
 	return &file, selection, nil
 }
 
 func (l *LibraryImages) Read(file store.CoverFile) ([]byte, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !file.Protected && l.ttl > 0 && time.Since(file.FetchedAt) > l.ttl {
+		if err := l.expireLocked(file); err != nil {
+			return nil, err
+		}
+		return nil, os.ErrNotExist
+	}
 	data, err := l.files.Read(file.RelativePath)
 	if errors.Is(err, os.ErrNotExist) {
 		_ = l.store.MarkCoverFileMissing(file.ID)
+	}
+	if err == nil {
+		sum := sha256.Sum256(data)
+		if hex.EncodeToString(sum[:]) != file.ContentHash {
+			return nil, fmt.Errorf("封面文件校验失败")
+		}
+		err = l.store.TouchCoverFile(file.ID)
 	}
 	return data, err
 }
@@ -119,7 +149,7 @@ func (l *LibraryImages) ReuseReleasePreviews(releaseID int64) error {
 		if catalog == nil {
 			continue
 		}
-		previews, err := l.store.ListCatalogPreviewFiles(catalog.ID)
+		previews, err := l.store.AutoPreviewFiles(catalog.ID)
 		if err != nil {
 			return err
 		}

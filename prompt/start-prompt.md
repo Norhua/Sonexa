@@ -596,7 +596,7 @@ CREATE TABLE release (
   cover_path         TEXT,                 -- 发行级封面，复用 3.4 的获取与缓存策略
   cover_source_url   TEXT,
   tracklist_state    TEXT NOT NULL,        -- none | partial | complete | failed
-  fetched_at         DATETIME,             -- 清单拉取时间，iTunes 的 TTL 判据
+  fetched_at         DATETIME,             -- 清单拉取时间
   updated_at         DATETIME NOT NULL
 );
 CREATE UNIQUE INDEX idx_release_ref ON release(provider, provider_ref);
@@ -647,7 +647,7 @@ release_track.track_ref = track_metadata.match_ref
 
 选择「首次打开时懒加载」而非匹配时就拉：MB 是 1 req/s，导入 1000 行若每行都补一次详情请求，导入时间会翻倍；而用户实际打开的专辑只是其中一小部分。设置中可切换为「匹配时即拉取」。
 
-**iTunes 清单受 TTL 约束**（§9）：MB 数据为 CC0，`release` 可长期留存；iTunes 来源的 `release` 必须按 `fetched_at` 设 TTL，过期即视为 `none` 并在下次打开时重取。不可把 iTunes 清单当作长期事实来源。
+**清单不按日期失效**：MB 与 iTunes 来源的已存清单都不因 `fetched_at` 过期或变为 `none`；需要新数据时由用户手动重取，重取跳过响应缓存。
 
 **删除曲目的影响**：只删 `track`，`release` 与 `release_track` 不动——该位置自然回落为灰色行。这正是期望行为：用户删掉一首歌，专辑视图应显示「这张专辑你还缺这首」。
 
@@ -1314,8 +1314,7 @@ character 不单独成组，它只出现在 track_credit 的可点击片段中�
 导入导出  默认编码 / 默认分隔符 / 多值分隔符 / 导出格式
           导出默认 UTF-8 with BOM（便于 Excel 打开）
 
-缓存      封面缓存目录与上限 / 封面并发数（默认 8）/ 上游缓存 TTL
-          iTunes 曲目清单 TTL（§9 要求，默认 30 天）/ [清除缓存]
+缓存      封面缓存目录与上限 / 封面并发数（默认 8）/ 上游缓存 TTL / [清除缓存]
 
 关于      版本 / 数据来源署名（MusicBrainz 数据为 CC0，仍建议署名；
           Apple / iTunes 条款要求署名）
@@ -1350,7 +1349,7 @@ character 不单独成组，它只出现在 track_credit 的可点击片段中�
 |---|---|
 | MusicBrainz | 数据为 CC0，可自由缓存与存储。必须携带规范 User-Agent。建议在「关于」页署名。 |
 | Cover Art Archive | 图片版权各异。本地缓存自用可行；**导出时不打包图片**。 |
-| iTunes Search API | 无鉴权但受 Apple 条款约束：元数据仅可为性能目的短期缓存，**不得作为事实来源长期留存**。因此 iTunes 数据在 `provider_cache` 中必须设 TTL；**`release` / `release_track` 中 `provider = 'itunes'` 的曲目清单同受此约束**（4.10），按 `fetched_at` 设 TTL、过期重取，不可当作长期事实来源。MB 来源的清单为 CC0，不受限。图片同样不随导出打包。「关于」页需署名。 |
+| iTunes Search API | 无鉴权。原始响应、清单和已采用图片不设 iTunes 专属的保存天数，用户可手动刷新或清除缓存；本文不对 Apple 条款作合规结论。图片不随导出打包。「关于」页需署名。 |
 
 ---
 

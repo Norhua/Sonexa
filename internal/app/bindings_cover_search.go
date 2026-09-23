@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"sync"
@@ -11,23 +13,43 @@ import (
 	"github.com/norhua/sonexa/internal/covers"
 	"github.com/norhua/sonexa/internal/covers/sources"
 	"github.com/norhua/sonexa/internal/provider"
-	"github.com/norhua/sonexa/internal/provider/itunes"
 	"github.com/norhua/sonexa/internal/store"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
-	"os"
 )
 
 const EventCoverResults = "cover:results"
 const EventCoverChanged = "cover:changed"
 
+type CoverChangedEvent struct {
+	ReleaseID int64  `json:"releaseId"`
+	Revision  int64  `json:"revision"`
+	Provider  string `json:"provider"`
+	Ref       string `json:"ref"`
+}
+
+func (a *App) notifyCoverChanged(selection *store.CoverSelection) {
+	event := CoverChangedEvent{ReleaseID: selection.ReleaseID, Revision: selection.Revision}
+	if release, err := a.store.GetRelease(selection.ReleaseID); err == nil && release != nil {
+		if release.Provider != nil {
+			event.Provider = *release.Provider
+		}
+		if release.ProviderRef != nil {
+			event.Ref = *release.ProviderRef
+		}
+	}
+	a.emitEvent(EventCoverChanged, event)
+	a.notifyLibraryChanged()
+}
+
 type CoverSearchRequest struct {
-	SearchID  string   `json:"searchId"`
-	ReleaseID int64    `json:"releaseId"`
-	Title     string   `json:"title"`
-	Artist    string   `json:"artist"`
-	Album     string   `json:"album"`
-	Country   string   `json:"country"`
-	Sources   []string `json:"sources"`
+	SearchID   string   `json:"searchId"`
+	Generation int64    `json:"generation"`
+	ReleaseID  int64    `json:"releaseId"`
+	Title      string   `json:"title"`
+	Artist     string   `json:"artist"`
+	Album      string   `json:"album"`
+	Country    string   `json:"country"`
+	Sources    []string `json:"sources"`
 }
 
 type CoverSearchCard struct {
@@ -37,12 +59,13 @@ type CoverSearchCard struct {
 }
 
 type CoverSearchEvent struct {
-	SearchID  string            `json:"searchId"`
-	ReleaseID int64             `json:"releaseId"`
-	Source    string            `json:"source"`
-	State     string            `json:"state"`
-	Cards     []CoverSearchCard `json:"cards"`
-	Error     string            `json:"error"`
+	SearchID   string            `json:"searchId"`
+	Generation int64             `json:"generation"`
+	ReleaseID  int64             `json:"releaseId"`
+	Source     string            `json:"source"`
+	State      string            `json:"state"`
+	Cards      []CoverSearchCard `json:"cards"`
+	Error      string            `json:"error"`
 }
 
 type coverSession struct {
@@ -61,15 +84,19 @@ type CoverSourceInfo struct {
 }
 
 func (a *App) ListCoverSources() []CoverSourceInfo {
-	return []CoverSourceInfo{{"caa", "CAA", false}, {"itunes", "iTunes", true}, {"qq", "QQ", false}, {"163", "网易云", false}}
+	out := make([]CoverSourceInfo, 0, len(sources.List()))
+	for _, source := range sources.List() {
+		out = append(out, CoverSourceInfo{source.ID, source.Name, source.NeedsCountry})
+	}
+	return out
 }
 
 func (a *App) StartCoverSearch(request CoverSearchRequest) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	if gate := a.CheckOutbound(); !gate.Allowed {
-		return fmt.Errorf("%s", gate.Reason)
+	if err := a.checkCoverOutbound(); err != nil {
+		return err
 	}
 	if a.coverSvc == nil || a.coverSvc.Library() == nil {
 		return fmt.Errorf("封面服务未就绪")
@@ -102,26 +129,41 @@ func (a *App) StartCoverSearch(request CoverSearchRequest) error {
 		ctx = context.Background()
 	}
 	ctx, cancel := context.WithCancel(ctx)
+	ctx = provider.WithRequestGate(ctx, a.checkCoverOutbound)
 	session := &coverSession{ctx: ctx, cancel: cancel, releaseID: request.ReleaseID, variants: map[int64]bool{}, results: map[string]CoverSearchEvent{}}
 	a.mu.Lock()
+	if a.coverClosing {
+		a.mu.Unlock()
+		cancel()
+		return fmt.Errorf("应用正在关闭")
+	}
+	if len(a.coverSessions) >= 32 {
+		a.mu.Unlock()
+		cancel()
+		return fmt.Errorf("封面搜索会话过多，请关闭旧搜索")
+	}
 	if a.coverSessions == nil {
 		a.coverSessions = map[string]*coverSession{}
 	}
-	if old := a.coverSessions[request.SearchID]; old != nil {
-		old.cancel()
+	if a.coverSessions[request.SearchID] != nil {
+		a.mu.Unlock()
+		cancel()
+		return fmt.Errorf("搜索会话标识已使用，请新建会话")
 	}
 	a.coverSessions[request.SearchID] = session
 	registry, svc := a.registry, a.coverSvc
+	a.coverWorkers.Add(len(request.Sources))
 	a.mu.Unlock()
 	for _, source := range request.Sources {
 		go func(source string) {
+			defer a.coverWorkers.Done()
 			defer a.beginInteractive()()
 			q := provider.Query{Title: request.Title, Artist: request.Artist, Album: request.Album, Country: request.Country, Limit: 20, SkipCache: true}
 			cards, err := a.searchCoverSource(ctx, registry, svc, source, release, q)
 			if ctx.Err() != nil {
 				return
 			}
-			event := CoverSearchEvent{SearchID: request.SearchID, ReleaseID: request.ReleaseID, Source: source, State: "ok", Cards: cards}
+			event := CoverSearchEvent{SearchID: request.SearchID, Generation: request.Generation, ReleaseID: request.ReleaseID, Source: source, State: "ok", Cards: cards}
 			if err != nil {
 				event.State = "error"
 				event.Error = err.Error()
@@ -174,113 +216,51 @@ func (a *App) CancelCoverSearch(searchID string) {
 }
 
 func (a *App) searchCoverSource(ctx context.Context, registry *provider.Registry, svc *covers.Service, source string, release *store.Release, q provider.Query) ([]CoverSearchCard, error) {
-	cards := []CoverSearchCard{}
-	appendCatalog := func(key store.CoverCatalogKey) error {
-		catalog, err := a.store.GetCoverCatalog(key)
-		if err != nil {
-			return err
-		}
-		if catalog == nil {
-			return nil
-		}
-		for _, image := range catalog.Images {
-			cards = append(cards, CoverSearchCard{Source: source, SourceRef: key.SourceRef, Image: image})
-		}
-		return nil
-	}
+	var adapter sources.Searcher
 	switch source {
 	case "caa":
-		refs := []string{}
-		if release.Provider != nil && *release.Provider == "musicbrainz" && release.ProviderRef != nil {
-			refs = append(refs, *release.ProviderRef)
-		}
 		p, err := registry.Get(provider.MusicBrainz)
 		if err != nil {
 			return nil, err
 		}
-		candidates, err := p.SearchTracks(provider.WithPriority(ctx, provider.PriorityInteractive), q)
-		if err != nil {
-			return nil, err
+		ref := ""
+		if release.Provider != nil && *release.Provider == "musicbrainz" && release.ProviderRef != nil {
+			ref = *release.ProviderRef
 		}
-		seen := map[string]bool{}
-		for _, c := range candidates {
-			if c.ReleaseRef != nil {
-				refs = append(refs, *c.ReleaseRef)
-			}
-		}
-		var failure error
-		for _, ref := range refs {
-			if seen[ref] {
-				continue
-			}
-			if len(seen) >= 10 {
-				break
-			}
-			seen[ref] = true
-			catalog, err := svc.CAACatalog(ctx, "release", ref, true)
-			if err != nil {
-				failure = err
-				continue
-			}
-			if err := appendCatalog(catalog.CoverCatalogKey); err != nil {
-				return nil, err
-			}
-		}
-		return cards, failure
+		adapter = &sources.CAASource{Provider: p, ReleaseRef: ref, Catalog: svc.CAACatalog}
 	case "itunes":
 		p, err := registry.Get(provider.ITunes)
 		if err != nil {
 			return nil, err
 		}
-		candidates, err := p.SearchTracks(provider.WithPriority(ctx, provider.PriorityInteractive), q)
-		if err != nil {
-			return nil, err
-		}
-		seen := map[string]bool{}
-		for _, c := range candidates {
-			if c.ReleaseRef == nil || c.ThumbURL == nil || seen[*c.ReleaseRef] {
-				continue
-			}
-			seen[*c.ReleaseRef] = true
-			image := store.CoverImage{SourceImageID: *c.ThumbURL, PrimaryType: "Front", Types: []string{"Front"}, Front: true}
-			if c.AlbumTitle != nil {
-				image.Title = *c.AlbumTitle
-			}
-			if c.ArtistName != nil {
-				image.Artist = *c.ArtistName
-			}
-			for _, size := range itunes.ArtworkSizes {
-				image.Variants = append(image.Variants, store.CoverVariant{Spec: strconv.Itoa(size), URL: itunes.ArtworkURL(*c.ThumbURL, size), Constructed: true})
-			}
-			key := store.CoverCatalogKey{Source: "itunes", ObjectType: "album", SourceRef: *c.ReleaseRef}
-			if _, err := a.store.SaveCoverCatalog(key, []store.CoverImage{image}); err != nil {
-				return nil, err
-			}
-			if err := appendCatalog(key); err != nil {
-				return nil, err
-			}
-		}
+		adapter = &sources.ITunesSource{Provider: p}
 	default:
-		adapter := sources.NewWebSource(source, a.userAgent(a.settings.Get()), a.limiters, func() error {
-			if gate := a.CheckOutbound(); !gate.Allowed {
-				return fmt.Errorf("%s", gate.Reason)
-			}
-			return nil
-		})
-		results, err := adapter.Search(ctx, q)
-		if err != nil {
-			return nil, err
-		}
-		for _, result := range results {
+		adapter = sources.NewWebSource(source, a.userAgent(a.settings.Get()), a.limiters, a.checkCoverOutbound)
+	}
+	results, searchErr := adapter.Search(ctx, q)
+	cards := []CoverSearchCard{}
+	for _, result := range results {
+		// CAA 目录已经由共享服务持久化；其余来源在此生成服务端图片/规格 ID。
+		if source != "caa" {
 			if _, err := a.store.SaveCoverCatalog(result.Key, result.Images); err != nil {
-				return nil, err
+				return cards, err
 			}
-			if err := appendCatalog(result.Key); err != nil {
-				return nil, err
+		}
+		catalog, err := a.store.GetCoverCatalog(result.Key)
+		if err != nil {
+			return cards, err
+		}
+		if catalog == nil {
+			continue
+		}
+		for _, image := range catalog.Images {
+			cards = append(cards, CoverSearchCard{Source: source, SourceRef: result.Key.SourceRef, Image: image})
+			if len(cards) >= sources.MaxResults {
+				return cards, searchErr
 			}
 		}
 	}
-	return cards, nil
+	return cards, searchErr
 }
 
 type CoverAdoptionResult struct {
@@ -300,6 +280,27 @@ func (a *App) AdoptCoverCandidate(searchID string, variantID, revision int64) (*
 	if session == nil || session.ctx.Err() != nil {
 		return nil, fmt.Errorf("封面搜索会话已结束")
 	}
+	if svc == nil || svc.Library() == nil {
+		return nil, fmt.Errorf("封面服务未就绪")
+	}
+	release, err := a.store.GetRelease(session.releaseID)
+	if err != nil {
+		return nil, err
+	}
+	if release == nil {
+		return nil, fmt.Errorf("目标歌集已删除")
+	}
+	selection, err := a.store.GetCoverSelection(session.releaseID)
+	if err != nil {
+		return nil, err
+	}
+	currentRevision := int64(0)
+	if selection != nil {
+		currentRevision = selection.Revision
+	}
+	if revision != currentRevision {
+		return nil, store.ErrCoverSelectionChanged
+	}
 	session.mu.Lock()
 	allowed := session.variants[variantID]
 	session.mu.Unlock()
@@ -310,15 +311,21 @@ func (a *App) AdoptCoverCandidate(searchID string, variantID, revision int64) (*
 	if err != nil {
 		return nil, err
 	}
-	if variant == nil {
-		return nil, fmt.Errorf("图片规格不存在")
+	if variant == nil || !variant.Active {
+		return nil, fmt.Errorf("图片规格不存在或已失效")
 	}
 	image, err := a.store.GetCoverImage(variant.ImageID)
 	if err != nil {
 		return nil, err
 	}
+	if image == nil {
+		return nil, fmt.Errorf("图片不存在")
+	}
 	variants := append([]store.CoverVariant(nil), image.Variants...)
 	sort.SliceStable(variants, func(i, j int) bool {
+		if variants[i].ID == variants[j].ID {
+			return false
+		}
 		if variants[i].ID == variantID {
 			return true
 		}
@@ -337,7 +344,7 @@ func (a *App) AdoptCoverCandidate(searchID string, variantID, revision int64) (*
 		data, err := svc.DownloadVariant(session.ctx, v)
 		if err != nil {
 			failure = err
-			if session.ctx.Err() != nil {
+			if session.ctx.Err() != nil || !errors.Is(err, covers.ErrNotFound) {
 				return nil, err
 			}
 			continue
@@ -349,8 +356,7 @@ func (a *App) AdoptCoverCandidate(searchID string, variantID, revision int64) (*
 		if err != nil {
 			return nil, err
 		}
-		a.emitEvent(EventCoverChanged, selection)
-		a.notifyLibraryChanged()
+		a.notifyCoverChanged(selection)
 		return &CoverAdoptionResult{ReleaseID: selection.ReleaseID, Revision: selection.Revision, Width: file.Width, Height: file.Height, VariantID: v.ID}, nil
 	}
 	return nil, fmt.Errorf("所选图片全部规格均不可用: %w", failure)
@@ -373,7 +379,11 @@ func (a *App) PickAndAdoptCover(releaseID, revision int64) (*CoverAdoptionResult
 	if release == nil {
 		return nil, fmt.Errorf("没有所属歌集")
 	}
-	path, err := wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{Title: "选择专辑封面", Filters: []wruntime.FileFilter{{DisplayName: "封面图片 (*.jpg;*.jpeg;*.png;*.webp)", Pattern: "*.jpg;*.jpeg;*.png;*.webp"}}})
+	pick := a.pickCoverFile
+	if pick == nil {
+		pick = wruntime.OpenFileDialog
+	}
+	path, err := pick(a.ctx, wruntime.OpenDialogOptions{Title: "选择专辑封面", Filters: []wruntime.FileFilter{{DisplayName: "封面图片 (*.jpg;*.jpeg;*.png;*.webp)", Pattern: "*.jpg;*.jpeg;*.png;*.webp"}}})
 	if err != nil {
 		return nil, err
 	}
@@ -385,6 +395,13 @@ func (a *App) PickAndAdoptCover(releaseID, revision int64) (*CoverAdoptionResult
 		return nil, err
 	}
 	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("封面必须是普通图片文件")
+	}
 	data, err := covers.ReadImageBytes(file)
 	if err != nil {
 		return nil, err
@@ -393,8 +410,7 @@ func (a *App) PickAndAdoptCover(releaseID, revision int64) (*CoverAdoptionResult
 	if err != nil {
 		return nil, err
 	}
-	a.emitEvent(EventCoverChanged, selection)
-	a.notifyLibraryChanged()
+	a.notifyCoverChanged(selection)
 	return &CoverAdoptionResult{ReleaseID: releaseID, Revision: selection.Revision}, nil
 }
 

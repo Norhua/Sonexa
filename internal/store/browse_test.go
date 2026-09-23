@@ -704,6 +704,60 @@ func TestRepresentativeReleaseHonoursUserLadder(t *testing.T) {
 	}
 }
 
+// 阶梯的「有封面」对库内歌集指显式采用：旧版写 cover_path，新版写采用记录。
+// 两者都要计入，否则升级后新采用的封面不再参与代表选择。
+func TestRepresentativeReleaseCountsAdoptedCover(t *testing.T) {
+	s := openTestStore(t)
+	ids := map[string]int64{}
+	for _, ref := range []string{"rel-a", "rel-b"} {
+		if _, err := s.CreateTrackWithProvenance(NewTrackInput{
+			Title: "一首歌-" + ref, Album: ptr("同一张专辑"),
+			MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-" + ref),
+			Release: &ReleaseInput{
+				Provider: ptr("musicbrainz"), ProviderRef: ptr(ref), ReleaseGroupRef: ptr("rg-cover"),
+				ReleaseStatus: ptr("Official"), MediumFormat: ptr("CD"),
+				Country: ptr("JP"), FirstReleaseDate: ptr("2006-07-05"),
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		release, err := s.GetReleaseByRef("musicbrainz", ref)
+		if err != nil || release == nil {
+			t.Fatal(release, err)
+		}
+		ids[ref] = release.ID
+	}
+	groupID := *mustRelease(t, s, ids["rel-a"]).ReleaseGroupID
+	representative := func() string {
+		t.Helper()
+		rep, err := s.RepresentativeRelease(groupID)
+		if err != nil || rep == nil {
+			t.Fatal(rep, err)
+		}
+		return *rep.ProviderRef
+	}
+	if got := representative(); got != "rel-a" {
+		t.Fatalf("其余判据相同时按标识排序，代表应为 rel-a，实际 %s", got)
+	}
+	catalog := mustSaveCatalog(t, s, CoverCatalogKey{Source: "local", ObjectType: "local-image", SourceRef: "adopted"}, sampleCoverImages())
+	file := sampleCoverFile(catalog.Images[0].Variants[0].ID, ids["rel-b"], "albums/release-2/Front-local-250.jpg")
+	if _, err := s.AdoptCoverFile(file, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := representative(); got != "rel-b" {
+		t.Fatalf("rel-b 已采用封面，代表应为 rel-b，实际 %s", got)
+	}
+}
+
+func mustRelease(t *testing.T, s *Store, id int64) *Release {
+	t.Helper()
+	release, err := s.GetRelease(id)
+	if err != nil || release == nil || release.ReleaseGroupID == nil {
+		t.Fatalf("歌集读取失败: %+v %v", release, err)
+	}
+	return release
+}
+
 // TestRepresentativeSurvivesUnownedPick 守 mergeOneGroup 的一处回退。
 //
 // 代表 release 由优选阶梯在**整个发行组**里选（偏好实体载体），而列表的

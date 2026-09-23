@@ -68,10 +68,30 @@ func (s *Store) RepresentativeRelease(groupID int64) (*Release, error) {
 	if len(releases) == 0 {
 		return nil, nil
 	}
+	// 「有封面」指显式采用：旧版记在 cover_path，新版记在采用关系表。
+	adopted := map[int64]bool{}
+	selected, err := s.db.Query(`SELECT s.release_id FROM release_cover_selection s
+		JOIN release r ON r.id = s.release_id WHERE r.release_group_id = ?`, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer selected.Close()
+	for selected.Next() {
+		var id int64
+		if err := selected.Scan(&id); err != nil {
+			return nil, err
+		}
+		adopted[id] = true
+	}
+	if err := selected.Err(); err != nil {
+		return nil, err
+	}
 
 	candidates := make([]matchingCandidate, 0, len(releases))
 	for _, r := range releases {
-		candidates = append(candidates, toLadderCandidate(r))
+		c := toLadderCandidate(r)
+		c.HasCover = c.HasCover || adopted[r.ID]
+		candidates = append(candidates, c)
 	}
 	best := s.ladderConfig().SelectRelease(candidates)
 	if best == nil {

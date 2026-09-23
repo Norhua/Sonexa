@@ -20,20 +20,61 @@ type Result struct {
 	Images []store.CoverImage
 }
 
+type Searcher interface {
+	Search(context.Context, provider.Query) ([]Result, error)
+}
+
 type WebSource struct {
 	ID        string
 	HTTP      *http.Client
 	Limiters  *provider.Limiters
 	UserAgent string
 	Gate      func() error
+	Retry     provider.RetryPolicy
 }
 
 func NewWebSource(id, userAgent string, limiters *provider.Limiters, gate func() error) *WebSource {
 	limiters.Configure(provider.ProviderID("cover-"+id), 1, time.Second)
-	return &WebSource{ID: id, HTTP: &http.Client{Timeout: 30 * time.Second}, Limiters: limiters, UserAgent: userAgent, Gate: gate}
+	return &WebSource{ID: id, HTTP: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 || req.URL.Scheme != "https" || req.URL.User != nil {
+			return fmt.Errorf("不安全的来源重定向")
+		}
+		if req.URL.Hostname() != "c.y.qq.com" && req.URL.Hostname() != "music.163.com" {
+			return fmt.Errorf("来源重定向超出允许域名")
+		}
+		if gate != nil {
+			return gate()
+		}
+		return nil
+	}}, Limiters: limiters, UserAgent: userAgent, Gate: gate, Retry: provider.TransportRetryPolicy()}
 }
 
 func (s *WebSource) Search(ctx context.Context, q provider.Query) ([]Result, error) {
+	var last error
+	for attempt := 1; attempt <= max(s.Retry.MaxAttempts, 1); attempt++ {
+		results, err := s.searchOnce(ctx, q)
+		if err == nil {
+			if len(results) > 20 {
+				results = results[:20]
+			}
+			return results, nil
+		}
+		last = err
+		if !provider.IsRetryable(err) || attempt >= s.Retry.MaxAttempts {
+			break
+		}
+		timer := time.NewTimer(s.Retry.JitteredBackoff(attempt, err))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, last
+}
+
+func (s *WebSource) searchOnce(ctx context.Context, q provider.Query) ([]Result, error) {
 	term := strings.TrimSpace(strings.Join([]string{q.Title, q.Artist, q.Album}, " "))
 	if term == "" {
 		return nil, fmt.Errorf("请输入封面搜索条件")
@@ -74,13 +115,23 @@ func (s *WebSource) Search(ctx context.Context, q provider.Query) ([]Result, err
 	} else {
 		req.Header.Set("Referer", "https://music.163.com/")
 	}
+	if s.Gate != nil {
+		if err := s.Gate(); err != nil {
+			return nil, err
+		}
+	}
 	resp, err := s.HTTP.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("%s 搜索返回 HTTP %d", s.ID, resp.StatusCode)
+		seconds, _ := strconv.Atoi(resp.Header.Get("Retry-After"))
+		delay := time.Duration(seconds) * time.Second
+		if when, err := http.ParseTime(resp.Header.Get("Retry-After")); err == nil && time.Until(when) > delay {
+			delay = time.Until(when)
+		}
+		return nil, &provider.HTTPError{StatusCode: resp.StatusCode, Status: fmt.Sprintf("%s HTTP %d", s.ID, resp.StatusCode), RetryAfter: delay}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, (4<<20)+1))
 	if err != nil || len(body) > 4<<20 {

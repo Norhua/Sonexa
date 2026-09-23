@@ -256,7 +256,7 @@ defineExpose({ selectedCount, trackCount, selectedRows })
       :sort-field="sortField" :sort-order="sortDesc ? -1 : 1"
       :table-style="{ minWidth: `${columns.widthFor(columnContext)}px`, tableLayout: 'fixed' }" @sort="onSort">
       <Column v-if="hasColumn('trackNumber')" header="音轨号" style="width: 72px"><template #body="{ data }"><span class="select-text tabular-nums">{{ display(data.trackNumber) }}</span></template></Column>
-      <Column v-if="hasColumn('cover')" header="封面" style="width: 48px"><template #body="{ data }"><CoverArt :source="data.coverSource" :adopted-path="data.adoptedCoverPath" class="size-8 rounded" /></template></Column>
+      <Column v-if="hasColumn('cover')" header="封面" style="width: 48px"><template #body="{ data }"><CoverArt :source="data.coverSource" usage="thumbnail" class="size-8 rounded" /></template></Column>
       <Column v-for="column in textColumns"
         :key="column.field" :field="column.field" :header="column.label" :sortable="!fixedOrder">
         <template #sorticon="slotProps"><SortIcon v-bind="slotProps" /></template>

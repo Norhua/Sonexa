@@ -87,7 +87,7 @@ const rows = computed<Row[]>(() =>
     genre: t.genre,
     mediumFormat: t.mediumFormat,
     country: t.country,
-    coverSource: { releaseId: t.releaseId, provider: t.matchSource, ref: t.releaseRef, rg: t.releaseGroupRef },
+    coverSource: { releaseId: t.releaseId, revision: t.coverRevision, provider: t.matchSource, ref: t.releaseRef, rg: t.releaseGroupRef },
     adoptedCoverPath: t.coverPath,
   })),
 )

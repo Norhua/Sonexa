@@ -184,9 +184,8 @@ func (s *Store) Get() Settings {
 // Save 覆盖写入设置并落盘。
 func (s *Store) Save(next Settings) error {
 	s.mu.Lock()
-	s.cur = next
+	defer s.mu.Unlock()
 	path := s.path
-	s.mu.Unlock()
 
 	data, err := json.MarshalIndent(next, "", "  ")
 	if err != nil {
@@ -195,7 +194,26 @@ func (s *Store) Save(next Settings) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	file, err := os.CreateTemp(filepath.Dir(path), ".settings-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if _, err = file.Write(data); err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := os.Rename(file.Name(), path); err != nil {
+		return err
+	}
+	s.cur = next
+	return nil
 }
 
 // Path 返回设置文件路径。

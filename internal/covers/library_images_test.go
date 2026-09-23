@@ -86,6 +86,9 @@ func TestLibraryImagesReuseAfterCandidateAdmission(t *testing.T) {
 	if _, _, err := l.SaveVariant(0, catalog.Images[0].Variants[0].ID, pngBytes(250, 250), false, 0); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.MarkAutoCoverPreview(catalog.Images[0].Variants[0].ID); err != nil {
+		t.Fatal(err)
+	}
 	for _, table := range []string{"track", "release"} {
 		var n int
 		if err := st.DB().QueryRow("SELECT COUNT(*) FROM " + table).Scan(&n); err != nil || n != 0 {

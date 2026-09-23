@@ -1,46 +1,42 @@
 # 文档与实现核对
 
-日期：2026-09-20。代码基线：`8efba1a`。本次只修改文档与 OpenSpec 配置，不修改业务代码或用户数据库。
+日期：2026-09-23。代码基线：`edb175a` 加 `revise-album-cover-workflow` 的实现改动。本次将该变更的八个能力增量同步到主规格，并更新架构设计、功能索引、已知问题和本说明；历史归档不改。上一次全面核对（2026-09-20，基线 `8efba1a`）覆盖全部 22 份规格，记录见 Git 历史。
 
 ## 结果
 
 | 维度 | 结论 |
 | --- | --- |
-| 完整性 | 重写全部 22 份主规格，合并为 106 条需求、133 个场景；每条需求至少一个场景。正文从 2321 行减为 1044 行，约精简 55%。 |
-| 正确性 | 对照 Go 业务入口、存储、上游实现和 Vue 页面核对主要行为，将未实现承诺改为明确的现状与待完成目标，详见 [已知问题](known-gaps.md)。 |
-| 一致性 | 规格、设计、项目上下文和根 README 使用同一术语与当前技术栈；已失效说明从现行文档删除。原始归档规划保持不变，旧核验报告移入归档。 |
-
-活动变更为空，因此直接维护主规格，不重新开启已归档变更。核对采用 OpenSpec verify skill 的完整性、正确性、一致性三个维度，格式验证使用 OpenSpec CLI。
+| 完整性 | 主规格共 23 份，新增 [封面搜索](specs/upstream/cover-search/spec.md)；歌集清单、界面与交互、数据存储、设置、封面、iTunes、统一接口的增量需求全部进入主规格，原有场景未被删除。 |
+| 正确性 | 封面需求对照用途解析、CAA 目录、封面工作池、专辑图片文件、四来源适配、绑定和 Vue 页面核对；iTunes 需求对照缓存迁移、清单状态和设置字段核对。未完成部分记入[已知问题](known-gaps.md)的 G05、G09、G12、G14、G15；G10 的 iTunes 期限目标取消。 |
+| 一致性 | 现行规格和设计不再包含列表与详情共用 250px 缓存键、详情重新获取图标、按内容哈希命名采用文件或 iTunes 保存期限；保留其他来源的通用缓存有效期、来源署名和导出不含图片的规则。 |
 
 ## 核对依据
 
 | 范围 | 主要实现与回归 |
 | --- | --- |
-| 数据模型、入库、字段归属 | `internal/store/{migrations,create,admit,enrich}.go`；`internal/app/admit_test.go` |
-| 文本、评分、入库判定 | `internal/matching/{variants,classify,confidence,dispatch,provenance}.go`；`internal/acceptance/csv_import_test.go`，十行样例期望 4 入库 / 3 歧义复核 / 3 未匹配 |
-| 详情身份与后台任务 | `internal/app/{bindings_enrich,enrich_worker}.go`；`enrich_identity_test.go`、`enrich_worker_test.go` |
-| 署名与浏览 | `internal/store/{artist,browse,lookup}.go`；`internal/app/{artist_credit,participants_missing,view_tag_filter}_test.go` |
-| 清单与封面 | `internal/app/{bindings_albums,bindings_covers}.go`；`internal/provider/{musicbrainz,itunes}/`、`internal/covers/` 及对应测试 |
-| 设置、编辑、导入导出 | `internal/app/bindings_{settings,edit,import,export}.go`；`frontend/src/views/{SettingsView,EditDialog,ImportWizard,ReviewView}.vue` |
-| 列表与交互 | `frontend/src/{components,stores,lib}/`；`frontend/tests/unit/`、`frontend/tests/e2e/` |
-
-核对中特别纠正：iTunes lookup 固定 200 条、清单重取可能命中缓存、编辑只取最高分候选、部分设置没有实际使用、标签默认仍按集合位置排序，以及完整清单与发行组收藏计数的差异。未完成的用户锁、编辑事务等目标保留在问题清单，不当作正常功能保证。
+| 封面解析与存储 | `internal/covers/{resolver,pool,library_images,library_cache,files,transport}.go`、`internal/store/{migration_covers,cover_catalog,cover_files,cover_cache,cover_legacy}.go` 及对应测试 |
+| 封面来源与绑定 | `internal/covers/sources/`、`internal/app/{bindings_covers,bindings_cover_search,bindings_cover_targets}.go`；`internal/app/cover_*_test.go` |
+| 封面界面 | `frontend/src/{components/CoverArt.vue,components/CoverPreview.vue,components/DetailDrawer.vue,views/CoverSearchView.vue,stores/coverSearch.ts,lib/useCandidateCovers.ts}`；`frontend/tests/e2e/cover-*.spec.ts` |
+| iTunes 期限移除 | `internal/provider/itunes/`、`internal/store/migrate.go`（iTunes 缓存改为不过期）、`internal/config/settings.go`、`internal/app/{bindings_albums,bindings_settings}.go`；清单日期判定所在的 `internal/store/stale.go` 已删除 |
 
 ## 本次执行的检查
 
 | 检查 | 结果 |
 | --- | --- |
-| `openspec validate --specs --strict --no-interactive` | 22/22 通过 |
-| `openspec validate --archived --strict --no-interactive` | 1/1 通过 |
-| `go test -count=1 -race ./internal/...` | 11 个包通过 |
+| `openspec validate --specs --strict --no-interactive` | 23/23 通过 |
+| `openspec validate revise-album-cover-workflow --strict` | 通过 |
+| `go test -count=1 -race ./internal/...` | 12 个包通过 |
 | `go vet ./...` | 通过 |
-| `npm --prefix frontend test` | 5 个文件、34 项通过 |
-| `npm --prefix frontend run build` | 类型检查和 Vite 构建通过；主包约 912 kB，仍有超过 500 kB 告警 |
-| `cd frontend && SONEXA_E2E_PREVIEW=1 npm run test:e2e` | Chromium/WebKit 共 78 项通过 |
-| 需求结构、现行术语、本地 Markdown 链接与锚点 | 通过 |
-| 归档原文对比 | proposal、design、tasks、配置及 22 份增量规格，共 26 个文件与基线一致 |
+| `npm --prefix frontend test` | 6 个文件、37 项通过 |
+| `npm --prefix frontend run build` | 类型检查和 Vite 构建通过；主包约 925 kB，仍有超过 500 kB 告警 |
+| `cd frontend && SONEXA_E2E_PREVIEW=1 npm run test:e2e` | Chromium/WebKit 共 102 项通过 |
+| 旧数据库升级、中断续迁、目录变更与备份回滚演练 | 通过；无丢图、无额外收藏或歌集，旧版本拒绝打开新库 |
+| 真实来源 | CAA、iTunes、163 完成搜索、预览和采用；QQ 搜索接口返回 HTTP 500，见 G14 |
+| 本地 Markdown 链接与锚点 | 通过 |
 | `git diff --check` | 通过 |
+
+WebKit 下 `frontend/tests/e2e/image11-refinements.spec.ts:12`（侧栏按钮键盘激活）存在既有的间歇失败：变更前基线重复 20 次失败 3 次，当前失败 6 次，均为回车后新建对话框未出现；该测试不在本次改动范围内。
 
 ## 边界
 
-本报告不是逐场景动态验收。自动化回归不证明已知问题已修复，也不覆盖外部条款合规、原生 Wails 人工操作或大曲库性能。本次未重新打包或启动原生应用；浏览器回归基于本次构建及 Wails 测试替身。
+本报告不是逐场景动态验收。原生 Wails 窗口中的系统文件选择器、右键与键盘操作、搜索弹窗和真实断网尚未人工验收（G14），也不覆盖外部条款合规和大曲库性能。浏览器回归基于 Wails 测试替身。命令输出、演练数据和真实来源样例见变更目录中的 `acceptance.md`。

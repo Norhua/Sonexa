@@ -193,6 +193,12 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 // 库中已有且上游也存在时同时标注两个徽章；经 ISRC 桥接命中的标注
 // 「经 ISRC 匹配」；文本模糊比对的疑似命中带问号。
 func (a *App) applyLocalMatch(row *CandidateRow, c provider.Candidate) {
+	if c.ReleaseRef != nil {
+		if release, err := a.store.GetReleaseByRef(string(c.Provider), *c.ReleaseRef); err == nil && release != nil {
+			row.ReleaseID = release.ID
+			row.CoverRevision = a.CoverRevision(release.ID)
+		}
+	}
 	local, err := matching.ResolveLocal(a.store, c)
 	if err != nil || local.Kind == matching.LocalNone {
 		row.Badges = []string{string(c.Provider)}

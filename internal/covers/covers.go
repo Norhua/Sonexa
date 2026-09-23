@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -50,8 +51,14 @@ const maxOutcomes = 4096
 
 // Service 把工作池、缓存与 handler 组装为一个整体。
 type Service struct {
-	pool    *Pool
-	library *LibraryImages
+	prefetchMu sync.Mutex
+	prefetches map[string]context.CancelFunc
+	life       context.Context
+	stop       context.CancelFunc
+	operations sync.WaitGroup
+	closing    bool
+	pool       *Pool
+	library    *LibraryImages
 	// ladder 在 <img> 请求到达时按来源构造降级链。
 	//
 	// 早期实现要求前端先调 PrefetchCovers 把降级链登记进来，handler 只认登记过的键。
@@ -68,7 +75,9 @@ type Service struct {
 
 // NewService 建立封面服务。
 func NewService(cache *DiskCache, concurrency int, userAgent string) *Service {
+	life, stop := context.WithCancel(context.Background())
 	return &Service{
+		life: life, stop: stop, prefetches: map[string]context.CancelFunc{},
 		pool:     NewPool(cache, concurrency, userAgent),
 		outcomes: map[string]Outcome{},
 	}
@@ -120,15 +129,43 @@ func (s *Service) Pool() *Pool { return s.pool }
 // 这样并发度由 Go 的池决定，不受 webview 每主机连接数的限制。
 func (s *Service) Prefetch(ctx context.Context, refs []Ref) {
 	for _, r := range refs {
-		go func(ref Ref) {
-			if s.library != nil {
+		if s.library != nil {
+			s.prefetchMu.Lock()
+			if s.closing {
+				s.prefetchMu.Unlock()
+				return
+			}
+			if _, exists := s.prefetches[r.Key]; exists {
+				s.prefetchMu.Unlock()
+				continue
+			}
+			child, cancel := context.WithCancel(ctx)
+			s.prefetches[r.Key] = cancel
+			s.prefetchMu.Unlock()
+			go func(ref Ref) {
+				defer cancel()
 				usage := ref.Usage
 				if usage == "" {
 					usage = Thumbnail
 				}
-				_, _ = s.Resolve(ctx, ref.Target, usage)
-				return
-			}
+				resolved, err := s.Resolve(child, ref.Target, usage)
+				if child.Err() == nil {
+					outcome := OutcomeError
+					var disabled *OutboundError
+					if errors.As(err, &disabled) {
+						outcome = Outcome("disabled")
+					} else if err == nil {
+						outcome = resolved.Outcome
+					}
+					s.recordOutcome(ref.Key, outcome)
+				}
+				s.prefetchMu.Lock()
+				delete(s.prefetches, ref.Key)
+				s.prefetchMu.Unlock()
+			}(r)
+			continue
+		}
+		go func(ref Ref) {
 			// 失败只影响该行，不向上传播
 			_, _ = s.pool.Fetch(ctx, Fetcher{Key: ref.Key, URLs: ref.URLs})
 		}(r)
@@ -141,6 +178,16 @@ func (s *Service) CancelOutOfView(visibleKeys []string) {
 	keep := make(map[string]bool, len(visibleKeys))
 	for _, k := range visibleKeys {
 		keep[k] = true
+	}
+	if s.library != nil {
+		s.prefetchMu.Lock()
+		defer s.prefetchMu.Unlock()
+		for key, cancel := range s.prefetches {
+			if !keep[key] {
+				cancel()
+			}
+		}
+		return
 	}
 	s.pool.CancelAllExcept(keep)
 }
@@ -164,6 +211,25 @@ func (s *Service) Handler() http.Handler {
 		// 已采用的封面按落盘路径直接读取；临时缩略图按来源标识取。
 		// 两条路径都要能走通，否则用户采用过的封面显示不出来。
 		if adoptedPath := r.URL.Query().Get("adopted"); adoptedPath != "" {
+			if s.library != nil {
+				registered, err := s.library.store.IsLegacyCoverPath(adoptedPath)
+				if err != nil || !registered {
+					http.NotFound(w, r)
+					return
+				}
+				relative, err := filepath.Rel(s.library.files.root.Name(), adoptedPath)
+				if err != nil {
+					http.NotFound(w, r)
+					return
+				}
+				data, err := s.library.files.Read(filepath.ToSlash(relative))
+				if err != nil {
+					http.NotFound(w, r)
+					return
+				}
+				writeImage(w, data)
+				return
+			}
 			data := s.pool.cache.GetAdopted(adoptedPath)
 			if data == nil {
 				http.NotFound(w, r)

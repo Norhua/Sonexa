@@ -35,18 +35,20 @@ const emit = defineEmits<{
 
 /** 封面操作始终固定到打开菜单时的所属歌集。 */
 const menu = ref<InstanceType<typeof ContextMenu>>()
+const coverTrigger = ref<HTMLElement>()
 const settings = useSettingsStore()
 const coverSearch = useCoverSearchStore()
 const coverError = ref('')
+const menuDetail = ref<Models.app.TrackDetail | null>(null)
 const menuItems = computed(() => [{
   label: '更新歌曲图片',
   items: [
-    { label: '从本地存储中选择', disabled: !props.detail?.track.releaseId, command: pickLocal },
-    { label: '从网络搜索', disabled: !props.detail?.track.releaseId || !settings.outboundAllowed, command: searchNetwork },
+    { label: '从本地存储中选择', disabled: !menuDetail.value?.track.releaseId, command: pickLocal },
+    { label: '从网络搜索', disabled: !menuDetail.value?.track.releaseId || !settings.outboundAllowed, command: searchNetwork },
   ],
 }])
 async function pickLocal() {
-  const releaseId = props.detail?.track.releaseId
+  const releaseId = menuDetail.value?.track.releaseId
   if (!releaseId) return
   try {
     const revision = await App.CoverRevision(releaseId)
@@ -55,16 +57,25 @@ async function pickLocal() {
   } catch (e) { coverError.value = String(e) }
 }
 function searchNetwork() {
-  if (props.detail?.track.releaseId) coverSearch.open(props.detail)
+  if (!menuDetail.value?.track.releaseId || !settings.outboundAllowed) return
+  menu.value?.hide()
+  coverTrigger.value?.focus({ preventScroll: true })
+  void coverSearch.open(menuDetail.value)
 }
-function showMenu(event: MouseEvent) { menu.value?.show(event) }
+function showMenu(event: MouseEvent) {
+  // 鼠标右键默认不会聚焦容器；先聚焦，菜单 Escape/取消后才能回到封面。
+  if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus({ preventScroll: true })
+  menuDetail.value = props.detail
+  menu.value?.show(event)
+}
 function keyboardMenu(event: KeyboardEvent) {
   if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
     event.preventDefault()
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    menu.value?.show(new MouseEvent('contextmenu', { clientX: rect.left + 20, clientY: rect.top + 20 }))
+    showMenu(new MouseEvent('contextmenu', { clientX: rect.left + 20, clientY: rect.top + 20 }))
   }
 }
+watch(() => props.open, open => { if (!open) menu.value?.hide() })
 watch(() => props.detail?.track.id, () => { coverError.value = ''; menu.value?.hide() })
 
 const meta = computed(() => props.detail?.metadata ?? null)
@@ -100,25 +111,22 @@ const releaseInfo = computed(() => [
 
     <div class="min-h-0 flex-1 space-y-4 overflow-auto p-4">
       <!-- 封面 -->
-      <div class="flex justify-center" tabindex="0" role="button" aria-label="更新歌曲图片"
+      <div ref="coverTrigger" class="flex justify-center" tabindex="0" role="button" aria-label="更新歌曲图片"
         @contextmenu.prevent="showMenu" @keydown="keyboardMenu">
         <CoverArt
           :source="{
             releaseId: detail.track.releaseId,
+            revision: detail.track.coverRevision,
             provider: detail.coverProvider,
             ref: detail.coverRef,
             rg: detail.coverGroupRef,
           }"
-          :adopted-path="detail.adoptedCoverPath"
           usage="detail"
           icon-class="size-10"
           label-class="text-sm"
           class="aspect-square w-full max-w-[280px] rounded-md shadow"
         />
       </div>
-      <ContextMenu ref="menu" :model="menuItems" />
-      <p v-if="!detail.track.releaseId" class="text-xs text-muted-color">此曲目没有所属专辑，无法更新共享封面</p>
-      <p v-if="coverError" class="text-xs text-danger-color">{{ coverError }}</p>
       <!-- 歌名与艺术家 -->
       <div class="flex items-center gap-3">
         <div class="min-w-0 flex-1 break-words">
@@ -126,6 +134,9 @@ const releaseInfo = computed(() => [
           <p class="mt-1 text-sm text-muted-color">{{ display(detail.track.artist) }}</p>
         </div>
       </div>
+
+      <p v-if="!detail.track.releaseId" class="text-xs text-muted-color">此曲目没有所属专辑，无法更新共享封面</p>
+      <p v-if="coverError" role="alert" class="text-xs text-danger-color">{{ coverError }}</p>
 
       <!-- 参与者 -->
       <section>
@@ -209,6 +220,7 @@ const releaseInfo = computed(() => [
       </section>
     </div>
 
+    <ContextMenu ref="menu" :model="menuItems" />
     <!-- 底部明确的编辑按钮——右键不应是进入编辑的唯一入口 -->
     <footer class="shrink-0 border-t p-3">
       <Button fluid @click="emit('edit', detail.track.id)">

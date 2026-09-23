@@ -43,7 +43,12 @@ type Client struct {
 // NewClient 建立一个客户端。
 func NewClient(limiters *Limiters, cache Cache, userAgent string) *Client {
 	return &Client{
-		HTTP:      &http.Client{Timeout: 30 * time.Second},
+		HTTP: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("上游重定向次数过多")
+			}
+			return checkRequestGate(req.Context())
+		}},
 		Limiters:  limiters,
 		Cache:     cache,
 		Retry:     TransportRetryPolicy(),
@@ -145,6 +150,9 @@ func (c *Client) getWithRetry(ctx context.Context, req GetRequest) ([]byte, erro
 
 // do 执行实际的 HTTP 请求。
 func (c *Client) do(ctx context.Context, req GetRequest) ([]byte, error) {
+	if err := checkRequestGate(ctx); err != nil {
+		return nil, err
+	}
 	u, err := url.Parse(req.BaseURL + req.Endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("构造请求地址失败: %w", err)
@@ -193,6 +201,9 @@ func (c *Client) do(ctx context.Context, req GetRequest) ([]byte, error) {
 // Head 发起一次 HEAD 请求，用于验证构造出的图片地址是否可用。
 // 图片服务不占用上游令牌桶，因此这里不取令牌。
 func (c *Client) Head(ctx context.Context, rawURL string) error {
+	if err := checkRequestGate(ctx); err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
 	if err != nil {
 		return err

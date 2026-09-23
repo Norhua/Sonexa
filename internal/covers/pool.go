@@ -42,6 +42,7 @@ type Pool struct {
 	active      int
 	changed     chan struct{}
 	jobs        map[string]*sharedFetch
+	workers     sync.WaitGroup
 	closed      bool
 	userAgent   string
 	indexParser IndexParser
@@ -71,6 +72,16 @@ func (p *Pool) SetGate(gate func() error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.gate = gate
+}
+
+func (p *Pool) checkGate() error {
+	p.mu.Lock()
+	gate := p.gate
+	p.mu.Unlock()
+	if gate != nil {
+		return gate()
+	}
+	return nil
 }
 
 func (p *Pool) SetConcurrency(n int) {
@@ -134,7 +145,9 @@ func (p *Pool) Shared(ctx context.Context, key string, work func(context.Context
 		jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 		job = &sharedFetch{ctx: jobCtx, cancel: cancel, done: make(chan struct{})}
 		p.jobs[key] = job
+		p.workers.Add(1)
 		go func() {
+			defer p.workers.Done()
 			value, err := work(job.ctx)
 			p.mu.Lock()
 			job.value, job.err = value, err
@@ -225,17 +238,20 @@ func (p *Pool) fetchURLs(ctx context.Context, urls []string, parser IndexParser)
 }
 
 func (p *Pool) fetchOne(ctx context.Context, url string) ([]byte, error) {
+	p.mu.Lock()
+	retry := p.retry
+	p.mu.Unlock()
 	var last error
-	for attempt := 1; attempt <= max(p.retry.MaxAttempts, 1); attempt++ {
+	for attempt := 1; attempt <= max(retry.MaxAttempts, 1); attempt++ {
 		data, err := p.fetchOnce(ctx, url)
 		if err == nil {
 			return data, nil
 		}
 		last = err
-		if !provider.IsRetryable(err) || attempt >= p.retry.MaxAttempts {
+		if !provider.IsRetryable(err) || attempt >= retry.MaxAttempts {
 			break
 		}
-		timer := time.NewTimer(p.retry.JitteredBackoff(attempt, err))
+		timer := time.NewTimer(retry.JitteredBackoff(attempt, err))
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -251,14 +267,12 @@ func (p *Pool) fetchOnce(ctx context.Context, url string) ([]byte, error) {
 		return nil, err
 	}
 	defer p.release()
-	p.mu.Lock()
-	gate, ua := p.gate, p.userAgent
-	p.mu.Unlock()
-	if gate != nil {
-		if err := gate(); err != nil {
-			return nil, err
-		}
+	if err := p.checkGate(); err != nil {
+		return nil, err
 	}
+	p.mu.Lock()
+	ua := p.userAgent
+	p.mu.Unlock()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -318,6 +332,8 @@ func (p *Pool) Close() {
 	for _, job := range jobs {
 		<-job.done
 	}
+	p.workers.Wait()
+	p.client.CloseIdleConnections()
 }
 
 func (p *Pool) InflightCount() int {

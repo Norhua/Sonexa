@@ -27,6 +27,7 @@ type FileIdentity struct {
 	ImageID   string
 	Type      string
 	Original  bool
+	VariantID int64
 }
 
 type SavedImage struct {
@@ -85,6 +86,9 @@ func (f *AlbumFiles) Save(identity FileIdentity, data []byte) (*SavedImage, erro
 	stem, err := coverFileStem(identity, info)
 	if err != nil {
 		return nil, err
+	}
+	if identity.VariantID > 0 {
+		stem += fmt.Sprintf("-v%d", identity.VariantID)
 	}
 	dir := fmt.Sprintf("albums/release-%d", identity.ReleaseID)
 	if identity.ReleaseID == 0 {

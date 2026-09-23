@@ -32,6 +32,9 @@ type Target struct {
 }
 
 func (t Target) Key(usage Usage, revision int64) string {
+	if t.ReleaseID > 0 {
+		return fmt.Sprintf("release:%d|%s|%d", t.ReleaseID, usage, revision)
+	}
 	return fmt.Sprintf("%d|%s|%s|%s|%s|%d", t.ReleaseID, t.Provider, t.Ref, t.GroupRef, usage, revision)
 }
 
@@ -92,7 +95,7 @@ func (s *Service) localFiles(target Target) ([]store.CoverFile, error) {
 	if err != nil || catalog == nil {
 		return nil, err
 	}
-	return s.library.store.ListCatalogPreviewFiles(catalog.ID)
+	return s.library.store.AutoPreviewFiles(catalog.ID)
 }
 
 func (s *Service) chooseFile(files []store.CoverFile, usage Usage, threshold bool) *Resolved {
@@ -120,6 +123,11 @@ func (s *Service) chooseFile(files []store.CoverFile, usage Usage, threshold boo
 }
 
 func (s *Service) Resolve(ctx context.Context, requested Target, usage Usage) (*Resolved, error) {
+	ctx, done, err := s.beginOperation(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
 	if s.library == nil {
 		return nil, fmt.Errorf("专辑封面服务未装配")
 	}
@@ -173,8 +181,10 @@ func (s *Service) Resolve(ctx context.Context, requested Target, usage Usage) (*
 	if err == nil && catalog.State == "found" {
 		var got *Resolved
 		got, err = s.downloadCatalog(ctx, target, catalog, usage)
-		if err == nil && got != nil {
-			return got, nil
+		if err == nil {
+			if got != nil {
+				return got, nil
+			}
 		}
 	}
 	if fallback != nil {
@@ -195,6 +205,11 @@ func validMBID(ref string) bool {
 }
 
 func (s *Service) CAACatalog(ctx context.Context, kind, ref string, force bool) (*store.CoverCatalog, error) {
+	ctx, done, err := s.beginOperation(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
 	if !validMBID(ref) || (kind != "release" && kind != "release-group") {
 		return nil, fmt.Errorf("无效 MusicBrainz 发行身份")
 	}
@@ -222,12 +237,14 @@ func (s *Service) CAACatalog(ctx context.Context, kind, ref string, force bool) 
 		}
 		body, err := s.pool.fetchOne(ctx, musicbrainz.CoverArtArchiveBaseURL+"/"+kind+"/"+ref)
 		var images []store.CoverImage
+		actualRelease := ""
 		if errors.Is(err, ErrNotFound) {
 			err = nil
 		} else if err == nil {
 			var index *musicbrainz.CoverIndex
 			index, err = musicbrainz.ParseCoverCatalog(body)
 			if err == nil {
+				actualRelease = index.Release
 				for _, image := range index.Images {
 					entry := store.CoverImage{SourceImageID: image.ID, Types: image.Types, PrimaryType: image.Type, Front: image.Front, Back: image.Back, OriginalURL: image.Original}
 					for _, v := range image.Variants {
@@ -244,7 +261,11 @@ func (s *Service) CAACatalog(ctx context.Context, kind, ref string, force bool) 
 			}
 			return nil, err
 		}
-		if _, err := s.library.store.SaveCoverCatalog(key, images); err != nil {
+		id, err := s.library.store.SaveCoverCatalog(key, images)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.library.store.SetCoverCatalogRelease(id, actualRelease); err != nil {
 			return nil, err
 		}
 		return s.library.store.GetCoverCatalog(key)
@@ -283,6 +304,11 @@ func (s *Service) downloadCatalog(ctx context.Context, target Target, catalog *s
 				if err != nil {
 					return nil, err
 				}
+				if target.ReleaseID == 0 {
+					if err := s.library.store.MarkAutoCoverPreview(variant.ID); err != nil {
+						return nil, err
+					}
+				}
 				return &Resolved{File: file, Data: data, Outcome: OutcomeOK}, nil
 			}
 		}
@@ -295,6 +321,11 @@ func (s *Service) downloadCatalog(ctx context.Context, target Target, catalog *s
 
 // DownloadVariant 不接受前端任意 URL，规格必须来自已登记目录。
 func (s *Service) DownloadVariant(ctx context.Context, variant store.CoverVariant) ([]byte, error) {
+	ctx, done, err := s.beginOperation(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
 	if err := validImageURL(variant.URL); err != nil {
 		return nil, err
 	}
@@ -316,17 +347,18 @@ func (s *Service) DownloadVariant(ctx context.Context, variant store.CoverVarian
 			_, err = InspectImage(data)
 		}
 		if err != nil {
-			if ctx.Err() == nil {
+			var disabled *OutboundError
+			if ctx.Err() == nil && !errors.As(err, &disabled) {
 				_ = s.library.store.RecordCoverVariantError(variant.ID, errors.Is(err, ErrNotFound), err.Error())
 			}
+			return nil, err
+		}
+		if _, _, err := s.library.SaveVariant(0, variant.ID, data, false, 0); err != nil {
 			return nil, err
 		}
 		return data, nil
 	})
 	if err != nil {
-		return nil, err
-	}
-	if _, _, err := s.library.SaveVariant(0, variant.ID, value.([]byte), false, 0); err != nil {
 		return nil, err
 	}
 	return value.([]byte), nil
@@ -346,16 +378,31 @@ func validImageURL(raw string) error {
 	return fmt.Errorf("封面地址不是已支持来源")
 }
 
+func revisionFromQuery(q url.Values) int64 {
+	revision, _ := strconv.ParseInt(q.Get("revision"), 10, 64)
+	return revision
+}
+
 func (s *Service) serveLibrary(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	if id, _ := strconv.ParseInt(q.Get("variantId"), 10, 64); id > 0 {
+	if raw := q.Get("variantId"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			http.Error(w, "图片规格标识无效", http.StatusBadRequest)
+			return
+		}
 		variant, err := s.library.store.GetCoverVariant(id)
-		if err != nil || variant == nil {
+		if err != nil || variant == nil || !variant.Active {
 			http.NotFound(w, r)
 			return
 		}
 		data, err := s.DownloadVariant(r.Context(), *variant)
 		if err != nil {
+			var disabled *OutboundError
+			if errors.As(err, &disabled) {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
@@ -369,7 +416,7 @@ func (s *Service) serveLibrary(w http.ResponseWriter, r *http.Request) {
 	releaseID, _ := strconv.ParseInt(q.Get("releaseId"), 10, 64)
 	target := Target{ReleaseID: releaseID, Provider: q.Get("provider"), Ref: q.Get("ref"), GroupRef: q.Get("rg")}
 	resolved, err := s.Resolve(r.Context(), target, usage)
-	key := target.Key(usage, 0)
+	key := target.Key(usage, revisionFromQuery(q))
 	if err != nil {
 		s.recordOutcome(key, OutcomeError)
 		var disabled *OutboundError

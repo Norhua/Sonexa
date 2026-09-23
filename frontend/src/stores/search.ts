@@ -143,12 +143,6 @@ export const useSearchStore = defineStore('search', () => {
     if (provider?.error) throw new Error(provider.error)
     upstreamRows.value = provider?.rows ?? []
     upstreamCaps.value = provider?.capabilities ?? []
-
-    // 一页列表只发起一次批量预取，并发度由 Go 的池决定
-    if (upstreamRows.value.length > 0) {
-      const refs = await App.BuildCoverRefs(upstreamRows.value)
-      if (refs?.length) void App.PrefetchCovers(refs)
-    }
   }
 
   return {

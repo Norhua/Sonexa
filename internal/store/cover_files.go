@@ -52,6 +52,12 @@ func saveCoverFileTx(tx *sql.Tx, file CoverFile) (int64, error) {
 	if file.LastUsedAt.IsZero() {
 		file.LastUsedAt = file.FetchedAt
 	}
+	// 首条数据库语句必须是写入：WAL 下先 SELECT 会建立读快照，
+	// 与目录刷新并发时升级写锁可能立即 SQLITE_BUSY，busy_timeout 无法等待。
+	// 规格验证与文件记录在同一事务中，后续失败会一起回滚。
+	if _, err := tx.Exec(`UPDATE cover_variant SET width=?,height=?,format=?,state='verified',last_error='' WHERE id=?`, file.Width, file.Height, file.Format, file.VariantID); err != nil {
+		return 0, fmt.Errorf("登记封面规格验证失败: %w", err)
+	}
 	// 更新已知身份，而不是按文件名碰撞替换另一张图片。
 	var id int64
 	err := tx.QueryRow(`SELECT id FROM cover_file WHERE variant_id=? AND release_id IS ?`, file.VariantID, file.ReleaseID).Scan(&id)
@@ -77,8 +83,7 @@ func saveCoverFileTx(tx *sql.Tx, file CoverFile) (int64, error) {
 			return 0, err
 		}
 	}
-	_, err = tx.Exec(`UPDATE cover_variant SET width=?,height=?,format=?,state='verified',last_error='' WHERE id=?`, file.Width, file.Height, file.Format, file.VariantID)
-	return id, err
+	return id, nil
 }
 
 func (s *Store) SaveCoverFile(file CoverFile) (int64, error) {

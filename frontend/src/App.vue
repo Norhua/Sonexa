@@ -59,6 +59,8 @@ const sortKey = ref('default')
 const sortDesc = ref(false)
 
 let offLibrary: (() => void) | null = null
+let offCover: (() => void) | null = null
+watch(() => [library.view, library.contextId], () => { if (coverSearch.target) void coverSearch.close() })
 
 onMounted(async () => {
   await settings.load()
@@ -69,6 +71,9 @@ onMounted(async () => {
   // 补全信息匹配的状态：后端推送，这里只订阅并读一次初值
   enrich.subscribe()
   await enrich.refresh()
+  offCover = EventsOn(Events.CoverChanged, async (event: { releaseId: number }) => {
+    if (detail.value?.track.releaseId === event.releaseId && drawerOpen.value) await onCoverAdopted()
+  })
   offLibrary = EventsOn(Events.LibraryChanged, async () => {
     await library.loadCollections()
     await library.loadTracks()
@@ -89,6 +94,8 @@ onUnmounted(() => {
   tasks.unsubscribeAll()
   enrich.unsubscribeAll()
   offLibrary?.()
+  offCover?.()
+  void coverSearch.close()
 })
 
 /** 把后端的曲目视图转为表格行。 */
@@ -106,7 +113,7 @@ const rows = computed<Row[]>(() =>
     genre: t.genre,
     mediumFormat: t.mediumFormat,
     country: t.country,
-    coverSource: { releaseId: t.releaseId, provider: t.matchSource, ref: t.releaseRef, rg: t.releaseGroupRef },
+    coverSource: { releaseId: t.releaseId, revision: t.coverRevision, provider: t.matchSource, ref: t.releaseRef, rg: t.releaseGroupRef },
     // 封面挂在歌集上：已采用的那张优先于临时缩略图
     adoptedCoverPath: t.coverPath,
   })),
@@ -166,7 +173,15 @@ async function goUpstreamSearch(prefill?: { title: string; artist: string; album
 }
 
 let detailRequest = 0
-watch(drawerOpen, open => { if (!open) detailRequest++ }, { flush: 'sync' })
+watch(drawerOpen, open => {
+  if (!open) {
+    detailRequest++
+    if (coverSearch.target) void coverSearch.close()
+  }
+}, { flush: 'sync' })
+watch(() => detail.value?.track.id, id => {
+  if (coverSearch.target && coverSearch.target.track.id !== id) void coverSearch.close()
+})
 async function openDetail(row: Row) {
   await openTrackById(row.id)
 }
@@ -351,7 +366,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
 </script>
 
 <template>
-  <div class="flex h-full bg-app text-color">
+  <div class="flex h-full bg-app text-color" :inert="!!coverSearch.target">
     <AppSidebar
       @new-collection="newCollection"
       @rename-collection="renameCollection"
@@ -367,8 +382,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
         @open-settings="ui.openSettings('upstream')"
       />
 
-      <CoverSearchView v-if="coverSearch.target" />
-      <main v-show="!coverSearch.target" class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <main class="flex min-h-0 min-w-0 flex-1 flex-col">
         <!-- 标准曲目表格：全部曲目 / 最近添加 / 歌单 / 标签 -->
         <template v-if="showTrackTable">
           <ViewHeader />
@@ -463,7 +477,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
     <DetailDrawer
       :key="detail?.track.id"
       :detail="detail"
-      :open="drawerOpen && !coverSearch.target"
+      :open="drawerOpen"
       @close="drawerOpen = false"
       @edit="(id) => (editing = id)"
       @view-artist="goToArtist"
@@ -484,6 +498,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
       @saved="library.loadTracks()"
     />
 
+    <CoverSearchView v-if="coverSearch.target" />
     <SettingsDialog v-if="ui.settingsOpen" />
     <PromptDialog />
     <ConfirmDialog />

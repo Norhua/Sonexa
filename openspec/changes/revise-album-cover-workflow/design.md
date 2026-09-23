@@ -10,7 +10,7 @@
 | `internal/provider/musicbrainz/covers.go` | 自动先猜 Front URL；索引被展开成 URL 列表，丢失图片 ID 和档位；手动索引另走 provider client | 目录先行、类型化图片和档位，所有 CAA 请求进入同一并发服务 |
 | `internal/covers/{cache,adopt,covers,pool}.go` | tmp/adopted 两区、采用按哈希命名；outcomes 仅在内存；采用直接调用 fetchOne；手写尺寸解析只覆盖 JPEG/PNG | 专辑文件目录、持久化目录状态、统一调度和标准解码校验 |
 | `internal/store/cover.go`、`migrations.go` | 单一 `release.cover_path`；SetCover 接收 Source 却未保存；歌集共享且无歌集报错 | 多图片/规格与独立来源，保留 release 归属边界，迁移用户已采用文件 |
-| `DetailDrawer.vue`、`AlbumsView.vue`、`App.vue` | 抽屉 ImagePlus 图标和无图片的内嵌候选区；专辑头部仍传缩略图尺寸 | 右键菜单、独立搜索页、显式用途及共享更新事件 |
+| `DetailDrawer.vue`、`AlbumsView.vue`、`App.vue` | 抽屉 ImagePlus 图标和无图片的内嵌候选区；专辑头部仍传缩略图尺寸 | 右键菜单、搜索大弹窗、显式用途及共享更新事件 |
 | `internal/covers/adopt.go` | 跨来源全部等待后返回，错误被忽略；同发行不同图片可能折叠在同一候选 | 按来源渐进交付结果，按图片身份聚合，不跨图降级 |
 | `internal/provider/itunes/itunes.go`、`internal/store/stale.go` | 默认 30 天响应与清单失效；force 清单请求未传 SkipCache | 删除日期失效，补齐显式刷新穿透缓存 |
 | `internal/config/settings.go`、`bindings_settings.go` | iTunes TTL 字段和关于页短期留存主张；改目录重建服务但不搬采用文件 | 兼容删除字段、准确署名、目录安全迁移 |
@@ -111,7 +111,7 @@ CAA 自动选图按现有语义：主 Front 优先，其次其他 Front，再按
 - singleflight 拆成目录键与图片规格键。thumbnail/detail 同时请求共享目录，但图片传输分别为 250/1200。同图多行共享一个下载。
 - CAA HTTP、远程预览、采用和自动图片均经过共享封面并发控制；元数据搜索单独走原有来源令牌桶。目录获取释放并发槽位后再调度图片，不持有槽位等待另一个嵌套任务，避免并发 1 时死锁。
 - 替换 `Pool.SetConcurrency` 直接换 channel 的方式为可调整且统计现有任务的控制器：调小后等待运行任务结束，不启动超额任务；所有服务装配与设置更新共用该控制器。
-- 每个搜索/预取消费者持有可取消租约；仅某消费者退出不取消仍被其他页面等待的同键请求，无消费者后才中止。关闭搜索页主动取消所属会话，应用关闭取消全部。无需引入完整视口调度系统。
+- 每个搜索/预取消费者持有可取消租约；仅某消费者退出不取消仍被其他页面等待的同键请求，无消费者后才中止。关闭搜索弹窗主动取消所属会话，应用关闭取消全部。无需引入完整视口调度系统。
 - CAA 及所有图片真正发请求前执行出网 gate；先读本地，不让 `CheckOutbound` 禁用离线读取和本地导入。搜索页统一显示原因及设置入口。
 
 **取舍**：不以进程内 outcomes 代替持久化目录；outcomes 仍可作为展示状态的短期缓存，但按 target/usage/revision 查询，不推断无图。
@@ -153,12 +153,12 @@ AssetServer 使用受控文件 ID 或目标参数查询路径，只读取已登�
 
 **取舍**：数据库与文件系统不能形成一个事务，因此用“先完成文件、后提交引用、失败保留旧引用”的可恢复方案，不先清除旧图再下载。
 
-### 7. 搜索页布局和前端数据契约
+### 7. 搜索弹窗布局和前端数据契约
 
-新建 `frontend/src/views/CoverSearchView.vue` 及 Pinia 搜索会话。它是应用主区的临时工作页面，不新增常驻侧栏入口，不把候选塞回 340px 抽屉；从 `App.vue` 管理进入/返回快照，返回保留原视图、滚动/筛选和详情曲目。详情右键菜单复用 Volt ContextMenu，焦点区域支持 Shift+F10/菜单键，按 Escape 只关闭最上层菜单/预览。
+新建 `frontend/src/views/CoverSearchView.vue` 及 Pinia 搜索会话。它使用居中的应用内大弹窗承载，不创建独立系统窗口，不含侧栏，不替换或隐藏现有主内容区和详情抽屉；由 `App.vue` 挂载 Volt Dialog，背景保留原视图、滚动/筛选和详情曲目且不可交互；关闭按钮、取消或 Escape 关闭弹窗并取消所属会话，焦点回到原封面入口。详情右键菜单复用 Volt ContextMenu，焦点区域支持 Shift+F10/菜单键，大图预览叠加在搜索弹窗上层，按 Escape 每次只关闭最上层菜单、预览或搜索弹窗。
 
 ```text
-┌ ← 返回  从网络搜索封面                           目标：专辑名 ┐
+┌ 从网络搜索封面                           目标：专辑名  × ┐
 │ 修改后将应用到整个专辑                                      │
 │ 歌曲 [          ] 艺术家 [          ] 专辑 [          ] 搜索 │
 │ ☑ CAA  ☑ iTunes  ☑ QQ  ☑ 网易云      iTunes 地区 [默认 ▾] │
@@ -180,7 +180,7 @@ AssetServer 使用受控文件 ID 或目标参数查询路径，只读取已登�
 
 `CoverArt` 改收 `target`、`usage`、`revision`，CSS 尺寸仅控制展示。`TrackTable`、`CandidateTable`、`ReviewView`、`SearchView`、`AlbumsView` 所有小图显式 thumbnail，`DetailDrawer` 与专辑头部显式 detail。候选 DTO 带稳定发行来源，而非直接用 iTunes artwork URL 触发自动下载；无 MB 绑定只查本地。列表无需每行先做一次绑定，仍由本地 URL handler 解析，批量预取也调用同一后端入口。
 
-**取舍**：不引入 Vue Router 只为一个工作页，不增加新的图标触发器替代旧图标；菜单、页面和键盘可访问性共同承担入口。
+**取舍**：复用应用内大弹窗，不引入 Vue Router 或独立系统窗口，不增加新的图标触发器替代旧图标；菜单、弹窗和键盘可访问性共同承担入口。
 
 ### 8. iTunes 期限删除及文档清理
 
