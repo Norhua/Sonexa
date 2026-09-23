@@ -18,6 +18,7 @@ import SecondaryButton from '@/volt/SecondaryButton.vue'
 import Tag from '@/volt/Tag.vue'
 import ContextMenu from '@/volt/ContextMenu.vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useUiStore } from '@/stores/ui'
 import { useCoverSearchStore } from '@/stores/coverSearch'
 import type { Models } from '@/api'
 
@@ -37,6 +38,7 @@ const emit = defineEmits<{
 const menu = ref<InstanceType<typeof ContextMenu>>()
 const coverTrigger = ref<HTMLElement>()
 const settings = useSettingsStore()
+const ui = useUiStore()
 const coverSearch = useCoverSearchStore()
 const coverError = ref('')
 const menuDetail = ref<Models.app.TrackDetail | null>(null)
@@ -46,6 +48,10 @@ const menuItems = computed(() => [{
     { label: '从本地存储中选择', disabled: !menuDetail.value?.track.releaseId, command: pickLocal },
     { label: '从网络搜索', disabled: !menuDetail.value?.track.releaseId || !settings.outboundAllowed, command: searchNetwork },
   ],
+}, { separator: true }, {
+  label: '清除封面',
+  disabled: !menuDetail.value?.track.releaseId,
+  command: clearCover,
 }])
 async function pickLocal() {
   const releaseId = menuDetail.value?.track.releaseId
@@ -54,6 +60,23 @@ async function pickLocal() {
     const revision = await App.CoverRevision(releaseId)
     const result = await App.PickAndAdoptCover(releaseId, revision)
     if (!result.cancelled) emit('coverAdopted')
+  } catch (e) { coverError.value = String(e) }
+}
+/** 删除该歌集已保存的封面文件；清除后不再自动获取，直到重新选择图片。 */
+async function clearCover() {
+  const releaseId = menuDetail.value?.track.releaseId
+  if (!releaseId) return
+  const ok = await ui.confirm({
+    title: '清除专辑封面？',
+    message: '将删除此专辑已保存的全部封面文件，之后不再自动获取封面，直到重新选择图片。',
+    confirmLabel: '清除',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    const revision = await App.CoverRevision(releaseId)
+    await App.ClearCover(releaseId, revision)
+    emit('coverAdopted')
   } catch (e) { coverError.value = String(e) }
 }
 function searchNetwork() {

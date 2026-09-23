@@ -45,7 +45,7 @@
       exportFormat: 'csv', exportUtf8Bom: true,
     },
     cache: {
-      coverDir: '', coverMaxBytes: 536870912, coverConcurrency: 8,
+      coverDir: '', coverMaxBytes: 536870912, coverConcurrency: 32,
       providerCacheTtlHours: 24, coverTtlDays: 30,
     },
     onboardingDone: true,
@@ -110,6 +110,7 @@
         CoverSearchResults: async () => [],
         CancelCoverSearch: async () => {},
         PickAndAdoptCover: async () => ({ cancelled: true }),
+        ClearCover: async (releaseId) => ({ releaseId, revision: 1 }),
         BuildCoverRefs: async () => [],
         CancelCovers: async () => {},
         PrefetchCovers: async () => {},

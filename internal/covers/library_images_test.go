@@ -6,6 +6,7 @@ import (
 	"errors"
 	"image/color"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 
@@ -57,7 +58,7 @@ func TestLibraryImagesAdoptionAtomicAndRepeatable(t *testing.T) {
 	if err != nil || !bytes.Equal(data, pngBytes(50, 40)) {
 		t.Fatal("旧图片丢失")
 	}
-	entries, err := os.ReadDir(filepath.Join(root, "albums", "release-1"))
+	entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(path.Dir(original.RelativePath))))
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("失败留下文件: %v %v", entries, err)
 	}

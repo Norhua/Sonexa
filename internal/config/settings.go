@@ -141,7 +141,7 @@ func Defaults() Settings {
 		Cache: CacheSettings{
 			CoverDir:          "",
 			CoverMaxBytes:     2 << 30, // 2 GiB
-			CoverConcurrency:  8,
+			CoverConcurrency:  32,
 			ProviderCacheTTLh: 24 * 30,
 			CoverTTLDays:      30,
 		},

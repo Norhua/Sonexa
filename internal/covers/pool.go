@@ -12,8 +12,10 @@ import (
 	"github.com/norhua/sonexa/internal/provider"
 )
 
-const DefaultConcurrency = 8
-const MaxConcurrency = 16
+// 封面图片来自 CAA/archive.org 等不限并发的静态来源；瓶颈是每次重定向和 TLS 握手的延迟，
+// 并发只限制本机同时打开的连接数，因此默认值取得较高。
+const DefaultConcurrency = 32
+const MaxConcurrency = 64
 
 type Fetcher struct {
 	Key  string   `json:"key"`
@@ -58,7 +60,7 @@ func boundedConcurrency(n int) int {
 }
 
 func NewPool(cache *DiskCache, concurrency int, userAgent string) *Pool {
-	return &Pool{cache: cache, client: &http.Client{Timeout: 30 * time.Second}, limit: boundedConcurrency(concurrency),
+	return &Pool{cache: cache, client: &http.Client{Timeout: 60 * time.Second}, limit: boundedConcurrency(concurrency),
 		changed: make(chan struct{}), jobs: map[string]*sharedFetch{}, userAgent: userAgent, retry: provider.RetryPolicy{MaxAttempts: 1}}
 }
 

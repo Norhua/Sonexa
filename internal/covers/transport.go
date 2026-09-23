@@ -50,6 +50,10 @@ func (t *imageTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	t.once.Do(func() {
 		t.http = base.Clone()
 		t.http.Proxy = nil
+		// 默认每主机只保留 2 条空闲连接，并发取图时其余请求每次都重新握手。
+		t.http.MaxIdleConns = 2 * MaxConcurrency
+		t.http.MaxIdleConnsPerHost = MaxConcurrency
+		t.http.ForceAttemptHTTP2 = true
 		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second,
 			ControlContext: func(_ context.Context, _, address string, _ syscall.RawConn) error {
 				return publicImageAddress(address)

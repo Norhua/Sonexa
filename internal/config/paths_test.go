@@ -92,8 +92,8 @@ func TestSettingsDefaultsRoundTrip(t *testing.T) {
 	if got.Matching.MaxRetries != 5 {
 		t.Errorf("最大重试 = %d, 期望 5", got.Matching.MaxRetries)
 	}
-	if got.Cache.CoverConcurrency != 8 {
-		t.Errorf("封面并发 = %d, 期望 8", got.Cache.CoverConcurrency)
+	if got.Cache.CoverConcurrency != 32 {
+		t.Errorf("封面并发 = %d, 期望 32", got.Cache.CoverConcurrency)
 	}
 	if !got.ImportExport.ExportUTF8BOM {
 		t.Error("导出应默认使用带 BOM 的 UTF-8")

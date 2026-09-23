@@ -168,3 +168,20 @@ func TestAlbumFilesBadIdentityAndUnwritableDirectory(t *testing.T) {
 		t.Fatal("目录不可写应失败")
 	}
 }
+
+func TestReleaseDirUsesSanitizedTitle(t *testing.T) {
+	cases := map[string]string{
+		"心の羽根":                    "albums/release-7-心の羽根",
+		`AC/DC: Back "in" Black?`: "albums/release-7-AC_DC_ Back _in_ Black_",
+		"  ..  ":                  "albums/release-7",
+		"Vol. 1.":                 "albums/release-7-Vol. 1",
+	}
+	for title, want := range cases {
+		if got := releaseDir(7, title); got != want || !safeRelativePath(got) {
+			t.Errorf("%q => %q", title, got)
+		}
+	}
+	if got := releaseDir(7, strings.Repeat("长", 200)); len([]rune(got)) != len([]rune("albums/release-7-"))+maxDirTitleRunes {
+		t.Error("目录名未截断", got)
+	}
+}

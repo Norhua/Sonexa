@@ -69,8 +69,8 @@ CREATE UNIQUE INDEX idx_cover_file_preview ON cover_file(variant_id)
 CREATE INDEX idx_cover_file_eviction ON cover_file(protected, available, last_used_at);
 CREATE TABLE release_cover_selection (
   release_id INTEGER PRIMARY KEY REFERENCES release(id) ON DELETE CASCADE,
-  image_id INTEGER NOT NULL REFERENCES cover_image(id),
-  variant_id INTEGER NOT NULL,
+  image_id INTEGER REFERENCES cover_image(id),
+  variant_id INTEGER,
   revision INTEGER NOT NULL CHECK (revision > 0),
   adopted_at DATETIME NOT NULL,
   FOREIGN KEY (variant_id, image_id) REFERENCES cover_variant(id, image_id)

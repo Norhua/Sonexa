@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -53,7 +54,17 @@ func (l *LibraryImages) SaveVariant(releaseID int64, variantID int64, data []byt
 	if adopt && releaseID <= 0 {
 		return nil, nil, fmt.Errorf("没有所属歌集，无法采用封面")
 	}
-	saved, err := l.files.Save(FileIdentity{ReleaseID: releaseID, Source: key.Source, ObjectRef: key.ObjectType + ":" + key.SourceRef,
+	title := ""
+	if releaseID > 0 {
+		release, err := l.store.GetRelease(releaseID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if release != nil {
+			title = release.Title
+		}
+	}
+	saved, err := l.files.Save(FileIdentity{ReleaseID: releaseID, ReleaseTitle: title, Source: key.Source, ObjectRef: key.ObjectType + ":" + key.SourceRef,
 		ImageID: image.SourceImageID, Type: image.PrimaryType, Original: variant.Spec == "original", VariantID: variant.ID}, data)
 	if err != nil {
 		return nil, nil, err
@@ -171,6 +182,35 @@ func (l *LibraryImages) ReuseReleasePreviews(releaseID int64) error {
 		}
 	}
 	return nil
+}
+
+// ClearRelease 清除歌集封面：删除该歌集目录下的全部已保存文件并记录「已清除」。
+// 数据库先提交，文件删除失败只留下无引用的孤儿文件，不会让记录指向缺失文件。
+func (l *LibraryImages) ClearRelease(releaseID, revision int64) (*store.CoverSelection, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	selection, removed, err := l.store.ClearCoverSelection(releaseID, revision)
+	if err != nil {
+		return nil, err
+	}
+	dirs := map[string]bool{}
+	var failure error
+	for _, file := range removed {
+		if err := l.files.Remove(file.RelativePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			failure = err
+		}
+		dirs[path.Dir(file.RelativePath)] = true
+	}
+	// 目录非空（如有未登记文件）时删除会失败，保留即可。
+	for dir := range dirs {
+		if strings.HasPrefix(dir, "albums/") {
+			_ = l.files.Remove(dir)
+		}
+	}
+	if failure != nil {
+		return selection, fmt.Errorf("封面已清除，但部分文件删除失败: %w", failure)
+	}
+	return selection, nil
 }
 
 // ImportLocal 只处理用户选择器交付的字节，绝不让客户端指定网络 URL。

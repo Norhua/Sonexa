@@ -14,3 +14,23 @@ func TestImageTransportRejectsResolvedPrivateAddresses(t *testing.T) {
 		}
 	}
 }
+
+func TestCAAImageLadder(t *testing.T) {
+	m := "76df3287-6cda-33eb-8e9a-044b5e15ffdd"
+	cases := map[string]string{
+		"https://coverartarchive.org/release/" + m + "/829521842-250.jpg":  "https://archive.org/download/mbid-" + m + "/mbid-" + m + "-829521842_thumb250.jpg",
+		"https://coverartarchive.org/release/" + m + "/829521842-1200.jpg": "https://archive.org/download/mbid-" + m + "/mbid-" + m + "-829521842_thumb1200.jpg",
+		"https://coverartarchive.org/release/" + m + "/829521842.png":      "https://archive.org/download/mbid-" + m + "/mbid-" + m + "-829521842.png",
+	}
+	for in, want := range cases {
+		got := caaImageLadder(in)
+		if len(got) != 2 || got[0] != want || got[1] != in {
+			t.Fatalf("%s => %v", in, got)
+		}
+	}
+	for _, other := range []string{"https://is1.mzstatic.com/a/100x100bb.jpg", "https://coverartarchive.org/release/" + m + "/front-250"} {
+		if got := caaImageLadder(other); len(got) != 1 || got[0] != other {
+			t.Fatal(other, got)
+		}
+	}
+}

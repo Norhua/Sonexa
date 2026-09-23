@@ -342,11 +342,11 @@ defineExpose({ active })
           <InputNumber
             v-model="draft.cache.coverConcurrency"
             :min="1"
-            :max="16"
+            :max="64"
             size="small"
             class="mt-1 block w-20"
           />
-          <span class="ml-2 text-xs text-muted-color">建议不超过 16；不影响上游请求配额</span>
+          <span class="ml-2 text-xs text-muted-color">CAA 不限制并发；网络较慢时可调高，上限 64</span>
         </label>
         <label class="block text-sm">上游响应缓存有效期（小时）
           <InputNumber

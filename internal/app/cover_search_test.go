@@ -94,8 +94,8 @@ func TestCoverSearchProgressAndAuthorization(t *testing.T) {
 		if !q.SkipCache {
 			t.Error("显式搜索未绕过缓存")
 		}
-		ref, url, album := "jp:12", "https://is1.mzstatic.com/image/100x100bb.jpg", "album"
-		return []provider.Candidate{{ReleaseRef: &ref, ThumbURL: &url, AlbumTitle: &album}}, nil
+		ref, url, album, title := "jp:12", "https://is1.mzstatic.com/image/100x100bb.jpg", "album", "song"
+		return []provider.Candidate{{ReleaseRef: &ref, ThumbURL: &url, AlbumTitle: &album, Title: &title}}, nil
 	}})
 	request := CoverSearchRequest{SearchID: uuid.NewString(), Generation: 7, ReleaseID: id, Title: "song", Sources: []string{"caa", "itunes"}}
 	if err := a.StartCoverSearch(request); err != nil {
@@ -212,9 +212,9 @@ func TestCoverSearchEmptyAndErrorsStayDistinct(t *testing.T) {
 			old := http.DefaultTransport
 			defer func() { http.DefaultTransport = old }()
 			http.DefaultTransport = appCoverTransport(func(r *http.Request) (*http.Response, error) {
-				status, body := 200, `{"code":0,"data":{"song":{"list":[]}}}`
+				status, body := 200, `{"code":0,"req":{"code":0,"data":{"body":{"song":{"list":[]}}}}}`
 				if strings.Contains(r.URL.Host, "163") {
-					body = `{"code":200,"result":{"albumCount":0}}`
+					body = `{"code":200,"result":{"songCount":0}}`
 				}
 				if state == "error" {
 					status, body = 403, "source unavailable"
@@ -255,8 +255,8 @@ func TestCoverSearchCapsCardsAndRetryKeepsOtherAuthorization(t *testing.T) {
 	a.registry.Register(&coverSearchProvider{id: provider.ITunes, search: func(context.Context, provider.Query) ([]provider.Candidate, error) {
 		rows := []provider.Candidate{}
 		for i := range 30 {
-			ref, url := fmt.Sprintf("jp:%d", i), fmt.Sprintf("https://is1.mzstatic.com/%d/100x100bb.jpg", i)
-			rows = append(rows, provider.Candidate{ReleaseRef: &ref, ThumbURL: &url})
+			ref, url, title := fmt.Sprintf("jp:%d", i), fmt.Sprintf("https://is1.mzstatic.com/%d/100x100bb.jpg", i), "song"
+			rows = append(rows, provider.Candidate{ReleaseRef: &ref, ThumbURL: &url, Title: &title})
 		}
 		return rows, nil
 	}})

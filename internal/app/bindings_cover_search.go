@@ -424,3 +424,19 @@ func (a *App) CoverRevision(releaseID int64) int64 {
 	}
 	return selection.Revision
 }
+
+// ClearCover 清除歌集封面并删除已保存的封面文件；revision 防止覆盖并发的新采用。
+func (a *App) ClearCover(releaseID, revision int64) (*CoverAdoptionResult, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	if a.coverSvc == nil || a.coverSvc.Library() == nil {
+		return nil, fmt.Errorf("封面服务未就绪")
+	}
+	selection, err := a.coverSvc.Library().ClearRelease(releaseID, revision)
+	if selection != nil {
+		a.notifyCoverChanged(selection)
+		return &CoverAdoptionResult{ReleaseID: releaseID, Revision: selection.Revision}, err
+	}
+	return nil, err
+}

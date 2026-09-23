@@ -17,6 +17,9 @@ type transport func(*http.Request) (*http.Response, error)
 
 func (f transport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+const qqEmpty = `{"code":0,"req":{"code":0,"data":{"body":{"song":{"list":[]}}}}}`
+const neteaseEmpty = `{"code":200,"result":{"songCount":0}}`
+
 func TestWebSourceFixturesAndErrors(t *testing.T) {
 	for _, id := range []string{"qq", "163"} {
 		t.Run(id, func(t *testing.T) {
@@ -28,8 +31,13 @@ func TestWebSourceFixturesAndErrors(t *testing.T) {
 			if id == "163" {
 				parse = Parse163
 			}
-			results, err := parse(body)
-			if err != nil || len(results) != 1 || len(results[0].Images[0].Variants) != 3 {
+			want := 3
+			if id == "qq" {
+				want = len(QQSizes)
+			}
+			// 同专辑按专辑去重；艺人不符的翻唱被相关性过滤。
+			results, err := parse(body, provider.Query{Title: "晴天", Artist: "周杰伦"})
+			if err != nil || len(results) != 1 || len(results[0].Images[0].Variants) != want {
 				t.Fatalf("%+v %v", results, err)
 			}
 			for _, variant := range results[0].Images[0].Variants {
@@ -37,16 +45,19 @@ func TestWebSourceFixturesAndErrors(t *testing.T) {
 					t.Fatal("构造规格伪装真实像素")
 				}
 			}
-			for _, bad := range []string{"broken", `{}`, `{"code":403}`, `{"code":0,"data":{}}`} {
-				if _, err := parse([]byte(bad)); err == nil {
+			if all, err := parse(body, provider.Query{}); err != nil || len(all) != 2 {
+				t.Fatalf("无查询条件时不应过滤: %d %v", len(all), err)
+			}
+			for _, bad := range []string{"broken", `{}`, `{"code":403}`, `{"code":0,"req":{"code":0,"data":{}}}`} {
+				if _, err := parse([]byte(bad), provider.Query{}); err == nil {
 					t.Fatal(bad)
 				}
 			}
-			empty := `{"code":0,"data":{"song":{"list":[]}}}`
+			empty := qqEmpty
 			if id == "163" {
-				empty = `{"code":200,"result":{"albumCount":0}}`
+				empty = neteaseEmpty
 			}
-			if rows, err := parse([]byte(empty)); err != nil || len(rows) != 0 {
+			if rows, err := parse([]byte(empty), provider.Query{}); err != nil || len(rows) != 0 {
 				t.Fatal("有效空响应失败")
 			}
 			adapter := NewWebSource(id, "Sonexa/test", provider.NewLimiters(), nil)
@@ -55,14 +66,17 @@ func TestWebSourceFixturesAndErrors(t *testing.T) {
 				if r.Header.Get("User-Agent") != "Sonexa/test" {
 					t.Fatal("UA 未携带")
 				}
-				if id == "qq" && (r.Method != "GET" || r.URL.Query().Get("n") != "20") {
-					t.Fatal("QQ 请求参数")
+				if id == "qq" {
+					payload, _ := io.ReadAll(r.Body)
+					if r.Method != "POST" || r.URL.Path != "/cgi-bin/musicu.fcg" || !strings.Contains(string(payload), `"search_type":0`) {
+						t.Fatal("QQ 请求参数")
+					}
 				}
 				if id == "163" {
 					if err := r.ParseForm(); err != nil {
 						t.Fatal(err)
 					}
-					if r.Method != "POST" || r.Form.Get("type") != "10" {
+					if r.Method != "POST" || r.URL.Path != "/weapi/cloudsearch/pc" || r.Form.Get("params") == "" || len(r.Form.Get("encSecKey")) != 256 {
 						t.Fatal("163 请求参数")
 					}
 				}
@@ -93,9 +107,9 @@ func TestWebSourceRetryAfterAndCancellation(t *testing.T) {
 			start := time.Now()
 			adapter.HTTP.Transport = transport(func(*http.Request) (*http.Response, error) {
 				calls++
-				status, body := 200, `{"code":0,"data":{"song":{"list":[]}}}`
+				status, body := 200, qqEmpty
 				if id == "163" {
-					body = `{"code":200,"result":{"albumCount":0}}`
+					body = neteaseEmpty
 				}
 				header := make(http.Header)
 				if calls == 1 {
@@ -125,9 +139,9 @@ func TestWebSourceQuotasAreIndependentAndSharedAcrossInstances(t *testing.T) {
 		s := NewWebSource(id, "test", limiters, nil)
 		s.HTTP.Transport = transport(func(*http.Request) (*http.Response, error) {
 			arrivals <- id
-			body := `{"code":0,"data":{"song":{"list":[]}}}`
+			body := qqEmpty
 			if id == "163" {
-				body = `{"code":200,"result":{"albumCount":0}}`
+				body = neteaseEmpty
 			}
 			return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 		})

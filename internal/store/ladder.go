@@ -71,7 +71,7 @@ func (s *Store) RepresentativeRelease(groupID int64) (*Release, error) {
 	// 「有封面」指显式采用：旧版记在 cover_path，新版记在采用关系表。
 	adopted := map[int64]bool{}
 	selected, err := s.db.Query(`SELECT s.release_id FROM release_cover_selection s
-		JOIN release r ON r.id = s.release_id WHERE r.release_group_id = ?`, groupID)
+		JOIN release r ON r.id = s.release_id WHERE r.release_group_id = ? AND s.image_id IS NOT NULL`, groupID)
 	if err != nil {
 		return nil, err
 	}

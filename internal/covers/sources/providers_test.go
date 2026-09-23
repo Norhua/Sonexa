@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/norhua/sonexa/internal/provider"
@@ -29,18 +31,21 @@ func TestCAASourceBoundsReleasesAndPreservesImages(t *testing.T) {
 	})
 	mb := musicbrainz.New(client, musicbrainz.Config{Contact: "test@example.com"}, nil)
 	refs := []string{}
+	var mu sync.Mutex
 	source := &CAASource{Provider: mb, ReleaseRef: "release-0", Catalog: func(_ context.Context, kind, ref string, force bool) (*store.CoverCatalog, error) {
 		if kind != "release" || !force {
 			t.Error("目录类型或强制刷新丢失")
 		}
+		mu.Lock()
 		refs = append(refs, ref)
+		mu.Unlock()
 		return &store.CoverCatalog{CoverCatalogKey: store.CoverCatalogKey{Source: "caa", ObjectType: kind, SourceRef: ref}, Images: []store.CoverImage{
 			{SourceImageID: "front", PrimaryType: "Front", Variants: []store.CoverVariant{{Spec: "250"}, {Spec: "1200"}}},
 			{SourceImageID: "back", PrimaryType: "Back", Variants: []store.CoverVariant{{Spec: "original"}}},
 		}}, nil
 	}}
 	rows, err := source.Search(context.Background(), provider.Query{Title: "song", SkipCache: true})
-	if err != nil || len(refs) != 10 || len(rows) != 10 || refs[0] != "release-0" {
+	if err != nil || len(refs) != 10 || len(rows) != 10 || !slices.Contains(refs, "release-0") {
 		t.Fatalf("发行查询应去重并含固定目标: %v %v", refs, err)
 	}
 	unique := map[string]bool{}
@@ -70,12 +75,13 @@ func TestITunesSourceCountryVariantsAndImageIdentity(t *testing.T) {
 				body := `{"results":[
 					{"trackId":1,"collectionId":12,"collectionName":"album","artworkUrl100":"https://is1.mzstatic.com/first/100x100bb.jpg"},
 					{"trackId":2,"collectionId":12,"collectionName":"album","artworkUrl100":"https://is1.mzstatic.com/first/100x100bb.jpg"},
-					{"trackId":3,"collectionId":12,"collectionName":"album","artworkUrl100":"https://is1.mzstatic.com/second/100x100bb.jpg"}
+					{"trackId":3,"collectionId":12,"collectionName":"album","artworkUrl100":"https://is1.mzstatic.com/second/100x100bb.jpg"},
+					{"trackId":4,"trackName":"other","collectionId":13,"collectionName":"unrelated","artworkUrl100":"https://is1.mzstatic.com/third/100x100bb.jpg"}
 				]}`
 				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 			})
 			source := &ITunesSource{Provider: itunes.New(client, itunes.Config{DefaultCountry: "jp"}, nil)}
-			rows, err := source.Search(context.Background(), provider.Query{Title: "song", Country: country, SkipCache: true})
+			rows, err := source.Search(context.Background(), provider.Query{Title: "song", Album: "album", Country: country, SkipCache: true})
 			if err != nil || len(rows) != 1 || len(rows[0].Images) != 2 {
 				t.Fatalf("同图未去重或异图被合并: %+v %v", rows, err)
 			}

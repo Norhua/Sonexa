@@ -10,6 +10,7 @@ import (
 	"github.com/norhua/sonexa/internal/covers"
 	"github.com/norhua/sonexa/internal/covers/sources"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/store"
 )
 
 // 显式启用，普通测试保持离线。只获取公开封面，不含账号/代理/音频。
@@ -22,15 +23,20 @@ func TestLiveCoverSources(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			adapter := sources.NewWebSource(id, "Sonexa/test (public cover compatibility check)", provider.NewLimiters(), nil)
-			results, err := adapter.Search(ctx, provider.Query{Artist: "周杰伦", Limit: 3})
+			results, err := adapter.Search(ctx, provider.Query{Title: "世界中の雨", Artist: "チームドラゴン from AKB48", Album: "心の羽根", Limit: 3})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if len(results) == 0 {
 				t.Fatal("已知公开查询没有返回封面")
 			}
-			variants := results[0].Images[0].Variants
-			variant := variants[len(variants)-1]
+			// QQ 1200 并非每张专辑都有，取 800；网易云取原图。
+			var variant store.CoverVariant
+			for _, v := range results[0].Images[0].Variants {
+				if v.Spec == "800" || v.Spec == "original" {
+					variant = v
+				}
+			}
 			request, err := http.NewRequestWithContext(ctx, "GET", variant.URL, nil)
 			if err != nil {
 				t.Fatal(err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/provider/itunes"
@@ -35,37 +36,47 @@ type CAASource struct {
 
 func (s *CAASource) Search(ctx context.Context, q provider.Query) ([]Result, error) {
 	q.Limit = boundedLimit(q.Limit)
-	results := []Result{}
+	// 固定目标与 MusicBrainz 召回的发行一起并发读取目录；CAA 不限制并发，
+	// 串行读取十个目录（每个都要经 archive.org 重定向）是封面搜索慢的主因。
+	refs := []string{}
 	seen := map[string]bool{}
-	var failure error
-	load := func(ref string) {
-		if ref == "" || seen[ref] || len(seen) >= MaxCAAReleases || ctx.Err() != nil {
-			return
+	add := func(ref string) {
+		if ref != "" && !seen[ref] && len(refs) < MaxCAAReleases {
+			seen[ref] = true
+			refs = append(refs, ref)
 		}
-		seen[ref] = true
-		catalog, err := s.Catalog(ctx, "release", ref, q.SkipCache)
-		if err != nil {
-			failure = err
-			return
-		}
-		results = append(results, Result{Key: catalog.CoverCatalogKey, Images: catalog.Images})
 	}
-	// 固定目标先查；之后用原元数据 provider 的共享配额召回其他发行。
-	load(s.ReleaseRef)
+	add(s.ReleaseRef)
+	candidates, failure := s.Provider.SearchTracks(provider.WithPriority(ctx, provider.PriorityInteractive), q)
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	candidates, err := s.Provider.SearchTracks(provider.WithPriority(ctx, provider.PriorityInteractive), q)
-	if err != nil {
-		failure = err
 	}
 	for _, candidate := range candidates {
 		if candidate.ReleaseRef != nil {
-			load(*candidate.ReleaseRef)
+			add(*candidate.ReleaseRef)
 		}
 	}
+	catalogs := make([]*store.CoverCatalog, len(refs))
+	errs := make([]error, len(refs))
+	var wg sync.WaitGroup
+	for i, ref := range refs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			catalogs[i], errs[i] = s.Catalog(ctx, "release", ref, q.SkipCache)
+		}()
+	}
+	wg.Wait()
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	results := []Result{}
+	for i, catalog := range catalogs {
+		if errs[i] != nil {
+			failure = errs[i]
+			continue
+		}
+		results = append(results, Result{Key: catalog.CoverCatalogKey, Images: catalog.Images})
 	}
 	return results, failure
 }
@@ -84,6 +95,10 @@ func (s *ITunesSource) Search(ctx context.Context, q provider.Query) ([]Result, 
 	count := 0
 	for _, c := range candidates {
 		if c.ReleaseRef == nil || c.ThumbURL == nil {
+			continue
+		}
+		// iTunes 对词项宽松召回，会返回同艺人的无关专辑。
+		if !Relevant(q, deref(c.Title), deref(c.ArtistName), deref(c.AlbumTitle)) {
 			continue
 		}
 		identity := fmt.Sprintf("%s|%s", *c.ReleaseRef, *c.ThumbURL)
@@ -114,6 +129,13 @@ func (s *ITunesSource) Search(ctx context.Context, q provider.Query) ([]Result, 
 		}
 	}
 	return results, nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func boundedLimit(limit int) int {

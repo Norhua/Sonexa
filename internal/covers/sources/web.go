@@ -1,12 +1,14 @@
 package sources
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -39,7 +41,7 @@ func NewWebSource(id, userAgent string, limiters *provider.Limiters, gate func()
 		if len(via) >= 5 || req.URL.Scheme != "https" || req.URL.User != nil {
 			return fmt.Errorf("不安全的来源重定向")
 		}
-		if req.URL.Hostname() != "c.y.qq.com" && req.URL.Hostname() != "music.163.com" {
+		if req.URL.Hostname() != "u.y.qq.com" && req.URL.Hostname() != "music.163.com" {
 			return fmt.Errorf("来源重定向超出允许域名")
 		}
 		if gate != nil {
@@ -54,8 +56,8 @@ func (s *WebSource) Search(ctx context.Context, q provider.Query) ([]Result, err
 	for attempt := 1; attempt <= max(s.Retry.MaxAttempts, 1); attempt++ {
 		results, err := s.searchOnce(ctx, q)
 		if err == nil {
-			if len(results) > 20 {
-				results = results[:20]
+			if len(results) > MaxResults {
+				results = results[:MaxResults]
 			}
 			return results, nil
 		}
@@ -74,8 +76,18 @@ func (s *WebSource) Search(ctx context.Context, q provider.Query) ([]Result, err
 	return nil, last
 }
 
+// searchQuery 是 QQ/网易云按歌曲搜索时的检索词：歌曲名优先，缺失时退回专辑名。
+// 专辑搜索会把歌曲名当作专辑名的一部分而全部落空，因此两家都按歌曲搜索后按专辑聚合。
+func searchQuery(q provider.Query) string {
+	head := strings.TrimSpace(q.Title)
+	if head == "" {
+		head = strings.TrimSpace(q.Album)
+	}
+	return strings.TrimSpace(strings.Join([]string{head, strings.TrimSpace(q.Artist)}, " "))
+}
+
 func (s *WebSource) searchOnce(ctx context.Context, q provider.Query) ([]Result, error) {
-	term := strings.TrimSpace(strings.Join([]string{q.Title, q.Artist, q.Album}, " "))
+	term := searchQuery(q)
 	if term == "" {
 		return nil, fmt.Errorf("请输入封面搜索条件")
 	}
@@ -87,19 +99,28 @@ func (s *WebSource) searchOnce(ctx context.Context, q provider.Query) ([]Result,
 	if err := s.Limiters.Wait(ctx, provider.ProviderID("cover-"+s.ID)); err != nil {
 		return nil, err
 	}
-	limit := q.Limit
-	if limit <= 0 || limit > 20 {
-		limit = 20
-	}
+	// 歌曲级结果按专辑去重后远少于条数，多取一些再过滤。
+	const fetchLimit = 30
 	var req *http.Request
 	var err error
 	switch s.ID {
 	case "qq":
-		params := url.Values{"w": {term}, "format": {"json"}, "p": {"1"}, "n": {strconv.Itoa(limit)}, "t": {"0"}}
-		req, err = http.NewRequestWithContext(ctx, "GET", "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?"+params.Encode(), nil)
+		payload, _ := json.Marshal(map[string]any{
+			"comm": map[string]any{"ct": "19", "cv": "1859", "uin": "0"},
+			"req": map[string]any{"module": "music.search.SearchCgiService", "method": "DoSearchForQQMusicDesktop",
+				"param": map[string]any{"query": term, "search_type": 0, "num_per_page": fetchLimit, "page_num": 1}},
+		})
+		req, err = http.NewRequestWithContext(ctx, "POST", "https://u.y.qq.com/cgi-bin/musicu.fcg", bytes.NewReader(payload))
+		if err == nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
 	case "163":
-		params := url.Values{"s": {term}, "type": {"10"}, "limit": {strconv.Itoa(limit)}, "offset": {"0"}, "total": {"true"}}
-		req, err = http.NewRequestWithContext(ctx, "POST", "https://music.163.com/api/search/get/web", strings.NewReader(params.Encode()))
+		payload, _ := json.Marshal(map[string]string{"s": term, "type": "1", "limit": strconv.Itoa(fetchLimit), "offset": "0"})
+		var form url.Values
+		form, err = weapiForm(payload)
+		if err == nil {
+			req, err = http.NewRequestWithContext(ctx, "POST", "https://music.163.com/weapi/cloudsearch/pc", strings.NewReader(form.Encode()))
+		}
 		if err == nil {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -137,42 +158,61 @@ func (s *WebSource) searchOnce(ctx context.Context, q provider.Query) ([]Result,
 	if err != nil || len(body) > 4<<20 {
 		return nil, fmt.Errorf("来源响应不可读或过大")
 	}
+	var results []Result
 	if s.ID == "qq" {
-		return ParseQQ(body)
+		results, err = ParseQQ(body, q)
+	} else {
+		results, err = Parse163(body, q)
 	}
-	return Parse163(body)
+	if err == nil && q.Limit > 0 && len(results) > q.Limit {
+		results = results[:q.Limit]
+	}
+	return results, err
 }
 
-func ParseQQ(body []byte) ([]Result, error) {
+// QQSizes 是 QQ 封面构造地址的规格；并非每张专辑都有 1200，采用时按 404 逐级回退。
+var QQSizes = []int{300, 500, 800, 1200}
+
+func ParseQQ(body []byte, q provider.Query) ([]Result, error) {
 	var response struct {
 		Code *int `json:"code"`
-		Data *struct {
-			Song *struct {
-				List []struct {
-					AlbumMID  string `json:"albummid"`
-					AlbumName string `json:"albumname"`
-					Singer    []struct {
-						Name string `json:"name"`
-					} `json:"singer"`
-				} `json:"list"`
-			} `json:"song"`
-		} `json:"data"`
+		Req  *struct {
+			Code *int `json:"code"`
+			Data *struct {
+				Body *struct {
+					Song *struct {
+						List []struct {
+							Name  string `json:"name"`
+							Album struct {
+								MID  string `json:"mid"`
+								Name string `json:"name"`
+							} `json:"album"`
+							Singer []struct {
+								Name string `json:"name"`
+							} `json:"singer"`
+						} `json:"list"`
+					} `json:"song"`
+				} `json:"body"`
+			} `json:"data"`
+		} `json:"req"`
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, err
 	}
-	if response.Code == nil || *response.Code != 0 || response.Data == nil || response.Data.Song == nil || response.Data.Song.List == nil {
+	r := response.Req
+	if response.Code == nil || *response.Code != 0 || r == nil || r.Code == nil || *r.Code != 0 || r.Data == nil || r.Data.Body == nil ||
+		r.Data.Body.Song == nil || r.Data.Body.Song.List == nil {
 		return nil, fmt.Errorf("QQ 搜索响应异常或来源不可用")
 	}
 	out := []Result{}
 	seen := map[string]bool{}
-	for _, song := range response.Data.Song.List {
-		if song.AlbumMID == "" || seen[song.AlbumMID] {
+	for _, song := range r.Data.Body.Song.List {
+		mid := song.Album.MID
+		if mid == "" || seen[mid] {
 			continue
 		}
-		seen[song.AlbumMID] = true
-		for _, r := range song.AlbumMID {
-			if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+		for _, c := range mid {
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z') {
 				return nil, fmt.Errorf("QQ 专辑身份无效")
 			}
 		}
@@ -180,59 +220,83 @@ func ParseQQ(body []byte) ([]Result, error) {
 		for _, singer := range song.Singer {
 			artists = append(artists, singer.Name)
 		}
-		image := store.CoverImage{SourceImageID: song.AlbumMID, PrimaryType: "Front", Types: []string{"Front"}, Front: true, Title: song.AlbumName, Artist: strings.Join(artists, " / ")}
-		for _, size := range []int{300, 500, 800} {
-			image.Variants = append(image.Variants, store.CoverVariant{Spec: strconv.Itoa(size), Constructed: true,
-				URL: fmt.Sprintf("https://y.qq.com/music/photo_new/T002R%dx%dM000%s.jpg", size, size, song.AlbumMID)})
+		artist := strings.Join(artists, " / ")
+		if !Relevant(q, song.Name, artist, song.Album.Name) {
+			continue
 		}
-		out = append(out, Result{Key: store.CoverCatalogKey{Source: "qq", ObjectType: "album", SourceRef: song.AlbumMID}, Images: []store.CoverImage{image}})
+		seen[mid] = true
+		image := store.CoverImage{SourceImageID: mid, PrimaryType: "Front", Types: []string{"Front"}, Front: true, Title: song.Album.Name, Artist: artist}
+		for _, size := range QQSizes {
+			image.Variants = append(image.Variants, store.CoverVariant{Spec: strconv.Itoa(size), Constructed: true,
+				URL: fmt.Sprintf("https://y.qq.com/music/photo_new/T002R%dx%dM000%s.jpg", size, size, mid)})
+		}
+		out = append(out, Result{Key: store.CoverCatalogKey{Source: "qq", ObjectType: "album", SourceRef: mid}, Images: []store.CoverImage{image}})
 	}
 	return out, nil
 }
 
-func Parse163(body []byte) ([]Result, error) {
+func Parse163(body []byte, q provider.Query) ([]Result, error) {
 	var response struct {
 		Code   int `json:"code"`
 		Result *struct {
-			AlbumCount *int `json:"albumCount"`
-			Albums     []struct {
-				ID     json.Number `json:"id"`
-				Name   string      `json:"name"`
-				PicURL string      `json:"picUrl"`
-				Artist struct {
+			SongCount *int `json:"songCount"`
+			Songs     []struct {
+				Name string `json:"name"`
+				Al   struct {
+					ID     json.Number `json:"id"`
+					Name   string      `json:"name"`
+					PicURL string      `json:"picUrl"`
+				} `json:"al"`
+				Ar []struct {
 					Name string `json:"name"`
-				} `json:"artist"`
-			} `json:"albums"`
+				} `json:"ar"`
+			} `json:"songs"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, err
 	}
-	if response.Code != 200 || response.Result == nil || (response.Result.Albums == nil && (response.Result.AlbumCount == nil || *response.Result.AlbumCount != 0)) {
+	if response.Code != 200 || response.Result == nil || (response.Result.Songs == nil && (response.Result.SongCount == nil || *response.Result.SongCount != 0)) {
 		return nil, fmt.Errorf("网易云搜索响应异常或来源不可用")
 	}
 	out := []Result{}
 	seen := map[string]bool{}
-	for _, album := range response.Result.Albums {
-		if album.ID == "" || album.PicURL == "" || seen[album.ID.String()] {
+	for _, song := range response.Result.Songs {
+		album := song.Al
+		if album.PicURL == "" {
 			continue
 		}
-		seen[album.ID.String()] = true
+		artists := []string{}
+		for _, a := range song.Ar {
+			artists = append(artists, a.Name)
+		}
+		artist := strings.Join(artists, " / ")
+		if !Relevant(q, song.Name, artist, album.Name) {
+			continue
+		}
 		u, err := url.Parse(album.PicURL)
 		if err != nil || (!strings.HasSuffix(u.Hostname(), ".music.126.net") && u.Hostname() != "music.126.net") {
-			return nil, fmt.Errorf("网易云封面地址无效")
+			continue
 		}
+		// 用户上传的歌曲专辑 id 为 0，此时以图片 id（地址末段）作为来源身份。
+		ref := album.ID.String()
+		if ref == "" || ref == "0" {
+			ref = "pic-" + strings.TrimSuffix(path.Base(u.Path), path.Ext(u.Path))
+		}
+		if seen[ref] {
+			continue
+		}
+		seen[ref] = true
 		u.Scheme = "https"
-		image := store.CoverImage{SourceImageID: album.ID.String(), Title: album.Name, Artist: album.Artist.Name, PrimaryType: "Front", Types: []string{"Front"}, Front: true, OriginalURL: u.String()}
+		u.RawQuery = ""
+		image := store.CoverImage{SourceImageID: ref, Title: album.Name, Artist: artist, PrimaryType: "Front", Types: []string{"Front"}, Front: true, OriginalURL: u.String()}
 		image.Variants = append(image.Variants, store.CoverVariant{Spec: "original", URL: u.String()})
 		for _, size := range []int{250, 500} {
 			resized := *u
-			q := resized.Query()
-			q.Set("param", fmt.Sprintf("%dy%d", size, size))
-			resized.RawQuery = q.Encode()
+			resized.RawQuery = url.Values{"param": {fmt.Sprintf("%dy%d", size, size)}}.Encode()
 			image.Variants = append(image.Variants, store.CoverVariant{Spec: strconv.Itoa(size), URL: resized.String(), Constructed: true})
 		}
-		out = append(out, Result{Key: store.CoverCatalogKey{Source: "163", ObjectType: "album", SourceRef: album.ID.String()}, Images: []store.CoverImage{image}})
+		out = append(out, Result{Key: store.CoverCatalogKey{Source: "163", ObjectType: "album", SourceRef: ref}, Images: []store.CoverImage{image}})
 	}
 	return out, nil
 }

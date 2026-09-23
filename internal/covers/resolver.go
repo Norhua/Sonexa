@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -138,15 +139,21 @@ func (s *Service) Resolve(ctx context.Context, requested Target, usage Usage) (*
 	if err != nil {
 		return nil, err
 	}
+	var selection *store.CoverSelection
+	if target.ReleaseID > 0 {
+		if selection, err = s.library.store.GetCoverSelection(target.ReleaseID); err != nil {
+			return nil, err
+		}
+		// 用户清除过封面：不复用预览、不自动获取，直到重新采用。
+		if selection != nil && selection.Cleared {
+			return &Resolved{Outcome: OutcomeEmpty}, nil
+		}
+	}
 	files, err := s.localFiles(target)
 	if err != nil {
 		return nil, err
 	}
 	if target.ReleaseID > 0 {
-		selection, err := s.library.store.GetCoverSelection(target.ReleaseID)
-		if err != nil {
-			return nil, err
-		}
 		if selection != nil {
 			selected := []store.CoverFile{}
 			for _, file := range files {
@@ -342,7 +349,7 @@ func (s *Service) DownloadVariant(ctx context.Context, variant store.CoverVarian
 				}
 			}
 		}
-		data, err := s.pool.fetchOne(ctx, variant.URL)
+		data, err := s.pool.fetchURLs(ctx, caaImageLadder(variant.URL), nil)
 		if err == nil {
 			_, err = InspectImage(data)
 		}
@@ -362,6 +369,28 @@ func (s *Service) DownloadVariant(ctx context.Context, variant store.CoverVarian
 		return nil, err
 	}
 	return value.([]byte), nil
+}
+
+var caaImagePath = regexp.MustCompile(`^/release/([0-9a-f-]{36})/([0-9]+)(?:-(250|500|1200))?\.([a-z]+)$`)
+
+// caaImageLadder 把 CAA 图片地址改写为它最终 307 到的 archive.org 地址，省去一次
+// coverartarchive.org 往返（每跳都需独立 TLS 握手，慢网络下单跳可达数秒）。
+// 直连失败时退回规范地址，archive.org 布局变化只会让它变慢而不会取不到图。
+func caaImageLadder(raw string) []string {
+	u, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(u.Hostname(), "coverartarchive.org") {
+		return []string{raw}
+	}
+	m := caaImagePath.FindStringSubmatch(u.Path)
+	if m == nil {
+		return []string{raw}
+	}
+	name := "mbid-" + m[1] + "-" + m[2]
+	if m[3] != "" {
+		name += "_thumb" + m[3]
+	}
+	direct := "https://archive.org/download/mbid-" + m[1] + "/" + name + "." + m[4]
+	return []string{direct, raw}
 }
 
 func validImageURL(raw string) error {

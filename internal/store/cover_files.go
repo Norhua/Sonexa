@@ -29,11 +29,14 @@ type CoverFile struct {
 	Available    bool      `json:"available"`
 }
 
+// CoverSelection 是歌集的封面采用关系。Cleared 表示用户清除了封面：
+// 图片身份为空，自动获取不再为该歌集补图，直到用户重新采用。
 type CoverSelection struct {
 	ReleaseID int64     `json:"releaseId"`
 	ImageID   int64     `json:"imageId"`
 	VariantID int64     `json:"variantId"`
 	Revision  int64     `json:"revision"`
+	Cleared   bool      `json:"cleared"`
 	AdoptedAt time.Time `json:"-"`
 }
 
@@ -144,15 +147,75 @@ func (s *Store) AdoptCoverFile(file CoverFile, expectedRevision int64) (*CoverSe
 
 func (s *Store) GetCoverSelection(releaseID int64) (*CoverSelection, error) {
 	var selection CoverSelection
+	var imageID, variantID sql.NullInt64
 	err := s.db.QueryRow(`SELECT release_id,image_id,variant_id,revision,adopted_at FROM release_cover_selection WHERE release_id=?`, releaseID).
-		Scan(&selection.ReleaseID, &selection.ImageID, &selection.VariantID, &selection.Revision, &selection.AdoptedAt)
+		Scan(&selection.ReleaseID, &imageID, &variantID, &selection.Revision, &selection.AdoptedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	selection.ImageID, selection.VariantID, selection.Cleared = imageID.Int64, variantID.Int64, !imageID.Valid
 	return &selection, nil
+}
+
+// ClearCoverSelection 删除歌集的全部封面文件记录，并把采用关系标记为已清除（版本加一）。
+// 返回被删除的记录，由调用方在提交后删除磁盘文件。
+func (s *Store) ClearCoverSelection(releaseID, expectedRevision int64) (*CoverSelection, []CoverFile, error) {
+	selection := &CoverSelection{ReleaseID: releaseID, Revision: expectedRevision + 1, Cleared: true, AdoptedAt: time.Now().UTC()}
+	var removed []CoverFile
+	err := s.withTx(func(tx *sql.Tx) error {
+		// 先写以取得 SQLite 写锁，再检查版本（同 AdoptCoverFile）。
+		result, err := tx.Exec(`UPDATE release SET updated_at=updated_at WHERE id=?`, releaseID)
+		if err != nil {
+			return err
+		}
+		if n, _ := result.RowsAffected(); n == 0 {
+			return fmt.Errorf("歌集不存在")
+		}
+		var revision int64
+		err = tx.QueryRow(`SELECT revision FROM release_cover_selection WHERE release_id=?`, releaseID).Scan(&revision)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if revision != expectedRevision {
+			return ErrCoverSelectionChanged
+		}
+		rows, err := tx.Query(`SELECT `+coverFileColumns+` FROM cover_file WHERE release_id=?`, releaseID)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			file, err := scanCoverFile(rows)
+			if err != nil {
+				rows.Close()
+				return err
+			}
+			removed = append(removed, *file)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM cover_file WHERE release_id=?`, releaseID); err != nil {
+			return err
+		}
+		_, err = tx.Exec(`INSERT INTO release_cover_selection(release_id,image_id,variant_id,revision,adopted_at) VALUES(?,NULL,NULL,?,?)
+			ON CONFLICT(release_id) DO UPDATE SET image_id=NULL,variant_id=NULL,revision=excluded.revision,adopted_at=excluded.adopted_at`,
+			releaseID, selection.Revision, selection.AdoptedAt)
+		if err != nil {
+			return err
+		}
+		// 旧版 cover_path 同样计入「有封面」，清除后一并置空；旧文件保留以便回滚。
+		_, err = tx.Exec(`UPDATE release SET cover_path=NULL,cover_source_url=NULL,cover_width=NULL,cover_height=NULL,updated_at=? WHERE id=?`,
+			selection.AdoptedAt, releaseID)
+		return err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return selection, removed, nil
 }
 
 const coverFileColumns = `id,variant_id,release_id,relative_path,content_hash,byte_size,width,height,format,fetched_at,last_used_at,protected,available`

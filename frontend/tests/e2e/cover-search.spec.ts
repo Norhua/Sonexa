@@ -160,7 +160,7 @@ test('keyboard menu imports from the nil region and restores focus on Escape and
   await expect(trigger).toBeFocused()
 })
 
-test('missing album disables both cover actions without creating a target', async ({ page }) => {
+test('missing album disables all cover actions without creating a target', async ({ page }) => {
   await page.evaluate(() => {
     const api = (window as any).go.app.App, detail = api.GetTrackDetail
     api.GetTrackDetail = async (id: number) => {
@@ -175,6 +175,7 @@ test('missing album disables both cover actions without creating a target', asyn
   for (const name of ['从本地存储中选择', '从网络搜索']) {
     await expect(page.getByRole('menuitem', { name, exact: true })).toHaveAttribute('aria-disabled', 'true')
   }
+  await expect(page.getByRole('menuitem', { name: '清除封面', exact: true })).toHaveAttribute('aria-disabled', 'true')
   await page.keyboard.press('Escape')
   await expect(page.getByRole('button', { name: '更新歌曲图片', exact: true })).toBeFocused()
 })
@@ -199,4 +200,25 @@ test('outbound disabled keeps local import available and cancel leaves current c
   await page.getByRole('menuitem', { name: '从本地存储中选择', exact: true }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__picked)).toBe(true)
   expect(await page.evaluate(() => (window as any).__coverAdoption)).toBeUndefined()
+})
+
+test('clear cover asks for confirmation and clears the menu release', async ({ page }) => {
+  await page.evaluate(() => {
+    const api = (window as any).go.app.App
+    api.ClearCover = async (releaseId: number, revision: number) => {
+      (window as any).__cleared = [releaseId, revision]
+      return { releaseId, revision: revision + 1 }
+    }
+  })
+  await page.locator('.track-list [data-row-key]').first().locator('td').last().dblclick()
+  await page.getByRole('button', { name: '更新歌曲图片', exact: true }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '清除封面', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '清除专辑封面？' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  expect(await page.evaluate(() => (window as any).__cleared)).toBeUndefined()
+  await page.getByRole('button', { name: '更新歌曲图片', exact: true }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '清除封面', exact: true }).click()
+  await page.getByRole('dialog', { name: '清除专辑封面？' }).getByRole('button', { name: '清除', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__cleared)).toEqual([20, 0])
 })

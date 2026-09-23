@@ -1,1 +1,1 @@
-{"code":0,"data":{"song":{"list":[{"albummid":"000MkMni19ClKG","albumname":"叶惠美","singer":[{"name":"周杰伦"}]},{"albummid":"000MkMni19ClKG","albumname":"叶惠美","singer":[{"name":"周杰伦"}]}]}}}
+{"code":0,"req":{"code":0,"data":{"body":{"song":{"list":[{"name":"晴天","album":{"mid":"000MkMni19ClKG","name":"叶惠美"},"singer":[{"name":"周杰伦"}]},{"name":"东风破","album":{"mid":"000MkMni19ClKG","name":"叶惠美"},"singer":[{"name":"周杰伦"}]},{"name":"晴天","album":{"mid":"003ABCdef12345","name":"翻唱合集"},"singer":[{"name":"路人"}]}]}}}}}

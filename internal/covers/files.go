@@ -22,12 +22,14 @@ type AlbumFiles struct {
 
 type FileIdentity struct {
 	ReleaseID int64
-	Source    string
-	ObjectRef string
-	ImageID   string
-	Type      string
-	Original  bool
-	VariantID int64
+	// ReleaseTitle 仅用于让歌集目录可读，不参与身份判定。
+	ReleaseTitle string
+	Source       string
+	ObjectRef    string
+	ImageID      string
+	Type         string
+	Original     bool
+	VariantID    int64
 }
 
 type SavedImage struct {
@@ -78,6 +80,33 @@ func coverFileStem(identity FileIdentity, info ImageInfo) (string, error) {
 	return kind + "-" + identity.Source + "-" + spec, nil
 }
 
+// maxDirTitleRunes 限制目录名中歌集名的长度，避免超出文件系统单段名称上限。
+const maxDirTitleRunes = 80
+
+// releaseDir 形如 albums/release-<id>-<歌集名>。歌集名清理掉路径与各平台保留字符，
+// 清理后为空则只用 id。歌集改名后新文件进入新目录，已登记文件按原相对路径读取。
+func releaseDir(id int64, title string) string {
+	var b strings.Builder
+	for _, r := range title {
+		switch {
+		case r < 0x20 || r == 0x7f || strings.ContainsRune(`/\:*?"<>|`, r):
+			b.WriteRune('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	name := []rune(strings.Join(strings.Fields(b.String()), " "))
+	if len(name) > maxDirTitleRunes {
+		name = name[:maxDirTitleRunes]
+	}
+	// Windows 不允许目录名以点或空格结尾。
+	clean := strings.Trim(string(name), ". ")
+	if clean == "" {
+		return fmt.Sprintf("albums/release-%d", id)
+	}
+	return fmt.Sprintf("albums/release-%d-%s", id, clean)
+}
+
 func (f *AlbumFiles) Save(identity FileIdentity, data []byte) (*SavedImage, error) {
 	info, err := InspectImage(data)
 	if err != nil {
@@ -90,7 +119,7 @@ func (f *AlbumFiles) Save(identity FileIdentity, data []byte) (*SavedImage, erro
 	if identity.VariantID > 0 {
 		stem += fmt.Sprintf("-v%d", identity.VariantID)
 	}
-	dir := fmt.Sprintf("albums/release-%d", identity.ReleaseID)
+	dir := releaseDir(identity.ReleaseID, identity.ReleaseTitle)
 	if identity.ReleaseID == 0 {
 		if identity.ObjectRef == "" {
 			return nil, fmt.Errorf("预览图片缺少来源对象身份")
