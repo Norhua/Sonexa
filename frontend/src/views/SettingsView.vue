@@ -221,6 +221,18 @@ defineExpose({ active })
             </label>
           </template>
 
+          <template v-else-if="p.id === 'qq'">
+            <label class="block text-sm">速率限制（请求/分钟）
+              <InputNumber
+                v-model="draft.qqmusic.ratePerMin"
+                :min="1"
+                size="small"
+                class="mt-1 block w-24"
+              />
+            </label>
+            <p class="text-xs text-muted-color">使用非公开接口，遇到风控或鉴权提示时该上游报告不可用。</p>
+          </template>
+
           <p v-else class="text-xs text-muted-color">该上游无需额外配置。</p>
 
           <p class="text-xs text-muted-color">

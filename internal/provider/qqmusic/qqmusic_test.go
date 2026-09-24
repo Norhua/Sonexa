@@ -2,7 +2,6 @@ package qqmusic
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -68,24 +67,7 @@ func TestCandidateSkipsInvalidAlbum(t *testing.T) {
 
 func detailFromFixture(t *testing.T, name, album, track string) *provider.Detail {
 	t.Helper()
-	blocks, err := decodeBlocks(fixture(t, name), "album", "songs", "song")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var parts detailParts
-	json.Unmarshal(blocks["album"], &parts.album)
-	page, err := parseSongPage(blocks["songs"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	parts.total = page.TotalNum
-	for _, s := range page.SongList {
-		parts.songs = append(parts.songs, s.SongInfo)
-	}
-	var detail songDetailData
-	json.Unmarshal(blocks["song"], &detail)
-	parts.detail = &detail
-	d, err := buildDetail(album, track, parts)
+	d, err := ParseDetailJSON(fixture(t, name), album, track)
 	if err != nil {
 		t.Fatal(err)
 	}

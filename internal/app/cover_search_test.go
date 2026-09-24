@@ -39,7 +39,7 @@ type appCoverTransport func(*http.Request) (*http.Response, error)
 
 func (f appCoverTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func TestCoverSourceRegistryDoesNotExtendMetadataProviders(t *testing.T) {
+func TestCoverSourceRegistryOnlyQQIsMetadataProvider(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
 	defer a.coverSvc.Close()
@@ -47,13 +47,16 @@ func TestCoverSourceRegistryDoesNotExtendMetadataProviders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(providers) != 2 {
-		t.Fatalf("元数据来源数量改变: %+v", providers)
-	}
+	// QQ 音乐已是标准元数据上游；163 仍只作为封面来源。
+	ids := []string{}
 	for _, p := range providers {
-		if p.ID == "qq" || p.ID == "163" {
+		ids = append(ids, p.ID)
+		if p.ID == "163" {
 			t.Fatal("封面专用来源泄漏到元数据注册表")
 		}
+	}
+	if strings.Join(ids, ",") != "musicbrainz,itunes,qq" {
+		t.Fatalf("元数据来源改变: %v", ids)
 	}
 	sources := a.ListCoverSources()
 	if len(sources) != 4 {

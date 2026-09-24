@@ -31,7 +31,8 @@
     general: { theme: 'dark', language: 'zh-CN' },
     musicbrainz: { contact: 'test@example.com', serverUrl: '', ratePerSec: 1 },
     itunes: { defaultCountry: 'JP', ratePerMin: 20 },
-    providerPriority: ['musicbrainz', 'itunes'],
+    qqmusic: { ratePerMin: 30 },
+    providerPriority: ['musicbrainz', 'itunes', 'qq'],
     matching: {
       titleWeight: 40, creditExactWeight: 25, creditFuzzyWeight: 15,
       albumExactWeight: 20, albumFuzzyWeight: 10, upstreamScoreScale: 1,
@@ -69,6 +70,7 @@
         ListProviders: async () => [
           { id: 'musicbrainz', displayName: 'MusicBrainz', configured: true, reason: '', capabilities: ['label'], needsCountry: false },
           { id: 'itunes', displayName: 'iTunes', configured: true, reason: '', capabilities: [], needsCountry: true },
+          { id: 'qq', displayName: 'QQ 音乐', configured: true, reason: '', capabilities: [], needsCountry: false },
         ],
         CheckOutbound: async () => ({ allowed: !!settings.musicbrainz.contact.trim(), reason: settings.musicbrainz.contact.trim() ? '' : '需要设置联系方式', settingsAnchor: 'upstream' }),
         CheckReachable: async () => true,

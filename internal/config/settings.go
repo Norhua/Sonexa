@@ -43,6 +43,11 @@ type ITunesSettings struct {
 	RatePerMin     float64 `json:"ratePerMin"`
 }
 
+// QQMusicSettings 对应 QQ 音乐的配置分组。
+type QQMusicSettings struct {
+	RatePerMin float64 `json:"ratePerMin"`
+}
+
 // MatchingSettings 对应设置页的「匹配」分组。
 type MatchingSettings struct {
 	TitleWeight        float64 `json:"titleWeight"`
@@ -92,6 +97,7 @@ type Settings struct {
 	General          GeneralSettings      `json:"general"`
 	MusicBrainz      MusicBrainzSettings  `json:"musicbrainz"`
 	ITunes           ITunesSettings       `json:"itunes"`
+	QQMusic          QQMusicSettings      `json:"qqmusic"`
 	ProviderPriority []string             `json:"providerPriority"`
 	Matching         MatchingSettings     `json:"matching"`
 	ImportExport     ImportExportSettings `json:"importExport"`
@@ -112,7 +118,8 @@ func Defaults() Settings {
 			DefaultCountry: "",
 			RatePerMin:     20,
 		},
-		ProviderPriority: []string{"musicbrainz", "itunes"},
+		QQMusic:          QQMusicSettings{RatePerMin: 30},
+		ProviderPriority: []string{"musicbrainz", "itunes", "qq"},
 		Matching: MatchingSettings{
 			TitleWeight:        55,
 			CreditExactWeight:  20,

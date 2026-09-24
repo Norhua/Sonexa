@@ -5,6 +5,7 @@ import (
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/provider/itunes"
 	"github.com/norhua/sonexa/internal/provider/musicbrainz"
+	"github.com/norhua/sonexa/internal/provider/qqmusic"
 )
 
 func (a *App) checkCoverOutbound() error {
@@ -20,6 +21,7 @@ func (a *App) checkCoverOutbound() error {
 //
 //	来自 MusicBrainz → Cover Art Archive
 //	来自 iTunes      → iTunes 图片地址（尺寸靠构造）
+//	来自 QQ 音乐     → QQ 图片地址（由专辑 MID 构造）
 func (a *App) coverLadder(providerID, releaseRef, artworkURL string, releaseGroupRef *string) []string {
 	switch provider.ProviderID(providerID) {
 	case provider.MusicBrainz:
@@ -34,6 +36,17 @@ func (a *App) coverLadder(providerID, releaseRef, artworkURL string, releaseGrou
 			urls = append(urls, img.URL)
 		}
 		urls = append(urls, musicbrainz.CAAIndexFallbackURLs(releaseRef, rgRef)...)
+		return urls
+
+	case provider.QQMusic:
+		// QQ 图片地址由专辑 MID 直接构造；缩略图档在前，逐级回退。
+		if !qqmusic.ValidMID(releaseRef) {
+			return nil
+		}
+		urls := make([]string, 0, len(qqmusic.CoverSizes))
+		for _, size := range qqmusic.CoverSizes {
+			urls = append(urls, qqmusic.CoverURL(releaseRef, size))
+		}
 		return urls
 
 	case provider.ITunes:

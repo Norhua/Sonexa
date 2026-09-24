@@ -121,33 +121,19 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 		},
 		"songs": songsBlock(albumMID, 0),
 	}
-	names := []string{"album", "songs"}
 	if ref.TrackRef != "" {
 		reqs["song"] = map[string]any{
 			"module": "music.pf_song_detail_svr", "method": "get_song_detail",
 			"param": map[string]any{"song_mid": ref.TrackRef},
 		}
-		names = append(names, "song")
 	}
 	body, err := p.musicu(ctx, "/detail", ref.SkipCache, reqs)
 	if err != nil {
 		return nil, err
 	}
-	blocks, err := decodeBlocks(body, names...)
+	parts, err := parseDetailParts(body, ref.TrackRef != "")
 	if err != nil {
 		return nil, err
-	}
-	var parts detailParts
-	if err := json.Unmarshal(blocks["album"], &parts.album); err != nil {
-		return nil, fmt.Errorf("解析 QQ 音乐专辑详情失败: %w", err)
-	}
-	page, err := parseSongPage(blocks["songs"])
-	if err != nil {
-		return nil, err
-	}
-	parts.total = page.TotalNum
-	for _, s := range page.SongList {
-		parts.songs = append(parts.songs, s.SongInfo)
 	}
 	// 按已取数量判断是否取完；空页即停，避免 totalNum 异常时无界请求。
 	for n := 1; len(parts.songs) < parts.total && n < maxSongPages; n++ {
@@ -170,15 +156,7 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 			parts.songs = append(parts.songs, s.SongInfo)
 		}
 	}
-	if ref.TrackRef != "" {
-		var detail songDetailData
-		if err := json.Unmarshal(blocks["song"], &detail); err != nil {
-			return nil, fmt.Errorf("解析 QQ 音乐歌曲详情失败: %w", err)
-		}
-		parts.detail = &detail
-	}
-
-	d, err := buildDetail(albumMID, ref.TrackRef, parts)
+	d, err := buildDetail(albumMID, ref.TrackRef, *parts)
 	if err != nil {
 		return nil, err
 	}
@@ -247,6 +225,48 @@ func (p *Provider) musicu(ctx context.Context, endpoint string, skipCache bool, 
 		Body: body, ParamsHash: p.hash(map[string]string{"body": string(body)}), SkipCache: skipCache,
 		Headers: map[string]string{"Referer": "https://y.qq.com/"},
 	})
+}
+
+// ParseDetailJSON 把一次合并详情响应解析为 Detail（不做清单分页）。
+// 导出以便离线重放测试。
+func ParseDetailJSON(body []byte, albumMID, trackRef string) (*provider.Detail, error) {
+	parts, err := parseDetailParts(body, trackRef != "")
+	if err != nil {
+		return nil, err
+	}
+	return buildDetail(albumMID, trackRef, *parts)
+}
+
+// parseDetailParts 解析合并请求的 album / songs / song 三个块。
+func parseDetailParts(body []byte, withSong bool) (*detailParts, error) {
+	names := []string{"album", "songs"}
+	if withSong {
+		names = append(names, "song")
+	}
+	blocks, err := decodeBlocks(body, names...)
+	if err != nil {
+		return nil, err
+	}
+	var parts detailParts
+	if err := json.Unmarshal(blocks["album"], &parts.album); err != nil {
+		return nil, fmt.Errorf("解析 QQ 音乐专辑详情失败: %w", err)
+	}
+	page, err := parseSongPage(blocks["songs"])
+	if err != nil {
+		return nil, err
+	}
+	parts.total = page.TotalNum
+	for _, s := range page.SongList {
+		parts.songs = append(parts.songs, s.SongInfo)
+	}
+	if withSong {
+		var detail songDetailData
+		if err := json.Unmarshal(blocks["song"], &detail); err != nil {
+			return nil, fmt.Errorf("解析 QQ 音乐歌曲详情失败: %w", err)
+		}
+		parts.detail = &detail
+	}
+	return &parts, nil
 }
 
 func songsBlock(albumMID string, begin int) map[string]any {

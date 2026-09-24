@@ -16,6 +16,7 @@ import (
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/provider/itunes"
 	"github.com/norhua/sonexa/internal/provider/musicbrainz"
+	"github.com/norhua/sonexa/internal/provider/qqmusic"
 	"github.com/norhua/sonexa/internal/store"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -224,9 +225,12 @@ func (a *App) rebuildProviders(cur config.Settings) {
 		RatePerMin:     cur.ITunes.RatePerMin,
 	}, store.ParamsHash)
 
+	qq := qqmusic.New(a.client, qqmusic.Config{RatePerMin: cur.QQMusic.RatePerMin}, store.ParamsHash)
+
 	a.registry = provider.NewRegistry()
 	a.registry.Register(mb)
 	a.registry.Register(it)
+	a.registry.Register(qq)
 
 	priority := make([]provider.ProviderID, 0, len(cur.ProviderPriority))
 	for _, id := range cur.ProviderPriority {

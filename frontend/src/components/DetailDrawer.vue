@@ -13,6 +13,7 @@ import { X, Pencil } from 'lucide-vue-next'
 import { App, display, duration, DASH } from '@/api'
 import CoverArt from '@/components/CoverArt.vue'
 import { creditParts } from '@/lib/creditParts'
+import { lyricsText } from '@/lib/lyrics'
 import Button from '@/volt/Button.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import Tag from '@/volt/Tag.vue'
@@ -102,6 +103,7 @@ watch(() => props.open, open => { if (!open) menu.value?.hide() })
 watch(() => props.detail?.track.id, () => { coverError.value = ''; menu.value?.hide() })
 
 const meta = computed(() => props.detail?.metadata ?? null)
+const lyrics = computed(() => lyricsText(meta.value?.lyrics))
 const fallbackCredit = computed(() => creditParts(
   props.detail?.creditText || props.detail?.track.artist || '',
   props.detail?.creditSpans ?? [],
@@ -198,7 +200,7 @@ const releaseInfo = computed(() => [
           </template>
         </dl>
         <p v-if="detail.participants.length === 0" class="mt-1.5 text-xs text-muted-color">
-          暂无参与角色信息<span v-if="meta?.matchSource === 'itunes'">：iTunes 不提供演唱、作曲、作词等角色数据</span>
+          暂无参与角色信息<span v-if="meta?.matchSource === 'itunes'">：iTunes 不提供演唱、作曲、作词等角色数据</span><span v-else-if="meta?.matchSource === 'qq'">：QQ 音乐未列出该曲的角色，或尚未补全详情</span>
         </p>
       </section>
 
@@ -226,6 +228,14 @@ const releaseInfo = computed(() => [
             <dd class="min-w-0 break-words">{{ display(meta?.catalogNumber) }}</dd>
           </div>
         </dl>
+      </section>
+
+      <!-- 歌词：上游事实，只读；默认折叠，避免长文本挤占抽屉 -->
+      <section v-if="lyrics">
+        <details>
+          <summary class="mb-2 cursor-pointer text-xs font-medium text-muted-color">歌词</summary>
+          <p class="whitespace-pre-line break-words text-sm leading-relaxed">{{ lyrics }}</p>
+        </details>
       </section>
 
       <!-- 标签 chips。歌单不在抽屉显示 -->

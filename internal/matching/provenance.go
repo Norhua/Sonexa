@@ -15,6 +15,9 @@ var mbidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 // itunesRefPattern 是 iTunes 标识的格式：{country}:{trackId}。
 var itunesRefPattern = regexp.MustCompile(`^[a-z]{2}:\d+$`)
 
+// qqRefPattern 是 QQ 音乐标识的格式：歌曲 MID。
+var qqRefPattern = regexp.MustCompile(`^[0-9A-Za-z]{10,20}$`)
+
 // ValidateMatchRef 校验匹配标识的格式。
 //
 // 取值方案按上游确定：
@@ -22,6 +25,7 @@ var itunesRefPattern = regexp.MustCompile(`^[a-z]{2}:\d+$`)
 //	musicbrainz  track MBID（不可用 recording MBID——同一录音出现在几十张
 //	             发行上，用它会把 CD 版与数字版判为同一条）
 //	itunes       {country}:{trackId}（同一首歌在不同地区 trackId 不同）
+//	qq           歌曲 MID（song id 是数字，MID 才是详情与歌词接口的稳定标识）
 //
 // 用户在编辑页手动填入标识时需通过此校验。
 func ValidateMatchRef(source provider.ProviderID, ref string) error {
@@ -38,6 +42,11 @@ func ValidateMatchRef(source provider.ProviderID, ref string) error {
 	case provider.ITunes:
 		if !itunesRefPattern.MatchString(ref) {
 			return fmt.Errorf("iTunes 标识应为「地区:曲目编号」（形如 jp:534038851）")
+		}
+		return nil
+	case provider.QQMusic:
+		if !qqRefPattern.MatchString(ref) {
+			return fmt.Errorf("QQ 音乐标识应为歌曲 MID（形如 003RcjkV1XjQQy）")
 		}
 		return nil
 	default:
