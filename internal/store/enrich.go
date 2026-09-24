@@ -13,7 +13,7 @@ import (
 // 这些字段不走编辑界面那套「填充/保持」：它们是上游事实的直接映射，
 // 由 ApplyDetailToTrack 在拉取详情时写入。
 //
-// 曲目侧与歌集侧分开写：署名、录音标识、作品标识、ISRC、音轨序号属于
+// 曲目侧与歌集侧分开写：署名、录音标识、作品标识、ISRC、音轨序号、歌词属于
 // 这一首；碟数、音轨数、发行日期、类型、厂牌、目录号属于这张歌集。
 func (s *Store) WriteDetailColumns(trackID int64, d *provider.Detail) error {
 	if d == nil {
@@ -29,10 +29,11 @@ func (s *Store) WriteDetailColumns(trackID int64, d *provider.Detail) error {
 				work_ref          = COALESCE(?, work_ref),
 				isrc              = COALESCE(?, isrc),
 				track_number_text = COALESCE(?, track_number_text),
+				lyrics            = COALESCE(?, lyrics),
 				updated_at        = ?
 			WHERE id = ?`,
 			d.TrackCredit, deref(d.Title),
-			d.RecordingRef, d.WorkRef, d.ISRC, d.TrackNumberText,
+			d.RecordingRef, d.WorkRef, d.ISRC, d.TrackNumberText, d.Lyrics,
 			now, trackID); err != nil {
 			return err
 		}

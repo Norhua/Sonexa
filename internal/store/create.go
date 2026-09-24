@@ -235,6 +235,7 @@ type TrackMetadata struct {
 	DurationMS      *int    `json:"durationMs"`
 	Genre           *string `json:"genre"`
 	Comment         *string `json:"comment"`
+	Lyrics          *string `json:"lyrics"`
 
 	MatchSource  *string `json:"matchSource"`
 	MatchRef     *string `json:"matchRef"`
@@ -274,7 +275,7 @@ func (s *Store) GetMetadata(trackID int64) (*TrackMetadata, error) {
 	err := s.db.QueryRow(`
 		SELECT t.id, t.title, t.credit,
 		       t.disc_number, t.track_number, t.track_number_text, t.duration_ms,
-		       t.genre, t.comment,
+		       t.genre, t.comment, t.lyrics,
 		       t.match_source, t.match_ref, t.recording_ref, t.work_ref, t.isrc,
 		       t.provenance_json, t.locked_json,
 		       t.release_id, r.title, r.credit, r.primary_type, r.secondary_types,
@@ -287,7 +288,7 @@ func (s *Store) GetMetadata(trackID int64) (*TrackMetadata, error) {
 		WHERE t.id = ?`, trackID).Scan(
 		&m.TrackID, &m.Title, &m.Credit,
 		&m.DiscNumber, &m.TrackNumber, &m.TrackNumberText, &m.DurationMS,
-		&m.Genre, &m.Comment,
+		&m.Genre, &m.Comment, &m.Lyrics,
 		&m.MatchSource, &m.MatchRef, &m.RecordingRef, &m.WorkRef, &m.ISRC,
 		&m.ProvenanceJSON, &m.LockedJSON,
 		&m.ReleaseID, &m.Album, &m.AlbumCredit, &m.PrimaryType, &m.SecondaryTypes,

@@ -3,6 +3,7 @@ package sources
 import (
 	"context"
 	"fmt"
+	"github.com/norhua/sonexa/internal/provider/qqmusic"
 	"io"
 	"net/http"
 	"os"
@@ -33,7 +34,7 @@ func TestWebSourceFixturesAndErrors(t *testing.T) {
 			}
 			want := 3
 			if id == "qq" {
-				want = len(QQSizes)
+				want = len(qqmusic.CoverSizes)
 			}
 			// 同专辑按专辑去重；艺人不符的翻唱被相关性过滤。
 			results, err := parse(body, provider.Query{Title: "晴天", Artist: "周杰伦"})

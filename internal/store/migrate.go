@@ -27,6 +27,8 @@ var migrations = []Migration{
 	{Version: 3, Name: "itunes_no_expiry", SQL: `UPDATE provider_cache SET ttl_seconds=0 WHERE provider='itunes';`},
 	{Version: 4, Name: "cover_preview_origin", SQL: `ALTER TABLE cover_file ADD COLUMN auto_reusable INTEGER NOT NULL DEFAULT 0 CHECK(auto_reusable IN (0,1));
 		ALTER TABLE cover_catalog ADD COLUMN actual_release_url TEXT NOT NULL DEFAULT '';`},
+	// 歌词是上游事实（QQ 音乐详情提供），不进编辑界面。
+	{Version: 5, Name: "track_lyrics", SQL: `ALTER TABLE track ADD COLUMN lyrics TEXT;`},
 }
 
 // LatestVersion 返回本程序支持的最高 schema 版本。

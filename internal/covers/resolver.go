@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/norhua/sonexa/internal/provider/musicbrainz"
+	"github.com/norhua/sonexa/internal/provider/qqmusic"
 	"github.com/norhua/sonexa/internal/store"
 )
 
@@ -97,6 +98,8 @@ func (s *Service) localFiles(target Target) ([]store.CoverFile, error) {
 	case "musicbrainz":
 	case "itunes":
 		key.Source, key.ObjectType = "itunes", "album"
+	case "qq":
+		key.Source, key.ObjectType = "qq", "album"
 	default:
 		return nil, nil
 	}
@@ -187,6 +190,8 @@ func (s *Service) Resolve(ctx context.Context, requested Target, usage Usage) (*
 	switch {
 	case target.Provider == "itunes" && itunesAlbumRef.MatchString(target.Ref):
 		catalog, err = s.ITunesCatalog(ctx, target.Ref)
+	case target.Provider == "qq" && qqmusic.ValidMID(target.Ref):
+		catalog, err = s.QQCatalog(ctx, target.Ref)
 	case target.Provider == "musicbrainz" && validMBID(target.Ref):
 		catalog, err = s.CAACatalog(ctx, "release", target.Ref, false)
 		if err == nil && catalog.State == "empty" && validMBID(target.GroupRef) {
@@ -307,6 +312,13 @@ func (s *Service) downloadCatalog(ctx context.Context, target Target, catalog *s
 		specs = []string{"250", "100", "600", "1200", "3000"}
 		if usage == Detail {
 			specs = []string{"1200", "3000", "600", "250", "100"}
+		}
+	}
+	if catalog.Source == "qq" {
+		// 1200 档并非每张专辑都有，缺失时逐级回退。
+		specs = []string{"300", "500", "800", "1200"}
+		if usage == Detail {
+			specs = []string{"1200", "800", "500", "300"}
 		}
 	}
 	for _, image := range images {

@@ -170,9 +170,6 @@ func (s *WebSource) searchOnce(ctx context.Context, q provider.Query) ([]Result,
 	return results, err
 }
 
-// QQSizes 是 QQ 封面构造地址的规格；并非每张专辑都有 1200，采用时按 404 逐级回退。
-var QQSizes = []int{300, 500, 800, 1200}
-
 func ParseQQ(body []byte, q provider.Query) ([]Result, error) {
 	var response struct {
 		Code *int `json:"code"`
@@ -225,12 +222,11 @@ func ParseQQ(body []byte, q provider.Query) ([]Result, error) {
 			continue
 		}
 		seen[mid] = true
-		image := store.CoverImage{SourceImageID: mid, PrimaryType: "Front", Types: []string{"Front"}, Front: true, Title: song.Album.Name, Artist: artist}
-		for _, size := range QQSizes {
-			image.Variants = append(image.Variants, store.CoverVariant{Spec: strconv.Itoa(size), Constructed: true,
-				URL: fmt.Sprintf("https://y.qq.com/music/photo_new/T002R%dx%dM000%s.jpg", size, size, mid)})
+		images := store.QQCoverImages(mid, song.Album.Name, artist)
+		if images == nil {
+			continue
 		}
-		out = append(out, Result{Key: store.CoverCatalogKey{Source: "qq", ObjectType: "album", SourceRef: mid}, Images: []store.CoverImage{image}})
+		out = append(out, Result{Key: store.CoverCatalogKey{Source: "qq", ObjectType: "album", SourceRef: mid}, Images: images})
 	}
 	return out, nil
 }
