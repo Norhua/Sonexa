@@ -18,6 +18,7 @@ type ProviderID string
 const (
 	MusicBrainz ProviderID = "musicbrainz"
 	ITunes      ProviderID = "itunes"
+	QQMusic     ProviderID = "qq"
 )
 
 // Provider 是所有上游必须实现的统一接口。

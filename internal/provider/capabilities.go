@@ -19,6 +19,8 @@ const (
 	CapUpstreamScore
 	// CapPrimaryType 表示提供主要类型。
 	CapPrimaryType
+	// CapLyrics 表示详情带歌词。
+	CapLyrics
 )
 
 // Has 报告能力集是否包含某项能力。
@@ -42,6 +44,7 @@ var capNames = []struct {
 	{CapMultiSizeCover, "MultiSizeCover"},
 	{CapUpstreamScore, "UpstreamScore"},
 	{CapPrimaryType, "PrimaryType"},
+	{CapLyrics, "Lyrics"},
 }
 
 // Names 返回能力集中所有被置位的能力名，供前端渲染列策略。

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -69,7 +70,12 @@ type GetRequest struct {
 	// SkipCache 为真时绕过缓存直接请求（如用户手动「重新获取」）。
 	SkipCache bool
 	// ParamsHash 由调用方提供，通常为 store.ParamsHash(Params)。
+	// 带 Body 的请求须把请求体也纳入哈希，否则不同请求会命中同一缓存。
 	ParamsHash string
+	// Body 非空时改发 POST JSON（QQ 音乐的 musicu.fcg 只接受 POST）。
+	Body []byte
+	// Headers 是附加请求头，如 Referer。
+	Headers map[string]string
 }
 
 // Get 发起一次 GET 请求，先查缓存、再取令牌、最后出网。
@@ -163,9 +169,19 @@ func (c *Client) do(ctx context.Context, req GetRequest) ([]byte, error) {
 	}
 	u.RawQuery = q.Encode()
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	method, payload := http.MethodGet, io.Reader(nil)
+	if req.Body != nil {
+		method, payload = http.MethodPost, bytes.NewReader(req.Body)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, method, u.String(), payload)
 	if err != nil {
 		return nil, err
+	}
+	if req.Body != nil {
+		httpReq.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range req.Headers {
+		httpReq.Header.Set(k, v)
 	}
 	// User-Agent 是 MusicBrainz 的硬性要求，统一在这里注入。
 	if c.UserAgent != "" {

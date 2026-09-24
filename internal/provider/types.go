@@ -139,6 +139,8 @@ type Detail struct {
 	CatalogNumber *string
 	Comment       *string
 	ISRC          *string
+	// Lyrics 是上游给出的歌词原文（通常为带时间标签的 LRC）。
+	Lyrics *string
 
 	// 上游标识
 	RecordingRef    *string
