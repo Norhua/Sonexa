@@ -171,7 +171,12 @@ func TestDetailMissingTrack(t *testing.T) {
 func TestFetchDetailOverHTTP(t *testing.T) {
 	var posts int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "lyric") {
+		if r.URL.Path != musicuPath && r.URL.Path != lyricPath {
+			t.Errorf("请求路径错误: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path == lyricPath {
 			w.Write([]byte(`{"retcode":0,"code":0,"subcode":0,"lyric":"[00:00.00]x"}`))
 			return
 		}
@@ -187,9 +192,9 @@ func TestFetchDetailOverHTTP(t *testing.T) {
 		w.Write(raw)
 	}))
 	defer srv.Close()
-	oldM, oldL := MusicuURL, LyricURL
-	MusicuURL, LyricURL = srv.URL+"/musicu", srv.URL+"/lyric"
-	defer func() { MusicuURL, LyricURL = oldM, oldL }()
+	oldM, oldL := MusicuBase, LyricBase
+	MusicuBase, LyricBase = srv.URL, srv.URL
+	defer func() { MusicuBase, LyricBase = oldM, oldL }()
 
 	client := provider.NewClient(nil, nil, "test")
 	p := New(client, Config{}, nil)

@@ -15,10 +15,18 @@ import (
 	"github.com/norhua/sonexa/internal/provider"
 )
 
-// 接口地址。测试可替换。
+// 接口主机。测试可替换。
+//
+// provider.Client 以 BaseURL+Endpoint 拼出地址，Endpoint 必须是真实路径；
+// 同一路径的不同请求靠请求体进入 ParamsHash 区分缓存。
 var (
-	MusicuURL = "https://u.y.qq.com/cgi-bin/musicu.fcg"
-	LyricURL  = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg"
+	MusicuBase = "https://u.y.qq.com"
+	LyricBase  = "https://c.y.qq.com"
+)
+
+const (
+	musicuPath = "/cgi-bin/musicu.fcg"
+	lyricPath  = "/lyric/fcgi-bin/fcg_query_lyric_new.fcg"
 )
 
 // DefaultRatePerMin 是默认速率：调研时以不小于 1.2 秒的间隔串行请求，
@@ -89,7 +97,7 @@ func (p *Provider) SearchTracks(ctx context.Context, q provider.Query) ([]provid
 	if limit <= 0 || limit > 50 {
 		limit = 25
 	}
-	body, err := p.musicu(ctx, "/search", q.SkipCache, map[string]any{
+	body, err := p.musicu(ctx, q.SkipCache, map[string]any{
 		"req": map[string]any{
 			"module": "music.search.SearchCgiService",
 			"method": "DoSearchForQQMusicDesktop",
@@ -127,7 +135,7 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 			"param": map[string]any{"song_mid": ref.TrackRef},
 		}
 	}
-	body, err := p.musicu(ctx, "/detail", ref.SkipCache, reqs)
+	body, err := p.musicu(ctx, ref.SkipCache, reqs)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +145,7 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 	}
 	// 按已取数量判断是否取完；空页即停，避免 totalNum 异常时无界请求。
 	for n := 1; len(parts.songs) < parts.total && n < maxSongPages; n++ {
-		body, err := p.musicu(ctx, "/album-songs", ref.SkipCache, map[string]any{"songs": songsBlock(albumMID, len(parts.songs))})
+		body, err := p.musicu(ctx, ref.SkipCache, map[string]any{"songs": songsBlock(albumMID, len(parts.songs))})
 		if err != nil {
 			return nil, err
 		}
@@ -200,7 +208,7 @@ func (p *Provider) SearchCovers(ctx context.Context, q provider.Query) ([]provid
 func (p *Provider) fetchLyric(ctx context.Context, songMID string, skipCache bool) (*string, error) {
 	params := map[string]string{"songmid": songMID, "g_tk": "5381", "format": "json", "nobase64": "1"}
 	body, err := p.client.Get(ctx, provider.GetRequest{
-		Provider: provider.QQMusic, Endpoint: "/lyric", BaseURL: LyricURL,
+		Provider: provider.QQMusic, Endpoint: lyricPath, BaseURL: LyricBase,
 		Params: params, ParamsHash: p.hash(params), SkipCache: skipCache,
 		Headers: map[string]string{"Referer": "https://y.qq.com/"},
 	})
@@ -211,7 +219,7 @@ func (p *Provider) fetchLyric(ctx context.Context, songMID string, skipCache boo
 }
 
 // musicu 发起一次 musicu.fcg POST。请求体参与缓存键。
-func (p *Provider) musicu(ctx context.Context, endpoint string, skipCache bool, reqs map[string]any) ([]byte, error) {
+func (p *Provider) musicu(ctx context.Context, skipCache bool, reqs map[string]any) ([]byte, error) {
 	payload := map[string]any{"comm": map[string]any{"ct": "19", "cv": "1859", "uin": "0"}}
 	for k, v := range reqs {
 		payload[k] = v
@@ -221,7 +229,7 @@ func (p *Provider) musicu(ctx context.Context, endpoint string, skipCache bool, 
 		return nil, err
 	}
 	return p.client.Get(ctx, provider.GetRequest{
-		Provider: provider.QQMusic, Endpoint: endpoint, BaseURL: MusicuURL,
+		Provider: provider.QQMusic, Endpoint: musicuPath, BaseURL: MusicuBase,
 		Body: body, ParamsHash: p.hash(map[string]string{"body": string(body)}), SkipCache: skipCache,
 		Headers: map[string]string{"Referer": "https://y.qq.com/"},
 	})
