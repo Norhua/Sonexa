@@ -14,3 +14,12 @@ iTunes 原始响应、清单、已收藏元数据和已采用图片 SHALL 不设
 #### Scenario: 关于说明
 - **WHEN** 用户打开关于页或导出曲库
 - **THEN** 关于页标明 Apple/iTunes 来源且不声称短期留存要求，导出仍不打包任何封面图片
+
+## ADDED Requirements
+
+### Requirement: 自动封面读取
+iTunes SHALL 同时为 iTunes 候选和歌集提供自动封面读取：按保存的 `country:collectionId` 身份使用已有 artwork 目录，缺失时以 limit=200 精确 Lookup，与歌曲搜索共用同一客户端、请求缓存键与每分钟配额，地区取自保存身份而非当前默认地区，实际请求与重定向经统一出网检查。不按标题关联封面，不改变歌曲身份；iTunes 不提供的参与角色、载体、发行国家、厂牌和目录号仍不推断。具体取图规则见 [封面](../cover-art/spec.md)。
+
+#### Scenario: 标题不一致
+- **WHEN** 搜索结果标题为 `side-c - EP` 而 Lookup 返回 `Side-C`
+- **THEN** 仍以专辑 ID 关联封面，不因标题差异失败或改用标题搜图

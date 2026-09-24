@@ -67,9 +67,9 @@
 
 ## G14 — 封面搜索来源与原生验收
 
-- **现状**：2026-09-23 验收时，QQ 公开搜索接口 `c.y.qq.com/soso/fcgi-bin/client_search_cp` 对全部查询返回 HTTP 500，QQ 图片地址仍可访问；应用按来源失败显示错误和重试，其他来源不受影响。CAA、iTunes、163 已完成真实搜索、预览和采用。系统文件选择器、原生 WebView 中的右键与键盘操作、搜索弹窗和真实断网尚未人工验收。
-- **依据**：`internal/covers/sources/web.go`、`internal/covers/sources/live_test.go`；验收记录见 `changes/revise-album-cover-workflow/acceptance.md`。
-- **目标与验收**：用 `SONEXA_LIVE_COVERS=1 go test ./internal/covers/sources -run TestLiveCoverSources` 复测 QQ；持续失败时另行确定不需登录、代理或伪装的公开查询方式，或把 QQ 标为不可用，不以离线 fixture 代替真实来源。按验收记录中的清单完成原生检查。
+- **现状**：QQ 搜索已改用 `u.y.qq.com/cgi-bin/musicu.fcg`（`DoSearchForQQMusicDesktop`），163 改用 WEAPI 歌曲搜索并按专辑聚合，2026-09-24 均已真实验通；CAA、iTunes 已完成真实搜索、预览和采用。系统文件选择器、原生 WebView 中的右键与键盘操作、搜索弹窗、清除封面和真实断网尚未人工验收。图片传输不使用环境代理，需要代理才能访问 archive.org 的网络无法获得直连加速。
+- **依据**：`internal/covers/sources/web.go`、`internal/covers/sources/live_test.go`；验收记录见归档变更 `revise-album-cover-workflow/acceptance.md`。
+- **目标与验收**：用 `SONEXA_LIVE_COVERS=1 go test ./internal/covers/sources -run TestLiveCoverSources` 定期复测四来源，不以离线 fixture 代替真实来源；按验收记录中的清单完成原生检查。
 
 ## G15 — 旧封面缺失时的目录变更
 
