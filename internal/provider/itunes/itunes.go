@@ -159,7 +159,21 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("解析 iTunes 清单响应失败: %w", err)
 	}
+	if resp.Results == nil {
+		return nil, fmt.Errorf("iTunes 清单响应缺少 results")
+	}
+	if len(resp.Results) > 0 {
+		col := resp.Results[0]
+		if col.WrapperType != "collection" || strconv.FormatInt(col.CollectionID, 10) != collectionID {
+			return nil, fmt.Errorf("iTunes 清单响应未匹配目标专辑 %s", ref.ID)
+		}
+	}
 	d := ParseLookup(&resp, country, ref.TrackRef)
+	if len(resp.Results) == 0 && ref.TrackRef == "" {
+		// 合法空响应仍标明查询身份，供封面目录区分无图与损坏响应。
+		identity := country + ":" + collectionID
+		d.ReleaseRef = &identity
+	}
 	if ref.TrackRef != "" && d.MatchRef == "" {
 		return nil, fmt.Errorf("专辑 %s 中未找到目标曲目 %s", ref.ID, ref.TrackRef)
 	}

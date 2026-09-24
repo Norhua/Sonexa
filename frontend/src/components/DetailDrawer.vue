@@ -197,7 +197,9 @@ const releaseInfo = computed(() => [
             </div>
           </template>
         </dl>
-        <p v-if="detail.participants.length === 0" class="mt-1.5 text-xs text-muted-color">暂无参与角色信息</p>
+        <p v-if="detail.participants.length === 0" class="mt-1.5 text-xs text-muted-color">
+          暂无参与角色信息<span v-if="meta?.matchSource === 'itunes'">：iTunes 不提供演唱、作曲、作词等角色数据</span>
+        </p>
       </section>
 
       <!-- 发行信息 -->

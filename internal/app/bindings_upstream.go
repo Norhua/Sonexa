@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/norhua/sonexa/internal/covers"
@@ -48,7 +49,7 @@ type CandidateRow struct {
 	// MatchedVariant 供复核队列显示该分值来自哪个变体。
 	MatchedVariant string `json:"matchedVariant"`
 
-	/** ArtworkURL 仅保留候选原始元信息；自动封面不使用它出网。 */
+	/** ArtworkURL 保留候选元信息；后端将其登记为受控图片目录。 */
 	ArtworkURL *string `json:"artworkUrl"`
 
 	ReleaseRef      *string `json:"releaseRef"`
@@ -224,6 +225,11 @@ func (a *App) matchUpstream(ctx context.Context, p provider.Provider, in matchin
 func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction string) []CandidateRow {
 	rows := make([]CandidateRow, 0, len(scored))
 	for _, sc := range scored {
+		// 搜索已给出 artwork，无需为预览每个候选再发一次 Lookup。
+		// 失败不吞掉有效的歌曲候选，后续仍可按发行身份恢复目录。
+		if err := a.store.RememberCandidateArtwork(sc.Candidate); err != nil {
+			log.Printf("登记候选封面失败: %v", err)
+		}
 		row := rowFrom(sc)
 		a.applyLocalMatch(&row, sc.Candidate)
 		if row.LocalTrackID == 0 {
@@ -250,7 +256,7 @@ func rowFrom(sc matching.ScoredCandidate) CandidateRow {
 		ReleaseRef: c.ReleaseRef, ReleaseGroupRef: c.ReleaseGroupRef,
 		RecordingRef: c.RecordingRef, ISRC: c.ISRC,
 		ReleaseStatus: c.ReleaseStatus, FirstReleaseDate: c.FirstReleaseDate,
-		// 保留原始信息用于无损入库，自动取图仅使用发行身份。
+		// 保留已知 artwork；自动取图仍只接收发行身份，不信任前端 URL。
 		ArtworkURL: c.ThumbURL,
 	}
 	switch {

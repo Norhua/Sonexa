@@ -115,6 +115,8 @@ type Detail struct {
 	AlbumTitle  *string
 	TrackCredit *string // 曲目级署名原串
 	AlbumCredit *string // 发行级署名原串
+	// ArtworkURL 是上游明确提供的专辑图片地址，非参与者或人工采用信息。
+	ArtworkURL *string `json:"-"`
 
 	PrimaryType      *string
 	SecondaryTypes   []string

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
 )
 
@@ -47,6 +48,9 @@ func TestResolverGroupFallbackPersistsActualRelease(t *testing.T) {
 
 func TestTargetOutcomeRevisionAndLegacyPathRejection(t *testing.T) {
 	svc, _ := resolverService(t)
+	svc.SetITunesDetailLoader(func(_ context.Context, ref string) (*provider.Detail, error) {
+		return &provider.Detail{Provider: provider.ITunes, ReleaseRef: &ref}, nil
+	})
 	for _, raw := range []string{"/cover?adopted=/etc/passwd", "/cover?provider=itunes&ref=jp:12&usage=detail&revision=7"} {
 		r := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(r, httptest.NewRequest("GET", raw, nil))

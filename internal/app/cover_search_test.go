@@ -110,7 +110,7 @@ func TestCoverSearchProgressAndAuthorization(t *testing.T) {
 	if first.Generation != 7 || first.ReleaseID != id || first.SearchID != request.SearchID {
 		t.Fatalf("会话身份丢失: %+v", first)
 	}
-	if first.Source != "itunes" || len(first.Cards) != 1 || len(first.Cards[0].Image.Variants) != 4 {
+	if first.Source != "itunes" || len(first.Cards) != 1 || len(first.Cards[0].Image.Variants) != 5 {
 		t.Fatalf("%+v", first)
 	}
 	close(slow)

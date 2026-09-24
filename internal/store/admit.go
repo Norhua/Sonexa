@@ -20,6 +20,9 @@ func (s *Store) AdmitCandidate(c provider.Candidate) (int64, error) {
 	if c.Title == nil || *c.Title == "" {
 		return 0, ErrTitleRequired
 	}
+	if err := s.RememberCandidateArtwork(c); err != nil {
+		return 0, err
+	}
 	source := string(c.Provider)
 
 	return s.CreateTrackWithProvenance(NewTrackInput{

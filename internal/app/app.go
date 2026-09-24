@@ -387,6 +387,15 @@ func (a *App) attachLadderBuilder(svc *covers.Service) *covers.Service {
 	if svc == nil {
 		return nil
 	}
+	svc.SetITunesDetailLoader(func(ctx context.Context, ref string) (*provider.Detail, error) {
+		a.mu.RLock()
+		p, err := a.registry.Get(provider.ITunes)
+		a.mu.RUnlock()
+		if err != nil {
+			return nil, err
+		}
+		return p.FetchDetail(ctx, provider.Ref{Provider: provider.ITunes, ID: ref})
+	})
 	svc.Pool().SetIndexParser(musicbrainz.ParseCAAThumbnailIndex)
 	svc.SetLadderBuilder(func(providerID, ref, releaseGroupRef string) []string {
 		var rg *string

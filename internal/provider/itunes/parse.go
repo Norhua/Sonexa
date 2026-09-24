@@ -2,6 +2,8 @@ package itunes
 
 import (
 	"context"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -61,8 +63,12 @@ func candidateFrom(r result, country string) provider.Candidate {
 	if y := parseYear(r.ReleaseDate); y != nil {
 		c.Year = y
 	}
-	if r.ArtworkURL100 != "" {
-		thumb := ArtworkURL(r.ArtworkURL100, 250)
+	artwork := r.ArtworkURL100
+	if artwork == "" {
+		artwork = r.ArtworkURL60
+	}
+	if artwork != "" {
+		thumb := ArtworkURL(artwork, 250)
 		c.ThumbURL = &thumb
 		c.HasCover = true
 	}
@@ -88,6 +94,10 @@ func ParseLookup(resp *lookupResponse, country, trackRef string) *provider.Detai
 	// 首条：collection 自身
 	col := resp.Results[0]
 	if col.WrapperType == "collection" || col.CollectionID != 0 {
+		d.ArtworkURL = strPtr(col.ArtworkURL100)
+		if d.ArtworkURL == nil {
+			d.ArtworkURL = strPtr(col.ArtworkURL60)
+		}
 		d.AlbumTitle = strPtr(col.CollectionName)
 		d.AlbumCredit = strPtr(col.ArtistName)
 		if col.CollectionID != 0 {
@@ -120,6 +130,13 @@ func ParseLookup(resp *lookupResponse, country, trackRef string) *provider.Detai
 		}
 		if r.TrackID == 0 {
 			continue
+		}
+		// 正确专辑的曲目也可能提供 collection 未带的 artwork。
+		if d.ArtworkURL == nil && col.CollectionID != 0 && r.CollectionID == col.CollectionID {
+			d.ArtworkURL = strPtr(r.ArtworkURL100)
+			if d.ArtworkURL == nil {
+				d.ArtworkURL = strPtr(r.ArtworkURL60)
+			}
 		}
 		disc := r.DiscNumber
 		if disc == 0 {
@@ -190,13 +207,11 @@ func (p *Provider) SearchCovers(ctx context.Context, q provider.Query) ([]provid
 	return out, nil
 }
 
-// ArtworkSizes 是 iTunes 提供的四档尺寸。
-//
-// 只提供有限的若干档：大图靠构造地址属未文档化行为，可能随时失效，
-// 档位越多风险面越大。
-var ArtworkSizes = []int{3000, 1200, 600, 100}
+// ArtworkSizes 是供封面目录使用的有限构造档位，250 用于自动缩略图。
+// 构造地址是未文档化行为，实际可用性与尺寸必须经下载解码确认。
+var ArtworkSizes = []int{3000, 1200, 600, 250, 100}
 
-// ArtworkLadder 按从高到低构造四档尺寸。
+// ArtworkLadder 按从高到低构造有限尺寸。
 func ArtworkLadder(artworkURL string) []provider.CoverImage {
 	out := make([]provider.CoverImage, 0, len(ArtworkSizes))
 	for _, size := range ArtworkSizes {
@@ -208,15 +223,28 @@ func ArtworkLadder(artworkURL string) []provider.CoverImage {
 	return out
 }
 
-// ArtworkURL 把 artworkUrl100 中的 100x100bb 替换为目标尺寸。
+var artworkDimensions = regexp.MustCompile(`^\d+x\d+([a-zA-Z]*\.[a-zA-Z0-9]+)$`)
+
+// ArtworkURL 只改最后一个路径段的尺寸；也能从 250/1200 等已构造地址再次转换。
+// 不修改图片身份路径里的数字、裁剪后缀或查询参数，未知格式保持原样。
 func ArtworkURL(artworkURL string, size int) string {
-	dim := strconv.Itoa(size)
-	for _, known := range []string{"100x100", "60x60", "30x30"} {
-		if strings.Contains(artworkURL, known) {
-			return strings.Replace(artworkURL, known, dim+"x"+dim, 1)
-		}
+	u, err := url.Parse(artworkURL)
+	if err != nil || size <= 0 {
+		return artworkURL
 	}
-	return artworkURL
+	path := u.EscapedPath()
+	start := strings.LastIndex(path, "/") + 1
+	parts := artworkDimensions.FindStringSubmatch(path[start:])
+	if parts == nil {
+		return artworkURL
+	}
+	dim := strconv.Itoa(size)
+	u.RawPath = path[:start] + dim + "x" + dim + parts[1]
+	u.Path, err = url.PathUnescape(u.RawPath)
+	if err != nil {
+		return artworkURL
+	}
+	return u.String()
 }
 
 // VerifyArtwork 验证构造出的地址确实可用，不可用时应退到下一档。

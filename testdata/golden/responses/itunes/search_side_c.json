@@ -1,0 +1,12 @@
+{
+  "resultCount": 1,
+  "results": [{
+    "wrapperType": "track", "kind": "song",
+    "artistId": 619709349, "collectionId": 1475065332, "trackId": 1475065334,
+    "artistName": "4円", "collectionName": "side-c - EP", "trackName": "ツバサ",
+    "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music123/v4/59/c3/38/59c338d5-dc87-458e-ba54-76f41f64a399/sidec.jpg/100x100bb.jpg",
+    "releaseDate": "2019-09-18T12:00:00Z", "discCount": 1, "discNumber": 1,
+    "trackCount": 4, "trackNumber": 2, "trackTimeMillis": 267720,
+    "country": "JPN", "primaryGenreName": "J-Pop"
+  }]
+}

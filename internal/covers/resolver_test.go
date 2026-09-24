@@ -122,7 +122,7 @@ func TestResolverNoMBAndSelectedOverride(t *testing.T) {
 		t.Error("没有 MB 绑定不应出网")
 		return nil, fmt.Errorf("unexpected network")
 	})
-	for _, target := range []Target{{}, {Provider: "itunes", Ref: "jp:123"}, {Provider: "musicbrainz", Ref: "recording-only"}} {
+	for _, target := range []Target{{}, {Provider: "itunes", Ref: "https://is1.mzstatic.com/arbitrary.jpg"}, {Provider: "musicbrainz", Ref: "recording-only"}} {
 		got, err := svc.Resolve(context.Background(), target, Thumbnail)
 		if err != nil || got.Outcome != OutcomeEmpty {
 			t.Fatalf("应为 nil: %+v %v", got, err)

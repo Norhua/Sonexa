@@ -40,7 +40,7 @@ func (a *App) coverLadder(providerID, releaseRef, artworkURL string, releaseGrou
 		// iTunes 只返回一个 artworkUrl100，大图靠构造地址（未文档化行为），
 		// 因此需要基准地址才能生成降级链——它来自 search 响应。
 		//
-		// 四档从高到低，选中时先 HEAD 验证再采用，不可用自动退档。
+		// 有限档位从高到低，不可用时退档，实际尺寸由解码确认。
 		if artworkURL == "" {
 			return nil
 		}

@@ -1,0 +1,10 @@
+{
+  "resultCount": 5,
+  "results": [
+    {"wrapperType":"collection","collectionType":"Album","artistId":619709349,"collectionId":1475065332,"artistName":"4円","collectionName":"Side-C","artworkUrl100":"https://is1-ssl.mzstatic.com/image/thumb/Music123/v4/59/c3/38/59c338d5-dc87-458e-ba54-76f41f64a399/sidec.jpg/100x100bb.jpg","trackCount":4,"country":"JPN","releaseDate":"2019-09-18T07:00:00Z","primaryGenreName":"J-Pop"},
+    {"wrapperType":"track","kind":"song","collectionId":1475065332,"trackId":1475065333,"artistName":"4円","collectionName":"side-c - EP","trackName":"赤橙","discCount":1,"discNumber":1,"trackCount":4,"trackNumber":1,"trackTimeMillis":225653},
+    {"wrapperType":"track","kind":"song","collectionId":1475065332,"trackId":1475065334,"artistName":"4円","collectionName":"side-c - EP","trackName":"ツバサ","discCount":1,"discNumber":1,"trackCount":4,"trackNumber":2,"trackTimeMillis":267720},
+    {"wrapperType":"track","kind":"song","collectionId":1475065332,"trackId":1475065335,"artistName":"4円","collectionName":"side-c - EP","trackName":"水彩の月","discCount":1,"discNumber":1,"trackCount":4,"trackNumber":3,"trackTimeMillis":316493},
+    {"wrapperType":"track","kind":"song","collectionId":1475065332,"trackId":1475065336,"artistName":"4円","collectionName":"side-c - EP","trackName":"虎","discCount":1,"discNumber":1,"trackCount":4,"trackNumber":4,"trackTimeMillis":270987}
+  ]
+}

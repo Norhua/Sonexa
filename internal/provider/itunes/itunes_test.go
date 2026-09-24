@@ -358,7 +358,7 @@ func TestSearchAndLookupShareOneBucket(t *testing.T) {
 	}
 }
 
-// TestArtworkURLConstruction 覆盖 9.6：四档尺寸的构造。
+// TestArtworkURLConstruction 覆盖有限档位的尺寸构造。
 func TestArtworkURLConstruction(t *testing.T) {
 	base := "https://is1-ssl.mzstatic.com/image/thumb/Music/abc/100x100bb.jpg"
 
@@ -377,8 +377,8 @@ func TestArtworkURLConstruction(t *testing.T) {
 	}
 
 	ladder := ArtworkLadder(base)
-	if len(ladder) != 4 {
-		t.Errorf("降级链档数 = %d, 期望 4（只提供有限档位）", len(ladder))
+	if len(ladder) != 5 {
+		t.Errorf("降级链档数 = %d, 期望 5（含自动缩略图 250）", len(ladder))
 	}
 }
 

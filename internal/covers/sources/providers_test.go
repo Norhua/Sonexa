@@ -89,11 +89,14 @@ func TestITunesSourceCountryVariantsAndImageIdentity(t *testing.T) {
 				specs := []string{}
 				for _, v := range image.Variants {
 					specs = append(specs, v.Spec)
+					if !strings.Contains(v.URL, "/"+v.Spec+"x"+v.Spec+"bb.jpg") {
+						t.Fatalf("档位 %s 仍指向缩略图: %s", v.Spec, v.URL)
+					}
 					if !v.Constructed || v.Width != nil || v.Height != nil {
 						t.Fatal("构造档位被当成实际尺寸")
 					}
 				}
-				if !reflect.DeepEqual(specs, []string{"3000", "1200", "600", "100"}) {
+				if !reflect.DeepEqual(specs, []string{"3000", "1200", "600", "250", "100"}) {
 					t.Fatal(specs)
 				}
 			}

@@ -89,10 +89,18 @@ func (s *Service) localFiles(target Target) ([]store.CoverFile, error) {
 		}
 		return s.library.store.ListReleaseCoverFiles(target.ReleaseID)
 	}
-	if target.Provider != "musicbrainz" || target.Ref == "" {
+	if target.Ref == "" {
 		return nil, nil
 	}
-	catalog, err := s.library.store.GetCoverCatalog(store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: target.Ref})
+	key := store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: target.Ref}
+	switch target.Provider {
+	case "musicbrainz":
+	case "itunes":
+		key.Source, key.ObjectType = "itunes", "album"
+	default:
+		return nil, nil
+	}
+	catalog, err := s.library.store.GetCoverCatalog(key)
 	if err != nil || catalog == nil {
 		return nil, err
 	}
@@ -175,15 +183,20 @@ func (s *Service) Resolve(ctx context.Context, requested Target, usage Usage) (*
 		return got, nil
 	}
 	fallback := s.chooseFile(files, usage, false)
-	if target.Provider != "musicbrainz" || !validMBID(target.Ref) {
+	var catalog *store.CoverCatalog
+	switch {
+	case target.Provider == "itunes" && itunesAlbumRef.MatchString(target.Ref):
+		catalog, err = s.ITunesCatalog(ctx, target.Ref)
+	case target.Provider == "musicbrainz" && validMBID(target.Ref):
+		catalog, err = s.CAACatalog(ctx, "release", target.Ref, false)
+		if err == nil && catalog.State == "empty" && validMBID(target.GroupRef) {
+			catalog, err = s.CAACatalog(ctx, "release-group", target.GroupRef, false)
+		}
+	default:
 		if fallback != nil {
 			return fallback, nil
 		}
 		return &Resolved{Outcome: OutcomeEmpty}, nil
-	}
-	catalog, err := s.CAACatalog(ctx, "release", target.Ref, false)
-	if err == nil && catalog.State == "empty" && validMBID(target.GroupRef) {
-		catalog, err = s.CAACatalog(ctx, "release-group", target.GroupRef, false)
 	}
 	if err == nil && catalog.State == "found" {
 		var got *Resolved
@@ -288,8 +301,13 @@ func (s *Service) downloadCatalog(ctx context.Context, target Target, catalog *s
 	sort.SliceStable(images, func(i, j int) bool { return images[i].Front && !images[j].Front })
 	specs := []string{"250", "500", "1200", "original"}
 	if usage == Detail {
-		opts := []string{"1200", "original"}
-		specs = opts
+		specs = []string{"1200", "original"}
+	}
+	if catalog.Source == "itunes" {
+		specs = []string{"250", "100", "600", "1200", "3000"}
+		if usage == Detail {
+			specs = []string{"1200", "3000", "600", "250", "100"}
+		}
 	}
 	for _, image := range images {
 		for _, spec := range specs {
