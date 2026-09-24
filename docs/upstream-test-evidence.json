@@ -1,0 +1,2412 @@
+{
+  "reportDate": "2026-09-24",
+  "scope": "上游元数据可用性调研；不是现有项目验收、曲库覆盖率或 SLA 测试。",
+  "environment": {
+    "os": "macOS",
+    "httpClient": "curl 8.7.1 / LibreSSL 3.3.6",
+    "userAgent": "SonexaMetadataResearch/0.1 (+https://github.com/norhua/sonexa)",
+    "explicitProxy": false,
+    "egressCountry": "not verified",
+    "loginCookies": false,
+    "privateApiTokens": false,
+    "neteaseProtocol": "WEAPI: AES-128-CBC PKCS#7 twice, base64 each layer, random 16 ASCII-byte second key, reverse-key raw RSA, URL-encoded params/encSecKey"
+  },
+  "notes": [
+    "sha256 为原始响应正文哈希；响应会随时间变化，哈希不是重跑必须相同的断言。",
+    "HTTP status=0 表示未获得 HTTP 响应，不是服务端返回的状态码。",
+    "原始正文留在本地 tmp/upstream-research，不提交；此证据文件只保存参数、状态和少量字段观察，不包含完整歌词、图片或 Cookie。",
+    "businessStatus 缺少 code 不表示失败：MusicBrainz、iTunes、CAA 等有各自响应结构。",
+    "延时为单次客户端测量，不是上游 SLA。"
+  ],
+  "requests": [
+    {
+      "name": "caa-cover",
+      "testedAt": "2026-09-24T12:35:33.325700+00:00",
+      "method": "GET",
+      "url": "https://coverartarchive.org/release/588d5b01-a0ef-3599-b076-c69c8c36f635/23866002389-250.jpg",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 2.759256,
+      "finalUrl": "https://dn720704.ca.archive.org/0/items/mbid-588d5b01-a0ef-3599-b076-c69c8c36f635/mbid-588d5b01-a0ef-3599-b076-c69c8c36f635-23866002389_thumb250.jpg",
+      "bytes": 23298,
+      "sha256": "fdcd32be73ce68639ec0bb18b4f486952720cd0b4e5910b4cc533f2a7a6e1174",
+      "error": "",
+      "businessStatus": {},
+      "decodedImageSize": [
+        250,
+        250
+      ],
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "caa-supercell",
+      "testedAt": "2026-09-24T12:34:22.749327+00:00",
+      "method": "GET",
+      "url": "https://coverartarchive.org/release/588d5b01-a0ef-3599-b076-c69c8c36f635",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 3.52782,
+      "finalUrl": "https://dn720704.ca.archive.org/0/items/mbid-588d5b01-a0ef-3599-b076-c69c8c36f635/index.json",
+      "bytes": 44742,
+      "sha256": "a30627e388066cfa039223c5c13cd9c332099e925ece21e07d848da852c0d335",
+      "error": "",
+      "businessStatus": {},
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "itunes-album-world",
+      "testedAt": "2026-09-24T12:33:31.967934+00:00",
+      "method": "GET",
+      "url": "https://itunes.apple.com/lookup?id=642832495&country=jp&entity=song&limit=200",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.502881,
+      "finalUrl": "https://itunes.apple.com/lookup?id=642832495&country=jp&entity=song&limit=200",
+      "bytes": 50347,
+      "sha256": "77a8b3eb4d19d4a3d6b6ab906cf5efea8a616fb69ce5559196a67bc29bf28600",
+      "error": "",
+      "businessStatus": {
+        "resultCount": 25
+      },
+      "observedFields": {
+        "collections": [
+          {
+            "collectionId": 642832495,
+            "collectionName": "Mikunopolis in Los Angeles \"Happy to Meet You ! I'm Hatsune Miku\" (Live)",
+            "collectionType": "Album",
+            "trackCount": 24,
+            "country": "JPN"
+          }
+        ],
+        "trackResults": 24,
+        "hasUpcField": false
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "itunes-cover",
+      "testedAt": "2026-09-24T12:35:33.000194+00:00",
+      "method": "GET",
+      "url": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/f6/a2/af/f6a2affc-e480-13f1-170c-38b07f89652f/KRHS-92359_VariousArt_MIKUNOPOLI.jpg/1200x1200bb.jpg",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.297566,
+      "finalUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/f6/a2/af/f6a2affc-e480-13f1-170c-38b07f89652f/KRHS-92359_VariousArt_MIKUNOPOLI.jpg/1200x1200bb.jpg",
+      "bytes": 567319,
+      "sha256": "2be987067df60705585514fff30d0e2c4f1963a93f84e63206a969965a0ec9d7",
+      "error": "",
+      "businessStatus": {},
+      "decodedImageSize": [
+        1200,
+        1200
+      ],
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "itunes-ep-lookup",
+      "testedAt": "2026-09-24T12:43:12.404169+00:00",
+      "method": "GET",
+      "url": "https://itunes.apple.com/lookup?id=1869838405&country=jp&entity=song&limit=200",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.324986,
+      "finalUrl": "https://itunes.apple.com/lookup?id=1869838405&country=jp&entity=song&limit=200",
+      "bytes": 11948,
+      "sha256": "75fb66279bb0dd7d128a5b695bbc6cb89fe5edff6d1d8f171ec359f9ba44d001",
+      "error": "",
+      "businessStatus": {
+        "resultCount": 7
+      },
+      "observedFields": {
+        "collections": [
+          {
+            "collectionId": 1869838405,
+            "collectionName": "Ex-Otogibanashi - EP",
+            "collectionType": "Album",
+            "trackCount": 6,
+            "country": "JPN"
+          }
+        ],
+        "trackResults": 6,
+        "hasUpcField": false
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "itunes-qingtian-cn",
+      "testedAt": "2026-09-24T12:36:30.875911+00:00",
+      "method": "GET",
+      "url": "https://itunes.apple.com/lookup?id=535824738&country=cn",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.39606,
+      "finalUrl": "https://itunes.apple.com/lookup?id=535824738&country=cn",
+      "bytes": 1472,
+      "sha256": "53d6d0e7931f1ea7bb1ff4c346d5dd997484d8b4129c02532eda1a7dbe4c4f3e",
+      "error": "",
+      "businessStatus": {
+        "resultCount": 1
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "itunes-search-qingtian",
+      "testedAt": "2026-09-24T12:33:35.599582+00:00",
+      "method": "GET",
+      "url": "https://itunes.apple.com/search?term=%E5%91%A8%E6%9D%B0%E5%80%AB+%E6%99%B4%E5%A4%A9&country=tw&media=music&entity=song&limit=5",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.425508,
+      "finalUrl": "https://itunes.apple.com/search?term=%E5%91%A8%E6%9D%B0%E5%80%AB+%E6%99%B4%E5%A4%A9&country=tw&media=music&entity=song&limit=5",
+      "bytes": 7880,
+      "sha256": "5851ad65ea3d863f17f08f19702238ea917c844fb6298ac383d2895587951563",
+      "error": "",
+      "businessStatus": {
+        "resultCount": 5
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "itunes-search-world",
+      "testedAt": "2026-09-24T12:33:28.451488+00:00",
+      "method": "GET",
+      "url": "https://itunes.apple.com/search?term=supercell+%E3%83%AF%E3%83%BC%E3%83%AB%E3%83%89%E3%82%A4%E3%82%BA%E3%83%9E%E3%82%A4%E3%83%B3&country=jp&media=music&entity=song&limit=5",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.398972,
+      "finalUrl": "https://itunes.apple.com/search?term=supercell+%E3%83%AF%E3%83%BC%E3%83%AB%E3%83%89%E3%82%A4%E3%82%BA%E3%83%9E%E3%82%A4%E3%83%B3&country=jp&media=music&entity=song&limit=5",
+      "bytes": 10031,
+      "sha256": "a10131c3f178951adebaaafce6e16a6433ad14b50ba8c3b927bf5c0d26cf9892",
+      "error": "",
+      "businessStatus": {
+        "resultCount": 5
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "itunes-single-lookup",
+      "testedAt": "2026-09-24T12:36:27.373029+00:00",
+      "method": "GET",
+      "url": "https://itunes.apple.com/lookup?id=1755141035&country=jp&entity=song",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.361102,
+      "finalUrl": "https://itunes.apple.com/lookup?id=1755141035&country=jp&entity=song",
+      "bytes": 2935,
+      "sha256": "a6663b44ab00b828f8e192a764e102bb4ab57fd694ddb3843d1a0122b601bd04",
+      "error": "",
+      "businessStatus": {
+        "resultCount": 2
+      },
+      "observedFields": {
+        "collections": [
+          {
+            "collectionId": 1755141035,
+            "collectionName": "ワールドイズマイン",
+            "collectionType": "Album",
+            "trackCount": 1,
+            "country": "JPN"
+          }
+        ],
+        "trackResults": 1,
+        "hasUpcField": false
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "itunes-song-lookup",
+      "testedAt": "2026-09-24T12:36:23.807649+00:00",
+      "method": "GET",
+      "url": "https://itunes.apple.com/lookup?id=642832873&country=jp",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.439073,
+      "finalUrl": "https://itunes.apple.com/lookup?id=642832873&country=jp",
+      "bytes": 2176,
+      "sha256": "7e975baccf74d9961a91bb70e27e453b7116afd9324c690cdebdc1b0f20230ce",
+      "error": "",
+      "businessStatus": {
+        "resultCount": 1
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "itunes-upc-lookup",
+      "testedAt": "2026-09-24T12:41:54.769712+00:00",
+      "method": "GET",
+      "url": "https://itunes.apple.com/lookup?upc=720642462928&country=us&entity=song&limit=200",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.69413,
+      "finalUrl": "https://itunes.apple.com/lookup?upc=720642462928&country=us&entity=song&limit=200",
+      "bytes": 55375,
+      "sha256": "4d0a6c083d0ad43c71cbe6ac83298f8e6d96b1323bac147ecb91c90078161fa1",
+      "error": "",
+      "businessStatus": {
+        "resultCount": 36
+      },
+      "observedFields": {
+        "collections": [
+          {
+            "collectionId": 1890580956,
+            "collectionName": "Weezer (2024 Remaster)",
+            "collectionType": "Album",
+            "trackCount": 10,
+            "country": "USA"
+          },
+          {
+            "collectionId": 1440869641,
+            "collectionName": "Weezer (Deluxe Edition)",
+            "collectionType": "Album",
+            "trackCount": 24,
+            "country": "USA"
+          }
+        ],
+        "trackResults": 34,
+        "hasUpcField": false
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "mb-getlucky-detail",
+      "testedAt": "2026-09-24T12:36:25.011328+00:00",
+      "method": "GET",
+      "url": "https://musicbrainz.org/ws/2/recording/44a2fd4f-fbfe-4822-b277-2994596b1156?fmt=json&inc=artist-credits%2Bisrcs%2Bartist-rels%2Bwork-rels%2Bwork-level-rels",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 1.596056,
+      "finalUrl": "https://musicbrainz.org/ws/2/recording/44a2fd4f-fbfe-4822-b277-2994596b1156?fmt=json&inc=artist-credits%2Bisrcs%2Bartist-rels%2Bwork-rels%2Bwork-level-rels",
+      "bytes": 5791,
+      "sha256": "bd2a5f73b935aeb9c5f7f32db94ab00ac151e4b2f021a73d24f8f1b01deebb24",
+      "error": "",
+      "businessStatus": {},
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "mb-group-supercell",
+      "testedAt": "2026-09-24T12:34:19.469286+00:00",
+      "method": "GET",
+      "url": "https://musicbrainz.org/ws/2/release-group/b82f022d-26e3-4d53-81c3-d00916646842?fmt=json&inc=genres",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.99512,
+      "finalUrl": "https://musicbrainz.org/ws/2/release-group/b82f022d-26e3-4d53-81c3-d00916646842?fmt=json&inc=genres",
+      "bytes": 711,
+      "sha256": "e48623c45e6c7e8d6a1333b0f96464a61486be5e4f629c02090fa0564f8f2d10",
+      "error": "",
+      "businessStatus": {},
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "mb-recording-nagi",
+      "testedAt": "2026-09-24T12:37:16.382961+00:00",
+      "method": "GET",
+      "url": "https://musicbrainz.org/ws/2/recording/1c8d2ed4-258f-4435-8db9-fa2f8be24712?fmt=json&inc=artist-credits%2Bisrcs%2Bartist-rels%2Bwork-rels%2Bwork-level-rels",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 2.639436,
+      "finalUrl": "https://musicbrainz.org/ws/2/recording/1c8d2ed4-258f-4435-8db9-fa2f8be24712?fmt=json&inc=artist-credits%2Bisrcs%2Bartist-rels%2Bwork-rels%2Bwork-level-rels",
+      "bytes": 7781,
+      "sha256": "90e41bf23b098e1dd7409676d55d1909ff9a64adb54b3abf4bd3af367eab9690",
+      "error": "",
+      "businessStatus": {},
+      "observedFields": {
+        "title": "君の知らない物語",
+        "id": "1c8d2ed4-258f-4435-8db9-fa2f8be24712",
+        "artistCredit": [
+          {
+            "name": "supercell",
+            "joinphrase": "",
+            "id": "9b15ff5e-5bd1-43c2-821d-e31240aad334"
+          }
+        ],
+        "isrcs": [
+          "JPSR00901782"
+        ],
+        "video": false,
+        "relations": [
+          {
+            "type": "arranger",
+            "attributes": [],
+            "artist": {
+              "id": "aabc3d78-218b-4e98-95b7-fe6388adef2d",
+              "name": "ryo"
+            }
+          },
+          {
+            "type": "instrument",
+            "attributes": [
+              "guitar"
+            ],
+            "artist": {
+              "id": "e8a7b479-6a1d-4747-9765-25ef95c17097",
+              "name": "西川進"
+            }
+          },
+          {
+            "type": "instrument",
+            "attributes": [
+              "drums (drum set)"
+            ],
+            "artist": {
+              "id": "df75c103-8e60-4ccb-b94d-c8f7154acba7",
+              "name": "玉田豊夢"
+            }
+          },
+          {
+            "type": "instrument",
+            "attributes": [
+              "piano"
+            ],
+            "artist": {
+              "id": "cc2c35f4-e744-481e-94c5-b92ad6296041",
+              "name": "渡辺シュンスケ"
+            }
+          },
+          {
+            "type": "instrument",
+            "attributes": [
+              "bass"
+            ],
+            "artist": {
+              "id": "24fd71ed-309e-4e0b-8b5f-38d05e953ab4",
+              "name": "山口寛雄"
+            }
+          },
+          {
+            "type": "misc",
+            "attributes": [
+              "task"
+            ],
+            "artist": {
+              "id": "43fcbe2c-fe4c-41ab-8930-5b312c754d7e",
+              "name": "福山泰史"
+            }
+          },
+          {
+            "type": "mix",
+            "attributes": [],
+            "artist": {
+              "id": "fe365cb3-f24c-4044-a40d-82b653c680ee",
+              "name": "牧野英司"
+            }
+          },
+          {
+            "type": "producer",
+            "attributes": [
+              "task"
+            ],
+            "artist": {
+              "id": "aabc3d78-218b-4e98-95b7-fe6388adef2d",
+              "name": "ryo"
+            }
+          },
+          {
+            "type": "recording",
+            "attributes": [],
+            "artist": {
+              "id": "f4f5a088-fe5b-449c-93ed-7efc3a2e166d",
+              "name": "三上義英"
+            }
+          },
+          {
+            "type": "recording",
+            "attributes": [
+              "lead vocals"
+            ],
+            "artist": {
+              "id": "07aeb45e-184e-4507-96c0-55f6e1cbca00",
+              "name": "森田良紀"
+            }
+          },
+          {
+            "type": "vocal",
+            "attributes": [
+              "lead vocals"
+            ],
+            "artist": {
+              "id": "5aca45e6-2901-4dd1-bd50-814576b3f0f2",
+              "name": "nagi"
+            }
+          },
+          {
+            "type": "performance",
+            "attributes": [],
+            "work": {
+              "id": "717a6517-290e-3696-942a-aba233ffc398",
+              "title": "君の知らない物語",
+              "artistRelations": [
+                {
+                  "type": "composer",
+                  "name": "ryo"
+                },
+                {
+                  "type": "lyricist",
+                  "name": "ryo"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "mb-recording-qingtian",
+      "testedAt": "2026-09-24T12:34:21.685084+00:00",
+      "method": "GET",
+      "url": "https://musicbrainz.org/ws/2/recording/1daf7867-18fe-4e09-893d-e41f72889cd3?fmt=json&inc=artist-credits%2Bisrcs%2Bgenres%2Bartist-rels%2Bwork-rels%2Bwork-level-rels",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 1.038916,
+      "finalUrl": "https://musicbrainz.org/ws/2/recording/1daf7867-18fe-4e09-893d-e41f72889cd3?fmt=json&inc=artist-credits%2Bisrcs%2Bgenres%2Bartist-rels%2Bwork-rels%2Bwork-level-rels",
+      "bytes": 949,
+      "sha256": "0fd4099a443f622d4fd66742ab8e1e4c5114a309e420a972e7d8282262e153e4",
+      "error": "",
+      "businessStatus": {},
+      "observedFields": {
+        "title": "晴天",
+        "id": "1daf7867-18fe-4e09-893d-e41f72889cd3",
+        "artistCredit": [
+          {
+            "name": "周杰倫",
+            "joinphrase": "",
+            "id": "a223958d-5c56-4b2c-a30a-87e357bc121b"
+          }
+        ],
+        "isrcs": [
+          "TWK980300602"
+        ],
+        "video": true,
+        "relations": []
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "mb-recording-world-audio",
+      "testedAt": "2026-09-24T12:35:33.819083+00:00",
+      "method": "GET",
+      "url": "https://musicbrainz.org/ws/2/recording/b5c3432e-7ec5-4d81-92fe-e8e8e8dbd18b?fmt=json&inc=artist-credits%2Bisrcs%2Bgenres%2Bartist-rels%2Bwork-rels%2Bwork-level-rels%2Burl-rels",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 1.441202,
+      "finalUrl": "https://musicbrainz.org/ws/2/recording/b5c3432e-7ec5-4d81-92fe-e8e8e8dbd18b?fmt=json&inc=artist-credits%2Bisrcs%2Bgenres%2Bartist-rels%2Bwork-rels%2Bwork-level-rels%2Burl-rels",
+      "bytes": 6788,
+      "sha256": "1b560d699ab49a44fe39f1a597327329e1dd0eb18f74f2348932d8181c6243be",
+      "error": "",
+      "businessStatus": {},
+      "observedFields": {
+        "title": "ワールドイズマイン",
+        "id": "b5c3432e-7ec5-4d81-92fe-e8e8e8dbd18b",
+        "artistCredit": [
+          {
+            "name": "supercell",
+            "joinphrase": " feat. ",
+            "id": "9b15ff5e-5bd1-43c2-821d-e31240aad334"
+          },
+          {
+            "name": "初音ミク",
+            "joinphrase": "",
+            "id": "130d679a-9a92-4373-8348-0800b6b93a30"
+          }
+        ],
+        "isrcs": [
+          "JPP400900066"
+        ],
+        "video": false,
+        "relations": [
+          {
+            "type": "arranger",
+            "attributes": [],
+            "artist": {
+              "id": "aabc3d78-218b-4e98-95b7-fe6388adef2d",
+              "name": "ryo"
+            }
+          },
+          {
+            "type": "design/illustration",
+            "attributes": [],
+            "artist": {
+              "id": "67fd11d1-6361-4721-a2cf-97de65f8dca4",
+              "name": "redjuice"
+            }
+          },
+          {
+            "type": "performance",
+            "attributes": [],
+            "work": {
+              "id": "ade2a0c3-66cf-4c7a-9a04-cb7dbb08ede7",
+              "title": "ワールドイズマイン",
+              "artistRelations": [
+                {
+                  "type": "composer",
+                  "name": "ryo"
+                },
+                {
+                  "type": "lyricist",
+                  "name": "ryo"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "mb-recording-world",
+      "testedAt": "2026-09-24T12:34:12.803254+00:00",
+      "method": "GET",
+      "url": "https://musicbrainz.org/ws/2/recording/be45c857-e7a2-4d5b-a664-5113deb745c2?fmt=json&inc=artist-credits%2Bartists%2Breleases%2Bisrcs%2Bgenres%2Bartist-rels%2Bwork-rels%2Bwork-level-rels%2Burl-rels",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 1.763776,
+      "finalUrl": "https://musicbrainz.org/ws/2/recording/be45c857-e7a2-4d5b-a664-5113deb745c2?fmt=json&inc=artist-credits%2Bartists%2Breleases%2Bisrcs%2Bgenres%2Bartist-rels%2Bwork-rels%2Bwork-level-rels%2Burl-rels",
+      "bytes": 13635,
+      "sha256": "dc19bf6ad26be79b4391822d494dd61b953e28e35e1e1eaf5c3f8212491f6ada",
+      "error": "",
+      "businessStatus": {},
+      "observedFields": {
+        "title": "ワールドイズマイン",
+        "id": "be45c857-e7a2-4d5b-a664-5113deb745c2",
+        "artistCredit": [
+          {
+            "name": "supercell",
+            "joinphrase": " feat. ",
+            "id": "9b15ff5e-5bd1-43c2-821d-e31240aad334"
+          },
+          {
+            "name": "初音ミク",
+            "joinphrase": "",
+            "id": "130d679a-9a92-4373-8348-0800b6b93a30"
+          }
+        ],
+        "isrcs": [],
+        "video": true,
+        "relations": [
+          {
+            "type": "performance",
+            "attributes": [],
+            "work": {
+              "id": "ade2a0c3-66cf-4c7a-9a04-cb7dbb08ede7",
+              "title": "ワールドイズマイン",
+              "artistRelations": [
+                {
+                  "type": "composer",
+                  "name": "ryo"
+                },
+                {
+                  "type": "lyricist",
+                  "name": "ryo"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "mb-release-supercell",
+      "testedAt": "2026-09-24T12:34:15.788559+00:00",
+      "method": "GET",
+      "url": "https://musicbrainz.org/ws/2/release/588d5b01-a0ef-3599-b076-c69c8c36f635?fmt=json&inc=recordings%2Bartist-credits%2Brelease-groups%2Blabels%2Bisrcs%2Bgenres%2Bartist-rels%2Bwork-rels%2Brecording-level-rels%2Bwork-level-rels%2Burl-rels",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 2.454963,
+      "finalUrl": "https://musicbrainz.org/ws/2/release/588d5b01-a0ef-3599-b076-c69c8c36f635?fmt=json&inc=recordings%2Bartist-credits%2Brelease-groups%2Blabels%2Bisrcs%2Bgenres%2Bartist-rels%2Bwork-rels%2Brecording-level-rels%2Bwork-level-rels%2Burl-rels",
+      "bytes": 110192,
+      "sha256": "01e74f8298cc1f148fbf04927a8a3d1480771bbb391485ef37650a36634be6b7",
+      "error": "",
+      "businessStatus": {},
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "mb-search-getlucky",
+      "testedAt": "2026-09-24T12:35:36.496402+00:00",
+      "method": "GET",
+      "url": "https://musicbrainz.org/ws/2/recording/?fmt=json&query=recording%3A%22Get+Lucky%22+AND+artist%3A%22Daft+Punk%22+AND+release%3A%22Random+Access+Memories%22&limit=3",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 1.128289,
+      "finalUrl": "https://musicbrainz.org/ws/2/recording/?fmt=json&query=recording%3A%22Get+Lucky%22+AND+artist%3A%22Daft+Punk%22+AND+release%3A%22Random+Access+Memories%22&limit=3",
+      "bytes": 13826,
+      "sha256": "81c34279ab8d2c164d5dc20b7f09191c7cb7eb195844ecc85d3ad8536b4e3168",
+      "error": "",
+      "businessStatus": {
+        "count": 5
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "mb-search-qingtian",
+      "testedAt": "2026-09-24T12:33:32.723027+00:00",
+      "method": "GET",
+      "url": "https://musicbrainz.org/ws/2/recording/?fmt=json&query=recording%3A%22%E6%99%B4%E5%A4%A9%22+AND+artist%3A%22%E5%91%A8%E6%9D%B0%E5%80%AB%22&limit=3",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 1.215485,
+      "finalUrl": "https://musicbrainz.org/ws/2/recording/?fmt=json&query=recording%3A%22%E6%99%B4%E5%A4%A9%22+AND+artist%3A%22%E5%91%A8%E6%9D%B0%E5%80%AB%22&limit=3",
+      "bytes": 23185,
+      "sha256": "ce3ca0d214824c9c522a6a3e2546a94bd6ea3e002c96ac60e016e20137efdc2c",
+      "error": "",
+      "businessStatus": {
+        "count": 10
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "mb-search-supercell-vocal",
+      "testedAt": "2026-09-24T12:36:27.843885+00:00",
+      "method": "GET",
+      "url": "https://musicbrainz.org/ws/2/recording/?fmt=json&query=recording%3A%22%E5%90%9B%E3%81%AE%E7%9F%A5%E3%82%89%E3%81%AA%E3%81%84%E7%89%A9%E8%AA%9E%22+AND+artist%3Asupercell&limit=3",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 1.317556,
+      "finalUrl": "https://musicbrainz.org/ws/2/recording/?fmt=json&query=recording%3A%22%E5%90%9B%E3%81%AE%E7%9F%A5%E3%82%89%E3%81%AA%E3%81%84%E7%89%A9%E8%AA%9E%22+AND+artist%3Asupercell&limit=3",
+      "bytes": 40664,
+      "sha256": "6be6d1e17b08343c01c527a9f125358408a2069267a35877f0e3f8a39d970c0d",
+      "error": "",
+      "businessStatus": {
+        "count": 16
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "mb-search-world",
+      "testedAt": "2026-09-24T12:33:29.653436+00:00",
+      "method": "GET",
+      "url": "https://musicbrainz.org/ws/2/recording/?fmt=json&query=recording%3A%22%E3%83%AF%E3%83%BC%E3%83%AB%E3%83%89%E3%82%A4%E3%82%BA%E3%83%9E%E3%82%A4%E3%83%B3%22+AND+artist%3Asupercell&limit=5",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 1.84107,
+      "finalUrl": "https://musicbrainz.org/ws/2/recording/?fmt=json&query=recording%3A%22%E3%83%AF%E3%83%BC%E3%83%AB%E3%83%89%E3%82%A4%E3%82%BA%E3%83%9E%E3%82%A4%E3%83%B3%22+AND+artist%3Asupercell&limit=5",
+      "bytes": 49304,
+      "sha256": "b6b4b5a4681729fa0b38738ef365442af14c8c0dc5a706ab50652a21b7c00a00",
+      "error": "",
+      "businessStatus": {
+        "count": 16
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-album-ep",
+      "testedAt": "2026-09-24T12:43:13.634938+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/v1/album/358640241",
+      "requestPayload": {
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.137037,
+      "finalUrl": "https://music.163.com/weapi/v1/album/358640241",
+      "bytes": 14677,
+      "sha256": "31efdb50e924f984b53a05bcf972d5563717e05a23a0942619ca9cace5ceebe8",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "observedFields": {
+        "id": 358640241,
+        "name": "Ex-Otogibanashi",
+        "type": "EP",
+        "subType": "录音室版",
+        "size": 6,
+        "company": "Cosmic Princess Kaguya!",
+        "publishTime": 1769097600000,
+        "songsReturned": 6
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-album-qingtian",
+      "testedAt": "2026-09-24T12:34:14.127982+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/v1/album/18905",
+      "requestPayload": {
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.136754,
+      "finalUrl": "https://music.163.com/weapi/v1/album/18905",
+      "bytes": 31653,
+      "sha256": "b5b44e588b022c59491c99e410fb921581afbcc7d07f77c6e617f1e993be07bc",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "observedFields": {
+        "id": 18905,
+        "name": "叶惠美",
+        "type": "专辑",
+        "subType": "录音室版",
+        "size": 11,
+        "company": "",
+        "publishTime": 1059580800000,
+        "songsReturned": 11
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-album-single",
+      "testedAt": "2026-09-24T12:43:15.036612+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/v1/album/81917",
+      "requestPayload": {
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.127365,
+      "finalUrl": "https://music.163.com/weapi/v1/album/81917",
+      "bytes": 14962,
+      "sha256": "30592b3f5ed30af5cf7dffd07fa7d454a18fad65073049ac156f06c854cc7d7d",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "observedFields": {
+        "id": 81917,
+        "name": "君の知らない物語",
+        "type": "EP",
+        "subType": "录音室版",
+        "size": 6,
+        "company": "索尼音乐",
+        "publishTime": 1250006400000,
+        "songsReturned": 6
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-album",
+      "testedAt": "2026-09-24T12:33:30.987850+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/v1/album/2080195",
+      "requestPayload": {
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.156416,
+      "finalUrl": "https://music.163.com/weapi/v1/album/2080195",
+      "bytes": 36837,
+      "sha256": "bebaea3eb6f2c5b914140a467ce058065a291f523ab093a1c21455179456d24d",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "observedFields": {
+        "id": 2080195,
+        "name": "初音ミクベスト ～memories～",
+        "type": "精选集",
+        "subType": "录音室版",
+        "size": 17,
+        "company": "",
+        "publishTime": 1251216000007,
+        "songsReturned": 17
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-cover",
+      "testedAt": "2026-09-24T12:35:32.614061+00:00",
+      "method": "GET",
+      "url": "https://p1.music.126.net/BqFzD0ev7bMOxkSQqjtKmg==/109951169042217958.jpg?param=500y500",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.076616,
+      "finalUrl": "https://p1.music.126.net/BqFzD0ev7bMOxkSQqjtKmg==/109951169042217958.jpg?param=500y500",
+      "bytes": 364275,
+      "sha256": "285a0a60b9189a6305827d42c7143e33a745f3497636e89ac297e8245855d949",
+      "error": "",
+      "businessStatus": {},
+      "decodedImageSize": [
+        500,
+        500
+      ],
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-detail-nagi",
+      "testedAt": "2026-09-24T12:37:55.318826+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/v3/song/detail",
+      "requestPayload": {
+        "c": "[{\"id\":825646}]",
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.082746,
+      "finalUrl": "https://music.163.com/weapi/v3/song/detail",
+      "bytes": 2219,
+      "sha256": "a9c547f06b05bd63c84a19bfcaf5eaa30cf0f6b78ddab79da8b6efa150a05620",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-detail",
+      "testedAt": "2026-09-24T12:33:29.675310+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/v3/song/detail",
+      "requestPayload": {
+        "c": "[{\"id\":22677570},{\"id\":186016}]",
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.085978,
+      "finalUrl": "https://music.163.com/weapi/v3/song/detail",
+      "bytes": 4348,
+      "sha256": "dd45a6e9aa094bb862c61bd4db3840e46c0f5fe373b608964ad4ff8533a9dd3c",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-lyric-nagi",
+      "testedAt": "2026-09-24T12:37:56.630229+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/song/lyric",
+      "requestPayload": {
+        "id": 825646,
+        "lv": -1,
+        "kv": -1,
+        "tv": -1,
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.0851,
+      "finalUrl": "https://music.163.com/weapi/song/lyric",
+      "bytes": 5785,
+      "sha256": "78592ab99e8259663dfc2ea1a133684fbcc74c7d3b47a0574889068387bc2262",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "observedFields": {
+        "lyricCharacterCounts": {
+          "lrc": 1527,
+          "tlyric": 1543
+        }
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-lyric-new",
+      "testedAt": "2026-09-24T12:35:36.461327+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/song/lyric/v1",
+      "requestPayload": {
+        "id": 22677570,
+        "cp": false,
+        "lv": 0,
+        "tv": 0,
+        "rv": 0,
+        "kv": 0,
+        "yv": 0,
+        "ytv": 0,
+        "yrv": 0,
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.078746,
+      "finalUrl": "https://music.163.com/weapi/song/lyric/v1",
+      "bytes": 23624,
+      "sha256": "130919b24e730d463ce9624429b7b1b3bab3a5fd78d1ad947e3c5f66a6b3efbf",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "observedFields": {
+        "lyricCharacterCounts": {
+          "lrc": 1522,
+          "tlyric": 1339,
+          "romalrc": 2521,
+          "yrc": 9560,
+          "ytlrc": 1171,
+          "yromalrc": 2064
+        }
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-lyric-qingtian",
+      "testedAt": "2026-09-24T12:34:12.821863+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/song/lyric",
+      "requestPayload": {
+        "id": 186016,
+        "lv": -1,
+        "kv": -1,
+        "tv": -1,
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.070838,
+      "finalUrl": "https://music.163.com/weapi/song/lyric",
+      "bytes": 3594,
+      "sha256": "47cd76c848546ec9d7232bfd850551588f85ceb99092287174d16032218508ee",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "observedFields": {
+        "lyricCharacterCounts": {
+          "lrc": 1390,
+          "tlyric": 719
+        }
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-lyric-world",
+      "testedAt": "2026-09-24T12:33:32.382799+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/song/lyric",
+      "requestPayload": {
+        "id": 22677570,
+        "lv": -1,
+        "kv": -1,
+        "tv": -1,
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.07114,
+      "finalUrl": "https://music.163.com/weapi/song/lyric",
+      "bytes": 5552,
+      "sha256": "93112189f8c7e0faa3285d3e9f78296952ff1f07e8154a0580905332cf398cff",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "observedFields": {
+        "lyricCharacterCounts": {
+          "lrc": 1455,
+          "tlyric": 1339
+        }
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-search-nagi",
+      "testedAt": "2026-09-24T12:37:16.401415+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/cloudsearch/pc",
+      "requestPayload": {
+        "s": "君の知らない物語 supercell",
+        "type": "1",
+        "limit": "3",
+        "offset": "0",
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.170308,
+      "finalUrl": "https://music.163.com/weapi/cloudsearch/pc",
+      "bytes": 4923,
+      "sha256": "efc4738ee0bab0d4d786c5617bbbee7cea7ca7769ce576fa5e913e7ff9c3d205",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-search-qingtian",
+      "testedAt": "2026-09-24T12:32:45.070781+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/cloudsearch/pc",
+      "requestPayload": {
+        "s": "晴天 周杰伦",
+        "type": "1",
+        "limit": "5",
+        "offset": "0",
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.20893,
+      "finalUrl": "https://music.163.com/weapi/cloudsearch/pc",
+      "bytes": 8643,
+      "sha256": "6d040bd988320e1df5fb5e8e4f4eee7e6f61150868e0da1f684666c8e964508d",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-search-world",
+      "testedAt": "2026-09-24T12:32:43.457136+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/cloudsearch/pc",
+      "requestPayload": {
+        "s": "ワールドイズマイン",
+        "type": "1",
+        "limit": "5",
+        "offset": "0",
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.37184,
+      "finalUrl": "https://music.163.com/weapi/cloudsearch/pc",
+      "bytes": 9196,
+      "sha256": "9589f5c55b002b584a0a2657cbdbb672eb2d9dfa125a0a3f72eebc6a8c78c260",
+      "error": "",
+      "businessStatus": {
+        "code": 200
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-ugc-qingtian",
+      "testedAt": "2026-09-24T12:35:35.156009+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/rep/ugc/song/get",
+      "requestPayload": {
+        "songId": 186016,
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.053654,
+      "finalUrl": "https://music.163.com/weapi/rep/ugc/song/get",
+      "bytes": 82,
+      "sha256": "be7e4a58864d9e88cdc363a79da52cab5fd061d97fd2d199c8cd0e86f8e53edb",
+      "error": "",
+      "businessStatus": {
+        "code": 301,
+        "message": "系统错误"
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-ugc-world",
+      "testedAt": "2026-09-24T12:35:33.841251+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/rep/ugc/song/get",
+      "requestPayload": {
+        "songId": 22677570,
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.069724,
+      "finalUrl": "https://music.163.com/weapi/rep/ugc/song/get",
+      "bytes": 82,
+      "sha256": "be7e4a58864d9e88cdc363a79da52cab5fd061d97fd2d199c8cd0e86f8e53edb",
+      "error": "",
+      "businessStatus": {
+        "code": 301,
+        "message": "系统错误"
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-wiki-qingtian",
+      "testedAt": "2026-09-24T12:37:17.810887+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/song/play/about/block/page",
+      "requestPayload": {
+        "songId": 186016,
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.186512,
+      "finalUrl": "https://music.163.com/weapi/song/play/about/block/page",
+      "bytes": 45876,
+      "sha256": "3a9c21fecd65c861481a850cc637cad4a12fce77d27739c2d3f0fae28002f844",
+      "error": "",
+      "businessStatus": {
+        "code": 200,
+        "message": ""
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "ne-wiki-world",
+      "testedAt": "2026-09-24T12:33:33.693819+00:00",
+      "method": "POST",
+      "url": "https://music.163.com/weapi/song/play/about/block/page",
+      "requestPayload": {
+        "songId": 22677570,
+        "csrf_token": ""
+      },
+      "protocol": "weapi",
+      "referer": "https://music.163.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.21332,
+      "finalUrl": "https://music.163.com/weapi/song/play/about/block/page",
+      "bytes": 48647,
+      "sha256": "65a638852186e77935e6642af41db41930f3162a46525d27cfc1f78bbf405009",
+      "error": "",
+      "businessStatus": {
+        "code": 200,
+        "message": ""
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-album-qingtian",
+      "testedAt": "2026-09-24T12:34:15.702584+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.musichallAlbum.AlbumInfoServer",
+          "method": "GetAlbumDetail",
+          "param": {
+            "albumId": 8220
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.118099,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 10853,
+      "sha256": "1e463f06d105784f46bdab1432f4f799840b4b96c17f027f49cd116bbf93a158",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "observedFields": {
+        "albumID": 8220,
+        "albumMid": "000MkMni19ClKG",
+        "albumName": "叶惠美",
+        "albumType": "录音室专辑",
+        "recordNum": "",
+        "publishDate": "2003-07-31",
+        "genreNew": "Pop",
+        "companyName": "杰威尔音乐有限公司"
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-album-single",
+      "testedAt": "2026-09-24T12:43:13.607230+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.musichallAlbum.AlbumInfoServer",
+          "method": "GetAlbumDetail",
+          "param": {
+            "albumId": 12925366
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.177965,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 1811,
+      "sha256": "cd9315d02c16c02d8b0a68e6107ad2398b5bff1c9d3101a5b8a57fa2069fbc84",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "observedFields": {
+        "albumID": 12925366,
+        "albumMid": "002eATgs2sJPB2",
+        "albumName": "君の知らない物語",
+        "albumType": "EP",
+        "recordNum": "SRCL07081B00Z",
+        "publishDate": "2009-08-12",
+        "genreNew": "",
+        "companyName": "(P)2009 Sony Music Entertainment (Japan) Inc."
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-album",
+      "testedAt": "2026-09-24T12:33:32.744928+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.musichallAlbum.AlbumInfoServer",
+          "method": "GetAlbumDetail",
+          "param": {
+            "albumMid": "000BDJvT2aWQYZ"
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.126367,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 2752,
+      "sha256": "d24ff74aa132553409540fcf9bec9f1a060e9d93a994784dea59acd04ffa5c0f",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "observedFields": {
+        "albumID": 98264,
+        "albumMid": "000BDJvT2aWQYZ",
+        "albumName": "supercell",
+        "albumType": "录音室专辑",
+        "recordNum": "",
+        "publishDate": "2009-03-04",
+        "genreNew": "",
+        "companyName": ""
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-cover",
+      "testedAt": "2026-09-24T12:35:32.706293+00:00",
+      "method": "GET",
+      "url": "https://y.qq.com/music/photo_new/T002R500x500M000000BDJvT2aWQYZ.jpg",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.276652,
+      "finalUrl": "https://y.qq.com/music/photo_new/T002R500x500M000000BDJvT2aWQYZ.jpg",
+      "bytes": 83816,
+      "sha256": "3709fa6ef242eb306f7057d8c4eeedefb9790a356f723b129e3383314b920602",
+      "error": "",
+      "businessStatus": {},
+      "decodedImageSize": [
+        500,
+        500
+      ],
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-detail-nagi",
+      "testedAt": "2026-09-24T12:37:55.303961+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.pf_song_detail_svr",
+          "method": "get_song_detail",
+          "param": {
+            "song_mid": "001UVTVs2SpTNY"
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.326695,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 6704,
+      "sha256": "b214110ddade83675d4c2e7fc5435358b5f392547963fe5b32f1dd86c0acc0f0",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "observedFields": {
+        "infoShape": "array",
+        "roles": [
+          {
+            "title": "演唱者",
+            "type": "JUMP_TO_SINGER",
+            "values": [
+              "supercell"
+            ]
+          },
+          {
+            "title": "作词",
+            "type": "lyricist",
+            "values": [
+              "ryo"
+            ]
+          },
+          {
+            "title": "作曲",
+            "type": "JUMP_TO_SINGER",
+            "values": [
+              "ryo"
+            ]
+          },
+          {
+            "title": "编曲",
+            "type": "arrangement",
+            "values": [
+              "ryo"
+            ]
+          },
+          {
+            "title": "歌曲语种",
+            "type": "JUMP_TO_CATEGORY",
+            "values": [
+              " 日语"
+            ]
+          },
+          {
+            "title": "歌曲流派",
+            "type": "JUMP_TO_CATEGORY",
+            "values": [
+              "Animation"
+            ]
+          },
+          {
+            "title": "唱片公司",
+            "type": "JUMP_TO_COMPANY",
+            "values": [
+              "(P)2009 Sony Music Entertainment (Japan) Inc."
+            ]
+          }
+        ]
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-detail-qingtian",
+      "testedAt": "2026-09-24T12:33:31.182502+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.pf_song_detail_svr",
+          "method": "get_song_detail",
+          "param": {
+            "song_mid": "0039MnYb0qxYhV",
+            "song_id": 97773
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.343776,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 10931,
+      "sha256": "3577d10e4e1fc7cf05dc61424628eb8697a5b89b596084172c30e5804bc21e74",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "observedFields": {
+        "infoShape": "array",
+        "roles": [
+          {
+            "title": "演唱者",
+            "type": "JUMP_TO_SINGER",
+            "values": [
+              "周杰伦"
+            ]
+          },
+          {
+            "title": "作词",
+            "type": "lyricist",
+            "values": [
+              "周杰伦"
+            ]
+          },
+          {
+            "title": "作曲",
+            "type": "JUMP_TO_SINGER",
+            "values": [
+              "周杰伦"
+            ]
+          },
+          {
+            "title": "编曲",
+            "type": "arrangement",
+            "values": [
+              "周杰伦"
+            ]
+          },
+          {
+            "title": "制作人",
+            "type": "producer",
+            "values": [
+              "周杰伦"
+            ]
+          },
+          {
+            "title": "歌曲语种",
+            "type": "JUMP_TO_CATEGORY",
+            "values": [
+              "国语"
+            ]
+          },
+          {
+            "title": "歌曲流派",
+            "type": "JUMP_TO_CATEGORY",
+            "values": [
+              "Pop"
+            ]
+          },
+          {
+            "title": "录音师",
+            "type": "desc",
+            "values": [
+              "杨瑞代"
+            ]
+          },
+          {
+            "title": "混音工程师",
+            "type": "desc",
+            "values": [
+              "杨大纬"
+            ]
+          },
+          {
+            "title": "吉他",
+            "type": "desc",
+            "values": [
+              "蔡科俊Again"
+            ]
+          },
+          {
+            "title": "贝斯",
+            "type": "desc",
+            "values": [
+              "陈任佑"
+            ]
+          },
+          {
+            "title": "鼓",
+            "type": "desc",
+            "values": [
+              "陈柏州"
+            ]
+          },
+          {
+            "title": "合声",
+            "type": "desc",
+            "values": [
+              "周杰伦"
+            ]
+          },
+          {
+            "title": "合声编写",
+            "type": "desc",
+            "values": [
+              "周杰伦"
+            ]
+          },
+          {
+            "title": "唱片公司",
+            "type": "JUMP_TO_COMPANY",
+            "values": [
+              "杰威尔音乐有限公司"
+            ]
+          }
+        ]
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-detail-world",
+      "testedAt": "2026-09-24T12:33:29.656060+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.pf_song_detail_svr",
+          "method": "get_song_detail",
+          "param": {
+            "song_mid": "003RcjkV1XjQQy",
+            "song_id": 7410077
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.303883,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 7713,
+      "sha256": "ed1714ad4af24d505450faa5dbc1e1cf77e461720f2a3c684901f0ba9c442775",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "observedFields": {
+        "infoShape": "array",
+        "roles": [
+          {
+            "title": "演唱者",
+            "type": "JUMP_TO_SINGER",
+            "values": [
+              "supercell",
+              "初音未来"
+            ]
+          },
+          {
+            "title": "作词",
+            "type": "lyricist",
+            "values": [
+              "ryo"
+            ]
+          },
+          {
+            "title": "作曲",
+            "type": "JUMP_TO_SINGER",
+            "values": [
+              "ryo"
+            ]
+          },
+          {
+            "title": "编曲",
+            "type": "arrangement",
+            "values": [
+              "ryo"
+            ]
+          },
+          {
+            "title": "歌曲语种",
+            "type": "JUMP_TO_CATEGORY",
+            "values": [
+              " 日语"
+            ]
+          },
+          {
+            "title": "歌曲流派",
+            "type": "JUMP_TO_CATEGORY",
+            "values": [
+              "Pop"
+            ]
+          }
+        ]
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-detail-yqq",
+      "testedAt": "2026-09-24T12:34:12.804707+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.pf_song_detail_svr",
+          "method": "get_song_detail_yqq",
+          "param": {
+            "song_mid": "003RcjkV1XjQQy"
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.282942,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 3371,
+      "sha256": "fa38f8039d40ba978355274fae149f89e59efd0ca016d2c4884568b173d6e46a",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "observedFields": {
+        "infoShape": "object",
+        "infoKeys": [
+          "genre",
+          "lan",
+          "pub_time"
+        ]
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-lyric-json-base64",
+      "testedAt": "2026-09-24T12:38:39.073816+00:00",
+      "method": "GET",
+      "url": "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=003RcjkV1XjQQy&g_tk=5381&format=json",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.183851,
+      "finalUrl": "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=003RcjkV1XjQQy&g_tk=5381&format=json",
+      "bytes": 4576,
+      "sha256": "db20a8c06045ea2cba02860efabbceac7dbebbec28c8cc63901e293789b7db3c",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "retcode": 0,
+        "subcode": 0
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-lyric-jsonp",
+      "testedAt": "2026-09-24T12:38:38.770081+00:00",
+      "method": "GET",
+      "url": "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=003RcjkV1XjQQy&g_tk=5381&jsonpCallback=sonexaLyricCallback&format=jsonp",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.287181,
+      "finalUrl": "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=003RcjkV1XjQQy&g_tk=5381&jsonpCallback=sonexaLyricCallback&format=jsonp",
+      "bytes": 4597,
+      "sha256": "147296ff0388ca1b9b7fdb2582a4220402a30a22049299b96c45fc5bc6068709",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "retcode": 0,
+        "subcode": 0
+      },
+      "observedFields": {
+        "callback": "sonexaLyricCallback",
+        "wrapperValidated": true,
+        "lyricEncoding": "base64-utf8",
+        "decodedLyricCharacters": 1804,
+        "hasLrcTimestamps": true
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-lyric-world",
+      "testedAt": "2026-09-24T12:34:15.840986+00:00",
+      "method": "GET",
+      "url": "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=003RcjkV1XjQQy&format=json&nobase64=1",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.179468,
+      "finalUrl": "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=003RcjkV1XjQQy&format=json&nobase64=1",
+      "bytes": 3521,
+      "sha256": "6641d85f95116a126fc48fe3482b6dd1e7ab688ada2404088ee9df5fcd5399af",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "retcode": 0,
+        "subcode": 0
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-old-search",
+      "testedAt": "2026-09-24T12:34:16.037182+00:00",
+      "method": "GET",
+      "url": "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=%E6%99%B4%E5%A4%A9+%E5%91%A8%E6%9D%B0%E4%BC%A6&format=json&p=1&n=3",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 500,
+      "seconds": 5.099827,
+      "finalUrl": "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=%E6%99%B4%E5%A4%A9+%E5%91%A8%E6%9D%B0%E4%BC%A6&format=json&p=1&n=3",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "error": "",
+      "businessStatus": {},
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-search-nagi",
+      "testedAt": "2026-09-24T12:37:16.378448+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.search.SearchCgiService",
+          "method": "DoSearchForQQMusicDesktop",
+          "param": {
+            "query": "君の知らない物語 supercell",
+            "search_type": 0,
+            "num_per_page": 3,
+            "page_num": 1
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.319089,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 30278,
+      "sha256": "764e210d938ff0b07941818236963ee4277b661105d3091508139db2fdcb52cf",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-search-qingtian",
+      "testedAt": "2026-09-24T12:32:45.016091+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.search.SearchCgiService",
+          "method": "DoSearchForQQMusicDesktop",
+          "param": {
+            "query": "晴天 周杰伦",
+            "search_type": 0,
+            "num_per_page": 5,
+            "page_num": 1
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.270411,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 21420,
+      "sha256": "7a72d608e1b92afde70ea2ac2798e2473ef7593ecaac2a505a08648a8444e336",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-search-world",
+      "testedAt": "2026-09-24T12:32:43.429697+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.search.SearchCgiService",
+          "method": "DoSearchForQQMusicDesktop",
+          "param": {
+            "query": "ワールドイズマイン",
+            "search_type": 0,
+            "num_per_page": 5,
+            "page_num": 1
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.345834,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 24467,
+      "sha256": "4ccee0336f006c89120840f5c6c5bb2d144aaf57f7b43191f3ce9e611c33df77",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-tracks-multidisc",
+      "testedAt": "2026-09-24T12:37:17.931939+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.musichallAlbum.AlbumSongList",
+          "method": "GetAlbumSongList",
+          "param": {
+            "albumId": 14323,
+            "begin": 0,
+            "num": 100
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.200346,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 50567,
+      "sha256": "79fb1addc4e9de4d47f8f996bb71186cff843387c7425153ba78a63fc1c3fe27",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "observedFields": {
+        "totalNum": 25,
+        "returned": 25,
+        "trackPositions": [
+          {
+            "title": "乱舞春秋 (Live)",
+            "index_cd": 0,
+            "index_album": 10
+          },
+          {
+            "title": "轨迹 (Live)",
+            "index_cd": 1,
+            "index_album": 25
+          },
+          {
+            "title": "东风破 (Live)",
+            "index_cd": 1,
+            "index_album": 24
+          },
+          {
+            "title": "断了的弦 (Live)",
+            "index_cd": 1,
+            "index_album": 23
+          },
+          {
+            "title": "外婆 (Live)",
+            "index_cd": 1,
+            "index_album": 22
+          },
+          {
+            "title": "七里香 (Live)",
+            "index_cd": 1,
+            "index_album": 21
+          },
+          {
+            "title": "简单爱 (Live)",
+            "index_cd": 1,
+            "index_album": 20
+          },
+          {
+            "title": "倒带 (Live)",
+            "index_cd": 1,
+            "index_album": 19
+          },
+          {
+            "title": "困兽之斗 (Live)",
+            "index_cd": 1,
+            "index_album": 18
+          },
+          {
+            "title": "双刀+双截棍+龙拳 (Live)",
+            "index_cd": 1,
+            "index_album": 17
+          },
+          {
+            "title": "瓦解 (Live)",
+            "index_cd": 1,
+            "index_album": 16
+          },
+          {
+            "title": "借口 (Live)",
+            "index_cd": 1,
+            "index_album": 15
+          },
+          {
+            "title": "搁浅 (Live)",
+            "index_cd": 1,
+            "index_album": 14
+          },
+          {
+            "title": "爱情悬崖 (Live)",
+            "index_cd": 0,
+            "index_album": 13
+          },
+          {
+            "title": "我的地盘 (Live)",
+            "index_cd": 0,
+            "index_album": 12
+          },
+          {
+            "title": "将军 (Live)",
+            "index_cd": 0,
+            "index_album": 9
+          },
+          {
+            "title": "龙卷风 (Live)",
+            "index_cd": 0,
+            "index_album": 8
+          },
+          {
+            "title": "园游会 (Live)",
+            "index_cd": 0,
+            "index_album": 7
+          },
+          {
+            "title": "梯田＋爸，我回来了 (Live)",
+            "index_cd": 0,
+            "index_album": 6
+          },
+          {
+            "title": "你听得到 (Live)",
+            "index_cd": 0,
+            "index_album": 5
+          },
+          {
+            "title": "晴天 (Live)",
+            "index_cd": 0,
+            "index_album": 4
+          },
+          {
+            "title": "她的睫毛 (Live)",
+            "index_cd": 0,
+            "index_album": 3
+          },
+          {
+            "title": "止战之殇 (Live)",
+            "index_cd": 0,
+            "index_album": 2
+          },
+          {
+            "title": "以父之名 (Live)",
+            "index_cd": 0,
+            "index_album": 1
+          },
+          {
+            "title": "星晴 + 回到过去 + 最后的战役 + 爱我别走 (Live)",
+            "index_cd": 0,
+            "index_album": 11
+          }
+        ]
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "qq-tracks-supercell",
+      "testedAt": "2026-09-24T12:34:14.309511+00:00",
+      "method": "POST",
+      "url": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "requestPayload": {
+        "comm": {
+          "ct": "19",
+          "cv": "1859",
+          "uin": "0"
+        },
+        "req": {
+          "module": "music.musichallAlbum.AlbumSongList",
+          "method": "GetAlbumSongList",
+          "param": {
+            "albumMid": "000BDJvT2aWQYZ",
+            "begin": 0,
+            "num": 50
+          }
+        }
+      },
+      "protocol": null,
+      "referer": "https://y.qq.com/",
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 0.1713,
+      "finalUrl": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      "bytes": 25024,
+      "sha256": "813505e32dd10424f54f5f2dd7255ed70bd843270dd732d9dc2e0e1db97f634c",
+      "error": "",
+      "businessStatus": {
+        "code": 0,
+        "req.code": 0
+      },
+      "observedFields": {
+        "totalNum": 12,
+        "returned": 12,
+        "trackPositions": [
+          {
+            "title": "ワールドイズマイン (World is Mine)",
+            "index_cd": 0,
+            "index_album": 7
+          },
+          {
+            "title": "ライン (Line)",
+            "index_cd": 0,
+            "index_album": 6
+          },
+          {
+            "title": "またね",
+            "index_cd": 0,
+            "index_album": 12
+          },
+          {
+            "title": "その一秒 スローモーション",
+            "index_cd": 0,
+            "index_album": 10
+          },
+          {
+            "title": "嘘つきのパレード (说谎者的游行)",
+            "index_cd": 0,
+            "index_album": 9
+          },
+          {
+            "title": "初めての恋が終わる時 (初恋终结之时)",
+            "index_cd": 0,
+            "index_album": 8
+          },
+          {
+            "title": "くるくるまーくのすごいやつ (转来转去的厉害家伙)",
+            "index_cd": 0,
+            "index_album": 5
+          },
+          {
+            "title": "メルト (Melt)",
+            "index_cd": 0,
+            "index_album": 3
+          },
+          {
+            "title": "ハートブレイカー (令我伤心的人)",
+            "index_cd": 0,
+            "index_album": 2
+          },
+          {
+            "title": "恋は戦争 (恋爱就是战争)",
+            "index_cd": 0,
+            "index_album": 1
+          },
+          {
+            "title": "ブラック★ロックシューター (Black★Rock Shooter)",
+            "index_cd": 0,
+            "index_album": 4
+          },
+          {
+            "title": "ひねくれ者",
+            "index_cd": 0,
+            "index_album": 11
+          }
+        ]
+      },
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "vgm-fixture-79",
+      "testedAt": "2026-09-24T12:36:23.808187+00:00",
+      "method": "GET",
+      "url": "https://raw.githubusercontent.com/hufman/vgmdb/master/tests/album_ff8.html",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 1.065709,
+      "finalUrl": "https://raw.githubusercontent.com/hufman/vgmdb/master/tests/album_ff8.html",
+      "bytes": 53637,
+      "sha256": "1e187910892861880fa322511d9da9e8a75e633224565ff3f52be15bc9655f54",
+      "error": "",
+      "businessStatus": {},
+      "evidenceKind": "historical-public-fixture-not-live-vgmdb"
+    },
+    {
+      "name": "vgm-historic-cover",
+      "testedAt": "2026-09-24T12:36:24.893207+00:00",
+      "method": "GET",
+      "url": "https://medium-media.vgm.io/albums/97/79/79-1264618929.png",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 200,
+      "seconds": 2.471855,
+      "finalUrl": "https://medium-media.vgm.io/albums/97/79/79-1264618929.png",
+      "bytes": 75226,
+      "sha256": "d5bb35c88d673607923fd4b036759b8ebfc27bbef6052a830e3431dec80237e2",
+      "error": "",
+      "businessStatus": {},
+      "decodedImageSize": [
+        250,
+        247
+      ],
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "vgm-info-79",
+      "testedAt": "2026-09-24T12:32:42.227695+00:00",
+      "method": "GET",
+      "url": "https://vgmdb.info/album/79?format=json",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 35,
+      "httpStatus": 0,
+      "seconds": 2.333797,
+      "finalUrl": "https://vgmdb.info/album/79?format=json",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "error": "curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to vgmdb.info:443",
+      "businessStatus": {},
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "vgm-info-home",
+      "testedAt": "2026-09-24T12:34:11.598919+00:00",
+      "method": "GET",
+      "url": "https://vgmdb.info/",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 35,
+      "httpStatus": 0,
+      "seconds": 2.069754,
+      "finalUrl": "https://vgmdb.info/",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "error": "curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to vgmdb.info:443",
+      "businessStatus": {},
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "vgm-net-79",
+      "testedAt": "2026-09-24T12:32:44.577421+00:00",
+      "method": "GET",
+      "url": "https://vgmdb.net/album/79",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 403,
+      "seconds": 1.934509,
+      "finalUrl": "https://vgmdb.net/album/79",
+      "bytes": 5488,
+      "sha256": "4dfe2e2fcf60fa702f8191c976b79001b229e060458d0a68debddb971bb9deaf",
+      "error": "",
+      "businessStatus": {},
+      "evidenceKind": "direct-http-request"
+    },
+    {
+      "name": "vgm-net-search",
+      "testedAt": "2026-09-24T12:34:13.683729+00:00",
+      "method": "GET",
+      "url": "https://vgmdb.net/search?do=results&action=quicksearch&quicksearch=supercell",
+      "requestPayload": null,
+      "protocol": null,
+      "referer": null,
+      "curlExit": 0,
+      "httpStatus": 403,
+      "seconds": 4.519946,
+      "finalUrl": "https://vgmdb.net/search?do=results&action=quicksearch&quicksearch=supercell",
+      "bytes": 5747,
+      "sha256": "6b99ae99aa662627c859bc1fbdd20605af6ede9a0e0fed3cf7fdf80ddbf50639",
+      "error": "",
+      "businessStatus": {},
+      "evidenceKind": "direct-http-request"
+    }
+  ],
+  "additionalChecks": [
+    {
+      "id": "weapi-local-roundtrip",
+      "result": "passed",
+      "checks": [
+        "双层 AES 加解密回环",
+        "RSA 输出为 256 位十六进制字符"
+      ],
+      "note": "真实接口业务 code 200 另验证了加密请求可被上游接受。"
+    },
+    {
+      "id": "vgm-info-http",
+      "url": "http://vgmdb.info/album/79?format=json",
+      "method": "GET",
+      "curlExit": 52,
+      "httpStatus": 0,
+      "seconds": 1.368253,
+      "error": "Empty reply from server",
+      "note": "历史 HTTP 入口诊断，不作为明文接入建议；未单独记录精确起始时间。"
+    },
+    {
+      "id": "vgm-offline-parser",
+      "result": "passed",
+      "evidenceKind": "offline-historical-html",
+      "sourceCommit": "86894699362d6a7863c30e3bed054be49384cac8",
+      "fixture": "tests/album_ff8.html",
+      "fixtureMatchesCommitBlob": true,
+      "parserFiles": [
+        "vgmdb/parsers/album.py",
+        "vgmdb/parsers/utils.py"
+      ],
+      "dependencies": [
+        "beautifulsoup4==4.14.3",
+        "lxml==5.4.0"
+      ],
+      "observedFields": {
+        "catalog": "SSCX-10037",
+        "barcode": "4517331100379",
+        "release_date": "1999-11-20",
+        "publish_format": "Commercial, Limited Edition",
+        "classification": "Arrangement",
+        "discCount": 1,
+        "trackCount": 13,
+        "coverEntries": 6,
+        "performerEntries": 8,
+        "lyricistEntries": 3,
+        "vocalsPresent": false
+      },
+      "note": "只加载解析器，未运行抓取网络服务；不证明主站现行页面可访问或结构未变。"
+    }
+  ]
+}
