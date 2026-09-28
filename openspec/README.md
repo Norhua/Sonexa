@@ -26,7 +26,7 @@
 | 资料库 | [曲目](specs/library/track-library/spec.md) · [艺术家](specs/library/artists/spec.md) · [浏览视图](specs/library/browse-views/spec.md) · [歌集清单](specs/library/release-catalog/spec.md) |
 | 组织与检索 | [歌单与标签](specs/library/collections/spec.md) · [本地搜索](specs/library/search/spec.md) · [导出](specs/library/export/spec.md) |
 | 匹配 | [文本处理](specs/matching/text-processing/spec.md) · [评分](specs/matching/confidence/spec.md) · [处理流程](specs/matching/pipeline/spec.md) · [匹配来源](specs/matching/provenance/spec.md) |
-| 上游 | [统一接口](specs/upstream/provider-registry/spec.md) · [MusicBrainz](specs/upstream/musicbrainz/spec.md) · [iTunes](specs/upstream/itunes/spec.md) · [封面](specs/upstream/cover-art/spec.md) · [封面搜索](specs/upstream/cover-search/spec.md) · [上游搜索](specs/upstream/search/spec.md) |
+| 上游 | [统一接口](specs/upstream/provider-registry/spec.md) · [MusicBrainz](specs/upstream/musicbrainz/spec.md) · [iTunes](specs/upstream/itunes/spec.md) · [QQ 音乐](specs/upstream/qqmusic/spec.md) · [封面](specs/upstream/cover-art/spec.md) · [封面搜索](specs/upstream/cover-search/spec.md) · [上游搜索](specs/upstream/search/spec.md) |
 | 操作流程 | [表格导入](specs/import/table-import/spec.md) · [人工复核](specs/review/review-queue/spec.md) · [曲目编辑](specs/editing/track-editing/spec.md) |
 
 ## 维护约定

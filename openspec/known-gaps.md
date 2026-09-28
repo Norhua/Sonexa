@@ -77,6 +77,12 @@
 - **依据**：`internal/covers/library_cache.go` 的 `MoveRoot`、`internal/covers/library_images.go` 的 `MigrateLegacy`。
 - **目标与验收**：指出受影响的歌集；原文件已不存在的迁移记录不应无限阻止目录变更，或重新采用后立即解除阻止；失败时不在目标目录留下本次新建的文件。用旧数据库副本验证缺失文件、重新采用及目录变更。
 
+## G16 — QQ 音乐上游
+
+- **现状**：QQ 音乐元数据上游使用非公开的 `musicu.fcg` 与歌词接口，契约可能不经通知改变。碟序规律（`index_cd` 从 0 开始、`index_album` 为全专辑序号）与字段语义来自少量样本，`recordNum` 语义未核实，因此不映射目录号。`internal/provider/qqmusic/` 只有基于实测响应的离线测试，没有真实来源回归。封面搜索页的 QQ 查询使用独立配额（`cover-qq`，每秒 1 次），不消费 QQ 音乐元数据令牌桶（默认每分钟 30 次），两者同时使用时对同一接口的总请求率可超过设置值；是否合并配额尚未决定。
+- **依据**：`internal/provider/qqmusic/`、`internal/covers/sources/web.go`、`internal/app/bindings_cover_search.go`。
+- **目标与验收**：仿照 `TestLiveCoverSources` 增加以环境变量开启的真实来源测试，覆盖搜索、单碟与多碟详情及歌词回退，接口变化时更新 `testdata/` 样本；确定 QQ 封面查询与元数据请求的合计速率上限，并验证封面搜索与后台补全同时进行时的实际请求率。
+
 ## 验证范围
 
 原生 Wails 窗口按钮、窗口拖动、输入法、系统缩放、文件对话框和真实规模数据仍需人工验收。浏览器测试使用 Wails 测试替身，不代替原生验证。

@@ -29,7 +29,7 @@
 - **THEN** 分别记录 partial 或 failed；界面只显示已有曲目及补全/重试动作
 
 ### Requirement: 清单有效期
-iTunes、MusicBrainz 和本地已存清单 SHALL 不因获取时间或经过天数失效，保存的 none、partial、complete、failed 状态不经日期转换。手动重新获取 SHALL 跳过本地完整状态检查及原始响应缓存，以取得新响应；缺失/不完整时仍遵守原有清单补取规则。
+iTunes、MusicBrainz、QQ 音乐和本地已存清单 SHALL 不因获取时间或经过天数失效，保存的 none、partial、complete、failed 状态不经日期转换。手动重新获取 SHALL 跳过本地完整状态检查及原始响应缓存，以取得新响应；缺失/不完整时仍遵守原有清单补取规则。
 
 #### Scenario: iTunes 过期
 - **WHEN** 打开已超过旧版有效期的完整 iTunes 清单

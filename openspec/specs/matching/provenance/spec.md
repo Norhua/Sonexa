@@ -11,7 +11,7 @@
 ## Requirements
 
 ### Requirement: 身份与唯一性
-曲目 SHALL 可保存 match_source、match_ref、matched_at；来源和标识组合在有来源时唯一，无需匹配时为空。MusicBrainz 真实位置使用 track MBID，iTunes 使用小写 country:trackId。MusicBrainz 搜索缺少位置时可产生 recording@release 合成标识，但不能用于精确详情补全。
+曲目 SHALL 可保存 match_source、match_ref、matched_at；来源和标识组合在有来源时唯一，无需匹配时为空。MusicBrainz 真实位置使用 track MBID，iTunes 使用小写 country:trackId，QQ 音乐使用歌曲 MID。MusicBrainz 搜索缺少位置时可产生 recording@release 合成标识，但不能用于精确详情补全。
 
 #### Scenario: 同录音不同版本
 - **WHEN** 同录音出现于 CD 和数字发行的不同 track
@@ -32,7 +32,7 @@
 - **THEN** 后一次返回已有曲目身份，不显示唯一键错误
 
 ### Requirement: 身份编辑格式
-手动身份编辑 SHALL 校验 MusicBrainz UUID 或 iTunes 两位小写地区加数字编号格式；普通浏览不改变身份。编辑入口及保存行为见[曲目编辑](../../editing/track-editing/spec.md)。
+手动身份编辑 SHALL 校验 MusicBrainz UUID、iTunes 两位小写地区加数字编号，或 QQ 音乐 10–20 位字母数字的歌曲 MID 格式；普通浏览不改变身份。编辑入口及保存行为见[曲目编辑](../../editing/track-editing/spec.md)。
 
 #### Scenario: 非法标识
 - **WHEN** 用户提交不符合来源格式的标识
