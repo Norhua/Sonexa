@@ -90,7 +90,7 @@ CREATE TABLE release_group_match_key (
 CREATE INDEX idx_group_match ON release_group_match_key(title_key,credit_key);
 CREATE TABLE group_change_proposal (
  id INTEGER PRIMARY KEY, release_id INTEGER NOT NULL REFERENCES release(id) ON DELETE CASCADE,
- evidence_json TEXT NOT NULL, baseline_revision INTEGER NOT NULL,
+ evidence_json TEXT NOT NULL, evidence_hash TEXT NOT NULL DEFAULT '', baseline_revision INTEGER NOT NULL,
  status TEXT NOT NULL DEFAULT 'pending', created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL
 );
 CREATE TABLE release_membership_decision (

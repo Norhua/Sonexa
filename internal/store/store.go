@@ -10,17 +10,20 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
 	_ "modernc.org/sqlite"
 )
 
 // Store 持有数据库连接。
 type Store struct {
-	lyricsRoot   string
-	fileMu       *sync.Mutex
-	closeOnce    sync.Once
-	beforeCommit func(*sql.Tx) error
-	db           *sql.DB
+	planMu            sync.RWMutex
+	admissionVerifier func(domain.AdmissionPlan, domain.AdmissionApproval) bool
+	lyricsRoot        string
+	fileMu            *sync.Mutex
+	closeOnce         sync.Once
+	beforeCommit      func(*sql.Tx) error
+	db                *sql.DB
 	// ladder 是发行优选阶梯的配置，由 SetLadderConfig 注入用户设置。
 	// 专辑视图选代表 release 与匹配阶段共用它。
 	ladder *matching.LadderConfig

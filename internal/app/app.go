@@ -12,6 +12,7 @@ import (
 	"github.com/norhua/sonexa/internal/config"
 	"github.com/norhua/sonexa/internal/covers"
 	"github.com/norhua/sonexa/internal/importer"
+	"github.com/norhua/sonexa/internal/library"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/provider/itunes"
@@ -29,6 +30,7 @@ type App struct {
 	paths         config.Paths
 	settings      *config.Store
 	store         *store.Store
+	library       *library.Service
 	registry      *provider.Registry
 	limiters      *provider.Limiters
 	client        *provider.Client
@@ -182,6 +184,9 @@ func (a *App) initialize() error {
 		return err
 	}
 	a.coverSvc = a.attachLadderBuilder(svc)
+	if _, err := a.libraryService(); err != nil {
+		return err
+	}
 	svc.EnableNetworkPolicy(a.checkCoverOutbound)
 
 	a.rebuildRunner(cur)

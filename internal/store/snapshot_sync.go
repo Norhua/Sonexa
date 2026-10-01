@@ -161,6 +161,12 @@ func applySnapshotTx(tx *sql.Tx, id int64, snapshot *domain.Snapshot, revision i
 		if err := syncFTSForRelease(tx, *releaseID); err != nil {
 			return err
 		}
+		if err := rebuildGroupKeysTx(tx); err != nil {
+			return err
+		}
+		if err := proposeGroupChangeTx(tx, *releaseID, snapshot.Group); err != nil {
+			return err
+		}
 	}
 	merged, err := saveSnapshotTx(tx, "track", id, t)
 	if err != nil {
