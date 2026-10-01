@@ -1,63 +1,8 @@
 package matching
 
 import (
-	"fmt"
-	"regexp"
-	"strconv"
-	"strings"
-
 	"github.com/norhua/sonexa/internal/provider"
 )
-
-// mbidPattern 是 MusicBrainz 标识的格式：标准 UUID。
-var mbidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-
-// itunesRefPattern 是 iTunes 标识的格式：{country}:{trackId}。
-var itunesRefPattern = regexp.MustCompile(`^[a-z]{2}:\d+$`)
-
-// qqRefPattern 是 QQ 音乐标识的格式：歌曲 MID。
-var qqRefPattern = regexp.MustCompile(`^[0-9A-Za-z]{10,20}$`)
-
-// ValidateMatchRef 校验匹配标识的格式。
-//
-// 取值方案按上游确定：
-//
-//	musicbrainz  track MBID（不可用 recording MBID——同一录音出现在几十张
-//	             发行上，用它会把 CD 版与数字版判为同一条）
-//	itunes       {country}:{trackId}（同一首歌在不同地区 trackId 不同）
-//	qq           歌曲 MID（song id 是数字，MID 才是详情与歌词接口的稳定标识）
-//
-// 用户在编辑页手动填入标识时需通过此校验。
-func ValidateMatchRef(source provider.ProviderID, ref string) error {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return fmt.Errorf("标识不能为空")
-	}
-	switch source {
-	case provider.MusicBrainz:
-		if !mbidPattern.MatchString(ref) {
-			return fmt.Errorf("MusicBrainz 标识应为 track MBID（形如 xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx）")
-		}
-		return nil
-	case provider.ITunes:
-		if !itunesRefPattern.MatchString(ref) {
-			return fmt.Errorf("iTunes 标识应为「地区:曲目编号」（形如 jp:534038851）")
-		}
-		return nil
-	case provider.QQMusic:
-		if !qqRefPattern.MatchString(ref) {
-			return fmt.Errorf("QQ 音乐标识应为歌曲 MID（形如 003RcjkV1XjQQy）")
-		}
-		return nil
-	default:
-		return fmt.Errorf("未知的上游 %q", source)
-	}
-}
-
-// MakeITunesRef 构造 iTunes 的匹配标识。
-func MakeITunesRef(country string, trackID int64) string {
-	return strings.ToLower(country) + ":" + strconv.FormatInt(trackID, 10)
-}
 
 // LocalMatchKind 是候选与库中曲目的对应关系。
 type LocalMatchKind string

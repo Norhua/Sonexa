@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/norhua/sonexa/internal/domain"
 	"io"
 	"net/http"
 	"strings"
@@ -321,4 +322,15 @@ func TestCoverSearchCancelledDoesNotEmitOrReopen(t *testing.T) {
 	if len(a.CoverSearchResults(request.SearchID)) != 0 {
 		t.Fatal("取消后仍保留搜索快照")
 	}
+}
+
+func (s *coverSearchProvider) Refs() provider.RefCodec { return nil }
+func (s *coverSearchProvider) SnapshotFromCandidate(c provider.Candidate) (*domain.Snapshot, error) {
+	return provider.CandidateSnapshot(s.ID(), c)
+}
+func (s *coverSearchProvider) Complete(context.Context, domain.DetailTarget) (*domain.Snapshot, error) {
+	return nil, provider.ErrUnsupported
+}
+func (s *coverSearchProvider) LoadReleaseSummary(context.Context, domain.ReleaseIdentity) (*domain.ReleaseSummary, error) {
+	return nil, provider.ErrUnsupported
 }

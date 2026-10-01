@@ -1,0 +1,1132 @@
+{
+  "country": "JP",
+  "release-group": {
+    "first-release-date": "2009",
+    "title": "WHITE ALBUM2 Original Soundtrack ~setsuna~",
+    "artist-credit": [
+      {
+        "artist": {
+          "type": "Character",
+          "sort-name": "Ogiso, Setsuna",
+          "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+          "country": null,
+          "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+          "name": "小木曽雪菜",
+          "disambiguation": "WHITE ALBUM2"
+        },
+        "joinphrase": " (cv. ",
+        "name": "小木曽雪菜"
+      },
+      {
+        "artist": {
+          "type": "Person",
+          "sort-name": "Yonezawa, Madoka",
+          "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+          "country": "JP",
+          "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+          "name": "米澤円",
+          "disambiguation": ""
+        },
+        "joinphrase": ")",
+        "name": "米澤円"
+      }
+    ],
+    "primary-type": "Album",
+    "secondary-type-ids": [
+      "22a628ad-c082-3c4f-b1b6-d41665107b88"
+    ],
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "secondary-types": [
+      "Soundtrack"
+    ],
+    "id": "e28141b1-eb35-4bb3-a075-5ad49cae1933",
+    "disambiguation": ""
+  },
+  "disambiguation": "24bit/96kHz",
+  "packaging-id": null,
+  "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+  "text-representation": {
+    "script": "Jpan",
+    "language": "jpn"
+  },
+  "status": "Official",
+  "media": [
+    {
+      "position": 1,
+      "format": "Digital Media",
+      "tracks": [
+        {
+          "id": "739c9ede-69ea-41c0-9114-d512e797d629",
+          "recording": {
+            "artist-credit": [
+              {
+                "artist": {
+                  "type": "Character",
+                  "sort-name": "Ogiso, Setsuna",
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                  "country": null,
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "name": "小木曽雪菜",
+                  "disambiguation": "WHITE ALBUM2"
+                },
+                "name": "小木曽雪菜",
+                "joinphrase": " (cv. "
+              },
+              {
+                "joinphrase": ")",
+                "name": "米澤円",
+                "artist": {
+                  "country": "JP",
+                  "disambiguation": "",
+                  "name": "米澤円",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "sort-name": "Yonezawa, Madoka",
+                  "type": "Person",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+                }
+              }
+            ],
+            "disambiguation": "",
+            "video": false,
+            "id": "e460389c-bfdd-4c4e-a008-4eada5eb3867",
+            "length": 308000,
+            "title": "届かない恋 Live at Campus Fes",
+            "first-release-date": "2009"
+          },
+          "artist-credit": [
+            {
+              "joinphrase": " (cv. ",
+              "name": "小木曽雪菜",
+              "artist": {
+                "country": null,
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "name": "小木曽雪菜",
+                "disambiguation": "WHITE ALBUM2",
+                "type": "Character",
+                "sort-name": "Ogiso, Setsuna",
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f"
+              }
+            },
+            {
+              "name": "米澤円",
+              "joinphrase": ")",
+              "artist": {
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                "sort-name": "Yonezawa, Madoka",
+                "type": "Person",
+                "disambiguation": "",
+                "name": "米澤円",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "country": "JP"
+              }
+            }
+          ],
+          "position": 1,
+          "length": 308000,
+          "title": "届かない恋 Live at Campus Fes",
+          "number": "1"
+        },
+        {
+          "id": "40bce8c1-c068-4817-8498-6cf28ead8bf0",
+          "recording": {
+            "disambiguation": "",
+            "artist-credit": [
+              {
+                "joinphrase": " (cv. ",
+                "name": "小木曽雪菜",
+                "artist": {
+                  "country": null,
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "disambiguation": "WHITE ALBUM2",
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character",
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f"
+                }
+              },
+              {
+                "name": "米澤円",
+                "joinphrase": ")",
+                "artist": {
+                  "country": "JP",
+                  "name": "米澤円",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "disambiguation": "",
+                  "sort-name": "Yonezawa, Madoka",
+                  "type": "Person",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+                }
+              }
+            ],
+            "video": false,
+            "length": 280226,
+            "id": "33a36be5-d9f7-41de-8ad5-e3b6724a342d",
+            "title": "WHITE ALBUM Live at Campus Fes",
+            "first-release-date": "2009"
+          },
+          "position": 2,
+          "artist-credit": [
+            {
+              "joinphrase": " (cv. ",
+              "name": "小木曽雪菜",
+              "artist": {
+                "sort-name": "Ogiso, Setsuna",
+                "type": "Character",
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                "country": null,
+                "name": "小木曽雪菜",
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "disambiguation": "WHITE ALBUM2"
+              }
+            },
+            {
+              "joinphrase": ")",
+              "name": "米澤円",
+              "artist": {
+                "country": "JP",
+                "disambiguation": "",
+                "name": "米澤円",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "sort-name": "Yonezawa, Madoka",
+                "type": "Person",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+              }
+            }
+          ],
+          "length": 280000,
+          "title": "WHITE ALBUM Live at Campus Fes",
+          "number": "2"
+        },
+        {
+          "id": "e3d2c907-757b-4497-8c74-75cdc328703a",
+          "recording": {
+            "artist-credit": [
+              {
+                "joinphrase": " (cv. ",
+                "name": "小木曽雪菜",
+                "artist": {
+                  "country": null,
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "disambiguation": "WHITE ALBUM2",
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character",
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f"
+                }
+              },
+              {
+                "artist": {
+                  "disambiguation": "",
+                  "name": "米澤円",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "country": "JP",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "sort-name": "Yonezawa, Madoka",
+                  "type": "Person"
+                },
+                "name": "米澤円",
+                "joinphrase": ")"
+              }
+            ],
+            "disambiguation": "",
+            "video": false,
+            "id": "d332aa41-ac4f-4d52-bd56-fef6f85fee92",
+            "length": 249573,
+            "title": "Feeling Heart",
+            "first-release-date": "2009"
+          },
+          "position": 3,
+          "artist-credit": [
+            {
+              "artist": {
+                "country": null,
+                "disambiguation": "WHITE ALBUM2",
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "name": "小木曽雪菜",
+                "type": "Character",
+                "sort-name": "Ogiso, Setsuna",
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f"
+              },
+              "joinphrase": " (cv. ",
+              "name": "小木曽雪菜"
+            },
+            {
+              "artist": {
+                "name": "米澤円",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "disambiguation": "",
+                "country": "JP",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                "sort-name": "Yonezawa, Madoka",
+                "type": "Person"
+              },
+              "name": "米澤円",
+              "joinphrase": ")"
+            }
+          ],
+          "length": 250000,
+          "title": "Feeling Heart",
+          "number": "3"
+        },
+        {
+          "position": 4,
+          "artist-credit": [
+            {
+              "artist": {
+                "type": "Character",
+                "sort-name": "Ogiso, Setsuna",
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                "country": null,
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "name": "小木曽雪菜",
+                "disambiguation": "WHITE ALBUM2"
+              },
+              "name": "小木曽雪菜",
+              "joinphrase": " (cv. "
+            },
+            {
+              "artist": {
+                "disambiguation": "",
+                "name": "米澤円",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "country": "JP",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                "sort-name": "Yonezawa, Madoka",
+                "type": "Person"
+              },
+              "name": "米澤円",
+              "joinphrase": ")"
+            }
+          ],
+          "length": 246000,
+          "title": "夢想歌",
+          "number": "4",
+          "id": "8eebf5e6-6f02-458d-beb3-92c783db7943",
+          "recording": {
+            "disambiguation": "",
+            "artist-credit": [
+              {
+                "name": "小木曽雪菜",
+                "joinphrase": " (cv. ",
+                "artist": {
+                  "type": "Character",
+                  "sort-name": "Ogiso, Setsuna",
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                  "country": null,
+                  "disambiguation": "WHITE ALBUM2",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "name": "小木曽雪菜"
+                }
+              },
+              {
+                "name": "米澤円",
+                "joinphrase": ")",
+                "artist": {
+                  "country": "JP",
+                  "disambiguation": "",
+                  "name": "米澤円",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "sort-name": "Yonezawa, Madoka",
+                  "type": "Person",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+                }
+              }
+            ],
+            "video": false,
+            "length": 246000,
+            "id": "3776858d-57ba-499c-abca-ab34c9af9ce7",
+            "title": "夢想歌",
+            "first-release-date": "2009"
+          }
+        },
+        {
+          "id": "e31b8cfe-bd8b-4000-9939-0e537fe0353b",
+          "recording": {
+            "title": "Routes",
+            "first-release-date": "2009",
+            "disambiguation": "",
+            "artist-credit": [
+              {
+                "artist": {
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character",
+                  "disambiguation": "WHITE ALBUM2",
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "country": null
+                },
+                "name": "小木曽雪菜",
+                "joinphrase": " (cv. "
+              },
+              {
+                "artist": {
+                  "country": "JP",
+                  "disambiguation": "",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "name": "米澤円",
+                  "type": "Person",
+                  "sort-name": "Yonezawa, Madoka",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+                },
+                "joinphrase": ")",
+                "name": "米澤円"
+              }
+            ],
+            "video": false,
+            "length": 260000,
+            "id": "a90c0da5-8eec-4e23-a6c9-28d9f7bffd05"
+          },
+          "artist-credit": [
+            {
+              "artist": {
+                "country": null,
+                "name": "小木曽雪菜",
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "disambiguation": "WHITE ALBUM2",
+                "sort-name": "Ogiso, Setsuna",
+                "type": "Character",
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f"
+              },
+              "joinphrase": " (cv. ",
+              "name": "小木曽雪菜"
+            },
+            {
+              "joinphrase": ")",
+              "name": "米澤円",
+              "artist": {
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                "sort-name": "Yonezawa, Madoka",
+                "type": "Person",
+                "name": "米澤円",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "disambiguation": "",
+                "country": "JP"
+              }
+            }
+          ],
+          "position": 5,
+          "length": 260000,
+          "title": "Routes",
+          "number": "5"
+        },
+        {
+          "recording": {
+            "artist-credit": [
+              {
+                "artist": {
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "disambiguation": "WHITE ALBUM2",
+                  "country": null,
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character"
+                },
+                "name": "小木曽雪菜",
+                "joinphrase": " (cv. "
+              },
+              {
+                "name": "米澤円",
+                "joinphrase": ")",
+                "artist": {
+                  "type": "Person",
+                  "sort-name": "Yonezawa, Madoka",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "country": "JP",
+                  "disambiguation": "",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "name": "米澤円"
+                }
+              }
+            ],
+            "video": false,
+            "disambiguation": "",
+            "length": 278000,
+            "id": "8342e1ff-c00e-4c2b-acf3-3f77db2688c3",
+            "title": "あなたを想いたい",
+            "first-release-date": "2009"
+          },
+          "id": "8b401972-e483-41f7-8fa8-392269919890",
+          "number": "6",
+          "title": "あなたを想いたい",
+          "length": 278000,
+          "position": 6,
+          "artist-credit": [
+            {
+              "name": "小木曽雪菜",
+              "joinphrase": " (cv. ",
+              "artist": {
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                "type": "Character",
+                "sort-name": "Ogiso, Setsuna",
+                "disambiguation": "WHITE ALBUM2",
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "name": "小木曽雪菜",
+                "country": null
+              }
+            },
+            {
+              "name": "米澤円",
+              "joinphrase": ")",
+              "artist": {
+                "sort-name": "Yonezawa, Madoka",
+                "type": "Person",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                "country": "JP",
+                "disambiguation": "",
+                "name": "米澤円",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5"
+              }
+            }
+          ]
+        },
+        {
+          "title": "舞い落ちる雪のように",
+          "number": "7",
+          "position": 7,
+          "artist-credit": [
+            {
+              "artist": {
+                "sort-name": "Ogiso, Setsuna",
+                "type": "Character",
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                "country": null,
+                "name": "小木曽雪菜",
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "disambiguation": "WHITE ALBUM2"
+              },
+              "name": "小木曽雪菜",
+              "joinphrase": " (cv. "
+            },
+            {
+              "joinphrase": ")",
+              "name": "米澤円",
+              "artist": {
+                "country": "JP",
+                "name": "米澤円",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "disambiguation": "",
+                "sort-name": "Yonezawa, Madoka",
+                "type": "Person",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+              }
+            }
+          ],
+          "length": 293000,
+          "recording": {
+            "id": "31045021-f585-4946-86ea-81945ca2b168",
+            "length": 292493,
+            "video": false,
+            "artist-credit": [
+              {
+                "artist": {
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character",
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                  "country": null,
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "disambiguation": "WHITE ALBUM2"
+                },
+                "joinphrase": " (cv. ",
+                "name": "小木曽雪菜"
+              },
+              {
+                "artist": {
+                  "sort-name": "Yonezawa, Madoka",
+                  "type": "Person",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "country": "JP",
+                  "name": "米澤円",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "disambiguation": ""
+                },
+                "joinphrase": ")",
+                "name": "米澤円"
+              }
+            ],
+            "disambiguation": "",
+            "first-release-date": "2009",
+            "title": "舞い落ちる雪のように"
+          },
+          "id": "d24e7374-0201-471c-aa20-192d910ede53"
+        },
+        {
+          "recording": {
+            "artist-credit": [
+              {
+                "artist": {
+                  "disambiguation": "WHITE ALBUM2",
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "country": null,
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character"
+                },
+                "joinphrase": " (cv. ",
+                "name": "小木曽雪菜"
+              },
+              {
+                "artist": {
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "name": "米澤円",
+                  "disambiguation": "",
+                  "country": "JP",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "type": "Person",
+                  "sort-name": "Yonezawa, Madoka"
+                },
+                "joinphrase": ")",
+                "name": "米澤円"
+              }
+            ],
+            "disambiguation": "",
+            "video": false,
+            "id": "507d56ab-8f3a-413b-8541-111d412b845b",
+            "length": 256000,
+            "title": "POWDER SNOW",
+            "first-release-date": "2009"
+          },
+          "id": "25a00ba8-43d0-4dd3-856f-b3aa9158da5f",
+          "title": "POWDER SNOW",
+          "number": "8",
+          "artist-credit": [
+            {
+              "name": "小木曽雪菜",
+              "joinphrase": " (cv. ",
+              "artist": {
+                "country": null,
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "name": "小木曽雪菜",
+                "disambiguation": "WHITE ALBUM2",
+                "type": "Character",
+                "sort-name": "Ogiso, Setsuna",
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f"
+              }
+            },
+            {
+              "name": "米澤円",
+              "joinphrase": ")",
+              "artist": {
+                "country": "JP",
+                "disambiguation": "",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "name": "米澤円",
+                "type": "Person",
+                "sort-name": "Yonezawa, Madoka",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+              }
+            }
+          ],
+          "position": 8,
+          "length": 256000
+        },
+        {
+          "title": "ヒトリ",
+          "number": "9",
+          "position": 9,
+          "artist-credit": [
+            {
+              "artist": {
+                "country": null,
+                "disambiguation": "WHITE ALBUM2",
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "name": "小木曽雪菜",
+                "type": "Character",
+                "sort-name": "Ogiso, Setsuna",
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f"
+              },
+              "name": "小木曽雪菜",
+              "joinphrase": " (cv. "
+            },
+            {
+              "artist": {
+                "country": "JP",
+                "name": "米澤円",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "disambiguation": "",
+                "sort-name": "Yonezawa, Madoka",
+                "type": "Person",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+              },
+              "name": "米澤円",
+              "joinphrase": ")"
+            }
+          ],
+          "length": 277000,
+          "recording": {
+            "title": "ヒトリ",
+            "first-release-date": "2009",
+            "artist-credit": [
+              {
+                "artist": {
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character",
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "disambiguation": "WHITE ALBUM2",
+                  "country": null
+                },
+                "name": "小木曽雪菜",
+                "joinphrase": " (cv. "
+              },
+              {
+                "name": "米澤円",
+                "joinphrase": ")",
+                "artist": {
+                  "country": "JP",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "name": "米澤円",
+                  "disambiguation": "",
+                  "type": "Person",
+                  "sort-name": "Yonezawa, Madoka",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+                }
+              }
+            ],
+            "video": false,
+            "disambiguation": "",
+            "length": 277000,
+            "id": "e20c761e-5911-4fa5-9eb9-824a6b157dcf"
+          },
+          "id": "8b0bb2c0-a5bc-4b32-a318-16c2fa55a562"
+        },
+        {
+          "id": "bd54c1fe-e527-4f63-a4be-cd00a370d8bc",
+          "recording": {
+            "disambiguation": "",
+            "artist-credit": [
+              {
+                "artist": {
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character",
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                  "country": null,
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "disambiguation": "WHITE ALBUM2"
+                },
+                "name": "小木曽雪菜",
+                "joinphrase": " (cv. "
+              },
+              {
+                "artist": {
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "sort-name": "Yonezawa, Madoka",
+                  "type": "Person",
+                  "name": "米澤円",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "disambiguation": "",
+                  "country": "JP"
+                },
+                "name": "米澤円",
+                "joinphrase": ")"
+              }
+            ],
+            "video": false,
+            "id": "689caaa2-55ab-4f7a-8fe6-db8e572ce5c8",
+            "length": 250853,
+            "title": "SOUND OF DESTINY Live at Campus Fes",
+            "first-release-date": "2009"
+          },
+          "length": 251000,
+          "artist-credit": [
+            {
+              "name": "小木曽雪菜",
+              "joinphrase": " (cv. ",
+              "artist": {
+                "disambiguation": "WHITE ALBUM2",
+                "name": "小木曽雪菜",
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "country": null,
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                "sort-name": "Ogiso, Setsuna",
+                "type": "Character"
+              }
+            },
+            {
+              "artist": {
+                "country": "JP",
+                "disambiguation": "",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "name": "米澤円",
+                "type": "Person",
+                "sort-name": "Yonezawa, Madoka",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+              },
+              "name": "米澤円",
+              "joinphrase": ")"
+            }
+          ],
+          "position": 10,
+          "number": "10",
+          "title": "SOUND OF DESTINY Live at Campus Fes"
+        },
+        {
+          "id": "3edab4eb-8935-4314-9185-265d377018ba",
+          "recording": {
+            "id": "492f4747-3ddd-48c4-bbfe-c930b2d83ae5",
+            "length": 238493,
+            "artist-credit": [
+              {
+                "artist": {
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "disambiguation": "WHITE ALBUM2",
+                  "country": null,
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character"
+                },
+                "name": "小木曽雪菜",
+                "joinphrase": " (cv. "
+              },
+              {
+                "name": "米澤円",
+                "joinphrase": ")",
+                "artist": {
+                  "country": "JP",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "name": "米澤円",
+                  "disambiguation": "",
+                  "type": "Person",
+                  "sort-name": "Yonezawa, Madoka",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+                }
+              }
+            ],
+            "video": false,
+            "disambiguation": "",
+            "first-release-date": "2009",
+            "title": "君をのせて"
+          },
+          "length": 239000,
+          "position": 11,
+          "artist-credit": [
+            {
+              "artist": {
+                "sort-name": "Ogiso, Setsuna",
+                "type": "Character",
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                "country": null,
+                "name": "小木曽雪菜",
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "disambiguation": "WHITE ALBUM2"
+              },
+              "joinphrase": " (cv. ",
+              "name": "小木曽雪菜"
+            },
+            {
+              "name": "米澤円",
+              "joinphrase": ")",
+              "artist": {
+                "name": "米澤円",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "disambiguation": "",
+                "country": "JP",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                "sort-name": "Yonezawa, Madoka",
+                "type": "Person"
+              }
+            }
+          ],
+          "number": "11",
+          "title": "君をのせて"
+        },
+        {
+          "length": 303000,
+          "artist-credit": [
+            {
+              "name": "小木曽雪菜",
+              "joinphrase": " (cv. ",
+              "artist": {
+                "country": null,
+                "disambiguation": "WHITE ALBUM2",
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "name": "小木曽雪菜",
+                "type": "Character",
+                "sort-name": "Ogiso, Setsuna",
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f"
+              }
+            },
+            {
+              "name": "米澤円",
+              "joinphrase": ")",
+              "artist": {
+                "disambiguation": "",
+                "name": "米澤円",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "country": "JP",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                "sort-name": "Yonezawa, Madoka",
+                "type": "Person"
+              }
+            }
+          ],
+          "position": 12,
+          "number": "12",
+          "title": "I hope so...",
+          "id": "005dc07a-7766-4344-9a8b-fe85a54437ca",
+          "recording": {
+            "length": 302586,
+            "id": "5d61ab0e-963a-4671-9cfc-96555090be3b",
+            "disambiguation": "",
+            "artist-credit": [
+              {
+                "artist": {
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character",
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                  "country": null,
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "disambiguation": "WHITE ALBUM2"
+                },
+                "joinphrase": " (cv. ",
+                "name": "小木曽雪菜"
+              },
+              {
+                "artist": {
+                  "country": "JP",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "name": "米澤円",
+                  "disambiguation": "",
+                  "type": "Person",
+                  "sort-name": "Yonezawa, Madoka",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+                },
+                "name": "米澤円",
+                "joinphrase": ")"
+              }
+            ],
+            "video": false,
+            "first-release-date": "2009",
+            "title": "I hope so..."
+          }
+        },
+        {
+          "title": "届かない恋 Valentine Live",
+          "number": "13",
+          "artist-credit": [
+            {
+              "artist": {
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "name": "小木曽雪菜",
+                "disambiguation": "WHITE ALBUM2",
+                "country": null,
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                "type": "Character",
+                "sort-name": "Ogiso, Setsuna"
+              },
+              "name": "小木曽雪菜",
+              "joinphrase": " (cv. "
+            },
+            {
+              "name": "米澤円",
+              "joinphrase": ")",
+              "artist": {
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                "sort-name": "Yonezawa, Madoka",
+                "type": "Person",
+                "name": "米澤円",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "disambiguation": "",
+                "country": "JP"
+              }
+            }
+          ],
+          "position": 13,
+          "length": 303000,
+          "recording": {
+            "length": 302826,
+            "id": "30da0267-af7c-4172-b5bc-cf2740121e5c",
+            "disambiguation": "",
+            "artist-credit": [
+              {
+                "artist": {
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character",
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+                  "country": null,
+                  "disambiguation": "WHITE ALBUM2",
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c"
+                },
+                "name": "小木曽雪菜",
+                "joinphrase": " (cv. "
+              },
+              {
+                "joinphrase": ")",
+                "name": "米澤円",
+                "artist": {
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "type": "Person",
+                  "sort-name": "Yonezawa, Madoka",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "name": "米澤円",
+                  "disambiguation": "",
+                  "country": "JP"
+                }
+              }
+            ],
+            "video": false,
+            "first-release-date": "2009",
+            "title": "届かない恋 Valentine Live"
+          },
+          "id": "fcb8bfbb-52ac-4941-87fb-758130986d83"
+        },
+        {
+          "recording": {
+            "title": "時の魔法 Acoustic Version",
+            "first-release-date": "2009",
+            "artist-credit": [
+              {
+                "name": "小木曽雪菜",
+                "joinphrase": " (cv. ",
+                "artist": {
+                  "country": null,
+                  "name": "小木曽雪菜",
+                  "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                  "disambiguation": "WHITE ALBUM2",
+                  "sort-name": "Ogiso, Setsuna",
+                  "type": "Character",
+                  "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f"
+                }
+              },
+              {
+                "joinphrase": ")",
+                "name": "米澤円",
+                "artist": {
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "type": "Person",
+                  "sort-name": "Yonezawa, Madoka",
+                  "disambiguation": "",
+                  "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                  "name": "米澤円",
+                  "country": "JP"
+                }
+              }
+            ],
+            "disambiguation": "",
+            "video": false,
+            "id": "3f246d05-c401-4c87-bf9a-7b5f510bce97",
+            "length": 310000
+          },
+          "id": "d600e940-38a8-49dc-896a-3a70b07b18f6",
+          "number": "14",
+          "title": "時の魔法 Acoustic Version",
+          "length": 310000,
+          "artist-credit": [
+            {
+              "joinphrase": " (cv. ",
+              "name": "小木曽雪菜",
+              "artist": {
+                "country": null,
+                "name": "小木曽雪菜",
+                "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+                "disambiguation": "WHITE ALBUM2",
+                "sort-name": "Ogiso, Setsuna",
+                "type": "Character",
+                "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f"
+              }
+            },
+            {
+              "artist": {
+                "country": "JP",
+                "disambiguation": "",
+                "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+                "name": "米澤円",
+                "type": "Person",
+                "sort-name": "Yonezawa, Madoka",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+              },
+              "name": "米澤円",
+              "joinphrase": ")"
+            }
+          ],
+          "position": 14
+        }
+      ],
+      "title": "",
+      "format-id": "907a28d9-b3b2-3ef6-89a8-7b18d91d4794",
+      "id": "8401916c-cd83-3e36-b65b-d318645a07e9",
+      "track-offset": 0,
+      "track-count": 14
+    }
+  ],
+  "id": "bb08c318-b5c2-426e-9c43-58c520ae116c",
+  "date": "2014-03-26",
+  "release-events": [
+    {
+      "date": "2014-03-26",
+      "area": {
+        "type-id": null,
+        "type": null,
+        "iso-3166-1-codes": [
+          "JP"
+        ],
+        "sort-name": "Japan",
+        "disambiguation": "",
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan"
+      }
+    }
+  ],
+  "asin": null,
+  "cover-art-archive": {
+    "artwork": true,
+    "darkened": false,
+    "count": 1,
+    "back": false,
+    "front": true
+  },
+  "title": "WHITE ALBUM2 Original Soundtrack ~setsuna~",
+  "quality": "normal",
+  "packaging": null,
+  "barcode": null,
+  "label-info": [
+    {
+      "catalog-number": "AQMC-009",
+      "label": {
+        "label-code": null,
+        "type-id": "7aaa37fe-2def-3476-b359-80245850062d",
+        "type": "Original Production",
+        "sort-name": "F.I.X.RECORDS",
+        "id": "54f6db80-1c76-468b-9abf-2ea6abf2d8e8",
+        "name": "F.I.X.RECORDS",
+        "disambiguation": ""
+      }
+    }
+  ],
+  "artist-credit": [
+    {
+      "name": "小木曽雪菜",
+      "joinphrase": " (cv. ",
+      "artist": {
+        "id": "1258aa11-521c-4be3-a426-f5a619204b8c",
+        "name": "小木曽雪菜",
+        "disambiguation": "WHITE ALBUM2",
+        "country": null,
+        "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+        "type": "Character",
+        "sort-name": "Ogiso, Setsuna"
+      }
+    },
+    {
+      "artist": {
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "sort-name": "Yonezawa, Madoka",
+        "type": "Person",
+        "name": "米澤円",
+        "id": "3e5d8cae-aaca-4978-86a6-5e4486e6bdd5",
+        "disambiguation": "",
+        "country": "JP"
+      },
+      "name": "米澤円",
+      "joinphrase": ")"
+    }
+  ]
+}

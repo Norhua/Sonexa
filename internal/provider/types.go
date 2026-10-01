@@ -1,6 +1,9 @@
 package provider
 
-import "time"
+import (
+	"github.com/norhua/sonexa/internal/domain"
+	"time"
+)
 
 // Query 是一次上游查询的输入条件。三个文本字段可任意留空。
 type Query struct {
@@ -37,23 +40,36 @@ type Ref struct {
 // 所有字段用可空类型。缺失即缺失——用空串或零值伪装会让「署名精确匹配」
 // 在两边都缺失时误判为匹配成功。
 type Candidate struct {
-	Provider ProviderID
+	ArtworkCatalog     *domain.CoverCatalogInput
+	Provider           ProviderID
+	Credits            []CreditArtist
+	AlbumCredits       []CreditArtist
+	GroupCredits       []CreditArtist
+	ReleaseIdentifiers []domain.Identifier
 
 	// 匹配标识：MB 用 track MBID，iTunes 用 {country}:{trackId}。
 	MatchRef string
 
 	// 展示与评分字段
-	Title        *string
-	ArtistName   *string // 曲目级主要艺术家署名（扁平串）
-	AlbumTitle   *string
-	PrimaryType  *string
-	DurationMS   *int
-	TrackNumber  *int
-	TrackTotal   *int
-	DiscNumber   *int
-	Year         *int
-	MediumFormat *string
-	Country      *string
+	Title             *string
+	ArtistName        *string // 曲目级主要艺术家署名（扁平串）
+	AlbumTitle        *string
+	AlbumCredit       *string
+	GroupTitle        *string
+	GroupCredit       *string
+	ReleaseTrackTotal *int
+	MediumTrackTotal  *int
+	Media             []domain.Medium
+	Labels            []domain.Label
+	Identifiers       []domain.Identifier
+	PrimaryType       *string
+	DurationMS        *int
+	TrackNumber       *int
+	TrackTotal        *int
+	DiscNumber        *int
+	Year              *int
+	MediumFormat      *string
+	Country           *string
 
 	// 上游相关度分值（仅 MB 提供）
 	UpstreamScore *int
@@ -107,7 +123,19 @@ type CoverGroup struct {
 
 // Detail 是一次详情拉取的完整结果。字段远多于 Candidate，全部可空。
 type Detail struct {
-	Provider ProviderID
+	GroupTitle            *string
+	GroupCredit           *string
+	GroupCredits          []CreditArtist `json:"-"`
+	AlbumCredits          []CreditArtist `json:"-"`
+	ReleaseTrackTotal     *int
+	MediumTrackTotal      *int
+	Media                 []domain.Medium
+	Labels                []domain.Label
+	ReleaseIdentifiers    []domain.Identifier
+	Identifiers           []domain.Identifier
+	WorkRefs              []string
+	TracklistCompleteness domain.Completeness
+	Provider              ProviderID
 	// MatchRef 只在精确定位曲目成功后赋值；仅取发行清单时为空。
 	MatchRef string
 
@@ -165,6 +193,7 @@ type Detail struct {
 
 // CreditArtist 是原串中的一个署名身份（字节区间）。
 type CreditArtist struct {
+	Identity      *domain.Identity
 	Name          string
 	CanonicalName string
 	SortName      *string
@@ -176,6 +205,8 @@ type CreditArtist struct {
 
 // DetailArtist 是详情中的一位参与者。
 type DetailArtist struct {
+	Identity     *domain.Identity
+	Attributes   []string
 	Name         string
 	SortName     *string
 	Type         *string // person | group | character | ...
@@ -188,6 +219,7 @@ type DetailArtist struct {
 
 // TracklistEntry 是清单中的一个位置。
 type TracklistEntry struct {
+	Identifiers     []domain.Identifier
 	DiscNumber      int
 	TrackNumber     int
 	TrackRef        *string

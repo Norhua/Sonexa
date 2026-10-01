@@ -6,15 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/google/uuid"
-	"github.com/norhua/sonexa/internal/provider/musicbrainz"
-	"github.com/norhua/sonexa/internal/provider/qqmusic"
 	"github.com/norhua/sonexa/internal/store"
 )
 
@@ -93,16 +88,12 @@ func (s *Service) localFiles(target Target) ([]store.CoverFile, error) {
 	if target.Ref == "" {
 		return nil, nil
 	}
-	key := store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: target.Ref}
-	switch target.Provider {
-	case "musicbrainz":
-	case "itunes":
-		key.Source, key.ObjectType = "itunes", "album"
-	case "qq":
-		key.Source, key.ObjectType = "qq", "album"
-	default:
+	policy, ok := s.artworkForProvider(target.Provider)
+	if !ok {
 		return nil, nil
 	}
+	key := store.CoverCatalogKey{Source: policy.Source, ObjectType: policy.ObjectType, SourceRef: target.Ref}
+
 	catalog, err := s.library.store.GetCoverCatalog(key)
 	if err != nil || catalog == nil {
 		return nil, err
@@ -187,22 +178,18 @@ func (s *Service) Resolve(ctx context.Context, requested Target, usage Usage) (*
 	}
 	fallback := s.chooseFile(files, usage, false)
 	var catalog *store.CoverCatalog
-	switch {
-	case target.Provider == "itunes" && itunesAlbumRef.MatchString(target.Ref):
-		catalog, err = s.ITunesCatalog(ctx, target.Ref)
-	case target.Provider == "qq" && qqmusic.ValidMID(target.Ref):
-		catalog, err = s.QQCatalog(ctx, target.Ref)
-	case target.Provider == "musicbrainz" && validMBID(target.Ref):
-		catalog, err = s.CAACatalog(ctx, "release", target.Ref, false)
-		if err == nil && catalog.State == "empty" && validMBID(target.GroupRef) {
-			catalog, err = s.CAACatalog(ctx, "release-group", target.GroupRef, false)
-		}
-	default:
+	policy, ok := s.artworkForProvider(target.Provider)
+	if !ok || policy.Validate(policy.ObjectType, target.Ref) != nil {
 		if fallback != nil {
 			return fallback, nil
 		}
 		return &Resolved{Outcome: OutcomeEmpty}, nil
 	}
+	catalog, err = s.Catalog(ctx, store.CoverCatalogKey{Source: policy.Source, ObjectType: policy.ObjectType, SourceRef: target.Ref}, false)
+	if err == nil && catalog.State == "empty" && policy.GroupFallback && policy.Validate("release-group", target.GroupRef) == nil {
+		catalog, err = s.Catalog(ctx, store.CoverCatalogKey{Source: policy.Source, ObjectType: "release-group", SourceRef: target.GroupRef}, false)
+	}
+
 	if err == nil && catalog.State == "found" {
 		var got *Resolved
 		got, err = s.downloadCatalog(ctx, target, catalog, usage)
@@ -224,103 +211,14 @@ func (s *Service) Resolve(ctx context.Context, requested Target, usage Usage) (*
 	return &Resolved{Outcome: OutcomeEmpty}, nil
 }
 
-func validMBID(ref string) bool {
-	id, err := uuid.Parse(ref)
-	return err == nil && id.String() == strings.ToLower(ref)
-}
-
-func (s *Service) CAACatalog(ctx context.Context, kind, ref string, force bool) (*store.CoverCatalog, error) {
-	ctx, done, err := s.beginOperation(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer done()
-	if !validMBID(ref) || (kind != "release" && kind != "release-group") {
-		return nil, fmt.Errorf("无效 MusicBrainz 发行身份")
-	}
-	key := store.CoverCatalogKey{Source: "caa", ObjectType: kind, SourceRef: ref}
-	cached, err := s.library.store.GetCoverCatalog(key)
-	if err != nil {
-		return nil, err
-	}
-	if !force && cached != nil {
-		if cached.State == "found" || cached.State == "empty" {
-			return cached, nil
-		}
-		if cached.RetryAfter != nil && time.Now().Before(*cached.RetryAfter) {
-			return nil, fmt.Errorf("CAA 暂时不可用: %s", cached.LastError)
-		}
-	}
-	value, err := s.pool.Shared(ctx, "catalog:"+kind+":"+ref, func(ctx context.Context) (any, error) {
-		// 等待同键任务期间可能已经有持久化目录；仅显式刷新绕过。
-		if !force {
-			if got, err := s.library.store.GetCoverCatalog(key); err != nil {
-				return nil, err
-			} else if got != nil && (got.State == "found" || got.State == "empty") {
-				return got, nil
-			}
-		}
-		body, err := s.pool.fetchOne(ctx, musicbrainz.CoverArtArchiveBaseURL+"/"+kind+"/"+ref)
-		var images []store.CoverImage
-		actualRelease := ""
-		if errors.Is(err, ErrNotFound) {
-			err = nil
-		} else if err == nil {
-			var index *musicbrainz.CoverIndex
-			index, err = musicbrainz.ParseCoverCatalog(body)
-			if err == nil {
-				actualRelease = index.Release
-				for _, image := range index.Images {
-					entry := store.CoverImage{SourceImageID: image.ID, Types: image.Types, PrimaryType: image.Type, Front: image.Front, Back: image.Back, OriginalURL: image.Original}
-					for _, v := range image.Variants {
-						entry.Variants = append(entry.Variants, store.CoverVariant{Spec: v.Spec, URL: v.URL})
-					}
-					images = append(images, entry)
-				}
-			}
-		}
-		if err != nil {
-			var disabled *OutboundError
-			if ctx.Err() == nil && !errors.As(err, &disabled) {
-				_ = s.library.store.RecordCoverCatalogError(key, err.Error(), time.Now().Add(time.Minute))
-			}
-			return nil, err
-		}
-		id, err := s.library.store.SaveCoverCatalog(key, images)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.library.store.SetCoverCatalogRelease(id, actualRelease); err != nil {
-			return nil, err
-		}
-		return s.library.store.GetCoverCatalog(key)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return value.(*store.CoverCatalog), nil
-}
-
 func (s *Service) downloadCatalog(ctx context.Context, target Target, catalog *store.CoverCatalog, usage Usage) (resolved *Resolved, failure error) {
 	images := append([]store.CoverImage(nil), catalog.Images...)
 	sort.SliceStable(images, func(i, j int) bool { return images[i].Front && !images[j].Front })
-	specs := []string{"250", "500", "1200", "original"}
-	if usage == Detail {
-		specs = []string{"1200", "original"}
+	specs := []string{"original"}
+	if policy, ok := s.artworkForSource(catalog.Source); ok && policy.Specs != nil {
+		specs = policy.Specs(usage == Detail)
 	}
-	if catalog.Source == "itunes" {
-		specs = []string{"250", "100", "600", "1200", "3000"}
-		if usage == Detail {
-			specs = []string{"1200", "3000", "600", "250", "100"}
-		}
-	}
-	if catalog.Source == "qq" {
-		// 1200 档并非每张专辑都有，缺失时逐级回退。
-		specs = []string{"300", "500", "800", "1200"}
-		if usage == Detail {
-			specs = []string{"1200", "800", "500", "300"}
-		}
-	}
+
 	for _, image := range images {
 		for _, spec := range specs {
 			for _, variant := range image.Variants {
@@ -379,7 +277,7 @@ func (s *Service) DownloadVariant(ctx context.Context, variant store.CoverVarian
 				}
 			}
 		}
-		data, err := s.pool.fetchURLs(ctx, caaImageLadder(variant.URL), nil)
+		data, err := s.pool.fetchURLs(ctx, s.imageURLs(variant.URL), nil)
 		if err == nil {
 			_, err = InspectImage(data)
 		}
@@ -399,28 +297,6 @@ func (s *Service) DownloadVariant(ctx context.Context, variant store.CoverVarian
 		return nil, err
 	}
 	return value.([]byte), nil
-}
-
-var caaImagePath = regexp.MustCompile(`^/release/([0-9a-f-]{36})/([0-9]+)(?:-(250|500|1200))?\.([a-z]+)$`)
-
-// caaImageLadder 把 CAA 图片地址改写为它最终 307 到的 archive.org 地址，省去一次
-// coverartarchive.org 往返（每跳都需独立 TLS 握手，慢网络下单跳可达数秒）。
-// 直连失败时退回规范地址，archive.org 布局变化只会让它变慢而不会取不到图。
-func caaImageLadder(raw string) []string {
-	u, err := url.Parse(raw)
-	if err != nil || !strings.EqualFold(u.Hostname(), "coverartarchive.org") {
-		return []string{raw}
-	}
-	m := caaImagePath.FindStringSubmatch(u.Path)
-	if m == nil {
-		return []string{raw}
-	}
-	name := "mbid-" + m[1] + "-" + m[2]
-	if m[3] != "" {
-		name += "_thumb" + m[3]
-	}
-	direct := "https://archive.org/download/mbid-" + m[1] + "/" + name + "." + m[4]
-	return []string{direct, raw}
 }
 
 func validImageURL(raw string) error {

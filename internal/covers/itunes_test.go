@@ -3,6 +3,7 @@ package covers
 import (
 	"context"
 	"fmt"
+	"github.com/norhua/sonexa/internal/provider/itunes"
 	"io"
 	"net/http"
 	"strings"
@@ -18,7 +19,8 @@ func TestITunesResolverSharesLookupAndImageAndKeepsCountry(t *testing.T) {
 	var mu sync.Mutex
 	lookups := map[string]int{}
 	images := map[string]int{}
-	svc.SetITunesDetailLoader(func(_ context.Context, ref string) (*provider.Detail, error) {
+	svc.SetDetailLoader(func(_ context.Context, target provider.Ref) (*provider.Detail, error) {
+		ref := target.ID
 		mu.Lock()
 		lookups[ref]++
 		mu.Unlock()
@@ -71,7 +73,8 @@ func TestITunesCatalogEmptyErrorAndMissingArtwork(t *testing.T) {
 		t.Run(fmt.Sprint(fail), func(t *testing.T) {
 			svc, st := resolverService(t)
 			calls := 0
-			svc.SetITunesDetailLoader(func(_ context.Context, ref string) (*provider.Detail, error) {
+			svc.SetDetailLoader(func(_ context.Context, target provider.Ref) (*provider.Detail, error) {
+				ref := target.ID
 				calls++
 				if fail {
 					return nil, fmt.Errorf("upstream failed")
@@ -99,7 +102,9 @@ func TestITunesCatalogEmptyErrorAndMissingArtwork(t *testing.T) {
 func TestITunesAdmissionWithoutPreviewAndSizeFallback(t *testing.T) {
 	svc, st := resolverService(t)
 	title, album, ref, art := "ツバサ", "Side-C", "jp:1475065332", "https://is1.mzstatic.com/sidec/250x250bb.jpg"
-	id, err := st.AdmitCandidate(provider.Candidate{Provider: provider.ITunes, MatchRef: "jp:1475065334", Title: &title, AlbumTitle: &album, ReleaseRef: &ref, ThumbURL: &art})
+	candidate := provider.Candidate{Provider: provider.ITunes, MatchRef: "jp:1475065334", Title: &title, AlbumTitle: &album, ReleaseRef: &ref, ThumbURL: &art}
+	candidate.ArtworkCatalog = (&itunes.Provider{}).ArtworkStrategy().Candidate(candidate)
+	id, err := st.AdmitCandidate(candidate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +139,7 @@ func TestITunesAdmissionWithoutPreviewAndSizeFallback(t *testing.T) {
 func TestITunesDoesNotReuseManualPreviewAsAutomaticSelection(t *testing.T) {
 	svc, st := resolverService(t)
 	key := store.CoverCatalogKey{Source: "itunes", ObjectType: "album", SourceRef: "jp:12"}
-	if _, err := st.SaveCoverCatalog(key, store.ITunesCoverImages("https://is1.mzstatic.com/a/100x100bb.jpg", "album", "artist")); err != nil {
+	if _, err := st.SaveCoverCatalog(key, itunes.CoverImages("https://is1.mzstatic.com/a/100x100bb.jpg", "album", "artist")); err != nil {
 		t.Fatal(err)
 	}
 	c, err := st.GetCoverCatalog(key)

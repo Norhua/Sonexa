@@ -31,7 +31,7 @@ func resolverService(t *testing.T) (*Service, *store.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := NewService(cache, 1, "test")
+	svc := newTestService(cache, 1, "test")
 	if err := svc.AttachLibrary(st); err != nil {
 		t.Fatal(err)
 	}

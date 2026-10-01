@@ -3,6 +3,7 @@ package sources
 import (
 	"context"
 	"fmt"
+	"github.com/norhua/sonexa/internal/provider/itunes"
 	"sync"
 
 	"github.com/norhua/sonexa/internal/provider"
@@ -104,7 +105,7 @@ func (s *ITunesSource) Search(ctx context.Context, q provider.Query) ([]Result, 
 			continue
 		}
 		seen[identity] = true
-		image := store.ITunesCoverImages(*c.ThumbURL, deref(c.AlbumTitle), deref(c.ArtistName))[0]
+		image := itunes.CoverImages(*c.ThumbURL, deref(c.AlbumTitle), deref(c.ArtistName))[0]
 		index, exists := albums[*c.ReleaseRef]
 		if !exists {
 			index = len(results)

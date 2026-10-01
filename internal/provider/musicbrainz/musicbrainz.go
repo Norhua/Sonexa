@@ -303,6 +303,7 @@ func buildCandidate(rec recording, rel release, med medium, trk track, credit st
 	if med.TrackCount > 0 {
 		total := med.TrackCount
 		c.TrackTotal = &total
+		c.MediumTrackTotal = &total
 	}
 	if med.Position > 0 {
 		disc := med.Position
@@ -343,6 +344,7 @@ func buildCandidate(rec recording, rel release, med medium, trk track, credit st
 	if len(rec.ISRCs) > 0 {
 		c.ISRC = strPtr(rec.ISRCs[0])
 	}
+	fillCandidateFacts(&c, rec, rel)
 	return c
 }
 
@@ -392,6 +394,7 @@ func buildReleaseLevelCandidate(rec recording, rel release, credit string) provi
 	if len(rec.ISRCs) > 0 {
 		c.ISRC = strPtr(rec.ISRCs[0])
 	}
+	fillCandidateFacts(&c, rec, rel)
 	return c
 }
 

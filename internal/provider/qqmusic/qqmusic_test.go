@@ -105,7 +105,7 @@ func TestDetailWorldIsMine(t *testing.T) {
 	}
 	r := roles(d)
 	if strings.Join(r["vocal"], ",") != "supercell,初音未来" || r["lyricist"][0] != "ryo" || r["composer"][0] != "ryo" ||
-		r["arranger"][0] != "ryo" || r["album_artist"][0] != "supercell" {
+		r["arranger"][0] != "ryo" || d.AlbumCredit == nil || *d.AlbumCredit != "supercell" {
 		t.Fatalf("角色错误: %v", r)
 	}
 	if d.Lyrics == nil || !strings.HasPrefix(*d.Lyrics, "[ti:ワールドイズマイン") {
@@ -151,6 +151,9 @@ func TestDetailMultiDiscOrdering(t *testing.T) {
 	}
 	if len(d.Tracklist) != 25 || *d.DiscTotal != 2 {
 		t.Fatalf("清单不完整: %d", len(d.Tracklist))
+	}
+	if d.ReleaseTrackTotal == nil || *d.ReleaseTrackTotal != 25 || len(d.Media) != 2 || d.Media[0].TrackTotal.Value != 13 || d.Media[1].TrackTotal.Value != 12 {
+		t.Fatalf("发行及每碟总数错误: %+v", d.Media)
 	}
 	for i, e := range d.Tracklist[:13] {
 		if e.DiscNumber != 1 || e.TrackNumber != i+1 {

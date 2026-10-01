@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
 )
 
@@ -66,6 +67,7 @@ func ParseDetail(rel *releaseDetail, trackRef string) *provider.Detail {
 
 	if credit := joinArtistCredit(rel.ArtistCredit); credit != "" {
 		d.AlbumCredit = &credit
+		d.AlbumCredits = parseCreditArtists(rel.ArtistCredit)
 	}
 	if rel.Status != "" {
 		d.ReleaseStatus = strPtr(rel.Status)
@@ -81,6 +83,9 @@ func ParseDetail(rel *releaseDetail, trackRef string) *provider.Detail {
 		d.Comment = strPtr(rel.Annotation)
 	}
 	if rel.ReleaseGroup != nil {
+		d.GroupTitle = strPtr(rel.ReleaseGroup.Title)
+		d.GroupCredit = strPtr(joinArtistCredit(rel.ReleaseGroup.ArtistCredit))
+		d.GroupCredits = parseCreditArtists(rel.ReleaseGroup.ArtistCredit)
 		d.ReleaseGroupRef = strPtr(rel.ReleaseGroup.ID)
 		d.PrimaryType = strPtr(rel.ReleaseGroup.PrimaryType)
 		d.SecondaryTypes = rel.ReleaseGroup.SecondaryTypes
@@ -105,20 +110,20 @@ func ParseDetail(rel *releaseDetail, trackRef string) *provider.Detail {
 
 	// 清单：响应中本就包含，顺带解析，不额外花请求
 	d.Tracklist = parseTracklist(rel)
-	// 歌集总曲数是全部碟的总和，不是目标曲目所在那张碟的曲数。
-	total := 0
+	d.ReleaseTrackTotal, d.Media = releaseCounts(*rel)
+	d.TrackTotal = d.ReleaseTrackTotal // 旧读侧过渡，统一快照只使用语义明确字段。
+	d.Labels = releaseLabels(*rel)
+	if rel.Barcode != "" {
+		d.ReleaseIdentifiers = []domain.Identifier{{Kind: "barcode", Value: rel.Barcode}}
+	}
+	d.TracklistCompleteness = domain.Partial
+	if d.ReleaseTrackTotal != nil && len(d.Tracklist) == *d.ReleaseTrackTotal {
+		d.TracklistCompleteness = domain.Complete
+	}
 	for _, med := range rel.Media {
-		if med.TrackCount > 0 {
-			total += med.TrackCount
-		} else {
-			total += len(med.TrackList())
-		}
 		if d.MediumFormat == nil {
 			d.MediumFormat = strPtr(med.Format)
 		}
-	}
-	if total > 0 {
-		d.TrackTotal = &total
 	}
 
 	// 定位目标曲目位置，取其曲目级字段；未指定/未命中绝不取首曲或借用署名。
@@ -143,11 +148,15 @@ func ParseDetail(rel *releaseDetail, trackRef string) *provider.Detail {
 		d.DiscNumber = &disc
 	}
 	d.MediumFormat = strPtr(med.Format)
+	if med.TrackCount > 0 {
+		d.MediumTrackTotal = &med.TrackCount
+	}
 	if trk.Length != nil {
 		d.DurationMS = trk.Length
 	}
 	if trk.Recording != nil {
 		d.RecordingRef = strPtr(trk.Recording.ID)
+		d.Identifiers, d.WorkRefs = recordingIdentifiers(trk.Recording)
 		if len(trk.Recording.ISRCs) > 0 {
 			d.ISRC = strPtr(trk.Recording.ISRCs[0])
 		}
@@ -167,15 +176,8 @@ func ParseDetail(rel *releaseDetail, trackRef string) *provider.Detail {
 	if joinArtistCredit(credits) == "" && trk.Recording != nil {
 		credits = trk.Recording.ArtistCredit
 	}
-	if joinArtistCredit(credits) == "" {
-		credits = rel.ArtistCredit
-	}
 	d.Credits = parseCreditArtists(credits)
 
-	// 发行级署名兜底为曲目级署名
-	if d.TrackCredit == nil && d.AlbumCredit != nil {
-		d.TrackCredit = d.AlbumCredit
-	}
 	return d
 }
 
@@ -206,6 +208,7 @@ func parseTracklist(rel *releaseDetail) []provider.TracklistEntry {
 			}
 			if trk.Recording != nil {
 				entry.RecordingRef = strPtr(trk.Recording.ID)
+				entry.Identifiers, _ = recordingIdentifiers(trk.Recording)
 				if entry.TrackCredit == nil {
 					if credit := joinArtistCredit(trk.Recording.ArtistCredit); credit != "" {
 						entry.TrackCredit = &credit
@@ -251,13 +254,14 @@ func parseRecordingArtists(rec *recording) []provider.DetailArtist {
 			continue
 		}
 		out = append(out, provider.DetailArtist{
-			Name:      reln.Artist.Name,
-			SortName:  strPtr(reln.Artist.SortName),
-			Type:      normalizeArtistType(reln.Artist.Type),
-			MBID:      strPtr(reln.Artist.ID),
-			Role:      role,
-			Attribute: attribute,
-			Position:  position,
+			Name:       reln.Artist.Name,
+			SortName:   strPtr(reln.Artist.SortName),
+			Type:       normalizeArtistType(reln.Artist.Type),
+			MBID:       strPtr(reln.Artist.ID),
+			Role:       role,
+			Attribute:  attribute,
+			Attributes: append([]string(nil), reln.Attributes...),
+			Position:   position,
 		})
 		position++
 	}
@@ -296,7 +300,7 @@ func parseRecordingArtists(rec *recording) []provider.DetailArtist {
 func roleFromRecordingRelation(r relation) (role string, attribute *string) {
 	switch strings.ToLower(r.Type) {
 	case "vocal":
-		return "vocal", nil
+		return "vocal", strPtr(strings.Join(r.Attributes, ", "))
 	case "instrument":
 		// 乐器名存在 attributes 中
 		if len(r.Attributes) > 0 {
@@ -352,12 +356,17 @@ func normalizeArtistType(t string) *string {
 	}
 }
 
-// dedupeArtists 按 (名称, 角色) 去重，保留首次出现的顺序。
+// dedupeArtists 仅去除身份、角色及属性完全相同的关系。
 func dedupeArtists(in []provider.DetailArtist) []provider.DetailArtist {
 	seen := map[string]bool{}
 	out := make([]provider.DetailArtist, 0, len(in))
 	for _, a := range in {
-		key := a.Name + "\x00" + a.Role
+		attrs, _ := json.Marshal(a.Attributes)
+		ref := ""
+		if a.MBID != nil {
+			ref = *a.MBID
+		}
+		key := ref + "\x00" + a.Name + "\x00" + a.Role + "\x00" + string(attrs)
 		if seen[key] {
 			continue
 		}
@@ -459,7 +468,7 @@ func ParseVoiceActor(a *artistDetail) *provider.DetailArtist {
 			SortName: strPtr(r.Artist.SortName),
 			Type:     normalizeArtistType(r.Artist.Type),
 			MBID:     strPtr(r.Artist.ID),
-			Role:     "vocal",
+			Role:     "voice",
 		}
 	}
 	return nil

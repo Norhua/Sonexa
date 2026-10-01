@@ -6,49 +6,13 @@ import (
 	"github.com/norhua/sonexa/internal/provider"
 )
 
-// TestValidateMatchRef 覆盖 8.1：手填非法标识被拒绝。
-func TestValidateMatchRef(t *testing.T) {
-	cases := []struct {
-		name   string
-		source provider.ProviderID
-		ref    string
-		ok     bool
-	}{
-		{"合法 MBID", provider.MusicBrainz, "c8b0a1f2-3d4e-5f60-9a8b-7c6d5e4f3a2b", true},
-		{"MBID 大写也合法", provider.MusicBrainz, "C8B0A1F2-3D4E-5F60-9A8B-7C6D5E4F3A2B", true},
-		{"非 UUID 被拒", provider.MusicBrainz, "not-a-uuid", false},
-		{"iTunes 标识不能用于 MB", provider.MusicBrainz, "jp:534038851", false},
-		{"空串被拒", provider.MusicBrainz, "", false},
-		{"合法 iTunes 标识", provider.ITunes, "jp:534038851", true},
-		{"iTunes 缺地区被拒", provider.ITunes, "534038851", false},
-		{"iTunes 地区需两位小写", provider.ITunes, "JP:534038851", false},
-		{"MBID 不能用于 iTunes", provider.ITunes, "c8b0a1f2-3d4e-5f60-9a8b-7c6d5e4f3a2b", false},
-		{"未知上游被拒", provider.ProviderID("unknown"), "anything", false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			err := ValidateMatchRef(c.source, c.ref)
-			if c.ok && err != nil {
-				t.Errorf("应通过校验, 得到 %v", err)
-			}
-			if !c.ok && err == nil {
-				t.Error("应被拒绝")
-			}
-			// 被拒时错误信息要说明格式要求
-			if !c.ok && err != nil && err.Error() == "" {
-				t.Error("错误信息应说明格式要求")
-			}
-		})
-	}
-}
-
 // fakeLookup 记录各步是否被调用，便于断言判定顺序与作用域。
 type fakeLookup struct {
-	byRef       map[string]int64
-	byISRC      map[string]int64
-	byText      int64
-	textCalled  bool
-	isrcCalled  bool
+	byRef      map[string]int64
+	byISRC     map[string]int64
+	byText     int64
+	textCalled bool
+	isrcCalled bool
 }
 
 func (f *fakeLookup) FindByMatchRef(source, ref string) (int64, error) {
@@ -168,15 +132,5 @@ func TestDurationTolerance(t *testing.T) {
 		if got := DurationWithinTolerance(c.a, c.b); got != c.want {
 			t.Errorf("DurationWithinTolerance(%d,%d) = %v, 期望 %v", c.a, c.b, got, c.want)
 		}
-	}
-}
-
-// TestMakeITunesRef 确保标识构造统一。
-func TestMakeITunesRef(t *testing.T) {
-	if got := MakeITunesRef("JP", 534038851); got != "jp:534038851" {
-		t.Errorf("标识 = %q, 期望 jp:534038851（地区转小写）", got)
-	}
-	if err := ValidateMatchRef(provider.ITunes, MakeITunesRef("jp", 1)); err != nil {
-		t.Errorf("构造出的标识应通过校验: %v", err)
 	}
 }

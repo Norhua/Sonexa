@@ -88,7 +88,7 @@ func TestResolverCatalogReopensAndRefreshFailurePreservesSnapshot(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	second := NewService(cache, 1, "test")
+	second := newTestService(cache, 1, "test")
 	if err := second.AttachLibrary(st); err != nil {
 		t.Fatal(err)
 	}

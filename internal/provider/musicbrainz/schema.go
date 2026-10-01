@@ -47,6 +47,8 @@ type artist struct {
 
 // release 是一张发行。
 type release struct {
+	TrackCount         *int                `json:"track-count"`
+	Barcode            string              `json:"barcode"`
 	ID                 string              `json:"id"`
 	Title              string              `json:"title"`
 	Status             string              `json:"status"` // Official | Promotion | Bootleg | Pseudo-Release
@@ -78,11 +80,12 @@ type coverArtArchive struct {
 }
 
 type releaseGroup struct {
-	ID               string   `json:"id"`
-	Title            string   `json:"title"`
-	PrimaryType      string   `json:"primary-type"`
-	SecondaryTypes   []string `json:"secondary-types"`
-	FirstReleaseDate string   `json:"first-release-date"`
+	ArtistCredit     []artistCredit `json:"artist-credit"`
+	ID               string         `json:"id"`
+	Title            string         `json:"title"`
+	PrimaryType      string         `json:"primary-type"`
+	SecondaryTypes   []string       `json:"secondary-types"`
+	FirstReleaseDate string         `json:"first-release-date"`
 }
 
 // medium 是一张碟（CD / Vinyl / Digital Media ...）。
@@ -153,6 +156,7 @@ type relation struct {
 
 // work 是作品。作曲与作词经此层级取得，而不是因为录音层级没有就判为缺失。
 type work struct {
+	ISWCs     []string   `json:"iswcs"`
 	ID        string     `json:"id"`
 	Title     string     `json:"title"`
 	Relations []relation `json:"relations"`

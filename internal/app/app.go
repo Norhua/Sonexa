@@ -373,6 +373,9 @@ func newCoverService(st *store.Store, paths config.Paths, cur config.Settings, v
 		return nil, err
 	}
 	svc := covers.NewService(cache, cur.Cache.CoverConcurrency, provider.UserAgentFor(version, cur.MusicBrainz.Contact))
+	svc.RegisterArtwork((&musicbrainz.Provider{}).ArtworkStrategy())
+	svc.RegisterArtwork((&itunes.Provider{}).ArtworkStrategy())
+	svc.RegisterArtwork((&qqmusic.Provider{}).ArtworkStrategy())
 	if err := svc.AttachLibrary(st); err != nil {
 		return nil, err
 	}
@@ -391,15 +394,21 @@ func (a *App) attachLadderBuilder(svc *covers.Service) *covers.Service {
 	if svc == nil {
 		return nil
 	}
-	svc.SetITunesDetailLoader(func(ctx context.Context, ref string) (*provider.Detail, error) {
+	svc.SetDetailLoader(func(ctx context.Context, ref provider.Ref) (*provider.Detail, error) {
 		a.mu.RLock()
-		p, err := a.registry.Get(provider.ITunes)
+		p, err := a.registry.Get(ref.Provider)
 		a.mu.RUnlock()
 		if err != nil {
 			return nil, err
 		}
-		return p.FetchDetail(ctx, provider.Ref{Provider: provider.ITunes, ID: ref})
+		return p.FetchDetail(ctx, ref)
 	})
+
+	for _, p := range a.registry.List() {
+		if source, ok := p.(provider.ArtworkStrategist); ok {
+			svc.RegisterArtwork(source.ArtworkStrategy())
+		}
+	}
 	svc.Pool().SetIndexParser(musicbrainz.ParseCAAThumbnailIndex)
 	svc.SetLadderBuilder(func(providerID, ref, releaseGroupRef string) []string {
 		var rg *string

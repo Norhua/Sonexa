@@ -252,7 +252,7 @@ func TestITunesAutomaticLookupGateAndIdentity(t *testing.T) {
 		t.Fatal("disabled became catalog failure", c, err)
 	}
 	// 即使缓存了另一地区的专辑，也不能误当目标。
-	a.coverSvc.SetITunesDetailLoader(func(context.Context, string) (*provider.Detail, error) {
+	a.coverSvc.SetDetailLoader(func(context.Context, provider.Ref) (*provider.Detail, error) {
 		return &provider.Detail{Provider: provider.ITunes, ReleaseRef: strPtrOrNil("us:1475065332"), ArtworkURL: strPtrOrNil("https://is1.mzstatic.com/100x100bb.jpg")}, nil
 	})
 	if _, err := a.coverSvc.Resolve(context.Background(), covers.Target{Provider: "itunes", Ref: key.SourceRef}, covers.Detail); err == nil {

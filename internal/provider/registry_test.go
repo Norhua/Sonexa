@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"github.com/norhua/sonexa/internal/domain"
 	"testing"
 	"time"
 )
@@ -17,8 +18,8 @@ type stubProvider struct {
 	configured error
 }
 
-func (s *stubProvider) ID() ProviderID            { return s.id }
-func (s *stubProvider) DisplayName() string       { return s.name }
+func (s *stubProvider) ID() ProviderID             { return s.id }
+func (s *stubProvider) DisplayName() string        { return s.name }
 func (s *stubProvider) Capabilities() Capabilities { return s.caps }
 func (s *stubProvider) RateLimit() (int, time.Duration) {
 	if s.rateN == 0 {
@@ -175,4 +176,37 @@ func equalIDs(a, b []ProviderID) bool {
 		}
 	}
 	return true
+}
+
+func (s *stubProvider) Refs() RefCodec { return nil }
+func (s *stubProvider) SnapshotFromCandidate(c Candidate) (*domain.Snapshot, error) {
+	return CandidateSnapshot(s.ID(), c)
+}
+func (s *stubProvider) Complete(context.Context, domain.DetailTarget) (*domain.Snapshot, error) {
+	return nil, ErrUnsupported
+}
+func (s *stubProvider) LoadReleaseSummary(context.Context, domain.ReleaseIdentity) (*domain.ReleaseSummary, error) {
+	return nil, ErrUnsupported
+}
+
+func TestSnapshotContractAndOptionalCapabilities(t *testing.T) {
+	r := NewRegistry()
+	p := &stubProvider{id: "test"}
+	r.Register(p)
+	album, artist := "Album", "Track Artist"
+	c := Candidate{Provider: "test", MatchRef: "track", AlbumTitle: &album, ArtistName: &artist}
+	s, err := p.SnapshotFromCandidate(c)
+	if err != nil || s.Track.Credit.Value.Text != artist || s.Release != nil {
+		t.Fatalf("candidate conversion: %#v %v", s, err)
+	}
+	c.Provider = "different"
+	if _, err := p.SnapshotFromCandidate(c); err == nil {
+		t.Fatal("wrong provider accepted")
+	}
+	if _, err := r.ListVersions(context.Background(), domain.Identity{Provider: "test", Ref: "group"}, Page{}); !errors.Is(err, ErrUnsupported) {
+		t.Fatal(err)
+	}
+	if _, err := r.LoadArtworkCatalog(context.Background(), ArtworkTarget{Release: domain.Identity{Provider: "test", Ref: "release"}}, ArtworkIO{}); !errors.Is(err, ErrUnsupported) {
+		t.Fatal(err)
+	}
 }

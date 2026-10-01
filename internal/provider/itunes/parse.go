@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
 )
 
@@ -75,6 +76,7 @@ func candidateFrom(r result, country string) provider.Candidate {
 	// 以下字段 iTunes 不提供，保持 nil：
 	//   PrimaryType / MediumFormat / Country / UpstreamScore /
 	//   ReleaseStatus / FirstReleaseDate / ReleaseGroupRef / RecordingRef / ISRC
+	c.ArtworkCatalog = (&Provider{}).ArtworkStrategy().Candidate(c)
 	return c
 }
 
@@ -93,7 +95,7 @@ func ParseLookup(resp *lookupResponse, country, trackRef string) *provider.Detai
 
 	// 首条：collection 自身
 	col := resp.Results[0]
-	if col.WrapperType == "collection" || col.CollectionID != 0 {
+	if col.WrapperType == "collection" {
 		d.ArtworkURL = strPtr(col.ArtworkURL100)
 		if d.ArtworkURL == nil {
 			d.ArtworkURL = strPtr(col.ArtworkURL60)
@@ -116,6 +118,7 @@ func ParseLookup(resp *lookupResponse, country, trackRef string) *provider.Detai
 		if col.TrackCount > 0 {
 			n := col.TrackCount
 			d.TrackTotal = &n
+			d.ReleaseTrackTotal = &n
 		}
 		if col.DiscCount > 0 {
 			n := col.DiscCount
@@ -128,7 +131,7 @@ func ParseLookup(resp *lookupResponse, country, trackRef string) *provider.Detai
 		if r.WrapperType != "" && r.WrapperType != "track" {
 			continue
 		}
-		if r.TrackID == 0 {
+		if r.TrackID == 0 || col.WrapperType != "collection" || (r.CollectionID != 0 && r.CollectionID != col.CollectionID) {
 			continue
 		}
 		// 正确专辑的曲目也可能提供 collection 未带的 artwork。
@@ -172,6 +175,33 @@ func ParseLookup(resp *lookupResponse, country, trackRef string) *provider.Detai
 			}
 		}
 	}
+	d.TracklistCompleteness = domain.Partial
+	if d.ReleaseTrackTotal != nil && len(d.Tracklist) == *d.ReleaseTrackTotal {
+		d.TracklistCompleteness = domain.Complete
+		counts := map[int]int{}
+		maxDisc := 0
+		for _, entry := range d.Tracklist {
+			counts[entry.DiscNumber]++
+			if entry.DiscNumber > maxDisc {
+				maxDisc = entry.DiscNumber
+			}
+		}
+		for disc := 1; disc <= maxDisc; disc++ {
+			m := domain.Medium{Number: disc}
+			if counts[disc] > 0 {
+				m.TrackTotal = domain.Known(counts[disc])
+			}
+			d.Media = append(d.Media, m)
+		}
+		if maxDisc > 0 && d.DiscTotal == nil {
+			d.DiscTotal = &maxDisc
+		}
+		if d.DiscNumber != nil && counts[*d.DiscNumber] > 0 {
+			n := counts[*d.DiscNumber]
+			d.MediumTrackTotal = &n
+		}
+	}
+
 	return d
 }
 

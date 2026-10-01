@@ -48,7 +48,8 @@ func TestResolverGroupFallbackPersistsActualRelease(t *testing.T) {
 
 func TestTargetOutcomeRevisionAndLegacyPathRejection(t *testing.T) {
 	svc, _ := resolverService(t)
-	svc.SetITunesDetailLoader(func(_ context.Context, ref string) (*provider.Detail, error) {
+	svc.SetDetailLoader(func(_ context.Context, target provider.Ref) (*provider.Detail, error) {
+		ref := target.ID
 		return &provider.Detail{Provider: provider.ITunes, ReleaseRef: &ref}, nil
 	})
 	for _, raw := range []string{"/cover?adopted=/etc/passwd", "/cover?provider=itunes&ref=jp:12&usage=detail&revision=7"} {
@@ -116,7 +117,7 @@ func TestPrefetchCancellationDoesNotCancelHandlerConsumer(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	for {
 		svc.pool.mu.Lock()
-		job := svc.pool.jobs["catalog:release:"+testReleaseMBID]
+		job := svc.pool.jobs["catalog:caa:release:"+testReleaseMBID]
 		n := 0
 		if job != nil {
 			n = job.waiters

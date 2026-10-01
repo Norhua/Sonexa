@@ -69,8 +69,9 @@ type Service struct {
 	// 拿不到降级链就 404，再被前端记进「坏图」集合，此后永不重试。
 	// 改为按请求参数就地构造后，登记与否不再影响取图，预取只是提前暖机。
 	ladder LadderBuilder
-	// itunesDetail 由应用注入，复用元数据客户端的缓存、配额与动态配置。
-	itunesDetail func(context.Context, string) (*provider.Detail, error)
+	// 来源策略与详情加载由应用注入，复用元数据客户端的缓存、配额与动态配置。
+	artwork      map[string]provider.ArtworkStrategy
+	detailLoader func(context.Context, provider.Ref) (*provider.Detail, error)
 
 	mu sync.Mutex
 	// outcomes 记录各缓存键最近一次取图的结果，供 Outcomes 查询。
@@ -84,6 +85,7 @@ func NewService(cache *DiskCache, concurrency int, userAgent string) *Service {
 		life: life, stop: stop, prefetches: map[string]context.CancelFunc{},
 		pool:     NewPool(cache, concurrency, userAgent),
 		outcomes: map[string]Outcome{},
+		artwork:  map[string]provider.ArtworkStrategy{},
 	}
 }
 

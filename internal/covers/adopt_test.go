@@ -24,7 +24,7 @@ func TestAdoptRecordsProvenance(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := NewService(newTestCache(t), 8, "test")
+	svc := newTestService(newTestCache(t), 8, "test")
 	url := srv.URL + "/front-1200.jpg"
 
 	got, err := svc.Adopt(context.Background(), provider.MusicBrainz, url)
@@ -68,7 +68,7 @@ func TestAdoptFromLadderFallsBack(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := NewService(newTestCache(t), 8, "test")
+	svc := newTestService(newTestCache(t), 8, "test")
 	got, err := svc.AdoptFromLadder(context.Background(), provider.ITunes, []string{
 		srv.URL + "/3000x3000bb.jpg", // 404
 		srv.URL + "/1200x1200bb.jpg", // 命中

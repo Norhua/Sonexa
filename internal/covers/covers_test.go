@@ -248,7 +248,7 @@ func TestHandlerServesBytes(t *testing.T) {
 	}))
 	defer origin.Close()
 
-	svc := NewService(newTestCache(t), 8, "test")
+	svc := newTestService(newTestCache(t), 8, "test")
 	svc.SetLadderBuilder(func(providerID, ref, rg string) []string {
 		return []string{origin.URL + "/" + providerID + "/" + ref}
 	})
@@ -284,7 +284,7 @@ func TestHandlerPrefetchedBytesHit(t *testing.T) {
 	}))
 	defer origin.Close()
 
-	svc := NewService(newTestCache(t), 8, "test")
+	svc := newTestService(newTestCache(t), 8, "test")
 	svc.SetLadderBuilder(func(providerID, ref, rg string) []string {
 		return []string{origin.URL + "/front"}
 	})
@@ -318,7 +318,7 @@ func TestHandlerDistinguishesEmptyFromError(t *testing.T) {
 	}))
 	defer origin.Close()
 
-	svc := NewService(newTestCache(t), 8, "test")
+	svc := newTestService(newTestCache(t), 8, "test")
 	svc.SetLadderBuilder(func(providerID, ref, rg string) []string {
 		return []string{origin.URL + "/front"}
 	})
@@ -354,7 +354,7 @@ func TestHandlerDistinguishesEmptyFromError(t *testing.T) {
 
 // TestHandlerRejectsMissingSource 确保来源缺失时明确报错，而不是当成一张不存在的图。
 func TestHandlerRejectsMissingSource(t *testing.T) {
-	svc := NewService(newTestCache(t), 8, "test")
+	svc := newTestService(newTestCache(t), 8, "test")
 	handler := httptest.NewServer(svc.Handler())
 	defer handler.Close()
 
@@ -377,7 +377,7 @@ func TestPrefetchIsOneCall(t *testing.T) {
 	}))
 	defer origin.Close()
 
-	svc := NewService(newTestCache(t), 8, "test")
+	svc := newTestService(newTestCache(t), 8, "test")
 	// 25 行不同封面，一次批量预取
 	refs := make([]Ref, 25)
 	for i := range refs {

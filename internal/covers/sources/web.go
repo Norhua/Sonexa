@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/norhua/sonexa/internal/provider/qqmusic"
 	"io"
 	"net/http"
 	"net/url"
@@ -222,7 +223,7 @@ func ParseQQ(body []byte, q provider.Query) ([]Result, error) {
 			continue
 		}
 		seen[mid] = true
-		images := store.QQCoverImages(mid, song.Album.Name, artist)
+		images := qqmusic.CoverImages(mid, song.Album.Name, artist)
 		if images == nil {
 			continue
 		}

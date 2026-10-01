@@ -9,10 +9,12 @@ package provider
 import (
 	"context"
 	"time"
+
+	"github.com/norhua/sonexa/internal/domain"
 )
 
 // ProviderID 是上游的稳定标识，如 "musicbrainz" / "itunes"。
-type ProviderID string
+type ProviderID = domain.ProviderID
 
 // 已实现的上游标识。
 const (
@@ -39,6 +41,10 @@ type Provider interface {
 	IsConfigured() error
 	// SearchTracks 按条件搜索，返回 track 粒度的候选。
 	SearchTracks(ctx context.Context, q Query) ([]Candidate, error)
+	Refs() RefCodec
+	SnapshotFromCandidate(Candidate) (*domain.Snapshot, error)
+	Complete(context.Context, domain.DetailTarget) (*domain.Snapshot, error)
+	LoadReleaseSummary(context.Context, domain.ReleaseIdentity) (*domain.ReleaseSummary, error)
 	// FetchDetail 拉取一条候选的完整详情（含该发行的完整曲目清单）。
 	FetchDetail(ctx context.Context, ref Ref) (*Detail, error)
 	// SearchCovers 按条件搜索封面，供详情抽屉的手动重新获取使用。

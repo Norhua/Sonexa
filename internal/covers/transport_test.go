@@ -1,6 +1,9 @@
 package covers
 
-import "testing"
+import (
+	"github.com/norhua/sonexa/internal/provider/musicbrainz"
+	"testing"
+)
 
 func TestImageTransportRejectsResolvedPrivateAddresses(t *testing.T) {
 	for _, address := range []string{"127.0.0.1:443", "10.1.1.1:443", "172.16.0.1:443", "192.168.1.1:443", "169.254.169.254:443", "100.64.1.1:443", "[::1]:443", "[::ffff:127.0.0.1]:443", "[fc00::1]:443", "[fe80::1]:443", "[ff02::1]:443", "0.0.0.0:443", "224.0.0.1:443"} {
@@ -23,13 +26,13 @@ func TestCAAImageLadder(t *testing.T) {
 		"https://coverartarchive.org/release/" + m + "/829521842.png":      "https://archive.org/download/mbid-" + m + "/mbid-" + m + "-829521842.png",
 	}
 	for in, want := range cases {
-		got := caaImageLadder(in)
+		got := musicbrainz.ImageURLs(in)
 		if len(got) != 2 || got[0] != want || got[1] != in {
 			t.Fatalf("%s => %v", in, got)
 		}
 	}
 	for _, other := range []string{"https://is1.mzstatic.com/a/100x100bb.jpg", "https://coverartarchive.org/release/" + m + "/front-250"} {
-		if got := caaImageLadder(other); len(got) != 1 || got[0] != other {
+		if got := musicbrainz.ImageURLs(other); len(got) != 1 || got[0] != other {
 			t.Fatal(other, got)
 		}
 	}

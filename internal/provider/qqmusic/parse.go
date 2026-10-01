@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
 )
 
@@ -71,6 +72,7 @@ func candidateFrom(s song) provider.Candidate {
 		DurationMS: durationOf(s.Interval),
 		Year:       parseYear(firstNonEmpty(s.TimePublic, s.Album.TimePublic)),
 	}
+	c.Credits, c.ArtistName = creditsOf(s.Singer)
 	// album ID=0 / MID 为空的搜索结果不是有效专辑，不能作为发行身份。
 	if s.Album.ID != 0 && ValidMID(s.Album.MID) {
 		ref := s.Album.MID
@@ -117,15 +119,27 @@ func buildDetail(albumMID, trackRef string, parts detailParts) (*provider.Detail
 	if parts.album.Company != nil {
 		// 可能是当前版权公司而非首版厂牌，作为 QQ 来源的值记录。
 		d.Label = strPtr(parts.album.Company.Name)
+		if d.Label != nil {
+			d.Labels = []domain.Label{{Name: *d.Label}}
+		}
 	}
 	if parts.album.Singer != nil {
 		names := make([]string, 0, len(parts.album.Singer.SingerList))
-		for i, s := range parts.album.Singer.SingerList {
+		offset := 0
+		for _, s := range parts.album.Singer.SingerList {
 			if s.Name == "" {
 				continue
 			}
 			names = append(names, s.Name)
-			d.Artists = append(d.Artists, provider.DetailArtist{Name: s.Name, Role: "album_artist", Position: i})
+			if len(names) > 1 {
+				offset += len(creditSep)
+			}
+			member := provider.CreditArtist{Name: s.Name, Start: offset, End: offset + len(s.Name)}
+			if s.MID != "" {
+				member.Identity = &domain.Identity{Provider: provider.QQMusic, Ref: s.MID}
+			}
+			d.AlbumCredits = append(d.AlbumCredits, member)
+			offset += len(s.Name)
 		}
 		d.AlbumCredit = strPtr(strings.Join(names, creditSep))
 	}
@@ -172,13 +186,18 @@ func buildDetail(albumMID, trackRef string, parts detailParts) (*provider.Detail
 		d.DiscTotal = &n
 	}
 	total := parts.total
-	if total <= 0 {
-		total = len(d.Tracklist)
-	}
 	if total > 0 {
 		d.TrackTotal = &total
+		d.ReleaseTrackTotal = &total
 	}
 
+	d.TracklistCompleteness = domain.Partial
+	if total > 0 && len(d.Tracklist) == total {
+		d.TracklistCompleteness = domain.Complete
+		for disc := 0; disc < len(discs); disc++ {
+			d.Media = append(d.Media, domain.Medium{Number: disc + 1, TrackTotal: domain.Known(discs[disc])})
+		}
+	}
 	if trackRef == "" {
 		return d, nil
 	}
@@ -193,6 +212,10 @@ func buildDetail(albumMID, trackRef string, parts detailParts) (*provider.Detail
 	d.TrackNumberText = entry.TrackNumberText
 	trackNo, discNo := entry.TrackNumber, entry.DiscNumber
 	d.TrackNumber, d.DiscNumber = &trackNo, &discNo
+	if d.TracklistCompleteness == domain.Complete {
+		n := discs[discNo-1]
+		d.MediumTrackTotal = &n
+	}
 
 	if parts.detail != nil {
 		if ti := parts.detail.TrackInfo; ti != nil {
@@ -268,9 +291,13 @@ func applyInfo(d *provider.Detail, info []infoEntry) {
 				continue
 			}
 			a := provider.DetailArtist{Name: name, Role: role, Position: position}
+			if c.MID != "" {
+				a.Identity = &domain.Identity{Provider: provider.QQMusic, Ref: c.MID}
+			}
 			if attr != "" {
 				v := attr
 				a.Attribute = &v
+				a.Attributes = []string{attr}
 			}
 			d.Artists = append(d.Artists, a)
 			position++
@@ -304,7 +331,11 @@ func creditsOf(singers []singer) ([]provider.CreditArtist, *string) {
 		}
 		start := b.Len()
 		b.WriteString(s.Name)
-		credits = append(credits, provider.CreditArtist{Name: s.Name, Start: start, End: b.Len()})
+		member := provider.CreditArtist{Name: s.Name, Start: start, End: b.Len()}
+		if s.MID != "" {
+			member.Identity = &domain.Identity{Provider: provider.QQMusic, Ref: s.MID}
+		}
+		credits = append(credits, member)
 	}
 	return credits, strPtr(b.String())
 }

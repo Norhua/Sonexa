@@ -3,9 +3,6 @@ package app
 import (
 	"github.com/norhua/sonexa/internal/covers"
 	"github.com/norhua/sonexa/internal/provider"
-	"github.com/norhua/sonexa/internal/provider/itunes"
-	"github.com/norhua/sonexa/internal/provider/musicbrainz"
-	"github.com/norhua/sonexa/internal/provider/qqmusic"
 )
 
 func (a *App) checkCoverOutbound() error {
@@ -23,48 +20,23 @@ func (a *App) checkCoverOutbound() error {
 //	来自 iTunes      → iTunes 图片地址（尺寸靠构造）
 //	来自 QQ 音乐     → QQ 图片地址（由专辑 MID 构造）
 func (a *App) coverLadder(providerID, releaseRef, artworkURL string, releaseGroupRef *string) []string {
-	switch provider.ProviderID(providerID) {
-	case provider.MusicBrainz:
-		rgRef := ""
-		if releaseGroupRef != nil {
-			rgRef = *releaseGroupRef
-		}
-		images := musicbrainz.CAAFrontLadder(releaseRef, rgRef)
-		// 列表缩略图直接用 front-250，放在链首
-		urls := []string{musicbrainz.CAAThumbnailURL(releaseRef)}
-		for _, img := range images {
-			urls = append(urls, img.URL)
-		}
-		urls = append(urls, musicbrainz.CAAIndexFallbackURLs(releaseRef, rgRef)...)
-		return urls
-
-	case provider.QQMusic:
-		// QQ 图片地址由专辑 MID 直接构造；缩略图档在前，逐级回退。
-		if !qqmusic.ValidMID(releaseRef) {
-			return nil
-		}
-		urls := make([]string, 0, len(qqmusic.CoverSizes))
-		for _, size := range qqmusic.CoverSizes {
-			urls = append(urls, qqmusic.CoverURL(releaseRef, size))
-		}
-		return urls
-
-	case provider.ITunes:
-		// iTunes 只返回一个 artworkUrl100，大图靠构造地址（未文档化行为），
-		// 因此需要基准地址才能生成降级链——它来自 search 响应。
-		//
-		// 有限档位从高到低，不可用时退档，实际尺寸由解码确认。
-		if artworkURL == "" {
-			return nil
-		}
-		images := itunes.ArtworkLadder(artworkURL)
-		urls := make([]string, 0, len(images))
-		for _, img := range images {
-			urls = append(urls, img.URL)
-		}
-		return urls
+	p, err := a.registry.Get(provider.ProviderID(providerID))
+	if err != nil {
+		return nil
 	}
-	return nil
+	source, ok := p.(provider.ArtworkStrategist)
+	if !ok {
+		return nil
+	}
+	rg := ""
+	if releaseGroupRef != nil {
+		rg = *releaseGroupRef
+	}
+	policy := source.ArtworkStrategy()
+	if policy.LegacyLadder == nil {
+		return nil
+	}
+	return policy.LegacyLadder(releaseRef, artworkURL, rg)
 }
 
 // coverThumbSize 仅供旧候选键兼容；实际选图使用 thumbnail/detail 用途。

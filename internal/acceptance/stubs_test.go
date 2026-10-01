@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/norhua/sonexa/internal/domain"
 	"io"
 	"net/http"
 	"net/url"
@@ -19,11 +20,11 @@ type stubProvider struct {
 	caps provider.Capabilities
 }
 
-func (s *stubProvider) ID() provider.ProviderID              { return s.id }
-func (s *stubProvider) DisplayName() string                  { return s.name }
-func (s *stubProvider) Capabilities() provider.Capabilities  { return s.caps }
-func (s *stubProvider) RateLimit() (int, time.Duration)      { return 1, time.Second }
-func (s *stubProvider) IsConfigured() error                  { return nil }
+func (s *stubProvider) ID() provider.ProviderID             { return s.id }
+func (s *stubProvider) DisplayName() string                 { return s.name }
+func (s *stubProvider) Capabilities() provider.Capabilities { return s.caps }
+func (s *stubProvider) RateLimit() (int, time.Duration)     { return 1, time.Second }
+func (s *stubProvider) IsConfigured() error                 { return nil }
 func (s *stubProvider) SearchTracks(context.Context, provider.Query) ([]provider.Candidate, error) {
 	return nil, nil
 }
@@ -77,4 +78,15 @@ func (h *httpSearcher) SearchTracks(ctx context.Context, q provider.Query) ([]pr
 		})
 	}
 	return out, nil
+}
+
+func (s *stubProvider) Refs() provider.RefCodec { return nil }
+func (s *stubProvider) SnapshotFromCandidate(c provider.Candidate) (*domain.Snapshot, error) {
+	return provider.CandidateSnapshot(s.ID(), c)
+}
+func (s *stubProvider) Complete(context.Context, domain.DetailTarget) (*domain.Snapshot, error) {
+	return nil, provider.ErrUnsupported
+}
+func (s *stubProvider) LoadReleaseSummary(context.Context, domain.ReleaseIdentity) (*domain.ReleaseSummary, error) {
+	return nil, provider.ErrUnsupported
 }

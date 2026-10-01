@@ -326,7 +326,7 @@ func (a *App) ApplyEdits(trackID int64, edits map[string]string, sources map[str
 
 	// 匹配溯源
 	if matchSource != nil && matchRef != nil {
-		if err := matching.ValidateMatchRef(provider.ProviderID(*matchSource), *matchRef); err != nil {
+		if err := a.validateMatchRef(provider.ProviderID(*matchSource), *matchRef); err != nil {
 			return err
 		}
 		if err := a.store.SetProvenance(trackID, *matchSource, *matchRef); err != nil {
@@ -355,7 +355,7 @@ func (a *App) SetProvenanceManual(trackID int64, providerID, ref string) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	if err := matching.ValidateMatchRef(provider.ProviderID(providerID), ref); err != nil {
+	if err := a.validateMatchRef(provider.ProviderID(providerID), ref); err != nil {
 		return err
 	}
 	if err := a.store.SetProvenance(trackID, providerID, ref); err != nil {
@@ -419,3 +419,12 @@ func intToStr(v *int) *string {
 }
 
 var _ = time.Now
+
+func (a *App) validateMatchRef(source provider.ProviderID, ref string) error {
+	p, err := a.registry.Get(source)
+	if err != nil {
+		return err
+	}
+	_, err = p.Refs().ParseTrack(ref, "")
+	return err
+}
