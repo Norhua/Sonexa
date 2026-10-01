@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
@@ -46,7 +47,9 @@ var releaseScopedFields = map[string]bool{
 
 // EditSession 是编辑界面的内容。
 type EditSession struct {
-	TrackID int64 `json:"trackId"`
+	Editor    *domain.EditorSession `json:"editor"`
+	Providers []ProviderInfo        `json:"providers"`
+	TrackID   int64                 `json:"trackId"`
 	// MatchLabel 是当前匹配来源的可读描述。
 	MatchLabel  string     `json:"matchLabel"`
 	MatchSource *string    `json:"matchSource"`
@@ -59,7 +62,16 @@ func (a *App) GetEditSession(trackID int64) (*EditSession, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
-	return a.buildEditSession(trackID, nil)
+	session, err := a.buildEditSession(trackID, nil)
+	if err != nil {
+		return nil, err
+	}
+	session.Editor, err = a.store.ReadEditorSession(trackID)
+	if err != nil {
+		return nil, err
+	}
+	session.Providers, err = a.ListProviders()
+	return session, err
 }
 
 // RematchTrack 从编辑界面发起重新匹配。

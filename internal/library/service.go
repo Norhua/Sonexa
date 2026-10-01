@@ -33,6 +33,7 @@ type Service struct {
 	clock    Clock
 	secret   [32]byte
 	plans    map[string]domain.AdmissionPlan
+	previews map[string]storedEditPreview
 }
 
 func New(registry *provider.Registry, st *store.Store, files *covers.LibraryImages, clock Clock) (*Service, error) {
@@ -42,7 +43,7 @@ func New(registry *provider.Registry, st *store.Store, files *covers.LibraryImag
 	if clock == nil {
 		clock = systemClock{}
 	}
-	service := &Service{registry: registry, store: st, files: files, clock: clock, plans: map[string]domain.AdmissionPlan{}}
+	service := &Service{registry: registry, store: st, files: files, clock: clock, plans: map[string]domain.AdmissionPlan{}, previews: map[string]storedEditPreview{}}
 	if _, err := rand.Read(service.secret[:]); err != nil {
 		return nil, err
 	}

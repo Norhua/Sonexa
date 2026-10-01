@@ -88,3 +88,30 @@
 验证：Go 全量、library/store/app/importer race、go vet、前端 39 项单元测试与构建通过。Chromium/WebKit 的新准入、多版本、能力差异及既有交互测试通过；全量 Playwright 首跑中 8 项失败均为旧文案、字段数量及单步接口断言，相关 16 项修正后通过，其余 110 项首跑通过（日志 `/tmp/sonexa-stage5-all-e2e.log`、`/tmp/sonexa-stage5-e2e-fix.log`）。绑定已重新生成，现有泛型转换警告及 Vite 大包提示仍保留，第 6 阶段需要收敛。
 
 此阶段未实施新编辑会话/保存计划，4.6 及第 6–8 阶段仍待完成。浏览测试使用 Wails 替身，不代表原生窗口、系统文件选择或真实网络验收通过。
+
+## 编辑会话与影响预览（2026-10-02）
+
+完成 6.1–6.3，累计 37/53。新编辑数据暂挂在旧 GetEditSession 的 editor 字段，保持现有界面可编译，待第 7 阶段替换界面后随 6.6 删除旧适配。
+
+- ReadEditorSession 在读事务与歌词文件锁内取得当前字段、有效快照、来源状态、角色身份/属性、歌词和发行/组计数，返回歌曲、发行、组、快照及封面修订。打开编辑不出网。
+- SearchEditCandidates 返回全部候选；PreviewEditCandidate 纯转换；LoadEditUpstream 经 RefCodec 解析和精确身份验证，完成资料只保存到 15 分钟服务端预览，不写正式实体。新 DTO 用 EditValue 的 state/valueJson 保留任意字段值，避免泛型切片构造器错误；Vitest 实际调用 Wails 生成构造器并验证角色/unknown/empty 往返。
+- PreviewEditSave 检查只读字段、数值、角色、碟结构长度及源修订；清歌曲保留发行，整发行解除列出全部歌曲，部分解除准备无上游身份的本地发行。共享专辑署名/类型/结构/封面/绑定均需要范围选择。无名发行可准备，单曲换版仍检查成员准入，复用目标默认保护目标当前值。
+- 6.4 已有上游换版对应实现及测试，但未勾选：精确歌曲身份、同来源录音、ISRC 优先，文本/时长仅建议；重复录音、目标已收藏、多个源占同一目标均提示冲突。两组研究 fixture 的正反方向验证通过，14 首对应及 White Love/深愛反向留原正确。手动结构变化的逐曲方案仍待下述设计选择。
+
+### 待用户选择的结构修改语义
+
+已在本轮发起异步澄清，尚未得到答复。`specs/editing/track-editing/spec.md` 的“碟数与位置一致性”允许调整、清空位置或“保留在原发行”，但“修改全部”默认原地修改共享发行。若一部分歌曲保留原发行和原结构，其他歌曲采用新结构，不能在同一发行的 current 中同时保存两套结构。
+
+推荐：这种混合方案为采用新结构的歌曲新建本地发行，原发行和留原歌曲保留原结构；不复制来源身份，并执行同组新增成员确认。备选：原地修改时仅允许调整/清空位置，保留原结构需改走新建专辑，但这需要调整规格中允许留原的范围。未擅自采用其中一项，6.4、6.5 及相应前端流程继续保留未完成。
+
+最终检查通过：
+
+- `go test ./... -timeout=120s`（`/tmp/sonexa-editor-full.log`）
+- `go test -race ./internal/library ./internal/store ./internal/app -timeout=180s`（`/tmp/sonexa-editor-race.log`）
+- `go vet ./...`（`/tmp/sonexa-editor-vet.log`）
+- `/Users/amadeus/.go/bin/wails generate module`（`/tmp/sonexa-editor-bindings.log`）
+- `cd frontend && npm test`：8 个文件、40 项通过
+- `cd frontend && npm run build`
+- `git diff --check`
+
+旧 AdmissionPlan 等 DTO 的泛型绑定警告仍存在，新 EditorSession/EditPreview 构造器已单独验证。尚未实现 SaveEdit、文件草稿原子保存、旧写入口替换和两栏新界面；不能把以上预览测试理解为保存已经完成。第 8 阶段与原生验收保持未勾选。
