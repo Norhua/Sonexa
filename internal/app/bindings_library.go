@@ -319,14 +319,11 @@ func (a *App) CreateTrackManual(title string, artist, album *string) (int64, err
 	if err := a.ready(); err != nil {
 		return 0, err
 	}
-	id, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: title, Credit: artist, Album: album, AlbumCredit: artist,
-	})
+	plan, err := a.PrepareLocalAdmission(LocalAdmissionInput{Title: &title, Artist: artist, Album: album})
 	if err != nil {
 		return 0, err
 	}
-	a.notifyLibraryChanged()
-	return id, nil
+	return a.commitUnconfirmedAdmission(plan)
 }
 
 // UpdateTrackBasic 手动修改曲名与署名。被修改的字段加锁。

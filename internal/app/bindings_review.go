@@ -15,9 +15,11 @@ import (
 // 待选、匹配中、失败只是状态标签，界面结构保持一致——
 // 不按进入原因分成结构不同的多种界面。
 type ReviewItem struct {
-	ID      int64  `json:"id"`
-	BatchID int64  `json:"batchId"`
-	Status  string `json:"status"`
+	ReviewReason   *string `json:"reviewReason"`
+	ReviewEvidence *string `json:"reviewEvidence"`
+	ID             int64   `json:"id"`
+	BatchID        int64   `json:"batchId"`
+	Status         string  `json:"status"`
 	// 原始导入文本，上半区展示；改搜不改动它
 	InTitle  *string `json:"inTitle"`
 	InArtist *string `json:"inArtist"`
@@ -60,6 +62,7 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 	for _, it := range items {
 		r := ReviewItem{
 			ID: it.ID, BatchID: it.BatchID, Status: string(it.Status),
+			ReviewReason: it.ReviewReason, ReviewEvidence: it.ReviewEvidence,
 			InTitle: it.InTitle, InArtist: it.InArtist, InAlbum: it.InAlbum,
 			AttemptCount: it.AttemptCount,
 			LastError:    it.LastError, LastErrorAt: formatTime(it.LastErrorAt),
@@ -236,14 +239,11 @@ func (a *App) AcceptCandidate(itemID int64, row CandidateRow) (int64, error) {
 	if err := a.ready(); err != nil {
 		return 0, err
 	}
-	trackID, err := a.AddToLibrary(row)
+	plan, err := a.PrepareAdmission(row, itemID)
 	if err != nil {
 		return 0, err
 	}
-	if err := a.store.MarkImported(itemID, trackID); err != nil {
-		return 0, err
-	}
-	return trackID, nil
+	return a.commitUnconfirmedAdmission(plan)
 }
 
 // MergeCandidate 把条目标记为与库中已有曲目相同。
@@ -265,30 +265,11 @@ func (a *App) NoMatchNeeded(itemID int64) (int64, error) {
 		return 0, err
 	}
 
-	item, err := a.store.GetItem(itemID)
+	plan, err := a.PrepareNoMatchNeeded(itemID)
 	if err != nil {
 		return 0, err
 	}
-	if item == nil {
-		return 0, fmt.Errorf("条目不存在")
-	}
-	if item.InTitle == nil || *item.InTitle == "" {
-		return 0, fmt.Errorf("该条目没有曲名，无法入库")
-	}
-
-	trackID, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: *item.InTitle, Credit: item.InArtist,
-		Album: item.InAlbum, AlbumCredit: item.InArtist,
-		// 溯源置空：不写 MatchSource / MatchRef
-	})
-	if err != nil {
-		return 0, err
-	}
-	if err := a.store.MarkImported(itemID, trackID); err != nil {
-		return 0, err
-	}
-	a.notifyLibraryChanged()
-	return trackID, nil
+	return a.commitUnconfirmedAdmission(plan)
 }
 
 // DiscardReviewItem 丢弃条目且不入库。

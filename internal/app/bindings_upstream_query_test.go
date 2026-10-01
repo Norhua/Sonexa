@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/norhua/sonexa/internal/domain"
 	"strings"
 	"testing"
 
@@ -108,3 +109,11 @@ func TestManualSearchGatesOnFilledFieldsOnly(t *testing.T) {
 }
 
 func sptr(s string) *string { return &s }
+
+func (s *recordingSearcher) ID() provider.ProviderID { return provider.MusicBrainz }
+func (s *recordingSearcher) SnapshotFromCandidate(c provider.Candidate) (*domain.Snapshot, error) {
+	return provider.CandidateSnapshot(s.ID(), c)
+}
+func (s *recordingSearcher) LoadReleaseSummary(context.Context, domain.ReleaseIdentity) (*domain.ReleaseSummary, error) {
+	return nil, provider.ErrUnsupported
+}

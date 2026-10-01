@@ -294,7 +294,7 @@ func TestXLSXSkipsEncodingAndDelimiter(t *testing.T) {
 }
 
 // TestPreviewAndSkipStats 覆盖 10.6：
-// 214 行中 3 行缺曲名时，提交按钮显示 211 条。
+// 214 行中 3 行缺曲名时，仍可提交 214 条，缺失提示独立统计。
 func TestPreviewAndSkipStats(t *testing.T) {
 	res, err := Parse("missing_titles.csv", fixture(t, "encoding", "missing_titles.csv"), "")
 	if err != nil {
@@ -305,13 +305,13 @@ func TestPreviewAndSkipStats(t *testing.T) {
 	if p.TotalRows != 214 {
 		t.Errorf("总行数 = %d, 期望 214", p.TotalRows)
 	}
-	if p.SkippedRows != 3 {
-		t.Errorf("跳过行数 = %d, 期望 3", p.SkippedRows)
+	if p.SkippedRows != 0 {
+		t.Errorf("跳过行数 = %d, 期望 0", p.SkippedRows)
 	}
-	if p.ImportableRows != 211 {
-		t.Errorf("将导入 %d 条, 期望 211", p.ImportableRows)
+	if p.ImportableRows != 214 {
+		t.Errorf("将导入 %d 条, 期望 214", p.ImportableRows)
 	}
-	if p.SkipSummary != "3 行缺少曲名，将跳过" {
+	if p.SkipSummary != "" || p.MissingTitleRows != 3 {
 		t.Errorf("跳过提示 = %q", p.SkipSummary)
 	}
 	// 预览至少 20 行
@@ -512,4 +512,18 @@ func TestOverridesActuallyAffectParsing(t *testing.T) {
 			t.Error("用错编码解码后首列内容应发生变化")
 		}
 	})
+}
+
+func TestBlankPhysicalRowsDoNotSplitQuotedCellsOrHideHeader(t *testing.T) {
+	res, err := Parse("blank.csv", []byte("\r\n曲名,艺术家\r\n\"第一行\r\n\r\n第二行\",署名\r\n\r\n"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := BuildPreview(res, 20)
+	if !res.Detection.HasHeader || preview.ImportableRows != 1 || preview.SkippedRows != 2 {
+		t.Fatalf("preview=%+v detection=%+v", preview, res.Detection)
+	}
+	if preview.Rows[1].Raw[0] != "第一行\n\n第二行" {
+		t.Fatalf("quoted cell changed: %q", preview.Rows[1].Raw)
+	}
 }

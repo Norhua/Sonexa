@@ -193,10 +193,9 @@ function toRows(): Row[] {
 async function addGhost(row: Row) {
   if (!detail.value?.provider || !row.trackRef) return
   try {
-    // 清单里已有 track 标识，直接带完整溯源入库——不需要再搜一次
+    // 后端从具体发行与清单位置读取完整事实。
     await App.AddGhostRowToLibrary(
-      detail.value.provider, row.trackRef, row.title,
-      row.artist ?? undefined, row.durationMs ?? undefined, row.recordingRef ?? undefined,
+      detail.value.releaseId, row.discNumber ?? 1, row.trackNumber ?? 0,
     )
     detail.value = await App.GetAlbumDetail(detail.value.releaseId)
     await load()

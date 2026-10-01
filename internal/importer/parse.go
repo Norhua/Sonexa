@@ -3,6 +3,7 @@ package importer
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 
@@ -132,7 +133,14 @@ func parseDelimitedWithOverrides(filename string, data []byte, ov Overrides) (*P
 		return nil, fmt.Errorf("文件为空或无法解析出任何行")
 	}
 
-	header := DetectHeader(records)
+	first := 0
+	for first < len(records) && isBlankRow(records[first]) {
+		first++
+	}
+	if first == len(records) {
+		return nil, fmt.Errorf("文件没有有效数据行")
+	}
+	header := DetectHeader(records[first:])
 	// 用户显式指定了首行是否为表头时以用户的为准
 	if ov.HasHeader != nil {
 		header = HeaderResult{HasHeader: *ov.HasHeader, Confidence: 1.0}
@@ -150,11 +158,11 @@ func parseDelimitedWithOverrides(filename string, data []byte, ov Overrides) (*P
 	}
 
 	if header.HasHeader {
-		res.Headers = records[0]
-		res.Rows = records[1:]
+		res.Headers = records[first]
+		res.Rows = append(append([][]string{}, records[:first]...), records[first+1:]...)
 	} else {
 		// 无表头时列映射按列序号呈现
-		res.Headers = numberedHeaders(len(records[0]))
+		res.Headers = numberedHeaders(len(records[first]))
 		res.Rows = records
 	}
 	res.ColumnMap = MapColumns(res.Headers)
@@ -176,20 +184,33 @@ func readDelimited(text string, delim rune) ([][]string, error) {
 	r.FieldsPerRecord = -1
 	r.LazyQuotes = true
 
-	records, err := r.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("解析表格失败: %w", err)
+	records := [][]string{}
+	nextLine := 1
+	var offset int64
+	for {
+		record, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("解析表格失败: %w", err)
+		}
+		startLine, _ := r.FieldPos(0)
+		for line := nextLine; line < startLine; line++ {
+			records = append(records, []string{})
+		}
+		records = append(records, record)
+		nextOffset := r.InputOffset()
+		nextLine += strings.Count(text[offset:nextOffset], "\n")
+		offset = nextOffset
+	}
+	// encoding/csv 忽略空物理行；保留这些行用于原始行号和跳过统计。
+	for nextLine <= strings.Count(text, "\n") {
+		records = append(records, []string{})
+		nextLine++
 	}
 
-	// 去掉全空行
-	var out [][]string
-	for _, rec := range records {
-		if isBlankRow(rec) {
-			continue
-		}
-		out = append(out, rec)
-	}
-	return out, nil
+	return records, nil
 }
 
 // parseXLSX 解析 XLSX。
@@ -231,24 +252,25 @@ func parseXLSX(filename string, data []byte, sheetName string) (*ParseResult, er
 		return nil, fmt.Errorf("读取工作表 %q 失败: %w", sheetName, err)
 	}
 
-	var records [][]string
-	for _, r := range rows {
-		if isBlankRow(r) {
-			continue
-		}
-		records = append(records, r)
-	}
+	records := rows
 	if len(records) == 0 {
 		return nil, fmt.Errorf("工作表 %q 为空", sheetName)
 	}
 
-	header := DetectHeader(records)
+	first := 0
+	for first < len(records) && isBlankRow(records[first]) {
+		first++
+	}
+	if first == len(records) {
+		return nil, fmt.Errorf("文件没有有效数据行")
+	}
+	header := DetectHeader(records[first:])
 	res.Detection.HasHeader = header.HasHeader
 	if header.HasHeader {
-		res.Headers = records[0]
-		res.Rows = records[1:]
+		res.Headers = records[first]
+		res.Rows = append(append([][]string{}, records[:first]...), records[first+1:]...)
 	} else {
-		res.Headers = numberedHeaders(len(records[0]))
+		res.Headers = numberedHeaders(len(records[first]))
 		res.Rows = records
 	}
 	res.ColumnMap = MapColumns(res.Headers)
@@ -259,16 +281,22 @@ func parseXLSX(filename string, data []byte, sheetName string) (*ParseResult, er
 
 // applyAttention 判定是否需要自动展开手动面板。
 //
-// 触发条件：编码探测置信度低于 80%，或未能映射出曲名列。
+// 触发条件：编码探测置信度低于 80%，或未能映射出有效数据列。
 func applyAttention(res *ParseResult, encodingConfidence float64) {
 	if encodingConfidence < 0.8 {
 		res.Detection.NeedsAttention = true
 		res.Detection.Reason = "编码探测置信度较低，请确认编码是否正确"
 		return
 	}
-	if !hasField(res.ColumnMap, FieldTitle) {
+	hasMapped := false
+	for _, field := range res.ColumnMap {
+		if field != FieldIgnore {
+			hasMapped = true
+		}
+	}
+	if !hasMapped {
 		res.Detection.NeedsAttention = true
-		res.Detection.Reason = "未能自动识别出「曲名」列，请手动指定"
+		res.Detection.Reason = "未能自动识别有效数据列，请确认列映射"
 	}
 }
 
@@ -305,41 +333,52 @@ type Preview struct {
 	ImportableRows int `json:"importableRows"`
 	// SkippedRows 是将被跳过的行数。
 	SkippedRows int `json:"skippedRows"`
-	// SkipSummary 是跳过原因的可读汇总，如「3 行缺少曲名，将跳过」。
-	SkipSummary string `json:"skipSummary"`
+	// SkipSummary 是跳过原因的可读汇总，仅统计真正空行或无有效映射内容。
+	SkipSummary       string `json:"skipSummary"`
+	MissingArtistRows int    `json:"missingArtistRows"`
+	MissingAlbumRows  int    `json:"missingAlbumRows"`
+	MissingTitleRows  int    `json:"missingTitleRows"`
+	MissingSummary    string `json:"missingSummary"`
 }
 
 // BuildPreview 按列映射生成预览与跳过统计。
 //
-// 预览至少 20 行；统计将被跳过的行数与原因（如缺少曲名）。
+// 预览至少 20 行；统计将被跳过的行数与原因（不包括缺少基本字段）。
 func BuildPreview(res *ParseResult, previewRows int) Preview {
 	if previewRows <= 0 {
 		previewRows = PreviewRows
 	}
 
 	p := Preview{TotalRows: len(res.Rows)}
-	missingTitle := 0
 
 	for i, raw := range res.Rows {
 		row := mapRow(i, raw, res.ColumnMap)
 		if row.SkipReason != "" {
 			p.SkippedRows++
-			if row.SkipReason == "缺少曲名" {
-				missingTitle++
-			}
 		} else {
 			p.ImportableRows++
+			if row.Artist == nil {
+				p.MissingArtistRows++
+			}
+			if row.Album == nil {
+				p.MissingAlbumRows++
+			}
+			if row.Title == "" {
+				p.MissingTitleRows++
+			}
 		}
 		if len(p.Rows) < previewRows {
 			p.Rows = append(p.Rows, row)
 		}
 	}
 
-	if missingTitle > 0 {
-		p.SkipSummary = fmt.Sprintf("%d 行缺少曲名，将跳过", missingTitle)
-	} else if p.SkippedRows > 0 {
-		p.SkipSummary = fmt.Sprintf("%d 行将被跳过", p.SkippedRows)
+	if p.SkippedRows > 0 {
+		p.SkipSummary = fmt.Sprintf("%d 行没有有效映射内容，将跳过", p.SkippedRows)
 	}
+	if p.MissingTitleRows+p.MissingArtistRows+p.MissingAlbumRows > 0 {
+		p.MissingSummary = fmt.Sprintf("缺少曲名 %d 行、艺术家 %d 行、专辑 %d 行，仍将导入并可逐条复核", p.MissingTitleRows, p.MissingArtistRows, p.MissingAlbumRows)
+	}
+
 	return p
 }
 
@@ -373,9 +412,10 @@ func mapRow(index int, raw []string, mapping []Field) Row {
 		}
 	}
 
-	// 曲名是必填项：缺少曲名的行被跳过
-	if row.Title == "" {
-		row.SkipReason = "缺少曲名"
+	if isBlankRow(raw) {
+		row.SkipReason = "空行"
+	} else if row.Title == "" && row.Artist == nil && row.Album == nil && row.Year == nil && row.TrackNo == nil && row.DiscNo == nil && row.DurationMS == nil {
+		row.SkipReason = "没有有效映射内容"
 	}
 	return row
 }

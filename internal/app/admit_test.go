@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/importer"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
@@ -18,12 +19,16 @@ func fullCandidate(ref string) provider.Candidate {
 	i := func(v int) *int { return &v }
 	return provider.Candidate{
 		Provider: provider.MusicBrainz, MatchRef: ref,
-		Title: s("God knows..."), ArtistName: s("平野綾"), AlbumTitle: s("涼宮ハルヒの詰合"),
+		Title: s("God knows..."), ArtistName: s("平野綾"), AlbumTitle: s("涼宮ハルヒの詰合"), AlbumCredit: s("平野綾"),
+		Labels:            []domain.Label{{Name: "Lantis", CatalogNumber: "LACM-4262"}},
+		Media:             []domain.Medium{{Number: 1, TrackTotal: domain.Known(4), Format: domain.Known("CD")}},
+		ReleaseTrackTotal: i(4), MediumTrackTotal: i(4),
+		Identifiers: []domain.Identifier{{Kind: "isrc", Value: "JPB600600001"}},
 		PrimaryType: s("Album"), DurationMS: i(272000), TrackNumber: i(2), TrackTotal: i(4),
 		DiscNumber: i(1), Year: i(2006), MediumFormat: s("CD"), Country: s("JP"),
 		ReleaseStatus: s("Official"), FirstReleaseDate: s("2006-07-05"),
 		Label: s("Lantis"), CatalogNumber: s("LACM-4262"),
-		ReleaseRef: s("rel-" + ref), ReleaseGroupRef: s("rg-1"), RecordingRef: s("rec-1"), ISRC: s("JPB600600001"),
+		ReleaseRef: s("rel-common"), ReleaseGroupRef: s("rg-1"), RecordingRef: s("rec-1"), ISRC: s("JPB600600001"),
 	}
 }
 
@@ -60,7 +65,7 @@ func TestAllAdmissionPathsWriteIdenticalTracks(t *testing.T) {
 	// 路径 C：导入自动入库（唯一高置信）
 	c := fullCandidate("c")
 	runner := importer.NewRunner(app.store, matching.NewEngine(app.settings.Get().Matching),
-		&recordingSearcher{hit: []provider.Candidate{c}}, provider.DefaultRetryPolicy(), false, nil)
+		&recordingSearcher{hit: []provider.Candidate{c}}, provider.DefaultRetryPolicy(), false, nil, app.library)
 	batchID, err := app.store.CreateBatch(&store.ImportBatch{Filename: "t.csv", TotalRows: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -106,28 +111,29 @@ func TestAllAdmissionPathsWriteIdenticalTracks(t *testing.T) {
 		}
 	}
 
-	// 路径 D：专辑视图灰色行加入曲库。
-	//
-	// 它带不了发行级字段（清单位置上本就只有曲名、署名、时长、录音标识），
-	// 因此不与前三条整体比对；比的是它带得动的那几列——这条路径同样
-	// **只写候选自己带的字段**，既不漏也不借。
-	idD, err := app.AddGhostRowToLibrary("musicbrainz", "d", "God knows...",
-		strPtrOrNil("平野綾"), fullCandidate("d").DurationMS, strPtrOrNil("rec-1"))
+	// 路径 D：灰色行必须从具体发行清单读取，保留位置及专辑事实。
+	release, _ := app.store.GetReleaseByRef("musicbrainz", "rel-common")
+	snapshot, _ := app.store.GetReleaseSnapshot(release.ID)
+	snapshot.Tracklist = domain.Known([]domain.TracklistEntry{{DiscNumber: 1, TrackNumber: 3, Track: domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: "d"}), Title: domain.Known("God knows..."), Credit: domain.Known(domain.Credit{Text: "平野綾"}), DurationMS: domain.Known(272000), Recording: domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: "rec-1"})}})
+	snapshot.TracklistCompleteness = domain.Complete
+	rev, _ := app.store.ReleaseRevision(release.ID)
+	if err := app.store.ApplyReleaseSnapshot(release.ID, &domain.Snapshot{Release: snapshot}, rev); err != nil {
+		t.Fatal(err)
+	}
+	idD, err := app.AddGhostRowToLibrary(release.ID, 1, 3)
 	if err != nil {
-		t.Fatalf("灰色行入库失败: %v", err)
+		t.Fatal(err)
 	}
 	metaD := metaOf(t, app, idD)
-	if metaD.Title != metaA.Title ||
-		!reflect.DeepEqual(metaD.Credit, metaA.Credit) ||
-		!reflect.DeepEqual(metaD.DurationMS, metaA.DurationMS) ||
-		!reflect.DeepEqual(metaD.RecordingRef, metaA.RecordingRef) ||
-		!reflect.DeepEqual(metaD.MatchSource, metaA.MatchSource) {
-		t.Errorf("灰色行入库与搜索页入库在共有字段上不同:\n A=%+v\n D=%+v", metaA, metaD)
+	if metaD.Title != metaA.Title || !reflect.DeepEqual(metaD.Credit, metaA.Credit) || !reflect.DeepEqual(metaD.DurationMS, metaA.DurationMS) || !reflect.DeepEqual(metaD.Label, metaA.Label) || metaD.TrackNumber == nil || *metaD.TrackNumber != 3 {
+		t.Fatalf("灰色行丢失上下文: %+v", metaD)
 	}
-	// 清单位置没给发行标识，歌集侧就该是空的——不拿别处的值去补
-	if metaD.Label != nil || metaD.ReleaseStatus != nil || metaD.Country != nil {
-		t.Errorf("灰色行入库凭空写出了发行级字段: %+v", metaD)
+	trackD, _ := app.store.GetTrack(idD)
+	stateD, _ := app.store.EnrichStateOf(idD)
+	if trackD.ReleaseID == nil || *trackD.ReleaseID != release.ID || stateD != store.EnrichPending {
+		t.Fatalf("灰色行状态=%+v", trackD)
 	}
+
 }
 
 // TestAdmissionNeverBorrowsImportValues 覆盖用户要求 1：
@@ -185,4 +191,16 @@ func metaOf(t *testing.T, app *App, id int64) store.TrackMetadata {
 	// 歌集行 id 随之不同；比对其余列。
 	m.TrackID, m.MatchRef, m.ReleaseRef, m.ReleaseID = 0, nil, nil, nil
 	return *m
+}
+
+func TestCandidateRowPreservesNewSnapshotFields(t *testing.T) {
+	candidate := fullCandidate("rich")
+	candidate.GroupTitle = strPtrOrNil("组标题")
+	candidate.GroupCredit = strPtrOrNil("组署名")
+	candidate.ReleaseIdentifiers = []domain.Identifier{{Kind: "barcode", Value: "123456"}, {Kind: "barcode", Value: "654321"}}
+	row := rowFrom(matching.ScoredCandidate{Candidate: candidate})
+	restored := row.toCandidate()
+	if !reflect.DeepEqual(candidate, restored) {
+		t.Fatalf("候选往返丢失字段:\n%+v\n%+v", candidate, restored)
+	}
 }

@@ -37,6 +37,7 @@ func (s *stubProvider) SearchCovers(context.Context, provider.Query) ([]provider
 
 // httpSearcher 把查询直接发往 stub server，用于端到端验证出错退避与统计。
 type httpSearcher struct {
+	provider.Provider
 	baseURL string
 }
 
@@ -88,5 +89,13 @@ func (s *stubProvider) Complete(context.Context, domain.DetailTarget) (*domain.S
 	return nil, provider.ErrUnsupported
 }
 func (s *stubProvider) LoadReleaseSummary(context.Context, domain.ReleaseIdentity) (*domain.ReleaseSummary, error) {
+	return nil, provider.ErrUnsupported
+}
+
+func (s *httpSearcher) ID() provider.ProviderID { return provider.MusicBrainz }
+func (s *httpSearcher) SnapshotFromCandidate(c provider.Candidate) (*domain.Snapshot, error) {
+	return provider.CandidateSnapshot(s.ID(), c)
+}
+func (s *httpSearcher) LoadReleaseSummary(context.Context, domain.ReleaseIdentity) (*domain.ReleaseSummary, error) {
 	return nil, provider.ErrUnsupported
 }

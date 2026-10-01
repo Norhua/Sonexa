@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/norhua/sonexa/internal/config"
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
@@ -18,6 +19,7 @@ import (
 
 // recordingSearcher 记录每次查询，并按曲名返回预设候选。
 type recordingSearcher struct {
+	provider.Provider
 	mu      sync.Mutex
 	byTitle map[string][]provider.Candidate
 	queries []provider.Query
@@ -72,7 +74,8 @@ func mbCandidate(ref, title, artist, album string) provider.Candidate {
 	return provider.Candidate{
 		Provider: provider.MusicBrainz, MatchRef: ref,
 		Title: sptr(title), ArtistName: sptr(artist), AlbumTitle: sptr(album),
-		ReleaseRef: sptr("rel-" + ref), ReleaseGroupRef: sptr("rg-1"),
+		ReleaseRef: sptr("rel-" + album), ReleaseGroupRef: sptr("rg-" + album),
+		AlbumCredit:   sptr(artist),
 		ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
 	}
 }
@@ -161,7 +164,7 @@ func TestRunnerImportsHighConfidence(t *testing.T) {
 	}
 
 	// 导入自动入库只写 release 行，清单状态为 none
-	rel, _ := st.GetReleaseByRef("musicbrainz", "rel-trk-1")
+	rel, _ := st.GetReleaseByRef("musicbrainz", "rel-涼宮ハルヒの詰合")
 	if rel == nil {
 		t.Fatal("应写入 release 行")
 	}
@@ -205,7 +208,7 @@ func TestRunnerSendsToReview(t *testing.T) {
 
 	var sawFail bool
 	for _, e := range events {
-		if containsStr(e.Line, "[匹配失败]") {
+		if containsStr(e.Line, "没有高置信匹配") {
 			sawFail = true
 		}
 	}
@@ -537,5 +540,66 @@ func TestRunnerRejectsVersionVariant(t *testing.T) {
 	}
 	if stats.Review != 1 {
 		t.Errorf("待复核 = %d, 期望 1", stats.Review)
+	}
+}
+
+func (s *recordingSearcher) ID() provider.ProviderID { return provider.MusicBrainz }
+func (s *recordingSearcher) SnapshotFromCandidate(c provider.Candidate) (*domain.Snapshot, error) {
+	return provider.CandidateSnapshot(s.ID(), c)
+}
+func (s *recordingSearcher) LoadReleaseSummary(context.Context, domain.ReleaseIdentity) (*domain.ReleaseSummary, error) {
+	return nil, provider.ErrUnsupported
+}
+
+func TestRunnerBatchUsesCommittedMembershipAndFourCounts(t *testing.T) {
+	st := openStore(t)
+	first := mbCandidate("first", "第一曲", "艺术家", "专辑")
+	next := mbCandidate("next", "第二曲", "艺术家", "专辑")
+	next.ReleaseRef = sptr("another-release")
+	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{"第一曲": {first}, "第二曲": {next}}, failFor: map[string]error{"请求失败": errors.New("offline")}}
+	batch, err := st.CreateBatch(&store.ImportBatch{Filename: "batch.csv", TotalRows: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := []store.ImportItem{}
+	for i, title := range []string{"第一曲", "第二曲", "没有结果", "请求失败"} {
+		items = append(items, store.ImportItem{RowIndex: i, RawRow: "[]", InTitle: sptr(title), InArtist: sptr("艺术家"), InAlbum: sptr("专辑")})
+	}
+	if err := st.EnqueueItems(batch, items); err != nil {
+		t.Fatal(err)
+	}
+	runner := newRunner(st, searcher)
+	runner.retry.MaxAttempts = 1
+	events := runToCompletion(t, runner, batch)
+	stats, err := st.Stats(batch)
+	if err != nil || stats.Imported != 1 || stats.ReviewOnly() != 1 || stats.Unmatched != 1 || stats.Failed != 1 || stats.Processed() != 4 {
+		t.Fatalf("stats=%+v %v", stats, err)
+	}
+	review, _ := st.AllReviewItems()
+	found := false
+	for _, item := range review {
+		if item.InTitle == nil || *item.InTitle != "第二曲" {
+			continue
+		}
+		found = true
+		if item.ReviewReason == nil || *item.ReviewReason != "new_release" || item.ReviewEvidence == nil {
+			t.Fatalf("missing reason/evidence: %+v", item)
+		}
+		var baseline domain.AdmissionBaseline
+		if err := json.Unmarshal([]byte(*item.ReviewEvidence), &baseline); err != nil {
+			t.Fatal(err)
+		}
+		if !baseline.RequiresConfirmation || len(baseline.Resolution.Groups) != 1 || len(baseline.Resolution.Groups[0].Members) != 1 {
+			t.Fatalf("baseline=%+v", baseline)
+		}
+	}
+	if !found {
+		t.Fatal("新版本应进入复核")
+	}
+	if len(events) == 0 || !events[len(events)-1].Done {
+		t.Fatal("应完成统计")
+	}
+	if rel, _ := st.GetReleaseByRef("musicbrainz", "another-release"); rel != nil {
+		t.Fatal("未经确认创建了发行")
 	}
 }

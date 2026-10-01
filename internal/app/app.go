@@ -269,7 +269,11 @@ func (a *App) rebuildRunner(cur config.Settings) {
 	fetchOnMatch := cur.Matching.TracklistTiming == config.TracklistOnMatch
 
 	// 导入阶段只用 MusicBrainz
-	a.runner = importer.NewRunner(a.store, engine, mb, retry, fetchOnMatch, a.emitProgress)
+	service, err := a.libraryServiceLocked()
+	if err != nil {
+		return
+	}
+	a.runner = importer.NewRunner(a.store, engine, mb, retry, fetchOnMatch, a.emitProgress, service)
 	if fetchOnMatch {
 		// 走后台优先级与同一套补全状态机：这是导入循环内部的一次取数，
 		// 不是用户在等的请求，标成交互式会让它抢在用户的搜索之前。

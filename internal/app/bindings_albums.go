@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
-	"time"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
@@ -281,112 +281,40 @@ func (a *App) FetchTracklist(providerID, releaseRef string, force bool) error {
 		}
 	}
 
-	detail, err := p.FetchDetail(context.Background(), provider.Ref{
-		ID: releaseRef, Country: countryOf(releaseRef), SkipCache: force,
-	})
-	if err != nil {
-		// 标记失败，界面显示错误与重试动作
-		if rel != nil {
-			a.store.ReplaceTracklist(rel.ID, nil, store.TracklistFailed)
-		}
-		return fmt.Errorf("补拉清单失败: %w", err)
+	if rel == nil {
+		return fmt.Errorf("发行尚未加入曲库，请先预览准入")
 	}
-
-	releaseID, err := a.upsertReleaseFromDetail(providerID, releaseRef, detail)
+	revision, err := a.store.ReleaseRevision(rel.ID)
 	if err != nil {
 		return err
 	}
-
-	if err := a.replaceTracklistFromDetail(releaseID, detail); err != nil {
+	done := a.beginInteractive()
+	defer done()
+	snapshot, err := p.Complete(provider.WithPriority(context.Background(), provider.PriorityInteractive), domain.DetailTarget{Release: domain.Identity{Provider: provider.ProviderID(providerID), Ref: releaseRef}, SkipCache: force})
+	if err != nil {
+		return fmt.Errorf("补拉清单失败: %w", err)
+	}
+	if err := a.store.ApplyReleaseSnapshot(rel.ID, snapshot, revision); err != nil {
 		return err
 	}
 	a.notifyLibraryChanged()
 	return nil
 }
 
-// replaceTracklistFromDetail 共用详情/清单入口；不把未定位的发行详情写进曲目。
-func (a *App) replaceTracklistFromDetail(releaseID int64, detail *provider.Detail) error {
-	entries := make([]store.ReleaseTrack, 0, len(detail.Tracklist))
-	for _, e := range detail.Tracklist {
-		entries = append(entries, store.ReleaseTrack{
-			DiscNumber: e.DiscNumber, TrackNumber: e.TrackNumber,
-			TrackRef: e.TrackRef, RecordingRef: e.RecordingRef,
-			Title: e.Title, TrackCredit: e.TrackCredit,
-			DurationMS: e.DurationMS, TrackNumberText: e.TrackNumberText,
-		})
+// PrepareGhostAdmission 根据发行及位置预览准入。
+func (a *App) PrepareGhostAdmission(releaseID int64, disc, position int) (*domain.AdmissionPlan, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
 	}
-	state := store.TracklistComplete
-	if len(entries) == 0 || (detail.TrackTotal != nil && len(entries) < *detail.TrackTotal) {
-		state = store.TracklistPartial
-	}
-	return a.store.ReplaceTracklist(releaseID, entries, state)
+	return service.PrepareGhostAdmission(a.ctx, releaseID, disc, position)
 }
-
-// upsertReleaseFromDetail 由详情写入或更新发行记录。
-func (a *App) upsertReleaseFromDetail(providerID, releaseRef string, d *provider.Detail) (int64, error) {
-	title := releaseRef
-	if d.AlbumTitle != nil {
-		title = *d.AlbumTitle
-	}
-	now := time.Now().UTC()
-
-	// 发行组：详情带着它时一并登记，同一专辑的不同版本才能在列表里合为一条
-	var groupID *int64
-	if d.ReleaseGroupRef != nil && *d.ReleaseGroupRef != "" {
-		id, err := a.store.UpsertReleaseGroup(&store.ReleaseGroup{
-			Provider: &providerID, ProviderRef: d.ReleaseGroupRef, Title: title,
-			PrimaryType:      strPtrOrNil(store.NormalizeReleaseType(deref(d.PrimaryType))),
-			FirstReleaseDate: d.FirstReleaseDate,
-		})
-		if err != nil {
-			return 0, err
-		}
-		groupID = &id
-	}
-
-	return a.store.UpsertRelease(&store.Release{
-		ReleaseGroupID: groupID,
-		Provider:       &providerID, ProviderRef: &releaseRef,
-		Title:         title,
-		Credit:        d.AlbumCredit,
-		PrimaryType:   strPtrOrNil(store.NormalizeReleaseType(deref(d.PrimaryType))),
-		ReleaseStatus: d.ReleaseStatus, MediumFormat: d.MediumFormat,
-		Country: d.Country, ReleaseDate: d.ReleaseDate,
-		FirstReleaseDate: d.FirstReleaseDate,
-		TrackTotal:       d.TrackTotal, DiscTotal: d.DiscTotal,
-		Label:          d.Label,
-		CatalogNumber:  d.CatalogNumber,
-		TracklistState: store.TracklistNone, FetchedAt: &now,
-	})
-}
-
-// AddGhostRowToLibrary 把灰色行直接入库。
-//
-// 清单里已有 track 标识，可直接带完整溯源入库——不需要再搜一次。
-func (a *App) AddGhostRowToLibrary(providerID, trackRef, title string,
-	credit *string, durationMS *int, recordingRef *string) (int64, error) {
-	if err := a.ready(); err != nil {
+func (a *App) AddGhostRowToLibrary(releaseID int64, disc, position int) (int64, error) {
+	plan, err := a.PrepareGhostAdmission(releaseID, disc, position)
+	if err != nil {
 		return 0, err
 	}
-	if trackRef == "" {
-		return 0, fmt.Errorf("缺少上游标识")
-	}
-
-	// 与其他三条入库路径共用同一个落点（见 admitCandidate）
-	return a.admitCandidate(provider.Candidate{
-		Provider: provider.ProviderID(providerID), MatchRef: trackRef,
-		Title: &title, ArtistName: credit, DurationMS: durationMS, RecordingRef: recordingRef,
-	})
-}
-
-// countryOf 从 {country}:{id} 形态的标识中取出地区。
-func countryOf(ref string) string {
-	for i := 0; i < len(ref); i++ {
-		if ref[i] == ':' {
-			return ref[:i]
-		}
-	}
-	return ""
+	return a.commitUnconfirmedAdmission(plan)
 }
 
 func asAlreadyExistsErr(err error, target **store.ErrAlreadyExists) bool {

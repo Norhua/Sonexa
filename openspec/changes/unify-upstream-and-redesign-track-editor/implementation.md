@@ -37,3 +37,40 @@
 3.4 的按需摘要与纯选版规则已实现并有测试：候选内已有发行优先、总曲数、非世界国家、稳定身份顺序，保留未知与位置/录音歧义，不枚举整组。该项仍未勾选，待 4.2 将 runner 接入并移除旧实体过滤直入规则。
 
 验证通过 `go test ./...` 与 `go test -race ./internal/library ./internal/store ./internal/app`。新用例已测试并发新组、并发成员、精确曲目重复、修订变化、跨计划凭据、过期、提交故障及队列原子性。旧公开创建/编辑入口仍将在第 4、6 阶段切换，当前不能宣称入口约束已经全面完成。
+
+## 导入、准入入口与精确补全（2026-10-02）
+
+完成 3.4、4.1–4.5，累计 28/53 项。本轮按用户要求完成测试和阶段提交后停止，尚未完成整个变更。
+
+- runner 接入 library 的按需摘要、同组/同内容判断及选版；匹配层不再使用实体载体过滤决定入库。自动准入遇到新增发行、资料不足、证据冲突或未知总数时进入复核，新增发行的计划依据随条目保存，四类进度统计互不重叠。同批前序提交会影响后续候选准入。
+- 导入保留有有效映射数据但缺曲名的行，分别统计曲名/艺术家/专辑缺失。CSV 物理空行及 XLSX 空记录单独跳过，支持前置空行和带换行的引号单元格，原始解析行不变；新增碟号入队字段。文件行数保留，进度分母取实际队列数量。
+- CandidateRow 保留专辑/组署名、角色署名数组、发行总数与每碟数量、媒体、厂牌和标识数组。搜索添加、复核接受、无需匹配与手动创建统一委托准入计划；旧单步 API 在需要额外确认时返回明确错误，不能替前端批准。复核终态与收藏在同一事务中提交，本地三项基本信息均可空，歌曲署名不再推断为专辑署名。
+- 灰色行改为传入发行 ID、碟号及轨号，由后端从有效绑定的发行快照读取清单事实，保留所属发行与 pending 状态。AlbumsView 调用同步更新。
+- 抽出仅同步既存发行事实的 ApplyReleaseSnapshot。FetchTracklist 不再创建发行/组、不再按旧 TrackTotal 猜测完整性；后台、导入即时和手动刷新均调用来源 Complete，再按精确歌曲身份及请求前修订提交。清单刷新不改任意歌曲，失败保留已有事实。
+- 修复 SaveSettings 持锁重建 runner 时的自死锁，重用单个 library 服务，保留已经生成的准入计划。更新使用伪标识的旧测试为格式有效的 UUID，并使用已准入发行验证 force 缓存刷新。
+
+本轮最终验证通过：
+
+- `go test ./... -timeout=120s`（`/tmp/sonexa-stage4-full.log`）
+- `go test -race ./internal/importer ./internal/library ./internal/store ./internal/app -timeout=180s`（`/tmp/sonexa-stage4-race.log`）
+- `go vet ./...`（`/tmp/sonexa-stage4-vet.log`）
+- `/Users/amadeus/.go/bin/wails generate module`（本机 PATH 未包含 Wails；生成文件按仓库规则不提交）
+- `cd frontend && npm test`：7 个文件、39 个测试通过（`/tmp/sonexa-stage4-frontend-tests.log`）
+- `cd frontend && npm run build`：类型检查与 Vite 构建通过（`/tmp/sonexa-stage4-frontend-build.log`）
+- `git diff --check`
+
+绑定生成后修正两处旧 `Models.store.CoverVariant` 引用为 `Models.domain.CoverVariant`。Wails v2 对部分 `Field[[]T]` 字段仍输出 `Not found` 警告，生成模型降为 any，并产生不能用于这些字段的构造转换；现有前端只使用类型与原始返回对象，没有调用这些模型构造器。后续第 6 阶段应提供稳定的前端 DTO 或修正生成方式，并覆盖序列化/构造用例，不能把本轮生成成功视为新编辑 API 已验收。Vite 仍有大于 500 kB 的 bundle 提示。
+
+### 下个会话继续的位置
+
+先读本变更 tasks/design/specs，使用 `$openspec-apply-change unify-upstream-and-redesign-track-editor` 继续。4.6 尚未完成，因为旧编辑与改名入口仍可能直接写身份或迁移成员；需要结合第 6 阶段统一保存计划移除这些旁路，不能宣称所有业务写入口已经受准入保护。
+
+重点待处理：
+
+1. `internal/app/bindings_edit.go` 的 ApplyEdits、SetProvenanceManual、ClearProvenance 等旧立即写入接口，以及 `bindings_library.go` 的 ApplyAlbumRename/MoveTrackToRelease 路径。
+2. 第 5 阶段多版本分区读取与共用确认 UI。当前搜索/复核/手动创建页面仍调用旧单步接口，遇到需要确认的新增版本会显示错误；必须改成 Prepare → 确认 → Commit 的共用交互，并接上归组冲突与待处理提议。4.3/4.4 的后端入口约束已验证，5.3 的界面流程尚未实现。
+3. 新导入缺失统计和复核原因已由后端返回，5.6 仍需前端展示与流程验收；来源能力和代表展示偏好亦待第 5 阶段完成。
+4. 第 6、7 阶段编辑会话、纯上游预览、共享影响及映射计划、原子文件保存与两栏编辑器尚未实施。
+5. 未执行本轮 Playwright、完整 wails build 或原生窗口验收；第 8 阶段仍全部未勾选，主规格/README/known-gaps 的最终同步待实现完成后进行。
+
+生产仅使用一个 library.Service；测试如需额外 runner，应注入 App 现有 service，避免对同一个 Store 重新安装计划签名验证器。`GetReleaseSnapshot` 只读取有效绑定快照，旧 `ReleaseSnapshot` 当前仍供提议接口使用，后续可统一其读取约束。

@@ -94,6 +94,7 @@ type ImportItem struct {
 	InAlbum       *string    `json:"inAlbum"`
 	InYear        *int       `json:"inYear"`
 	InTrackNo     *int       `json:"inTrackNo"`
+	InDiscNo      *int       `json:"inDiscNo"`
 	InDurationMS  *int       `json:"inDurationMs"`
 	Status        ItemStatus `json:"status"`
 	AttemptCount  int        `json:"attemptCount"`
@@ -103,9 +104,10 @@ type ImportItem struct {
 	Candidates    *string    `json:"candidates"`
 	TriedVariants *string    `json:"triedVariants"`
 	// ReviewReason 是进入复核的成因；非复核状态时为空。
-	ReviewReason *string `json:"reviewReason"`
-	TrackID      *int64  `json:"trackId"`
-	MergedInto   *int64  `json:"mergedInto"`
+	ReviewReason   *string `json:"reviewReason"`
+	ReviewEvidence *string `json:"reviewEvidence"`
+	TrackID        *int64  `json:"trackId"`
+	MergedInto     *int64  `json:"mergedInto"`
 }
 
 // CreateBatch 建立一个导入批次。
@@ -135,8 +137,8 @@ func (s *Store) EnqueueItems(batchID int64, items []ImportItem) error {
 		stmt, err := tx.Prepare(`
 			INSERT INTO import_item (
 				batch_id, row_index, raw_row, in_title, in_artist, in_album,
-				in_year, in_track_no, in_duration_ms, status, attempt_count, updated_at
-			) VALUES (?,?,?,?,?,?,?,?,?,?,0,?)`)
+				in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count, updated_at
+			) VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?)`)
 		if err != nil {
 			return err
 		}
@@ -146,7 +148,7 @@ func (s *Store) EnqueueItems(batchID int64, items []ImportItem) error {
 		for _, it := range items {
 			if _, err := stmt.Exec(batchID, it.RowIndex, it.RawRow,
 				it.InTitle, it.InArtist, it.InAlbum,
-				it.InYear, it.InTrackNo, it.InDurationMS,
+				it.InYear, it.InTrackNo, it.InDiscNo, it.InDurationMS,
 				string(StatusQueued), now); err != nil {
 				return fmt.Errorf("写入第 %d 行失败: %w", it.RowIndex, err)
 			}
@@ -165,9 +167,9 @@ func (s *Store) ClaimNextItem(batchID int64) (*ImportItem, error) {
 		now := time.Now().UTC()
 		row := tx.QueryRow(`
 			SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
-			       in_year, in_track_no, in_duration_ms, status, attempt_count,
+			       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
 			       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-			       review_reason, track_id, merged_into
+			       review_reason, review_evidence, track_id, merged_into
 			FROM import_item
 			WHERE batch_id = ? AND status = ?
 			  AND (next_retry_at IS NULL OR next_retry_at <= ?)
@@ -199,9 +201,9 @@ func scanItem(row interface{ Scan(...any) error }) (*ImportItem, error) {
 	var status string
 	err := row.Scan(&it.ID, &it.BatchID, &it.RowIndex, &it.RawRow,
 		&it.InTitle, &it.InArtist, &it.InAlbum,
-		&it.InYear, &it.InTrackNo, &it.InDurationMS, &status, &it.AttemptCount,
+		&it.InYear, &it.InTrackNo, &it.InDiscNo, &it.InDurationMS, &status, &it.AttemptCount,
 		&it.LastError, &it.LastErrorAt, &it.NextRetryAt, &it.Candidates, &it.TriedVariants,
-		&it.ReviewReason, &it.TrackID, &it.MergedInto)
+		&it.ReviewReason, &it.ReviewEvidence, &it.TrackID, &it.MergedInto)
 	if err != nil {
 		return nil, err
 	}
@@ -220,8 +222,13 @@ func (s *Store) MarkImported(itemID, trackID int64) error {
 // MarkReview 把条目置为待复核，记录成因并保存候选快照与已尝试变体。
 //
 // reason 为 ReviewReasonUnchanged 时不改写已有成因。
-func (s *Store) MarkReview(itemID int64, reason ReviewReason, candidatesJSON, variantsJSON string) error {
+func (s *Store) MarkReview(itemID int64, reason ReviewReason, candidatesJSON, variantsJSON string, evidence ...string) error {
 	return s.setStatus(itemID, StatusReview, func(tx *sql.Tx) error {
+		if len(evidence) > 0 {
+			if _, err := tx.Exec("UPDATE import_item SET review_evidence=? WHERE id=?", evidence[0], itemID); err != nil {
+				return err
+			}
+		}
 		if reason == ReviewReasonUnchanged {
 			_, err := tx.Exec(
 				`UPDATE import_item SET candidates = ?, tried_variants = ? WHERE id = ?`,
@@ -428,9 +435,9 @@ func (s *Store) ReviewItems(batchID int64) ([]ImportItem, error) {
 func (s *Store) AllReviewItems() ([]ImportItem, error) {
 	rows, err := s.db.Query(`
 		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
-		       in_year, in_track_no, in_duration_ms, status, attempt_count,
+		       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
 		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       review_reason, track_id, merged_into
+		       review_reason, review_evidence, track_id, merged_into
 		FROM import_item
 		WHERE status IN (?, ?)
 		ORDER BY batch_id, row_index`, string(StatusReview), string(StatusFailed))
@@ -444,9 +451,9 @@ func (s *Store) AllReviewItems() ([]ImportItem, error) {
 func (s *Store) itemsByStatus(batchID int64, status ItemStatus) ([]ImportItem, error) {
 	rows, err := s.db.Query(`
 		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
-		       in_year, in_track_no, in_duration_ms, status, attempt_count,
+		       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
 		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       review_reason, track_id, merged_into
+		       review_reason, review_evidence, track_id, merged_into
 		FROM import_item WHERE batch_id = ? AND status = ? ORDER BY row_index`,
 		batchID, string(status))
 	if err != nil {
@@ -472,9 +479,9 @@ func collectItems(rows *sql.Rows) ([]ImportItem, error) {
 func (s *Store) GetItem(itemID int64) (*ImportItem, error) {
 	row := s.db.QueryRow(`
 		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
-		       in_year, in_track_no, in_duration_ms, status, attempt_count,
+		       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
 		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       review_reason, track_id, merged_into
+		       review_reason, review_evidence, track_id, merged_into
 		FROM import_item WHERE id = ?`, itemID)
 	it, err := scanItem(row)
 	if errors.Is(err, sql.ErrNoRows) {

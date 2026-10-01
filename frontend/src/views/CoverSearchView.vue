@@ -46,7 +46,7 @@ function variant(card: Models.app.CoverSearchCard) {
   const smallest = [...available].sort((a, b) => (Number(a.spec) || Infinity) - (Number(b.spec) || Infinity))[0]!
   return available.find(v => v.id === variants.value[card.image.id]) ?? smallest
 }
-function label(v: Models.store.CoverVariant) {
+function label(v: Models.domain.CoverVariant) {
   return dimensions.value[v.id] ?? (v.width && v.height ? `${v.width}×${v.height}` : v.spec === 'original' ? '原图·尺寸未知' : `${v.spec}px${v.constructed ? '·待验证' : ''}`)
 }
 function loaded(id: number, width: number, height: number) {

@@ -209,3 +209,25 @@ func (s *Service) CommitAdmission(ctx context.Context, id, hash string, approval
 func (s *Service) ResolveGroup(snapshot domain.Snapshot) (domain.GroupResolution, error) {
 	return s.store.ResolveGroup(snapshot)
 }
+
+// PrepareGhostAdmission 从正式发行快照定位清单位置，不接受客户端拼装的缺失上下文。
+func (s *Service) PrepareGhostAdmission(ctx context.Context, releaseID int64, disc, position int) (*domain.AdmissionPlan, error) {
+	release, err := s.store.GetReleaseSnapshot(releaseID)
+	if err != nil {
+		return nil, err
+	}
+	if release == nil || release.Tracklist.State != domain.Value {
+		return nil, fmt.Errorf("该发行没有可用清单")
+	}
+	for _, entry := range release.Tracklist.Value {
+		if entry.DiscNumber != disc || entry.TrackNumber != position {
+			continue
+		}
+		if entry.Track.State != domain.Value || entry.Track.Value.Ref == "" || entry.Track.Value.Provider != release.Identity.Provider {
+			return nil, store.ErrSnapshotTarget
+		}
+		track := &domain.TrackSnapshot{Identity: entry.Track.Value, Release: &release.Identity, Title: entry.Title, Credit: entry.Credit, DurationMS: entry.DurationMS, Recording: entry.Recording, Identifiers: entry.Identifiers, DiscNumber: domain.Known(disc), TrackNumber: domain.Known(position)}
+		return s.PrepareAdmission(ctx, domain.AdmissionSeed{Snapshot: domain.Snapshot{Release: release, Track: track}})
+	}
+	return nil, fmt.Errorf("该发行清单位置不存在")
+}

@@ -104,70 +104,14 @@ func applySnapshotTx(tx *sql.Tx, id int64, snapshot *domain.Snapshot, revision i
 		}
 	}
 	if snapshot.Release != nil {
-		if releaseID == nil {
+		if releaseID == nil || (t.Release != nil && *t.Release != snapshot.Release.Identity) {
 			return ErrSnapshotTarget
 		}
-		r := snapshot.Release
-		var rp, rr *string
-		if err := tx.QueryRow("SELECT provider,provider_ref FROM release WHERE id=?", *releaseID).Scan(&rp, &rr); err != nil {
-			return err
-		}
-		if rp == nil || rr == nil || *rp != string(r.Identity.Provider) || *rr != r.Identity.Ref {
-			return ErrSnapshotTarget
-		}
-		if t.Release != nil && *t.Release != r.Identity {
-			return ErrSnapshotTarget
-		}
-		if snapshot.Group != nil {
-			var groupID int64
-			err := tx.QueryRow(`SELECT gr.group_id FROM release_group_ref gr JOIN release r ON r.release_group_id=gr.group_id WHERE r.id=? AND gr.provider=? AND gr.group_ref=?`, *releaseID, snapshot.Group.Identity.Provider, snapshot.Group.Identity.Ref).Scan(&groupID)
-			if err != nil && err != sql.ErrNoRows {
-				return err
-			}
-			if err == nil {
-				if err := saveGroupSnapshotTx(tx, groupID, snapshot.Group); err != nil {
-					return err
-				}
-			}
-		}
-		merged, err := saveSnapshotTx(tx, "release", *releaseID, r)
-		if err != nil {
-			return err
-		}
-		fields, err := layerFields(json.RawMessage(merged))
-		if err != nil {
-			return err
-		}
-		if err := writeCurrentTx(tx, "release", *releaseID, fields, *rp, false, nil); err != nil {
-			return err
-		}
-		var saved domain.ReleaseSnapshot
-		if err := json.Unmarshal(merged, &saved); err != nil {
-			return err
-		}
-		if r.Tracklist.IsKnown() {
-			if err := syncSnapshotTracklistTx(tx, *releaseID, saved); err != nil {
-				return err
-			}
-		}
-		if err := refreshCreditsTx(tx, "release", *releaseID); err != nil {
-			return err
-		}
-		if r.Date.IsKnown() {
-			if err := syncReleaseYearsTx(tx, *releaseID, r.Date, *rp); err != nil {
-				return err
-			}
-		}
-		if err := syncFTSForRelease(tx, *releaseID); err != nil {
-			return err
-		}
-		if err := rebuildGroupKeysTx(tx); err != nil {
-			return err
-		}
-		if err := proposeGroupChangeTx(tx, *releaseID, snapshot.Group); err != nil {
+		if err := applyReleaseSnapshotTx(tx, *releaseID, snapshot); err != nil {
 			return err
 		}
 	}
+
 	merged, err := saveSnapshotTx(tx, "track", id, t)
 	if err != nil {
 		return err
@@ -284,6 +228,89 @@ func syncReleaseYearsTx(tx *sql.Tx, releaseID int64, date domain.Field[string], 
 		if err := writeCurrentTx(tx, "track", id, fieldMap{"year": field}, source, false, nil); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (s *Store) ReleaseRevision(id int64) (int64, error) {
+	var revision int64
+	err := s.db.QueryRow("SELECT revision FROM release WHERE id=?", id).Scan(&revision)
+	return revision, err
+}
+
+// ApplyReleaseSnapshot 只补全既存发行的事实和 follow 值，不能创建或迁移成员。
+func (s *Store) ApplyReleaseSnapshot(id int64, snapshot *domain.Snapshot, revision int64) error {
+	if snapshot == nil || snapshot.Release == nil {
+		return ErrSnapshotTarget
+	}
+	return s.withTx(func(tx *sql.Tx) error {
+		var actual int64
+		if err := tx.QueryRow("SELECT revision FROM release WHERE id=?", id).Scan(&actual); err != nil {
+			return err
+		}
+		if actual != revision {
+			return ErrRevisionConflict
+		}
+		return applyReleaseSnapshotTx(tx, id, snapshot)
+	})
+}
+func applyReleaseSnapshotTx(tx *sql.Tx, id int64, snapshot *domain.Snapshot) error {
+	r := snapshot.Release
+	var rp, rr *string
+	if err := tx.QueryRow("SELECT provider,provider_ref FROM release WHERE id=?", id).Scan(&rp, &rr); err != nil {
+		return err
+	}
+	if rp == nil || rr == nil || *rp != string(r.Identity.Provider) || *rr != r.Identity.Ref {
+		return ErrSnapshotTarget
+	}
+	if snapshot.Group != nil {
+		var groupID int64
+		err := tx.QueryRow(`SELECT gr.group_id FROM release_group_ref gr JOIN release r ON r.release_group_id=gr.group_id WHERE r.id=? AND gr.provider=? AND gr.group_ref=?`, id, snapshot.Group.Identity.Provider, snapshot.Group.Identity.Ref).Scan(&groupID)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if err == nil {
+			if err := saveGroupSnapshotTx(tx, groupID, snapshot.Group); err != nil {
+				return err
+			}
+		}
+	}
+	merged, err := saveSnapshotTx(tx, "release", id, r)
+	if err != nil {
+		return err
+	}
+	fields, err := layerFields(json.RawMessage(merged))
+	if err != nil {
+		return err
+	}
+	if err := writeCurrentTx(tx, "release", id, fields, *rp, false, nil); err != nil {
+		return err
+	}
+	var saved domain.ReleaseSnapshot
+	if err := json.Unmarshal(merged, &saved); err != nil {
+		return err
+	}
+	if r.Tracklist.IsKnown() {
+		if err := syncSnapshotTracklistTx(tx, id, saved); err != nil {
+			return err
+		}
+	}
+	if err := refreshCreditsTx(tx, "release", id); err != nil {
+		return err
+	}
+	if r.Date.IsKnown() {
+		if err := syncReleaseYearsTx(tx, id, r.Date, *rp); err != nil {
+			return err
+		}
+	}
+	if err := syncFTSForRelease(tx, id); err != nil {
+		return err
+	}
+	if err := rebuildGroupKeysTx(tx); err != nil {
+		return err
+	}
+	if err := proposeGroupChangeTx(tx, id, snapshot.Group); err != nil {
+		return err
 	}
 	return nil
 }

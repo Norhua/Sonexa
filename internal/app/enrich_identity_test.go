@@ -18,13 +18,13 @@ import (
 // A release with distinct tracks/credits, reproducing image3/image4. IDs are
 // deliberately synthetic; no live service or user database is used.
 const enrichmentRelease = `{
- "id":"rel-snow","title":"狼と巫女とお菓子の家","artist-credit":[{"name":"Crest"}],
+ "id":"10000000-0000-4000-8000-000000000001","title":"狼と巫女とお菓子の家","artist-credit":[{"name":"Crest"}],
  "media":[{"position":1,"format":"CD","track-count":4,"tracks":[
-  {"id":"trk-honey","position":1,"number":"1","title":"Honey Trap","length":267000,
+  {"id":"20000000-0000-4000-8000-000000000001","position":1,"number":"1","title":"Honey Trap","length":267000,
    "artist-credit":[{"name":"Chia"}],"recording":{"id":"rec-honey"}},
-  {"id":"trk-moon","position":2,"number":"2","title":"Under The Moon","length":230000},
-  {"id":"trk-fire","position":3,"number":"3","title":"Fire","length":216000},
-  {"id":"trk-snow","position":4,"number":"4","title":"綿雪の夢","length":321000,
+  {"id":"20000000-0000-4000-8000-000000000002","position":2,"number":"2","title":"Under The Moon","length":230000},
+  {"id":"20000000-0000-4000-8000-000000000003","position":3,"number":"3","title":"Fire","length":216000},
+  {"id":"20000000-0000-4000-8000-000000000004","position":4,"number":"4","title":"綿雪の夢","length":321000,
    "artist-credit":[{"name":"ハトリアヤ"}],"recording":{"id":"rec-snow","isrcs":["JPTEST000004"],
     "relations":[{"type":"vocal","artist":{"id":"art-snow","name":"ハトリアヤ","type":"Person"}},
      {"type":"performance","work":{"id":"work-snow","relations":[
@@ -32,8 +32,8 @@ const enrichmentRelease = `{
  ]}]
 }`
 const enrichmentSearch = `{"recordings":[{"id":"rec-snow","title":"綿雪の夢","artist-credit":[{"name":"ハトリアヤ"}],
- "releases":[{"id":"rel-snow","title":"狼と巫女とお菓子の家","media":[{"position":1,"format":"CD","track-count":4,
- "track":[{"id":"trk-snow","position":4,"title":"綿雪の夢","length":321000}]}]}]}]}`
+ "releases":[{"id":"10000000-0000-4000-8000-000000000001","title":"狼と巫女とお菓子の家","media":[{"position":1,"format":"CD","track-count":4,
+ "track":[{"id":"20000000-0000-4000-8000-000000000004","position":4,"title":"綿雪の夢","length":321000}]}]}]}]}`
 
 func replayEnrichment(t *testing.T, app *App, body string) *atomic.Int32 {
 	t.Helper()
@@ -41,7 +41,7 @@ func replayEnrichment(t *testing.T, app *App, body string) *atomic.Int32 {
 	app.client.HTTP.Transport = coverReplayTransport(func(r *http.Request) (*http.Response, error) {
 		response := body
 		switch r.URL.Path {
-		case "/ws/2/release/rel-snow", "/lookup":
+		case "/ws/2/release/10000000-0000-4000-8000-000000000001", "/lookup":
 			details.Add(1)
 		case "/ws/2/recording":
 			response = enrichmentSearch
@@ -55,9 +55,9 @@ func replayEnrichment(t *testing.T, app *App, body string) *atomic.Int32 {
 
 func snowCandidate() provider.Candidate {
 	number, disc, duration := 4, 1, 321000
-	return provider.Candidate{Provider: provider.MusicBrainz, MatchRef: "trk-snow",
+	return provider.Candidate{Provider: provider.MusicBrainz, MatchRef: "20000000-0000-4000-8000-000000000004",
 		Title: strPtrOrNil("綿雪の夢"), ArtistName: strPtrOrNil("ハトリアヤ"), AlbumTitle: strPtrOrNil("狼と巫女とお菓子の家"),
-		ReleaseRef: strPtrOrNil("rel-snow"), RecordingRef: strPtrOrNil("rec-snow"),
+		ReleaseRef: strPtrOrNil("10000000-0000-4000-8000-000000000001"), RecordingRef: strPtrOrNil("rec-snow"),
 		TrackNumber: &number, DiscNumber: &disc, DurationMS: &duration}
 }
 
@@ -86,7 +86,7 @@ func TestNonFirstTrackEnrichmentKeepsIdentityAndCachesTracklist(t *testing.T) {
 					t.Fatal(e)
 				}
 				waitFor(t, "import completion", func() bool { return !app.runner.IsRunning(batch) })
-				id, err = app.store.FindByMatchRef("musicbrainz", "trk-snow")
+				id, err = app.store.FindByMatchRef("musicbrainz", "20000000-0000-4000-8000-000000000004")
 			} else {
 				id, err = app.store.AdmitCandidate(snowCandidate())
 				if err != nil {
@@ -99,7 +99,7 @@ func TestNonFirstTrackEnrichmentKeepsIdentityAndCachesTracklist(t *testing.T) {
 					}
 					waitFor(t, "background completion", func() bool { return app.enricher.Status().State == enrichIdle })
 				} else {
-					err = app.RefreshTrackDetail(id, "musicbrainz", "rel-snow")
+					err = app.RefreshTrackDetail(id, "musicbrainz", "10000000-0000-4000-8000-000000000001")
 				}
 			}
 			if err != nil || id == 0 {
@@ -119,7 +119,7 @@ func TestNonFirstTrackEnrichmentKeepsIdentityAndCachesTracklist(t *testing.T) {
 				t.Fatal(err)
 			}
 			m := detail.Metadata
-			if deref(m.MatchRef) != "trk-snow" || deref(m.RecordingRef) != "rec-snow" || deref(m.WorkRef) != "work-snow" || deref(m.ISRC) != "JPTEST000004" || m.DurationMS == nil || *m.DurationMS != 321000 {
+			if deref(m.MatchRef) != "20000000-0000-4000-8000-000000000004" || deref(m.RecordingRef) != "rec-snow" || deref(m.WorkRef) != "work-snow" || deref(m.ISRC) != "JPTEST000004" || m.DurationMS == nil || *m.DurationMS != 321000 {
 				t.Fatalf("wrong target metadata: %+v", m)
 			}
 			if detail.CreditText != "ハトリアヤ" || !strings.Contains(fmt.Sprint(detail.Participants), "Snow Composer") {
@@ -138,7 +138,7 @@ func TestNonFirstTrackEnrichmentKeepsIdentityAndCachesTracklist(t *testing.T) {
 				}
 			}
 			// Reopening a complete album must not need another metadata request.
-			if err := app.FetchTracklist("musicbrainz", "rel-snow", false); err != nil {
+			if err := app.FetchTracklist("musicbrainz", "10000000-0000-4000-8000-000000000001", false); err != nil {
 				t.Fatal(err)
 			}
 			if requests.Load() != 1 {
@@ -149,7 +149,7 @@ func TestNonFirstTrackEnrichmentKeepsIdentityAndCachesTracklist(t *testing.T) {
 }
 
 func TestUnresolvedDetailTargetDoesNotModifyTrack(t *testing.T) {
-	for _, ref := range []string{"", "missing-track", "rec-snow@rel-snow"} {
+	for _, ref := range []string{"", "20000000-0000-4000-8000-000000000009", "rec-snow@10000000-0000-4000-8000-000000000001"} {
 		t.Run("ref="+ref, func(t *testing.T) {
 			app, cleanup := newTestApp(t)
 			defer cleanup()
@@ -171,7 +171,7 @@ func TestUnresolvedDetailTargetDoesNotModifyTrack(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := app.RefreshTrackDetail(id, "musicbrainz", "rel-snow"); err == nil {
+			if err := app.RefreshTrackDetail(id, "musicbrainz", "10000000-0000-4000-8000-000000000001"); err == nil {
 				t.Fatal("unresolved target must fail, not select first track or mark fetched")
 			}
 			after, err := app.store.GetMetadata(id)
@@ -191,11 +191,11 @@ func TestSharedReleaseCacheStillSelectsEachTarget(t *testing.T) {
 	defer cleanup()
 	app.enricher.Pause()
 	requests := replayEnrichment(t, app, enrichmentRelease)
-	for _, ref := range []string{"trk-snow", "trk-honey"} {
+	for _, ref := range []string{"20000000-0000-4000-8000-000000000004", "20000000-0000-4000-8000-000000000001"} {
 		c := snowCandidate()
 		c.MatchRef = ref
 		c.ISRC = nil
-		if ref == "trk-honey" {
+		if ref == "20000000-0000-4000-8000-000000000001" {
 			c.Title = strPtrOrNil("Honey Trap")
 			c.RecordingRef = strPtrOrNil("rec-honey")
 		}
@@ -203,7 +203,7 @@ func TestSharedReleaseCacheStillSelectsEachTarget(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := app.RefreshTrackDetail(id, "musicbrainz", "rel-snow"); err != nil {
+		if err := app.RefreshTrackDetail(id, "musicbrainz", "10000000-0000-4000-8000-000000000001"); err != nil {
 			t.Fatal(err)
 		}
 		m, err := app.store.GetMetadata(id)
@@ -211,7 +211,7 @@ func TestSharedReleaseCacheStillSelectsEachTarget(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantNumber := 4
-		if ref == "trk-honey" {
+		if ref == "20000000-0000-4000-8000-000000000001" {
 			wantNumber = 1
 		}
 		if deref(m.MatchRef) != ref || m.Title != *c.Title || m.TrackNumber == nil || *m.TrackNumber != wantNumber {
@@ -229,7 +229,7 @@ func TestTracklistRefreshDoesNotEnrichAnArbitraryTrack(t *testing.T) {
 	app.enricher.Pause()
 	replayEnrichment(t, app, enrichmentRelease)
 	c := snowCandidate()
-	c.MatchRef = "trk-honey"
+	c.MatchRef = "20000000-0000-4000-8000-000000000001"
 	c.Title = strPtrOrNil("Search title")
 	c.RecordingRef = strPtrOrNil("rec-honey")
 	id, err := app.store.AdmitCandidate(c)
@@ -239,7 +239,7 @@ func TestTracklistRefreshDoesNotEnrichAnArbitraryTrack(t *testing.T) {
 	// Prime the list; the old FetchTracklist path enriched the first owned
 	// recording only on subsequent fetches.
 	for i := 0; i < 2; i++ {
-		if err := app.FetchTracklist("musicbrainz", "rel-snow", true); err != nil {
+		if err := app.FetchTracklist("musicbrainz", "10000000-0000-4000-8000-000000000001", true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -269,7 +269,7 @@ func TestDetailIdentityChangeDuringFetchIsRejected(t *testing.T) {
 		}
 		return transport.RoundTrip(r)
 	})
-	if err := app.RefreshTrackDetail(id, "musicbrainz", "rel-snow"); err == nil {
+	if err := app.RefreshTrackDetail(id, "musicbrainz", "10000000-0000-4000-8000-000000000001"); err == nil {
 		t.Fatal("stale response should fail")
 	}
 	m, err := app.store.GetMetadata(id)
@@ -291,10 +291,10 @@ func TestTruncatedDetailTracklistRemainsPartial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.RefreshTrackDetail(id, "musicbrainz", "rel-snow"); err != nil {
+	if err := app.RefreshTrackDetail(id, "musicbrainz", "10000000-0000-4000-8000-000000000001"); err != nil {
 		t.Fatal(err)
 	}
-	rel, err := app.store.GetReleaseByRef("musicbrainz", "rel-snow")
+	rel, err := app.store.GetReleaseByRef("musicbrainz", "10000000-0000-4000-8000-000000000001")
 	if err != nil {
 		t.Fatal(err)
 	}

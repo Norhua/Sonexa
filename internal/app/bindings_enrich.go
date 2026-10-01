@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
 )
@@ -103,16 +104,15 @@ func (a *App) fetchAndApplyDetail(ctx context.Context, target store.EnrichTarget
 	if err != nil {
 		return err
 	}
-	d, err := p.FetchDetail(ctx, provider.Ref{
-		Provider: provider.ProviderID(target.Provider),
-		ID:       target.ReleaseRef, TrackRef: trackRef,
-	})
+	identity := domain.Identity{Provider: provider.ProviderID(target.Provider), Ref: trackRef}
+	snapshot, err := p.Complete(ctx, domain.DetailTarget{Release: domain.Identity{Provider: identity.Provider, Ref: target.ReleaseRef}, Track: &identity})
 	if err != nil {
 		return fmt.Errorf("拉取详情失败: %w", err)
 	}
-	if d == nil || string(d.Provider) != target.Provider || deref(d.ReleaseRef) != target.ReleaseRef || d.MatchRef != trackRef {
+	if snapshot == nil || snapshot.Track == nil || snapshot.Track.Identity != identity {
 		return fmt.Errorf("详情未匹配目标曲目，拒绝写入")
 	}
+
 	// 请求在途时可能发生重新匹配/移动歌集；迟到的旧详情不能覆盖新身份。
 	current, err := a.store.GetMetadata(target.TrackID)
 	if err != nil {
@@ -121,7 +121,7 @@ func (a *App) fetchAndApplyDetail(ctx context.Context, target store.EnrichTarget
 	if current == nil || deref(current.MatchSource) != target.Provider || deref(current.MatchRef) != trackRef || deref(current.ReleaseRef) != target.ReleaseRef {
 		return fmt.Errorf("曲目身份在拉取期间已改变，取消本次补全")
 	}
-	return a.store.ApplySnapshot(target.TrackID, provider.DetailSnapshot(d), revision)
+	return a.store.ApplySnapshot(target.TrackID, snapshot, revision)
 }
 
 func deref(s *string) string {

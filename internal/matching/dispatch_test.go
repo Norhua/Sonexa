@@ -42,16 +42,11 @@ func TestDecideUniqueHighConfidence(t *testing.T) {
 func TestDecideSameGroupSolePhysical(t *testing.T) {
 	cfg := DefaultLadderConfig()
 	rg := sptr("rg-1")
-	cd := highConf("aaa", rg)
-	digital := highConf("bbb", rg)
+	cd, digital := highConf("aaa", rg), highConf("bbb", rg)
 	digital.Candidate.MediumFormat = sptr("Digital Media")
-
 	got := cfg.Decide([]ScoredCandidate{digital, cd})
-	if got.Outcome != OutcomeImportLadder {
-		t.Errorf("分流 = %q, 期望 import_ladder", got.Outcome)
-	}
-	if got.Selected == nil || got.Selected.MatchRef != "aaa" {
-		t.Errorf("选中 %+v, 期望 aaa（唯一的实体发行）", got.Selected)
+	if got.Selected != nil || got.Outcome != OutcomeReviewManyReleases {
+		t.Fatal("display medium preference selected admission", got)
 	}
 }
 

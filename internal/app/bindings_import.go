@@ -178,7 +178,7 @@ func (a *App) SubmitImport(path, sheetName string, columnMap []string,
 		Encoding:  &res.Detection.Encoding,
 		Delimiter: &res.Detection.Delimiter,
 		ColumnMap: strPtr(string(mapJSON)),
-		TotalRows: len(rows),
+		TotalRows: len(res.Rows),
 	})
 	if err != nil {
 		return 0, err
@@ -186,7 +186,7 @@ func (a *App) SubmitImport(path, sheetName string, columnMap []string,
 
 	items := make([]store.ImportItem, 0, len(rows))
 	for _, r := range rows {
-		// 缺少曲名的行被跳过，不入队
+		// 仅无有效映射内容的行跳过；缺少基本字段仍入队
 		if r.SkipReason != "" {
 			continue
 		}
@@ -194,7 +194,7 @@ func (a *App) SubmitImport(path, sheetName string, columnMap []string,
 		items = append(items, store.ImportItem{
 			RowIndex: r.Index, RawRow: string(raw),
 			InTitle: &r.Title, InArtist: r.Artist, InAlbum: r.Album,
-			InYear: r.Year, InTrackNo: r.TrackNo, InDurationMS: r.DurationMS,
+			InYear: r.Year, InTrackNo: r.TrackNo, InDiscNo: r.DiscNo, InDurationMS: r.DurationMS,
 		})
 	}
 	if err := a.store.EnqueueItems(batchID, items); err != nil {
@@ -280,12 +280,12 @@ type ImportBatchView struct {
 	Filename string `json:"filename"`
 	// Status 为 running | paused | done。
 	Status string `json:"status"`
-	// FileRows 是文件里的总行数，含因缺少曲名而被跳过、从未入队的行。
+	// FileRows 是文件里的总行数，含空白或无有效映射内容而跳过的行。
 	// 它只用于「文件里有多少行」这一信息，不做进度分母。
 	FileRows int `json:"fileRows"`
 	// TotalRows 是真正入队的条目数，即进度的分母。
 	//
-	// 两者必须分开：缺曲名的行在提交时就被跳过、不写进 import_item，
+	// 两者必须分开：空白行在提交时被跳过、不写进 import_item，
 	// 用文件行数当分母的话，只要有一行被跳过，进度就永远停在 90% 几。
 	TotalRows int              `json:"totalRows"`
 	Processed int              `json:"processed"`

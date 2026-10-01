@@ -181,7 +181,7 @@ func TestFourWayDispatch(t *testing.T) {
 		}
 	})
 
-	t.Run("同组多条经阶梯入库", func(t *testing.T) {
+	t.Run("同组多条保留给准入层选版", func(t *testing.T) {
 		cd := highConfCandidate("cd", "曲", "艺术家", "专辑", rg1)
 		digital := highConfCandidate("digital", "曲", "艺术家", "专辑", rg1)
 		digital.MediumFormat = sptr("Digital Media")
@@ -192,11 +192,11 @@ func TestFourWayDispatch(t *testing.T) {
 		res, _ := testEngine().Run(context.Background(), s, nil,
 			Input{Title: "曲", Artist: "艺术家", Album: "专辑"})
 
-		if res.Decision.Outcome != OutcomeImportLadder {
-			t.Errorf("分流 = %q, 期望 import_ladder", res.Decision.Outcome)
+		if res.Decision.Outcome != OutcomeReviewManyReleases {
+			t.Errorf("分流 = %q, 期望 review_many_releases", res.Decision.Outcome)
 		}
-		if res.Decision.Selected == nil || res.Decision.Selected.MatchRef != "cd" {
-			t.Errorf("选中 %+v, 期望 CD 版", res.Decision.Selected)
+		if res.Decision.Selected != nil {
+			t.Errorf("匹配层不应按载体选版: %+v", res.Decision.Selected)
 		}
 	})
 

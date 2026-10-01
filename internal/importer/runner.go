@@ -3,10 +3,13 @@ package importer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/norhua/sonexa/internal/domain"
+	"github.com/norhua/sonexa/internal/library"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
@@ -34,6 +37,8 @@ type Emitter func(Progress)
 
 // Runner 驱动匹配队列。
 type Runner struct {
+	library  *library.Service
+	initErr  error
 	store    *store.Store
 	engine   *matching.Engine
 	searcher matching.Searcher
@@ -57,8 +62,8 @@ type Runner struct {
 // searcher 固定为 MusicBrainz：v1 的导入匹配阶段只用主上游，
 // 且不对同一条目并发查询多个上游。用户如需其他上游可在复核队列中逐条改选。
 func NewRunner(st *store.Store, engine *matching.Engine, searcher matching.Searcher,
-	retry provider.RetryPolicy, fetchOnMatch bool, emit Emitter) *Runner {
-	return &Runner{
+	retry provider.RetryPolicy, fetchOnMatch bool, emit Emitter, services ...*library.Service) *Runner {
+	r := &Runner{
 		store:        st,
 		engine:       engine,
 		searcher:     searcher,
@@ -67,6 +72,18 @@ func NewRunner(st *store.Store, engine *matching.Engine, searcher matching.Searc
 		fetchOnMatch: fetchOnMatch,
 		running:      map[int64]context.CancelFunc{},
 	}
+	if len(services) > 0 {
+		r.library = services[0]
+	} else if source, ok := searcher.(provider.Provider); ok {
+		registry := provider.NewRegistry()
+		registry.Register(source)
+		r.library, r.initErr = library.New(registry, st, nil, nil)
+	}
+	if r.library == nil && r.initErr == nil {
+		r.initErr = fmt.Errorf("导入准入服务未装配")
+	}
+	return r
+
 }
 
 // SetEnricher 注入详情补全回调。
@@ -78,6 +95,9 @@ func (r *Runner) SetEnricher(fn func(trackID int64, providerID, releaseRef strin
 
 // Start 开始（或恢复）处理某批次。
 func (r *Runner) Start(ctx context.Context, batchID int64) error {
+	if r.initErr != nil {
+		return r.initErr
+	}
 	r.mu.Lock()
 	if _, already := r.running[batchID]; already {
 		r.mu.Unlock()
@@ -223,58 +243,62 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 
 	variantsJSON, _ := json.Marshal(res.TriedVariants)
 
-	// [4] 分流
-	switch res.Decision.Outcome {
-	case matching.OutcomeImportUnique, matching.OutcomeImportLadder:
-		sc := findScored(res.Scored, res.Decision.Selected.MatchRef)
-		trackID, err := r.importCandidate(*res.Decision.Selected)
-		if err != nil {
-			backoff := r.retry.Backoff(item.AttemptCount+1, err)
-			r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts)
+	// [4] 同一用例执行按需摘要、自动选版和准入；成员变更始终进入复核。
+	selection, err := r.library.SelectCandidate(ctx, res.Scored, item.ID)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ""
+		}
+		backoff := r.retry.Backoff(item.AttemptCount+1, err)
+		r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts)
+		return matching.ErrorLogLine(err)
+	}
+	if selection.Candidate != nil && selection.Reason == "" {
+		result, err := r.library.CommitAdmission(ctx, selection.Plan.ID, selection.Plan.Hash, domain.AdmissionApproval{})
+		if err == nil {
+			if r.fetchOnMatch && r.enricher != nil {
+				r.enricher(result.TrackID, string(selection.Candidate.Provider), deref(selection.Candidate.ReleaseRef))
+			}
+			return matching.LogLine(matching.OutcomeImportUnique, in, findScored(res.Scored, selection.Candidate.MatchRef))
+		}
+		if errors.Is(err, store.ErrPlanStale) || errors.Is(err, store.ErrConfirmationRequired) {
+			selection.Reason = library.ReasonNewRelease
+		} else {
+			r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
 			return matching.ErrorLogLine(err)
 		}
-		r.store.MarkImported(item.ID, trackID)
-		// 设置中选「匹配时」时才在这里补详情与清单；
-		// 默认留给首次打开专辑时懒加载。
-		if r.fetchOnMatch && r.enricher != nil {
-			r.enricher(trackID, string(res.Decision.Selected.Provider), deref(res.Decision.Selected.ReleaseRef))
-		}
-		return matching.LogLine(res.Decision.Outcome, in, sc)
+	}
+	reason := store.ReviewReason(selection.Reason)
+	if reason == "" {
+		reason = store.ReviewAmbiguous
+	}
+	candidatesJSON, _ := json.Marshal(res.Scored)
+	evidence := ""
+	if selection.Plan != nil {
+		raw, _ := json.Marshal(selection.Plan.Baseline)
+		evidence = string(raw)
+	}
+	if err := r.store.MarkReview(item.ID, reason, string(candidatesJSON), string(variantsJSON), evidence); err != nil {
+		return matching.ErrorLogLine(err)
+	}
 
+	return fmt.Sprintf("%s · %s：%s", in.Title, in.Artist, reviewReasonText(reason))
+}
+func reviewReasonText(reason store.ReviewReason) string {
+	switch string(reason) {
+	case library.ReasonNoMatch:
+		return "没有高置信匹配"
+	case library.ReasonNewRelease:
+		return "新增发行加入已有组，需确认"
+	case library.ReasonGroupInsufficient:
+		return "判组资料不足，需复核"
+	case library.ReasonGroupConflict:
+		return "组证据冲突，需复核"
+	case library.ReasonUnknownTotal:
+		return "发行总曲数未知，需复核"
 	default:
-		candidatesJSON, _ := json.Marshal(res.Scored)
-		r.store.MarkReview(item.ID, reviewReasonOf(res.Decision.Outcome),
-			string(candidatesJSON), string(variantsJSON))
-		return matching.LogLine(res.Decision.Outcome, in, nil)
+		return "候选存在歧义，需复核"
 	}
-}
-
-// reviewReasonOf 把分流结果映射为复核成因。
-//
-// 统计行里「进入复核」与「未匹配」是两个互不重叠的数，这里是它们唯一的分界点：
-// 多义（跨发行组、同组多份发行）算进入复核，无结果算未匹配。
-func reviewReasonOf(outcome matching.Outcome) store.ReviewReason {
-	if outcome == matching.OutcomeReviewNoMatch {
-		return store.ReviewNoMatch
-	}
-	return store.ReviewAmbiguous
-}
-
-// importCandidate 把一条候选入库并写入溯源。
-//
-// 只写候选自己带的字段，**不用表格里的原始输入去补**上游没给的署名或歌集——
-// 曲目记录的是「上游怎么说」，表格那一行是「用户当时怎么写」。
-// 补了会让一首曲目的字段一半来自上游、一半来自表格，且看不出哪一半是哪一半。
-// 因此这里与复核队列的「接受」、搜索页的「加入曲库」走同一个落点，
-// 三条路径入库的曲目没有任何区别。
-func (r *Runner) importCandidate(c provider.Candidate) (int64, error) {
-	trackID, err := r.store.AdmitCandidate(c)
-	// 撞唯一键说明另一路径抢先入库了，静默转为已有曲目
-	var exists *store.ErrAlreadyExists
-	if err != nil && asAlreadyExists(err, &exists) {
-		return exists.TrackID, nil
-	}
-	return trackID, err
 }
 
 // summaryFor 生成完成统计文案，并逐行列出失败条目的原始输入。

@@ -37,25 +37,8 @@ type Decision struct {
 	HighConfidence []provider.Candidate
 }
 
-// Decide 按分流规则判定一条目的去向。
-//
-//	仅一条高置信                              → 直接入库
-//	多条高置信 & 同组 & 过滤实体载体后剩一条    → 入库（那一条）
-//	多条高置信 & 同组 & 过滤后剩 0 条或多条     → 复核队列
-//	多条高置信 & 跨 release group             → 复核队列
-//	无结果 / 全部低置信                       → 复核队列
-//
-// **多条高置信一律不自动裁决**，这是整条规则的骨架，没有例外：
-//
-// 跨发行组时的分歧通常不是「同一张专辑的哪个版本」而是「到底是哪首歌」；
-// 同一发行组内剩下多条时（`世界中の雨` 在 MusicBrainz 里有 11 张同名 CD 发行，
-// 载体、国家、发行日、发行状态全同）没有任何客观依据能分出高下，
-// 阶梯只能靠 MBID 字典序收尾——那是「随便挑一个」，不是判定。
-//
-// 曾经为跨发行组开过两个例外（全部候选同一 recording、恰好一条歌集精确），
-// 它们把 `you`、`3253212` 两行从复核提到了入库，但代价是规则不再可预期：
-// 用户读到「多条高置信 → 复核」，实现却在某些情况下替他做了决定。
-// 有歧义就交人工，是这套规则唯一的收尾方式。
+// Decide 仅保留置信度分类供旧读取 DTO 使用；最终选版及准入由 library 执行。
+// 载体和国家偏好只用于展示代表，不在这里选择入库版本。
 func (cfg LadderConfig) Decide(scored []ScoredCandidate) Decision {
 	var high []ScoredCandidate
 	for _, s := range scored {
@@ -80,18 +63,6 @@ func (cfg LadderConfig) Decide(scored []ScoredCandidate) Decision {
 		return Decision{Outcome: OutcomeReviewCrossGroup, HighConfidence: highCands}
 	}
 
-	// 同一发行组：先过滤载体，只留实体发行。剩唯一一条才入库。
-	//
-	// 「剩 0 条」（全是数字发行）与「剩多条」（同一张碟在上游有多份登记）
-	// 都是没有客观依据可裁决的局面，一并交复核。
-	physical := cfg.PhysicalOnly(highCands)
-	if len(physical) == 1 {
-		return Decision{
-			Outcome:        OutcomeImportLadder,
-			Selected:       &physical[0],
-			HighConfidence: highCands,
-		}
-	}
 	return Decision{Outcome: OutcomeReviewManyReleases, HighConfidence: highCands}
 }
 

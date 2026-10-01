@@ -7,9 +7,9 @@ import (
 	"sync"
 
 	"github.com/norhua/sonexa/internal/covers"
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
-	"github.com/norhua/sonexa/internal/store"
 )
 
 // CandidateRow 是候选结果表格的一行。
@@ -17,8 +17,22 @@ import (
 // 列定义在上游搜索页与复核队列之间完全一致；
 // 动作按上下文变化，而列不变。
 type CandidateRow struct {
-	Provider string `json:"provider"`
-	MatchRef string `json:"matchRef"`
+	AlbumCredit        *string                 `json:"albumCredit"`
+	GroupTitle         *string                 `json:"groupTitle"`
+	GroupCredit        *string                 `json:"groupCredit"`
+	ReleaseTrackTotal  *int                    `json:"releaseTrackTotal"`
+	MediumTrackTotal   *int                    `json:"mediumTrackTotal"`
+	Credits            []provider.CreditArtist `json:"credits"`
+	AlbumCredits       []provider.CreditArtist `json:"albumCredits"`
+	GroupCredits       []provider.CreditArtist `json:"groupCredits"`
+	Media              []domain.Medium         `json:"media"`
+	Labels             []domain.Label          `json:"labels"`
+	Identifiers        []domain.Identifier     `json:"identifiers"`
+	ReleaseIdentifiers []domain.Identifier     `json:"releaseIdentifiers"`
+	UpstreamScore      *int                    `json:"upstreamScore"`
+	HasCover           bool                    `json:"hasCover"`
+	Provider           string                  `json:"provider"`
+	MatchRef           string                  `json:"matchRef"`
 	// Badges 可叠加，如 [本地][MB]；疑似命中时为 [本地?]。
 	Badges []string `json:"badges"`
 	// Note 给出附加说明，如「经 ISRC 匹配」。
@@ -67,7 +81,21 @@ type CandidateRow struct {
 // toCandidate 把行还原成候选，供入库。与 rowFrom 互为逆运算。
 func (r CandidateRow) toCandidate() provider.Candidate {
 	return provider.Candidate{
-		Provider: provider.ProviderID(r.Provider), MatchRef: r.MatchRef,
+		AlbumCredit:        r.AlbumCredit,
+		GroupTitle:         r.GroupTitle,
+		GroupCredit:        r.GroupCredit,
+		ReleaseTrackTotal:  r.ReleaseTrackTotal,
+		MediumTrackTotal:   r.MediumTrackTotal,
+		Credits:            r.Credits,
+		AlbumCredits:       r.AlbumCredits,
+		GroupCredits:       r.GroupCredits,
+		Media:              r.Media,
+		Labels:             r.Labels,
+		Identifiers:        r.Identifiers,
+		ReleaseIdentifiers: r.ReleaseIdentifiers,
+		UpstreamScore:      r.UpstreamScore,
+		HasCover:           r.HasCover,
+		Provider:           provider.ProviderID(r.Provider), MatchRef: r.MatchRef,
 		Title: r.Title, ArtistName: r.Artist, AlbumTitle: r.Album,
 		PrimaryType: r.PrimaryType, DurationMS: r.DurationMS,
 		TrackNumber: r.TrackNumber, TrackTotal: r.TrackTotal, DiscNumber: r.DiscNumber,
@@ -246,7 +274,21 @@ func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction string) 
 func rowFrom(sc matching.ScoredCandidate) CandidateRow {
 	c := sc.Candidate
 	row := CandidateRow{
-		Provider: string(c.Provider), MatchRef: c.MatchRef,
+		AlbumCredit:        c.AlbumCredit,
+		GroupTitle:         c.GroupTitle,
+		GroupCredit:        c.GroupCredit,
+		ReleaseTrackTotal:  c.ReleaseTrackTotal,
+		MediumTrackTotal:   c.MediumTrackTotal,
+		Credits:            c.Credits,
+		AlbumCredits:       c.AlbumCredits,
+		GroupCredits:       c.GroupCredits,
+		Media:              c.Media,
+		Labels:             c.Labels,
+		Identifiers:        c.Identifiers,
+		ReleaseIdentifiers: c.ReleaseIdentifiers,
+		UpstreamScore:      c.UpstreamScore,
+		HasCover:           c.HasCover,
+		Provider:           string(c.Provider), MatchRef: c.MatchRef,
 		Title: c.Title, Artist: c.ArtistName, Album: c.AlbumTitle,
 		PrimaryType: c.PrimaryType, DurationMS: c.DurationMS,
 		TrackNumber: c.TrackNumber, TrackTotal: c.TrackTotal, DiscNumber: c.DiscNumber,
@@ -278,24 +320,17 @@ func (a *App) AddToLibrary(row CandidateRow) (int64, error) {
 	return a.admitCandidate(row.toCandidate())
 }
 
-// admitCandidate 是绑定层里候选入库的唯一落点：搜索页、复核「接受」、
-// 专辑视图灰色行都经由它，与导入的自动入库共用 store.AdmitCandidate。
+// admitCandidate 保留旧调用协议，所有写入委托准入计划；需要确认时明确返回错误。
 func (a *App) admitCandidate(c provider.Candidate) (int64, error) {
-	if c.Title == nil || *c.Title == "" {
-		return 0, fmt.Errorf("候选缺少曲名")
-	}
-	trackID, err := a.store.AdmitCandidate(c)
-	var exists *store.ErrAlreadyExists
-	if err != nil && asAlreadyExistsErr(err, &exists) {
-		return exists.TrackID, nil
-	}
+	service, err := a.libraryService()
 	if err != nil {
 		return 0, err
 	}
-	a.notifyLibraryChanged()
-	// 刚出现一条待补的曲目：空闲时接着补，用户不必去点「开始」
-	a.autoStartEnrich()
-	return trackID, nil
+	plan, err := service.PrepareCandidate(a.ctx, c, 0)
+	if err != nil {
+		return 0, err
+	}
+	return a.commitUnconfirmedAdmission(plan)
 }
 
 // PrefetchCovers 批量预取一页列表的封面。
