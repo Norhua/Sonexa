@@ -16,6 +16,7 @@ func (s *Service) AttachLibrary(st *store.Store) error {
 		return err
 	}
 	s.library = library
+	library.catalogKeys = s.catalogsForRelease
 	if err := library.Configure(s.pool.cache.maxBytes, s.pool.cache.ttl); err != nil {
 		library.Close()
 		return err
@@ -105,4 +106,19 @@ func (s *Service) Close() error {
 		return s.library.Close()
 	}
 	return nil
+}
+
+func (s *Service) catalogsForRelease(release *store.Release) []store.CoverCatalogKey {
+	if release.Provider == nil || release.ProviderRef == nil {
+		return nil
+	}
+	policy, ok := s.artworkForProvider(*release.Provider)
+	if !ok || policy.CatalogKeys == nil {
+		return nil
+	}
+	group := ""
+	if release.ReleaseGroupRef != nil {
+		group = *release.ReleaseGroupRef
+	}
+	return policy.CatalogKeys(*release.ProviderRef, group)
 }

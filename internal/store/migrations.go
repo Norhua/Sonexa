@@ -1,145 +1,134 @@
 package store
 
-// migration0001Init 建立 v1 的全部表与索引。
-//
-// 从第一天起就走迁移路径，而不是在代码里 CREATE TABLE IF NOT EXISTS——
-// 否则迁移机制会因为「暂时用不上」而迟迟不落地。
-//
-// # 本版结构的三条主线
-//
-// 一、**发行（歌集）是实体，曲目通过外键指向它。** 此前发行级事实
-// （专辑名、类型、载体、国家、年份、碟数、音轨数、厂牌、目录号、封面）
-// 逐曲目复制一份存在 track_metadata 上，一张 12 首的专辑要存 12 份，
-// 改其中一份另外 11 份不动。现在它们只存在 release 上，曲目只保留
-// 自己那一份事实（碟号、音轨号、时长、风格、注释）。
-//
-// 二、**「署名」与「参与角色」是两件事。** track_credit 记录「谁出现在这条
-// 署名里」，track_artist 记录「谁在这首歌上担任什么角色」。此前只有后者，
-// 于是未署名的作词作曲与署名艺术家在库里长得一模一样，艺术家列表无从区分。
-//
-// 三、**曲目是单表。** 此前 track 与 track_metadata 各存一份曲名、专辑名、
-// 署名，三对近似重复，写入路径两边都写而「哪一份为准」没有定论。
-// 「基本信息必存在」由 title NOT NULL 表达，「丰富信息可整体为空」由
-// 其余列可空表达——语义不丢，漂移的可能消失。
+// 新代际仅用于空库初始化；当前值与上游事实独立保存。
 const migration0001Init = `
--- ========== 发行组：同一专辑的不同版本合为一条 ==========
+CREATE TABLE model_generation (id INTEGER PRIMARY KEY CHECK(id=1), generation TEXT NOT NULL);
+INSERT INTO model_generation VALUES(1,'upstream-snapshot-v1');
 CREATE TABLE release_group (
-  id                 INTEGER PRIMARY KEY,
-  provider           TEXT,
-  provider_ref       TEXT,
-  title              TEXT NOT NULL,
-  primary_type       TEXT,
-  secondary_types    TEXT,
-  first_release_date TEXT,
-
-  -- 该组下共有几个 release。取自上游 browse 请求（本地只见过其中几个，
-  -- 数本地行数得到的是「我见过几个」而不是「上游共有几个」），可手动改。
-  release_count            INTEGER,
-  release_count_fetched_at DATETIME,
-
-  created_at         DATETIME NOT NULL,
-  updated_at         DATETIME NOT NULL
+ id INTEGER PRIMARY KEY, display_provider TEXT, display_group_ref TEXT, representative_id INTEGER,
+ revision INTEGER NOT NULL DEFAULT 1, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL
 );
-CREATE UNIQUE INDEX idx_release_group_ref ON release_group(provider, provider_ref)
-  WHERE provider_ref IS NOT NULL;
-
--- ========== 歌集：专辑 / EP / 单曲 / Broadcast / Other ==========
--- provider 与 provider_ref 可空：本地新建的歌集（用户改歌集名新建、
--- 无上游标识的曲目归拢）两者都为 NULL。
+CREATE TABLE release_group_ref (
+ group_id INTEGER NOT NULL REFERENCES release_group(id) ON DELETE CASCADE,
+ provider TEXT NOT NULL, group_ref TEXT NOT NULL CHECK(group_ref<>''),
+ PRIMARY KEY(provider,group_ref)
+);
+CREATE TABLE release_group_current (
+ group_id INTEGER PRIMARY KEY REFERENCES release_group(id) ON DELETE CASCADE,
+ title TEXT, credit TEXT, primary_type TEXT, secondary_types TEXT,
+ states_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE release_group_snapshot (
+ group_id INTEGER NOT NULL REFERENCES release_group(id) ON DELETE CASCADE,
+ provider TEXT NOT NULL, group_ref TEXT NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)),
+ revision INTEGER NOT NULL DEFAULT 1, fetched_at DATETIME, release_count INTEGER,
+ PRIMARY KEY(provider,group_ref)
+);
 CREATE TABLE release (
-  id                INTEGER PRIMARY KEY,
-  release_group_id  INTEGER REFERENCES release_group(id) ON DELETE SET NULL,
-  provider          TEXT,
-  provider_ref      TEXT,
-
-  title             TEXT NOT NULL,
-  credit            TEXT,
-  primary_type      TEXT,
-  secondary_types   TEXT,
-  disc_total        INTEGER,
-  track_total       INTEGER,
-
-  -- 封面：文件不入库，只记落盘路径与取图来源。
-  -- 挂在歌集上而不是曲目上——采用一次即对该歌集全部曲目生效。
-  cover_path        TEXT,
-  cover_source_url  TEXT,
-  cover_width       INTEGER,
-  cover_height      INTEGER,
-  cover_fetched_at  DATETIME,
-
-  -- 上游事实，不进编辑界面
-  release_status    TEXT,
-  medium_format     TEXT,
-  country           TEXT,
-  release_date      TEXT,
-  first_release_date TEXT,
-  label             TEXT,
-  catalog_number    TEXT,
-
-  tracklist_state   TEXT NOT NULL DEFAULT 'none',
-  fetched_at        DATETIME,
-
-  provenance_json   TEXT,
-  locked_json       TEXT,
-  created_at        DATETIME NOT NULL,
-  updated_at        DATETIME NOT NULL
+ id INTEGER PRIMARY KEY, release_group_id INTEGER NOT NULL REFERENCES release_group(id),
+ provider TEXT, provider_ref TEXT, revision INTEGER NOT NULL DEFAULT 1,
+ tracklist_state TEXT NOT NULL DEFAULT 'none', fetched_at DATETIME,
+ created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL,
+ CHECK((provider IS NULL)=(provider_ref IS NULL)), CHECK(provider_ref IS NULL OR provider_ref<>'')
 );
--- 唯一性只对有上游标识的歌集成立。title 上没有唯一约束：
--- 不同版次、不同艺术家的同名歌集是常态。
-CREATE UNIQUE INDEX idx_release_ref ON release(provider, provider_ref)
-  WHERE provider_ref IS NOT NULL;
-CREATE INDEX idx_release_group_of ON release(release_group_id)
-  WHERE release_group_id IS NOT NULL;
-CREATE INDEX idx_release_title ON release(title);
-
--- ========== 曲目：单表，基本信息与丰富信息合并 ==========
+CREATE UNIQUE INDEX idx_release_ref ON release(provider,provider_ref) WHERE provider_ref IS NOT NULL;
+CREATE INDEX idx_release_group_of ON release(release_group_id);
+CREATE TABLE release_current (
+ release_id INTEGER PRIMARY KEY REFERENCES release(id) ON DELETE CASCADE,
+ title TEXT, credit TEXT, primary_type TEXT, secondary_types TEXT,
+ disc_total INTEGER CHECK(disc_total IS NULL OR disc_total>0), media_json TEXT,
+ states_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX idx_release_title ON release_current(title);
+CREATE TABLE release_snapshot (
+ release_id INTEGER PRIMARY KEY REFERENCES release(id) ON DELETE CASCADE,
+ body TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(body)), revision INTEGER NOT NULL DEFAULT 1,
+ fetched_at DATETIME
+);
 CREATE TABLE track (
-  id            INTEGER PRIMARY KEY,
-  -- 删歌集不删曲目：曲目是用户的收藏，歌集是它的归属。
-  release_id    INTEGER REFERENCES release(id) ON DELETE SET NULL,
-
-  title         TEXT NOT NULL,
-  -- 曲目级署名原串：原样保真，不由 track_credit 拼接推导。
-  credit        TEXT,
-
-  disc_number       INTEGER,
-  track_number      INTEGER,
-  track_number_text TEXT,
-  duration_ms       INTEGER,
-  genre             TEXT,
-  comment           TEXT,
-
-  -- 匹配溯源与上游标识
-  match_source  TEXT,
-  match_ref     TEXT,
-  matched_at    DATETIME,
-  recording_ref TEXT,
-  work_ref      TEXT,
-  isrc          TEXT,
-
-  -- 补全信息匹配的状态机
-  enrich_state    TEXT NOT NULL DEFAULT 'skipped',
-  enrich_attempts INTEGER NOT NULL DEFAULT 0,
-  enrich_error    TEXT,
-
-  -- 逐字段来源与用户锁：整体读写的结构，新增字段无需改动它们的存储形状。
-  -- 基本信息的三个布尔锁并入 locked_json——合表后没有理由留两套锁机制。
-  provenance_json TEXT,
-  locked_json     TEXT,
-
-  created_at    DATETIME NOT NULL,
-  updated_at    DATETIME NOT NULL
+ id INTEGER PRIMARY KEY, release_id INTEGER REFERENCES release(id) ON DELETE SET NULL,
+ match_source TEXT, match_ref TEXT, matched_at DATETIME,
+ revision INTEGER NOT NULL DEFAULT 1,
+ enrich_state TEXT NOT NULL DEFAULT 'skipped', enrich_attempts INTEGER NOT NULL DEFAULT 0,
+ enrich_error TEXT, credit_review TEXT,
+ created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL,
+ CHECK((match_source IS NULL)=(match_ref IS NULL)), CHECK(match_ref IS NULL OR match_ref<>'')
 );
+CREATE UNIQUE INDEX idx_match_ref ON track(match_source,match_ref) WHERE match_source IS NOT NULL;
 CREATE INDEX idx_track_created ON track(created_at DESC);
-CREATE INDEX idx_track_title ON track(title);
 CREATE INDEX idx_track_release ON track(release_id) WHERE release_id IS NOT NULL;
--- 部分唯一索引：未匹配的曲目（match_source IS NULL）不受唯一约束
-CREATE UNIQUE INDEX idx_match_ref ON track(match_source, match_ref)
-  WHERE match_source IS NOT NULL;
-CREATE INDEX idx_track_isrc ON track(isrc) WHERE isrc IS NOT NULL;
 CREATE INDEX idx_track_enrich ON track(enrich_state);
+CREATE TABLE lyrics_file (
+ id INTEGER PRIMARY KEY, relative_path TEXT NOT NULL UNIQUE, content_hash TEXT NOT NULL,
+ byte_size INTEGER NOT NULL, source TEXT NOT NULL, created_at DATETIME NOT NULL
+);
+CREATE TABLE track_current (
+ track_id INTEGER PRIMARY KEY REFERENCES track(id) ON DELETE CASCADE,
+ title TEXT, credit TEXT, year INTEGER CHECK(year IS NULL OR year>0),
+ disc_number INTEGER CHECK(disc_number IS NULL OR disc_number>0),
+ track_number INTEGER CHECK(track_number IS NULL OR track_number>0), genre TEXT,
+ lyrics_file_id INTEGER REFERENCES lyrics_file(id), states_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX idx_track_title ON track_current(title);
+CREATE TABLE track_snapshot (
+ track_id INTEGER PRIMARY KEY REFERENCES track(id) ON DELETE CASCADE,
+ body TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(body)), revision INTEGER NOT NULL DEFAULT 1,
+	lyrics_file_id INTEGER REFERENCES lyrics_file(id), lyrics_state TEXT NOT NULL DEFAULT 'unknown' CHECK(lyrics_state IN ('unknown','empty','value')), fetched_at DATETIME
+);
+CREATE TABLE track_identifier (
+ track_id INTEGER NOT NULL REFERENCES track(id) ON DELETE CASCADE,
+ kind TEXT NOT NULL, value TEXT NOT NULL, position INTEGER NOT NULL,
+ PRIMARY KEY(track_id,kind,position)
+);
+CREATE INDEX idx_track_identifier ON track_identifier(kind,value);
+CREATE TABLE release_group_match_key (
+ group_id INTEGER NOT NULL REFERENCES release_group(id) ON DELETE CASCADE,
+ source_kind TEXT NOT NULL, source_id TEXT NOT NULL, normalizer_version INTEGER NOT NULL,
+ title_key TEXT NOT NULL CHECK(title_key<>''), credit_key TEXT NOT NULL CHECK(credit_key<>''),
+ PRIMARY KEY(source_kind,source_id)
+);
+CREATE INDEX idx_group_match ON release_group_match_key(title_key,credit_key);
+CREATE TABLE group_change_proposal (
+ id INTEGER PRIMARY KEY, release_id INTEGER NOT NULL REFERENCES release(id) ON DELETE CASCADE,
+ evidence_json TEXT NOT NULL, baseline_revision INTEGER NOT NULL,
+ status TEXT NOT NULL DEFAULT 'pending', created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL
+);
+CREATE TABLE release_membership_decision (
+ id INTEGER PRIMARY KEY, plan_id TEXT NOT NULL, content_hash TEXT NOT NULL,
+ actions_json TEXT NOT NULL, evidence_json TEXT NOT NULL, approved_at DATETIME NOT NULL
+);
+CREATE TABLE operation_result (
+ plan_id TEXT PRIMARY KEY, content_hash TEXT NOT NULL, result_json TEXT NOT NULL, committed_at DATETIME NOT NULL
+);
 
--- ========== 艺术家与关系 ==========
+CREATE VIEW release_group_read AS SELECT g.*, c.title,c.credit,c.primary_type,c.secondary_types,
+ (SELECT provider FROM release_group_ref WHERE group_id=g.id ORDER BY provider,group_ref LIMIT 1) AS provider,
+ (SELECT group_ref FROM release_group_ref WHERE group_id=g.id ORDER BY provider,group_ref LIMIT 1) AS provider_ref,
+ (SELECT json_extract(body,'$.firstReleaseDate.value') FROM release_group_snapshot WHERE group_id=g.id ORDER BY provider,group_ref LIMIT 1) AS first_release_date,
+ (SELECT release_count FROM release_group_snapshot WHERE group_id=g.id ORDER BY provider,group_ref LIMIT 1) AS release_count
+ FROM release_group g JOIN release_group_current c ON c.group_id=g.id;
+CREATE VIEW release_read AS SELECT r.*,COALESCE(c.title,'') AS title,c.credit,c.primary_type,c.secondary_types,c.disc_total,c.media_json,c.states_json,
+ json_extract(s.body,'$.releaseTrackTotal.value') AS track_total,
+ json_extract(s.body,'$.status.value') AS release_status,
+ json_extract(s.body,'$.media.value[0].format.value') AS medium_format,
+ json_extract(s.body,'$.country.value') AS country,
+ json_extract(s.body,'$.date.value') AS release_date,
+ (SELECT first_release_date FROM release_group_read WHERE id=r.release_group_id) AS first_release_date,
+ json_extract(s.body,'$.labels.value[0].name') AS label,
+ json_extract(s.body,'$.labels.value[0].catalogNumber') AS catalog_number,
+ NULL AS cover_path,NULL AS cover_source_url,NULL AS cover_width,NULL AS cover_height,
+ NULL AS cover_fetched_at,(SELECT json_group_object(key,json_extract(value,'$.source')) FROM json_each(c.states_json)) AS provenance_json,
+ (SELECT json_group_object(key,json(CASE WHEN json_extract(value,'$.mode')='user' THEN 'true' ELSE 'false' END)) FROM json_each(c.states_json)) AS locked_json
+ FROM release r JOIN release_current c ON c.release_id=r.id LEFT JOIN release_snapshot s ON s.release_id=r.id;
+CREATE VIEW track_read AS SELECT t.*,COALESCE(c.title,'') AS title,c.credit,c.year,c.disc_number,c.track_number,c.genre,c.lyrics_file_id,c.states_json,
+ json_extract(s.body,'$.trackNumberText.value') AS track_number_text,
+ json_extract(s.body,'$.durationMS.value') AS duration_ms,
+ json_extract(s.body,'$.recording.value.ref') AS recording_ref,
+ json_extract(s.body,'$.works.value[0].ref') AS work_ref,
+ (SELECT value FROM track_identifier WHERE track_id=t.id AND kind='ISRC' ORDER BY position LIMIT 1) AS isrc,
+ NULL AS comment,NULL AS lyrics,(SELECT json_group_object(key,json_extract(value,'$.source')) FROM json_each(c.states_json)) AS provenance_json,
+ (SELECT json_group_object(key,json(CASE WHEN json_extract(value,'$.mode')='user' THEN 'true' ELSE 'false' END)) FROM json_each(c.states_json)) AS locked_json
+ FROM track t JOIN track_current c ON c.track_id=t.id LEFT JOIN track_snapshot s ON s.track_id=t.id;
 CREATE TABLE artist (
   id             INTEGER PRIMARY KEY,
   name           TEXT NOT NULL,
@@ -147,11 +136,14 @@ CREATE TABLE artist (
   type           TEXT,
   disambiguation TEXT,
   mbid           TEXT UNIQUE,
+  provider TEXT,
+  provider_ref TEXT,
   created_at     DATETIME NOT NULL,
   updated_at     DATETIME NOT NULL
 );
--- 同名 + 歧义消解的组合唯一：两位同名艺术家靠 disambiguation 区分，不被合并
-CREATE UNIQUE INDEX idx_artist_name ON artist(name, COALESCE(disambiguation, ''));
+-- 名称用于检索；只有来源身份构成唯一约束，同名不同人可以并存。
+CREATE INDEX idx_artist_name ON artist(name, COALESCE(disambiguation, ''));
+CREATE UNIQUE INDEX idx_artist_ref ON artist(provider,provider_ref) WHERE provider_ref IS NOT NULL;
 
 CREATE TABLE artist_link (
   from_artist_id INTEGER NOT NULL REFERENCES artist(id) ON DELETE CASCADE,
@@ -199,9 +191,10 @@ CREATE TABLE track_artist (
   artist_id INTEGER NOT NULL REFERENCES artist(id) ON DELETE CASCADE,
   role      TEXT NOT NULL,
   attribute TEXT,
-  position  INTEGER,
+  attributes_json TEXT NOT NULL DEFAULT '[]',
+  position INTEGER NOT NULL DEFAULT 0,
   source    TEXT,
-  PRIMARY KEY (track_id, artist_id, role)
+  PRIMARY KEY (track_id, artist_id, role, position)
 );
 CREATE INDEX idx_track_artist_lookup ON track_artist(artist_id, role);
 
@@ -235,7 +228,7 @@ CREATE TABLE release_track (
   track_number      INTEGER NOT NULL,
   track_ref         TEXT,
   recording_ref     TEXT,
-  title             TEXT NOT NULL,
+  title             TEXT,
   track_credit      TEXT,
   duration_ms       INTEGER,
   track_number_text TEXT,
@@ -303,7 +296,7 @@ CREATE INDEX idx_provider_cache_fetched ON provider_cache(fetched_at);
 CREATE VIEW track_fts_source AS
 SELECT
   t.id AS rowid,
-  t.title AS title,
+  COALESCE(t.title, '') AS title,
   COALESCE(t.credit, '') AS artist,
   COALESCE(r.title, '') AS album,
   COALESCE(t.credit, '') AS track_credit,
@@ -323,10 +316,15 @@ SELECT
       FROM track_artist ta
       JOIN artist a ON a.id = ta.artist_id
       WHERE ta.track_id = t.id
+      UNION
+      SELECT COALESCE(rc.credited_name,a.name) FROM release_credit rc
+      JOIN artist a ON a.id=rc.artist_id WHERE rc.release_id=t.release_id
+      UNION
+      SELECT c.credit FROM release_current c WHERE c.release_id=t.release_id AND c.credit IS NOT NULL
     ) x
   ), '') AS artist_names
-FROM track t
-LEFT JOIN release r ON r.id = t.release_id;
+FROM track_read t
+LEFT JOIN release_read r ON r.id = t.release_id;
 
 -- contentless 表：不存原文，只存倒排索引，省空间。
 -- 删除索引行时 FTS5 要求提供「当初索引进去的那份值」，而数据随时会被改写，

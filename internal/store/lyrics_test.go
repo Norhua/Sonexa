@@ -14,11 +14,11 @@ func TestWriteDetailColumnsLyrics(t *testing.T) {
 		t.Fatal(err)
 	}
 	lyrics := "[00:00.00]歌词"
-	if err := s.WriteDetailColumns(id, &provider.Detail{Provider: provider.QQMusic, Lyrics: &lyrics}); err != nil {
+	if err := s.WriteDetailColumns(id, &provider.Detail{Provider: provider.QQMusic, MatchRef: "003RcjkV1XjQQy", Lyrics: &lyrics}); err != nil {
 		t.Fatal(err)
 	}
 	// 后续无歌词的详情不清空已有歌词
-	if err := s.WriteDetailColumns(id, &provider.Detail{Provider: provider.QQMusic}); err != nil {
+	if err := s.WriteDetailColumns(id, &provider.Detail{Provider: provider.QQMusic, MatchRef: "003RcjkV1XjQQy"}); err != nil {
 		t.Fatal(err)
 	}
 	m, err := s.GetMetadata(id)

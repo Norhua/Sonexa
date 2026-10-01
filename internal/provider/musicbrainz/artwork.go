@@ -12,6 +12,13 @@ import (
 
 func (p *Provider) ArtworkStrategy() provider.ArtworkStrategy {
 	return provider.ArtworkStrategy{Provider: provider.MusicBrainz, Source: "caa", ObjectType: "release", GroupFallback: true,
+		CatalogKeys: func(ref, group string) []domain.CoverCatalogKey {
+			keys := []domain.CoverCatalogKey{{Source: "caa", ObjectType: "release", SourceRef: ref}}
+			if group != "" {
+				keys = append(keys, domain.CoverCatalogKey{Source: "caa", ObjectType: "release-group", SourceRef: group})
+			}
+			return keys
+		},
 		Validate: func(kind, ref string) error {
 			if !uuidRef.MatchString(ref) || (kind != "release" && kind != "release-group") {
 				return fmt.Errorf("无效 MusicBrainz 发行身份")

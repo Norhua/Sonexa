@@ -35,7 +35,7 @@ const RoleCredited = "credited"
 // character 不在其中——它不单独成组，只出现在署名原串的可点击片段中。
 var RoleDisplayOrder = []ArtistRole{
 	RoleVocal, RoleInstrument, RolePerformer, RoleComposer,
-	RoleLyricist, RoleArranger, RoleProducer, RoleRemixer, RoleConductor,
+	RoleLyricist, RoleWriter, RoleArranger, RoleProducer, RoleRemixer, RoleConductor,
 }
 
 // validRoles 用于拒绝取值域之外的角色值。
@@ -115,7 +115,7 @@ func (s *Store) UpsertArtist(a *Artist) (int64, error) {
 func upsertArtistTx(tx *sql.Tx, a *Artist) (int64, error) {
 	var id int64
 	err := tx.QueryRow(
-		`SELECT id FROM artist WHERE name = ? AND COALESCE(disambiguation,'') = COALESCE(?,'')`,
+		`SELECT id FROM artist WHERE provider IS NULL AND name = ? AND COALESCE(disambiguation,'') = COALESCE(?,'')`,
 		a.Name, a.Disambiguation).Scan(&id)
 	if err == nil {
 		// 已存在：补齐此前缺失的字段，不覆盖已有值
@@ -177,8 +177,8 @@ func (s *Store) SetTrackArtists(trackID int64, relations []TrackArtist) error {
 		for _, r := range relations {
 			if _, err := tx.Exec(`
 				INSERT INTO track_artist (track_id, artist_id, role, attribute, position, source)
-				VALUES (?,?,?,?,?,?)
-				ON CONFLICT(track_id, artist_id, role) DO UPDATE SET
+				VALUES (?,?,?,?,COALESCE(?,0),?)
+				ON CONFLICT(track_id, artist_id, role, position) DO UPDATE SET
 					attribute = excluded.attribute,
 					position  = excluded.position,
 					source    = excluded.source`,
@@ -198,8 +198,8 @@ func (s *Store) AddTrackArtist(trackID int64, r TrackArtist) error {
 	return s.withTx(func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`
 			INSERT INTO track_artist (track_id, artist_id, role, attribute, position, source)
-			VALUES (?,?,?,?,?,?)
-			ON CONFLICT(track_id, artist_id, role) DO UPDATE SET
+			VALUES (?,?,?,?,COALESCE(?,0),?)
+			ON CONFLICT(track_id, artist_id, role, position) DO UPDATE SET
 				attribute = excluded.attribute,
 				position  = excluded.position,
 				source    = excluded.source`,

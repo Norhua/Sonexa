@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/provider/musicbrainz"
 	"github.com/norhua/sonexa/internal/store"
@@ -31,7 +33,7 @@ func TestStructuredCreditsAndRolesStaySeparate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{Title: "By the Seaside"})
+	id, err := admitDetailForTest(app, detail)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,14 +65,24 @@ func TestStructuredCreditsAndRolesStaySeparate(t *testing.T) {
 	if len(d.Participants) != 2 || d.Participants[0].Role != "vocal" || len(d.Participants[0].Artists) != 2 || d.Participants[1].Role != "composer" {
 		t.Fatalf("participants = %+v", d.Participants)
 	}
-	// 刷新后没有角色的响应应移除旧 vocal，不能因空切片而保留旧关联。
+	// 未提供关系为 unknown，保留已知角色；明确 empty 才清除 follow。
 	detail.Artists = nil
 	if err := app.ApplyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
 		t.Fatal(err)
 	}
 	d, err = app.GetTrackDetail(id)
-	if err != nil || len(d.Participants) != 0 {
+	if err != nil || len(d.Participants) != 2 {
 		t.Fatalf("stale roles = %+v, %v", d, err)
+	}
+	snapshot := provider.DetailSnapshot(detail)
+	snapshot.Track.Roles = map[string]domain.Field[[]domain.Role]{"vocal": domain.Cleared[[]domain.Role](), "composer": domain.Cleared[[]domain.Role]()}
+	rev, _ := app.store.TrackRevision(id)
+	if err := app.store.ApplySnapshot(id, snapshot, rev); err != nil {
+		t.Fatal(err)
+	}
+	d, err = app.GetTrackDetail(id)
+	if err != nil || len(d.Participants) != 0 {
+		t.Fatalf("explicit empty not applied: %+v %v", d, err)
 	}
 	artists, _ = app.ListArtists()
 	if len(artists) != 2 {
@@ -89,7 +101,7 @@ func TestCVDetailUsesOneArtistWithoutVoiceLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{Title: "God knows..."})
+	id, err := admitDetailForTest(app, detail)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,16 +109,15 @@ func TestCVDetailUsesOneArtistWithoutVoiceLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 	artists, err := app.ListArtists()
-	const credit = "涼宮ハルヒ(CV:平野綾)"
-	if err != nil || len(artists) != 1 || artists[0].Name != credit {
+	if err != nil || len(artists) != 2 {
 		t.Fatalf("CV artists = %+v, %v", artists, err)
 	}
 	d, err := app.GetTrackDetail(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Participants[0].Role != "vocal" || len(d.Participants[0].Artists) != 1 || d.Participants[0].Artists[0].Name != credit {
-		t.Fatalf("vocal must target combined CV identity: %+v", d.Participants)
+	if d.Participants[0].Role != "vocal" || len(d.Participants[0].Artists) != 1 || d.Participants[0].Artists[0].Name != "平野綾" {
+		t.Fatalf("vocal must retain source artist identity: %+v", d.Participants)
 	}
 	var count int
 	if err := app.store.DB().QueryRow("SELECT COUNT(*) FROM artist_link").Scan(&count); err != nil || count != 0 {
@@ -136,7 +147,7 @@ func TestCVSplitAcrossUpstreamCreditPartsStaysWhole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{Title: "song"})
+	id, err := admitDetailForTest(app, detail)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +159,7 @@ func TestCVSplitAcrossUpstreamCreditPartsStaysWhole(t *testing.T) {
 		t.Fatalf("split CV identity: %+v, %v", entries, err)
 	}
 	d, err := app.GetTrackDetail(id)
-	if err != nil || len(d.Participants) != 1 || len(d.Participants[0].Artists) != 2 || d.Participants[0].Artists[0].Name != "角色 (CV: 声优)" {
+	if err != nil || len(d.Participants) != 1 || len(d.Participants[0].Artists) != 2 || d.Participants[0].Artists[0].Name != "声优" {
 		t.Fatalf("wrong CV participation: %+v, %v", d, err)
 	}
 }
@@ -167,7 +178,7 @@ func TestRecordingCreditDoesNotInventVocal(t *testing.T) {
 	if len(detail.Artists) != 1 || detail.Artists[0].Name != "初音ミク" {
 		t.Fatalf("invented roles: %+v", detail.Artists)
 	}
-	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{Title: "愛言葉"})
+	id, err := admitDetailForTest(app, detail)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,16 +208,16 @@ func TestRecordingCreditDoesNotInventVocal(t *testing.T) {
 func TestStructuredBandAndRepeatedCredit(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
-	for _, name := range []string{"Earth, Wind & Fire", "A feat. B"} {
+	for i, name := range []string{"Earth, Wind & Fire", "A feat. B"} {
 		response := map[string]any{"id": "rel", "media": []any{map[string]any{"tracks": []any{map[string]any{
-			"id": "trk", "title": "song", "artist-credit": []any{map[string]any{"name": name, "artist": map[string]string{"id": "band-" + name, "name": name, "type": "Group"}}},
+			"id": fmt.Sprint("trk", i), "title": "song", "artist-credit": []any{map[string]any{"name": name, "artist": map[string]string{"id": "band-" + name, "name": name, "type": "Group"}}},
 		}}}}}
 		body, _ := json.Marshal(response)
-		detail, err := musicbrainz.ParseDetailJSON(body, "trk")
+		detail, err := musicbrainz.ParseDetailJSON(body, fmt.Sprint("trk", i))
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{Title: "song"})
+		id, err := admitDetailForTest(app, detail)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -218,15 +229,29 @@ func TestStructuredBandAndRepeatedCredit(t *testing.T) {
 			t.Fatalf("split explicit band: %+v, %v", entries, err)
 		}
 	}
-	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{Title: "repeat"})
+	detail := &provider.Detail{Provider: provider.ITunes, MatchRef: "1@JP", TrackCredit: strPtrOrNil("A feat. B & A")}
+	id, err := admitDetailForTest(app, detail)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.ApplyDetailToTrack(context.Background(), id, "itunes", &provider.Detail{TrackCredit: strPtrOrNil("A feat. B & A")}); err != nil {
+	if err := app.ApplyDetailToTrack(context.Background(), id, "itunes", detail); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := app.store.GetTrackCredits(id)
 	if err != nil || len(entries) != 3 || entries[0].ArtistID != entries[2].ArtistID {
 		t.Fatalf("repeated credit = %+v, %v", entries, err)
 	}
+}
+
+// 独立的角色/署名测试也通过真实精确身份建立收藏，不能借补全偷偷换绑。
+func admitDetailForTest(app *App, detail *provider.Detail) (int64, error) {
+	// 这些极小 fixture 只关注署名，未建模的清单不参与同步。
+	for _, row := range detail.Tracklist {
+		if row.DiscNumber <= 0 || row.TrackNumber <= 0 {
+			detail.Tracklist = nil
+			detail.TracklistCompleteness = domain.Unloaded
+			break
+		}
+	}
+	return app.store.AdmitCandidate(provider.Candidate{Provider: detail.Provider, MatchRef: detail.MatchRef, Title: detail.Title, AlbumTitle: detail.AlbumTitle, AlbumCredit: detail.AlbumCredit, ReleaseRef: detail.ReleaseRef, ReleaseGroupRef: detail.ReleaseGroupRef})
 }

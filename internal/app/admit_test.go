@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/norhua/sonexa/internal/importer"
@@ -153,7 +154,7 @@ func TestAdmissionNeverBorrowsImportValues(t *testing.T) {
 			deref(track.Credit), deref(track.Album))
 	}
 	meta := metaOf(t, app, id)
-	if meta.ProvenanceJSON != nil {
+	if meta.ProvenanceJSON != nil && strings.Contains(*meta.ProvenanceJSON, "import") {
 		t.Errorf("不该再有 import 来源的溯源: %s", *meta.ProvenanceJSON)
 	}
 

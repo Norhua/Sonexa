@@ -158,6 +158,12 @@ func TestUnresolvedDetailTargetDoesNotModifyTrack(t *testing.T) {
 			c := snowCandidate()
 			c.MatchRef = ref
 			id, err := app.store.AdmitCandidate(c)
+			if ref == "" {
+				if err == nil {
+					t.Fatal("blank exact identity must be rejected")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}

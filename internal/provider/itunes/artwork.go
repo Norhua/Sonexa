@@ -22,6 +22,10 @@ func CoverImages(artwork, title, artist string) []domain.CoverImage {
 
 func (p *Provider) ArtworkStrategy() provider.ArtworkStrategy {
 	return provider.ArtworkStrategy{Provider: provider.ITunes, Source: "itunes", ObjectType: "album",
+		CatalogKeys: func(ref, group string) []domain.CoverCatalogKey {
+			keys := []domain.CoverCatalogKey{{Source: "itunes", ObjectType: "album", SourceRef: ref}}
+			return keys
+		},
 		Validate: func(kind, ref string) error {
 			if kind != "album" {
 				return fmt.Errorf("无效专辑类型")

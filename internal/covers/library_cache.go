@@ -106,13 +106,14 @@ func (l *LibraryImages) MoveRoot(dir string, commit func() error) error {
 			return err
 		}
 	}
-	// 迁移未完成的旧采用路径不能遗失；已经迁移完成的旧路径不再参与读取。
-	pending, err := l.store.PendingLegacyCovers()
-	if err != nil {
-		return err
-	}
-	if len(pending) > 0 {
-		return fmt.Errorf("仍有 %d 张旧封面未迁移，请先修复再更改目录", len(pending))
+	for _, draft := range l.drafts {
+		data, err := old.Read(draft.relative)
+		if err != nil {
+			return err
+		}
+		if err := copyExact(next, draft.relative, data); err != nil {
+			return err
+		}
 	}
 	if err := commit(); err != nil {
 		return err

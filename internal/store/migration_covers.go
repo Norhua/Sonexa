@@ -5,11 +5,12 @@ package store
 const migration0002CoverCatalog = `
 CREATE TABLE cover_catalog (
   id INTEGER PRIMARY KEY,
-  source TEXT NOT NULL CHECK (source IN ('caa','itunes','qq','163','local','unknown')),
+  source TEXT NOT NULL CHECK(source<>''),
   object_type TEXT NOT NULL,
   source_ref TEXT NOT NULL CHECK (source_ref <> ''),
   state TEXT NOT NULL DEFAULT 'unqueried' CHECK (state IN ('unqueried','found','empty','error')),
   checked_at DATETIME,
+  actual_release_url TEXT NOT NULL DEFAULT '',
   last_error TEXT NOT NULL DEFAULT '',
   retry_after DATETIME,
   version INTEGER NOT NULL DEFAULT 0,
@@ -58,6 +59,7 @@ CREATE TABLE cover_file (
   format TEXT NOT NULL,
   fetched_at DATETIME NOT NULL,
   last_used_at DATETIME NOT NULL,
+  auto_reusable INTEGER NOT NULL DEFAULT 0 CHECK(auto_reusable IN (0,1)),
   protected INTEGER NOT NULL DEFAULT 0 CHECK (protected IN (0,1)),
   available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0,1)),
   CHECK (release_id IS NOT NULL OR protected = 0)
@@ -75,12 +77,4 @@ CREATE TABLE release_cover_selection (
   adopted_at DATETIME NOT NULL,
   FOREIGN KEY (variant_id, image_id) REFERENCES cover_variant(id, image_id)
 );
-CREATE TABLE cover_legacy_migration (
-  release_id INTEGER PRIMARY KEY REFERENCES release(id) ON DELETE CASCADE,
-  legacy_path TEXT NOT NULL,
-  state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','complete','error')),
-  last_error TEXT NOT NULL DEFAULT ''
-);
-INSERT INTO cover_legacy_migration (release_id, legacy_path)
-SELECT id, cover_path FROM release WHERE cover_path IS NOT NULL AND cover_path <> '';
 `

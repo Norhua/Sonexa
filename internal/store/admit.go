@@ -17,22 +17,20 @@ import "github.com/norhua/sonexa/internal/provider"
 // 撞唯一约束（同一候选被另一条路径抢先入库）时返回 *ErrAlreadyExists，
 // 调用方据此静默转为已有曲目，不向用户报错。
 func (s *Store) AdmitCandidate(c provider.Candidate) (int64, error) {
-	if c.Title == nil || *c.Title == "" {
-		return 0, ErrTitleRequired
-	}
 	if err := s.RememberCandidateArtwork(c); err != nil {
 		return 0, err
 	}
 	source := string(c.Provider)
 
 	return s.CreateTrackWithProvenance(NewTrackInput{
-		Title:       *c.Title,
+		Title:       deref(c.Title),
 		Credit:      c.ArtistName,
 		Album:       c.AlbumTitle,
-		AlbumCredit: c.ArtistName,
+		AlbumCredit: c.AlbumCredit,
 		MatchSource: &source,
 		MatchRef:    &c.MatchRef,
 		Metadata: &MetadataInput{
+			Year:         c.Year,
 			TrackNumber:  c.TrackNumber,
 			DiscNumber:   c.DiscNumber,
 			DurationMS:   c.DurationMS,
@@ -48,7 +46,7 @@ func (s *Store) AdmitCandidate(c provider.Candidate) (int64, error) {
 			MediumFormat:     c.MediumFormat,
 			Country:          c.Country,
 			FirstReleaseDate: c.FirstReleaseDate,
-			TrackTotal:       c.TrackTotal,
+			TrackTotal:       c.ReleaseTrackTotal,
 			Label:            c.Label,
 			CatalogNumber:    c.CatalogNumber,
 		},

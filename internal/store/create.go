@@ -6,12 +6,12 @@ import (
 	"errors"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // NewTrackInput 是创建曲目的输入。
 type NewTrackInput struct {
-	Title string
+	ExistingReleaseID *int64
+	Title             string
 	// Credit 是曲目级署名原串。
 	Credit *string
 	// Album 是歌集名。非空时曲目会被挂到一条歌集上——
@@ -35,6 +35,7 @@ type NewTrackInput struct {
 // 发行级字段（类型、载体、国家、厂牌、目录号、碟数、音轨数、封面）
 // 不在这里——它们归 ReleaseInput，只存在歌集上一份。
 type MetadataInput struct {
+	Year            *int
 	DiscNumber      *int
 	TrackNumber     *int
 	TrackNumberText *string
@@ -74,67 +75,14 @@ type ReleaseInput struct {
 // 返回 *ErrAlreadyExists 并带上已有曲目的 id——
 // 调用方据此静默转为「跳转到已有曲目」，不向用户报错。
 func (s *Store) CreateTrackWithProvenance(in NewTrackInput) (int64, error) {
-	if strings.TrimSpace(in.Title) == "" {
-		return 0, ErrTitleRequired
-	}
-
-	// 预查：已存在则直接返回，不必进事务
-	if in.MatchSource != nil && in.MatchRef != nil {
-		if existing, err := s.FindByMatchRef(*in.MatchSource, *in.MatchRef); err != nil {
-			return 0, err
-		} else if existing != 0 {
+	var id int64
+	err := s.withTx(func(tx *sql.Tx) error { var err error; id, err = insertTrackTx(tx, in); return err })
+	if err != nil && isUniqueViolation(err) && in.MatchSource != nil && in.MatchRef != nil {
+		if existing, e := s.FindByMatchRef(*in.MatchSource, *in.MatchRef); e == nil && existing != 0 {
 			return existing, &ErrAlreadyExists{TrackID: existing}
 		}
 	}
-
-	var trackID int64
-	err := s.withTx(func(tx *sql.Tx) error {
-		releaseID, err := resolveReleaseTx(tx, in)
-		if err != nil {
-			return err
-		}
-
-		now := time.Now().UTC()
-		m := in.Metadata
-		if m == nil {
-			m = &MetadataInput{}
-		}
-		var matchedAt *time.Time
-		if in.MatchSource != nil && in.MatchRef != nil {
-			matchedAt = &now
-		}
-
-		res, err := tx.Exec(`
-			INSERT INTO track (
-				release_id, title, credit,
-				disc_number, track_number, track_number_text, duration_ms, genre, comment,
-				match_source, match_ref, matched_at, recording_ref, work_ref, isrc,
-				enrich_state, provenance_json, locked_json, created_at, updated_at
-			) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			nullableID(releaseID), in.Title, in.Credit,
-			m.DiscNumber, m.TrackNumber, m.TrackNumberText, m.DurationMS, m.Genre, m.Comment,
-			in.MatchSource, in.MatchRef, matchedAt, m.RecordingRef, m.WorkRef, m.ISRC,
-			string(InitialEnrichState(in)), m.ProvenanceJSON, m.LockedJSON, now, now)
-		if err != nil {
-			return err
-		}
-		trackID, err = res.LastInsertId()
-		if err != nil {
-			return err
-		}
-		return syncFTS(tx, trackID)
-	})
-
-	if err != nil {
-		// 事务内撞唯一键：另一路径抢先入库了
-		if isUniqueViolation(err) && in.MatchSource != nil && in.MatchRef != nil {
-			if existing, findErr := s.FindByMatchRef(*in.MatchSource, *in.MatchRef); findErr == nil && existing != 0 {
-				return existing, &ErrAlreadyExists{TrackID: existing}
-			}
-		}
-		return 0, err
-	}
-	return trackID, nil
+	return id, err
 }
 
 // resolveReleaseTx 决定新曲目挂在哪条歌集上。
@@ -270,6 +218,8 @@ type TrackMetadata struct {
 
 // GetMetadata 读取某曲目的详情；不存在时返回 nil。
 func (s *Store) GetMetadata(trackID int64) (*TrackMetadata, error) {
+	s.fileMu.Lock()
+	defer s.fileMu.Unlock()
 	var m TrackMetadata
 	var releaseDate, firstReleaseDate *string
 	err := s.db.QueryRow(`
@@ -280,11 +230,11 @@ func (s *Store) GetMetadata(trackID int64) (*TrackMetadata, error) {
 		       t.provenance_json, t.locked_json,
 		       t.release_id, r.title, r.credit, r.primary_type, r.secondary_types,
 		       r.release_status, r.medium_format, r.country,
-		       r.release_date, r.first_release_date,
+		       r.release_date, r.first_release_date, t.year,
 		       r.disc_total, r.track_total, r.label, r.catalog_number,
 		       r.cover_path, r.cover_source_url, r.provider_ref,
-		       (SELECT rg.provider_ref FROM release_group rg WHERE rg.id = r.release_group_id)
-		FROM track t LEFT JOIN release r ON r.id = t.release_id
+		       (SELECT rg.provider_ref FROM release_group_read rg WHERE rg.id = r.release_group_id)
+		FROM track_read t LEFT JOIN release_read r ON r.id = t.release_id
 		WHERE t.id = ?`, trackID).Scan(
 		&m.TrackID, &m.Title, &m.Credit,
 		&m.DiscNumber, &m.TrackNumber, &m.TrackNumberText, &m.DurationMS,
@@ -293,7 +243,7 @@ func (s *Store) GetMetadata(trackID int64) (*TrackMetadata, error) {
 		&m.ProvenanceJSON, &m.LockedJSON,
 		&m.ReleaseID, &m.Album, &m.AlbumCredit, &m.PrimaryType, &m.SecondaryTypes,
 		&m.ReleaseStatus, &m.MediumFormat, &m.Country,
-		&releaseDate, &firstReleaseDate,
+		&releaseDate, &firstReleaseDate, &m.Year,
 		&m.DiscTotal, &m.TrackTotal, &m.Label, &m.CatalogNumber,
 		&m.CoverPath, &m.CoverSourceURL, &m.ReleaseRef, &m.ReleaseGroupRef)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -303,7 +253,18 @@ func (s *Store) GetMetadata(trackID int64) (*TrackMetadata, error) {
 		return nil, err
 	}
 	m.ReleaseDate, m.FirstReleaseDate = releaseDate, firstReleaseDate
-	m.Year = (&Release{ReleaseDate: releaseDate, FirstReleaseDate: firstReleaseDate}).Year()
+
+	var lyricsID *int64
+	if err := s.db.QueryRow("SELECT lyrics_file_id FROM track_current WHERE track_id=?", trackID).Scan(&lyricsID); err != nil {
+		return nil, err
+	}
+	if lyricsID != nil {
+		lyrics, err := s.readLyrics(*lyricsID)
+		if err != nil {
+			return nil, err
+		}
+		m.Lyrics = lyrics
+	}
 	return &m, nil
 }
 
@@ -325,50 +286,8 @@ var trackEditColumns = map[string]string{
 //
 // 来源取值为 provider id 或 user（用户手动修改）。来源为 user 的字段
 // 不被上游结果自动覆盖——该判定在调用方完成。
-func (s *Store) ApplyMetadataEdits(trackID int64, edits map[string]string,
-	provenance map[string]string, locked map[string]bool) error {
-	if len(edits) == 0 && len(provenance) == 0 && len(locked) == 0 {
-		return nil
-	}
-
-	return s.withTx(func(tx *sql.Tx) error {
-		sets := []string{}
-		args := []any{}
-		for key, value := range edits {
-			column, ok := trackEditColumns[key]
-			if !ok {
-				continue
-			}
-			if column == "title" && strings.TrimSpace(value) == "" {
-				return ErrTitleRequired
-			}
-			sets = append(sets, column+" = ?")
-			if isIntColumn(column) {
-				args = append(args, parseIntOrNil(value))
-			} else {
-				args = append(args, nullIfBlank(value))
-			}
-		}
-		if len(provenance) > 0 || len(locked) > 0 {
-			provJSON, lockedJSON, err := marshalProvLock(provenance, locked)
-			if err != nil {
-				return err
-			}
-			sets = append(sets, "provenance_json = ?", "locked_json = ?")
-			args = append(args, provJSON, lockedJSON)
-		}
-		if len(sets) == 0 {
-			return nil
-		}
-		sets = append(sets, "updated_at = ?")
-		args = append(args, time.Now().UTC(), trackID)
-
-		if _, err := tx.Exec(
-			"UPDATE track SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
-			return err
-		}
-		return syncFTS(tx, trackID)
-	})
+func (s *Store) ApplyMetadataEdits(trackID int64, edits map[string]string, provenance map[string]string, locked map[string]bool) error {
+	return s.editLegacyFields("track", trackID, edits, provenance, locked)
 }
 
 func marshalProvLock(provenance map[string]string, locked map[string]bool) (string, string, error) {

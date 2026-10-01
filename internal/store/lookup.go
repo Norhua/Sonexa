@@ -2,7 +2,9 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"github.com/norhua/sonexa/internal/domain"
 	"time"
 
 	"github.com/norhua/sonexa/internal/matching"
@@ -12,7 +14,7 @@ import (
 func (s *Store) FindByMatchRef(source, ref string) (int64, error) {
 	var id int64
 	err := s.db.QueryRow(
-		`SELECT id FROM track WHERE match_source = ? AND match_ref = ?`,
+		`SELECT id FROM track_read WHERE match_source = ? AND match_ref = ?`,
 		source, ref).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
@@ -27,7 +29,7 @@ func (s *Store) FindByISRC(isrc string) (int64, error) {
 	}
 	var id int64
 	err := s.db.QueryRow(
-		`SELECT id FROM track WHERE isrc = ? LIMIT 1`, isrc).Scan(&id)
+		`SELECT track_id FROM track_identifier WHERE kind='ISRC' AND value=? ORDER BY track_id LIMIT 1`, isrc).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
@@ -43,7 +45,7 @@ func (s *Store) FindByISRC(isrc string) (int64, error) {
 func (s *Store) FindUnmatchedByText(normTitle, normArtist string, durationMS *int) (int64, error) {
 	rows, err := s.db.Query(`
 		SELECT t.id, t.title, t.credit, t.duration_ms
-		FROM track t
+		FROM track_read t
 		WHERE t.match_source IS NULL`)
 	if err != nil {
 		return 0, err
@@ -118,7 +120,7 @@ func (s *Store) ResolveTracklist(releaseID int64, provider string) ([]ResolvedPo
 		if t.TrackRef != nil && *t.TrackRef != "" {
 			var id int64
 			var createdAt time.Time
-			err := s.db.QueryRow(`SELECT id, created_at FROM track WHERE match_source = ? AND match_ref = ?`,
+			err := s.db.QueryRow(`SELECT id, created_at FROM track_read WHERE match_source = ? AND match_ref = ?`,
 				provider, *t.TrackRef).Scan(&id, &createdAt)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return nil, err
@@ -156,14 +158,41 @@ func (s *Store) SetProvenance(trackID int64, source, ref string) error {
 //
 // 置空时机：复核队列的「无需匹配」、用户在编辑页手动清空。
 func (s *Store) ClearProvenance(trackID int64) error {
-	now := time.Now().UTC()
-	return s.withTx(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`
-			UPDATE track SET
-				match_source = NULL, match_ref = NULL, matched_at = NULL, updated_at = ?
-			WHERE id = ?`, now, trackID)
+	s.fileMu.Lock()
+	defer s.fileMu.Unlock()
+	err := s.withTx(func(tx *sql.Tx) error { return clearTrackBindingTx(tx, trackID) })
+	if err == nil {
+		_ = s.collectLyrics()
+	}
+	return err
+}
+
+func clearTrackBindingTx(tx *sql.Tx, trackID int64) error {
+	origins, err := readOriginsTx(tx, "track", trackID)
+	if err != nil {
 		return err
-	})
+	}
+	for key := range origins {
+		origins[key] = FieldOrigin{Mode: domain.User, Source: "user"}
+	}
+	raw, err := json.Marshal(origins)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE track_current SET states_json=? WHERE track_id=?", string(raw), trackID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE track_artist SET source='user' WHERE track_id=?", trackID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM track_snapshot WHERE track_id=?", trackID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM track_identifier WHERE track_id=?", trackID); err != nil {
+		return err
+	}
+	_, err = tx.Exec("UPDATE track SET match_source=NULL,match_ref=NULL,matched_at=NULL,enrich_state='skipped',enrich_error=NULL,revision=revision+1,updated_at=? WHERE id=?", time.Now().UTC(), trackID)
+	return err
 }
 
 // ErrAlreadyExists 表示写入撞上了溯源的唯一约束。

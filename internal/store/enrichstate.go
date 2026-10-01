@@ -78,8 +78,8 @@ func (s *Store) TracksNeedingEnrichment(limit int) ([]EnrichTarget, error) {
 	query := `
 		SELECT t.id, COALESCE(t.match_source, ''), COALESCE(r.provider_ref, ''),
 		       t.enrich_attempts
-		FROM track t
-		LEFT JOIN release r ON r.id = t.release_id
+		FROM track_read t
+		LEFT JOIN release_read r ON r.id = t.release_id
 		WHERE t.enrich_state = ?
 		  AND COALESCE(t.match_source, '') <> ''
 		  AND COALESCE(r.provider_ref, '') <> ''
@@ -120,7 +120,7 @@ func (s *Store) EnrichStats() (EnrichCounts, error) {
 			SUM(CASE WHEN enrich_state IN ('fetched','absent') THEN 1 ELSE 0 END),
 			SUM(CASE WHEN enrich_state = 'pending' THEN 1 ELSE 0 END),
 			SUM(CASE WHEN enrich_state NOT IN ('fetched','absent','pending') THEN 1 ELSE 0 END)
-		FROM track`).Scan(&nullInt{&c.Matched}, &nullInt{&c.Pending}, &nullInt{&c.Skipped})
+		FROM track_read`).Scan(&nullInt{&c.Matched}, &nullInt{&c.Pending}, &nullInt{&c.Skipped})
 	if err != nil {
 		return c, fmt.Errorf("统计补全状态失败: %w", err)
 	}
@@ -133,7 +133,7 @@ func (s *Store) EnrichStats() (EnrichCounts, error) {
 func (s *Store) EnrichStateOf(trackID int64) (EnrichState, error) {
 	var state sql.NullString
 	err := s.db.QueryRow(
-		`SELECT enrich_state FROM track WHERE id = ?`, trackID).Scan(&state)
+		`SELECT enrich_state FROM track_read WHERE id = ?`, trackID).Scan(&state)
 	if errors.Is(err, sql.ErrNoRows) {
 		return EnrichSkipped, nil
 	}

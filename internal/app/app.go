@@ -379,9 +379,7 @@ func newCoverService(st *store.Store, paths config.Paths, cur config.Settings, v
 	if err := svc.AttachLibrary(st); err != nil {
 		return nil, err
 	}
-	for _, err := range svc.Library().MigrateLegacy(paths.CoverDir) {
-		log.Printf("旧封面暂未迁移，保留原文件并在下次启动重试: %v", err)
-	}
+
 	return svc, nil
 }
 

@@ -83,12 +83,12 @@ type TrackFilter struct {
 const trackSelectColumns = `
 	t.id, t.title, t.credit, r.title,
 	t.locked_json,
-	r.release_date, r.first_release_date,
+	t.year,
 	t.track_number, r.track_total, t.disc_number, t.duration_ms,
 	t.genre, r.medium_format, r.country, r.primary_type,
 	r.cover_path, t.match_source, t.match_ref,
 	t.release_id, r.provider_ref,
-	(SELECT rg.provider_ref FROM release_group rg WHERE rg.id = r.release_group_id),
+	(SELECT rg.provider_ref FROM release_group_read rg WHERE rg.id = r.release_group_id),
 	t.created_at,
 	COALESCE((SELECT revision FROM release_cover_selection WHERE release_id=t.release_id),0)`
 
@@ -96,10 +96,9 @@ func scanTrackView(sc interface{ Scan(...any) error }) (*TrackView, error) {
 	var v TrackView
 	var createdAt time.Time
 	var lockedJSON *string
-	var releaseDate, firstReleaseDate *string
 	if err := sc.Scan(&v.ID, &v.Title, &v.Artist, &v.Album,
 		&lockedJSON,
-		&releaseDate, &firstReleaseDate,
+		&v.Year,
 		&v.TrackNumber, &v.TrackTotal, &v.DiscNumber, &v.DurationMS,
 		&v.Genre, &v.MediumFormat, &v.Country, &v.PrimaryType,
 		&v.CoverPath, &v.MatchSource, &v.MatchRef,
@@ -107,7 +106,6 @@ func scanTrackView(sc interface{ Scan(...any) error }) (*TrackView, error) {
 		return nil, err
 	}
 	v.AddedAt = createdAt.UTC().Format(time.RFC3339)
-	v.Year = (&Release{ReleaseDate: releaseDate, FirstReleaseDate: firstReleaseDate}).Year()
 	locks := ParseLocks(lockedJSON)
 	v.TitleLocked, v.ArtistLocked, v.AlbumLocked = locks["title"], locks["credit"], locks["album"]
 	return &v, nil
@@ -252,11 +250,11 @@ func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, e
 
 	sb := strings.Builder{}
 	if countOnly {
-		sb.WriteString("SELECT COUNT(DISTINCT t.id) FROM track t")
+		sb.WriteString("SELECT COUNT(DISTINCT t.id) FROM track_read t")
 	} else {
-		sb.WriteString("SELECT DISTINCT " + trackSelectColumns + " FROM track t")
+		sb.WriteString("SELECT DISTINCT " + trackSelectColumns + " FROM track_read t")
 	}
-	sb.WriteString(" LEFT JOIN release r ON r.id = t.release_id")
+	sb.WriteString(" LEFT JOIN release_read r ON r.id = t.release_id")
 	for _, j := range joins {
 		sb.WriteString(" " + j)
 	}
@@ -292,7 +290,7 @@ func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, e
 func (s *Store) GetTrackView(id int64) (*TrackView, error) {
 	v, err := scanTrackView(s.db.QueryRow(
 		"SELECT "+trackSelectColumns+
-			" FROM track t LEFT JOIN release r ON r.id = t.release_id WHERE t.id = ?", id))
+			" FROM track_read t LEFT JOIN release_read r ON r.id = t.release_id WHERE t.id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -305,31 +303,7 @@ func (s *Store) GetTrackView(id int64) (*TrackView, error) {
 // 歌集名不在这里改——它归歌集，改它对该歌集全部曲目生效，
 // 不该由某一首曲目的一次匹配悄悄触发。
 func (s *Store) UpdateBasicOnMatch(trackID int64, title, credit *string) error {
-	return s.withTx(func(tx *sql.Tx) error {
-		var lockedJSON *string
-		if err := tx.QueryRow(`SELECT locked_json FROM track WHERE id = ?`, trackID).Scan(&lockedJSON); err != nil {
-			return err
-		}
-		locks := ParseLocks(lockedJSON)
-
-		sets := []string{"updated_at = ?"}
-		args := []any{time.Now().UTC()}
-		if title != nil && !locks["title"] {
-			sets = append(sets, "title = ?")
-			args = append(args, *title)
-		}
-		if credit != nil && !locks["credit"] {
-			sets = append(sets, "credit = ?")
-			args = append(args, *credit)
-		}
-		args = append(args, trackID)
-
-		if _, err := tx.Exec(
-			"UPDATE track SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
-			return err
-		}
-		return syncFTS(tx, trackID)
-	})
+	return s.UpdateTrackFields(trackID, title, credit, false)
 }
 
 // MoveTrackToRelease 把一首曲目挪到另一条歌集下。
@@ -339,7 +313,7 @@ func (s *Store) UpdateBasicOnMatch(trackID int64, title, credit *string) error {
 // 若是本地歌集且再无曲目引用，顺带删掉——否则侧栏会积一堆空专辑。
 func (s *Store) MoveTrackToRelease(trackID, releaseID int64) error {
 	var oldID *int64
-	if err := s.db.QueryRow(`SELECT release_id FROM track WHERE id = ?`, trackID).Scan(&oldID); err != nil {
+	if err := s.db.QueryRow(`SELECT release_id FROM track_read WHERE id = ?`, trackID).Scan(&oldID); err != nil {
 		return err
 	}
 	err := s.withTx(func(tx *sql.Tx) error {
@@ -364,7 +338,7 @@ func (s *Store) MoveTrackToRelease(trackID, releaseID int64) error {
 // 「改歌集名」时用它判断这次改动影响几首——只有一首时不必二次确认。
 func (s *Store) ReleaseTrackCount(releaseID int64) (int, error) {
 	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM track WHERE release_id = ?`, releaseID).Scan(&n)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM track_read WHERE release_id = ?`, releaseID).Scan(&n)
 	return n, err
 }
 
@@ -375,7 +349,7 @@ func (s *Store) ReleaseTrackCount(releaseID int64) (int, error) {
 func (s *Store) FindReleaseByTitleCredit(title string, credit *string) (int64, error) {
 	var id int64
 	err := s.db.QueryRow(`
-		SELECT id FROM release
+		SELECT id FROM release_read
 		WHERE LOWER(title) = LOWER(?)
 		  AND LOWER(COALESCE(credit,'')) = LOWER(COALESCE(?,''))
 		ORDER BY (provider_ref IS NULL), id

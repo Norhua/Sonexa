@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/norhua/sonexa/internal/domain"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -453,53 +454,32 @@ func TestF11_UserEditedYearSurvivesRematch(t *testing.T) {
 	}
 	releaseID := *meta.ReleaseID
 
-	// 用户手动把年份改为 2010：来源置为 user 并加锁
-	if err := s.UpdateReleaseFields(releaseID,
-		map[string]string{"releaseDate": "2010-01-01"},
-		map[string]string{"releaseDate": "user"},
-		map[string]bool{"releaseDate": true},
-	); err != nil {
-		t.Fatalf("手动修改失败: %v", err)
+	// 用户年份属于歌曲，发行日期保持只读。
+	if err := s.ApplyMetadataEdits(trackID, map[string]string{"year": "2010"}, nil, nil); err != nil {
+		t.Fatal(err)
 	}
-
 	meta, _ = s.GetMetadata(trackID)
-	if meta.Year == nil || *meta.Year != 2010 {
-		t.Fatalf("手动修改后年份 = %v, 期望 2010", meta.Year)
+	var provenance map[string]string
+	if err := json.Unmarshal([]byte(*meta.ProvenanceJSON), &provenance); err != nil {
+		t.Fatal(err)
 	}
-
-	// 重新匹配得到 2011：来源为 user 的字段默认不被填充
+	if meta.Year == nil || *meta.Year != 2010 || provenance["year"] != "user" {
+		t.Fatalf("user year: %+v", meta)
+	}
 	rel, err := s.GetRelease(releaseID)
 	if err != nil {
-		t.Fatalf("读取歌集失败: %v", err)
+		t.Fatal(err)
 	}
-	var provenance map[string]string
-	var locked map[string]bool
-	json.Unmarshal([]byte(*rel.ProvenanceJSON), &provenance)
-	json.Unmarshal([]byte(*rel.LockedJSON), &locked)
-
-	if provenance["releaseDate"] != "user" {
-		t.Errorf("年份来源 = %q, 期望 user", provenance["releaseDate"])
+	snapshot := &domain.Snapshot{Track: &domain.TrackSnapshot{Identity: domain.Identity{Provider: domain.ProviderID(*meta.MatchSource), Ref: *meta.MatchRef}, Year: domain.Known(2011)}, Release: &domain.ReleaseSnapshot{Identity: domain.Identity{Provider: domain.ProviderID(*rel.Provider), Ref: *rel.ProviderRef}, Date: domain.Known("2011-05-01"), Labels: domain.Known([]domain.Label{{Name: "Sony"}})}}
+	rev, _ := s.TrackRevision(trackID)
+	if err := s.ApplySnapshot(trackID, snapshot, rev); err != nil {
+		t.Fatal(err)
 	}
-	if !locked["releaseDate"] {
-		t.Error("年份应处于用户锁定状态")
-	}
-
-	// 模拟「未勾选填充」的重新匹配：不传 releaseDate 的编辑
-	if err := s.UpdateReleaseFields(releaseID,
-		map[string]string{"label": "Sony"},
-		provenance, locked,
-	); err != nil {
-		t.Fatalf("重新匹配写入失败: %v", err)
-	}
-
 	meta, _ = s.GetMetadata(trackID)
-	if meta.Year == nil || *meta.Year != 2010 {
-		t.Errorf("重新匹配后年份 = %v, 期望仍为用户设定的 2010", meta.Year)
+	if meta.Year == nil || *meta.Year != 2010 || meta.Label == nil || *meta.Label != "Sony" {
+		t.Fatalf("refresh overwrote user year or missed release facts: %+v", meta)
 	}
-	// 其余未锁字段照常更新
-	if meta.Label == nil || *meta.Label != "Sony" {
-		t.Errorf("厂牌 = %v, 期望被更新", meta.Label)
-	}
+
 }
 
 // TestF14_DuplicateAddIsIdempotent 覆盖 22.7 / F14：

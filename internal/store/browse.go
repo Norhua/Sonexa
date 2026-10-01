@@ -222,10 +222,10 @@ func (s *Store) ListAlbums() ([]AlbumListItem, error) {
 		SELECT r.id, r.release_group_id, r.title, r.credit, r.provider, r.provider_ref,
 		       r.release_date, r.first_release_date, r.track_total,
 		       r.cover_path, r.cover_source_url,
-		       (SELECT rg.provider_ref FROM release_group rg WHERE rg.id = r.release_group_id),
+		       (SELECT rg.provider_ref FROM release_group_read rg WHERE rg.id = r.release_group_id),
 		       COUNT(t.id)
-		FROM release r
-		JOIN track t ON t.release_id = r.id
+		FROM release_read r
+		JOIN track_read t ON t.release_id = r.id
 		GROUP BY r.id
 		ORDER BY r.title`)
 	if err != nil {
@@ -275,7 +275,7 @@ func (s *Store) ListAlbumsForTag(tagID int64) ([]AlbumListItem, error) {
 		return albums, err
 	}
 	rows, err := s.db.Query(`SELECT DISTINCT r.id, COALESCE(r.release_group_id, 0)
-		FROM release r JOIN track t ON t.release_id = r.id
+		FROM release_read r JOIN track_read t ON t.release_id = r.id
 		JOIN collection_item ci ON ci.track_id = t.id WHERE ci.collection_id = ?`, tagID)
 	if err != nil {
 		return nil, err

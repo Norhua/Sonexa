@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
-	"image/color"
 	"os"
 	"path"
 	"path/filepath"
 	"testing"
 
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/provider/musicbrainz"
 	"github.com/norhua/sonexa/internal/store"
 )
 
@@ -79,6 +79,9 @@ func TestLibraryImagesAdoptionAtomicAndRepeatable(t *testing.T) {
 
 func TestLibraryImagesReuseAfterCandidateAdmission(t *testing.T) {
 	l, st, _ := imageLibrary(t)
+	l.catalogKeys = func(r *store.Release) []store.CoverCatalogKey {
+		return (&musicbrainz.Provider{}).ArtworkStrategy().CatalogKeys(*r.ProviderRef, "")
+	}
 	key := store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: "mb-release"}
 	if _, err := st.SaveCoverCatalog(key, []store.CoverImage{{SourceImageID: "front", PrimaryType: "Front", Variants: []store.CoverVariant{{Spec: "250"}}}}); err != nil {
 		t.Fatal(err)
@@ -113,71 +116,6 @@ func TestLibraryImagesReuseAfterCandidateAdmission(t *testing.T) {
 	}
 	if chosen, err := st.GetCoverSelection(*track.ReleaseID); err != nil || chosen != nil {
 		t.Fatal("自动复用伪造了用户采用")
-	}
-}
-
-func TestLegacyCoverMigrationResumesWithoutDeletingOldFiles(t *testing.T) {
-	l, st, root := imageLibrary(t)
-	if err := os.MkdirAll(filepath.Join(root, "adopted"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	legacy := filepath.Join(root, "adopted", "hash.png")
-	data := solidPNG(800, 600, color.RGBA{R: 80, A: 255})
-	if err := os.WriteFile(legacy, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"A", "B", "missing"} {
-		id, err := st.FindOrCreateLocalRelease(name, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		file := legacy
-		if name == "missing" {
-			file += ".missing"
-		}
-		if err := st.SetReleaseCover(id, file, "https://is1.mzstatic.com/image.png"); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := st.DB().Exec(`INSERT INTO cover_legacy_migration(release_id,legacy_path) VALUES(?,?)`, id, file); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if failures := l.MigrateLegacy(root); len(failures) != 1 {
-		t.Fatalf("应仅报告缺失文件: %v", failures)
-	}
-	for _, id := range []int64{1, 2} {
-		selected, err := st.GetCoverSelection(id)
-		if err != nil || selected == nil {
-			t.Fatalf("迁移缺少选择: %v", err)
-		}
-		files, _ := st.ListReleaseCoverFiles(id)
-		if len(files) != 1 || !files[0].Protected || files[0].Width != 800 {
-			t.Fatal("迁移丢失尺寸/保护状态")
-		}
-		key, _ := st.CoverCatalogKeyForImage(selected.ImageID)
-		if key.Source != "itunes" {
-			t.Fatal("来源不准确")
-		}
-	}
-	// 模拟采用已提交、迁移完成标记还未写的中断。
-	if _, err := st.DB().Exec(`UPDATE cover_legacy_migration SET state='pending' WHERE release_id=1`); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(legacy+".missing", data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if failures := l.MigrateLegacy(root); len(failures) != 0 {
-		t.Fatalf("恢复失败: %v", failures)
-	}
-	selected, _ := st.GetCoverSelection(1)
-	if selected.Revision != 1 {
-		t.Fatal("重试重复采用")
-	}
-	if old, err := os.ReadFile(legacy); err != nil || !bytes.Equal(old, data) {
-		t.Fatal("迁移删除/改写了旧文件")
-	}
-	if pending, err := st.PendingLegacyCovers(); err != nil || len(pending) != 0 {
-		t.Fatalf("迁移未完成: %+v %v", pending, err)
 	}
 }
 

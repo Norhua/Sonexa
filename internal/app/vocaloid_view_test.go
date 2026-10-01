@@ -34,6 +34,7 @@ func TestVocaloidAndCreditedComposerReachArtistView(t *testing.T) {
 	// 以及一位未署名的编曲者。
 	detail := &provider.Detail{
 		Provider:    provider.MusicBrainz,
+		MatchRef:    "trk-aikotoba",
 		TrackCredit: &credit,
 		Artists: []provider.DetailArtist{
 			{Name: "初音ミク", Role: "vocal", Type: strPtrOrNil("character")},

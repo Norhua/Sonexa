@@ -12,9 +12,10 @@ const AppDirName = "Sonexa"
 
 // Paths 汇总应用使用的本地路径。数据库与默认封面缓存目录同级。
 type Paths struct {
-	AppDir   string // 应用专属目录
-	DBPath   string // SQLite 数据库文件
-	CoverDir string // 封面缓存目录（默认与数据库同级，可在设置中改）
+	AppDir    string // 应用专属目录
+	DBPath    string // SQLite 数据库文件
+	LyricsDir string // 当前歌词与编辑临时文件
+	CoverDir  string // 封面缓存目录（默认与数据库同级，可在设置中改）
 }
 
 // DefaultPaths 解析默认路径，但不创建任何目录。
@@ -25,15 +26,16 @@ func DefaultPaths() (Paths, error) {
 	}
 	appDir := filepath.Join(base, AppDirName)
 	return Paths{
-		AppDir:   appDir,
-		DBPath:   filepath.Join(appDir, "sonexa.db"),
-		CoverDir: filepath.Join(appDir, "covers"),
+		AppDir:    appDir,
+		DBPath:    filepath.Join(appDir, "sonexa.db"),
+		CoverDir:  filepath.Join(appDir, "covers"),
+		LyricsDir: filepath.Join(appDir, "lyrics"),
 	}, nil
 }
 
 // Ensure 创建应用目录与封面缓存目录。首次启动时自动完成，不要求用户选择路径。
 func (p Paths) Ensure() error {
-	for _, dir := range []string{p.AppDir, p.CoverDir} {
+	for _, dir := range []string{p.AppDir, p.CoverDir, p.LyricsDir} {
 		if dir == "" {
 			continue
 		}

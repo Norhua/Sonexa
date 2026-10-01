@@ -20,15 +20,38 @@ var ErrDatabaseNewer = errors.New("数据库版本高于当前程序支持的版
 
 // migrations 是全部迁移，按 Version 升序应用。
 //
-// v1 的初始结构保持不变；后续变更以新增迁移兼容已有数据库。
+// 本代际从空库创建；不执行旧模型的数据或封面转换。
 var migrations = []Migration{
-	{Version: 1, Name: "init", SQL: migration0001Init},
+	{Version: 1, Name: "snapshot_model", SQL: migration0001Init},
 	{Version: 2, Name: "cover_catalog", SQL: migration0002CoverCatalog},
-	{Version: 3, Name: "itunes_no_expiry", SQL: `UPDATE provider_cache SET ttl_seconds=0 WHERE provider='itunes';`},
-	{Version: 4, Name: "cover_preview_origin", SQL: `ALTER TABLE cover_file ADD COLUMN auto_reusable INTEGER NOT NULL DEFAULT 0 CHECK(auto_reusable IN (0,1));
-		ALTER TABLE cover_catalog ADD COLUMN actual_release_url TEXT NOT NULL DEFAULT '';`},
-	// 歌词是上游事实（QQ 音乐详情提供），不进编辑界面。
-	{Version: 5, Name: "track_lyrics", SQL: `ALTER TABLE track ADD COLUMN lyrics TEXT;`},
+}
+
+const ModelGeneration = "upstream-snapshot-v1"
+
+var ErrIncompatibleModel = errors.New("数据库模型不兼容，请先备份并清理旧版应用数据；程序不会自动删除数据")
+
+func (s *Store) checkModelGeneration() error {
+	var count int
+	if err := s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='model_generation'`).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		if err := s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name<>'schema_version'`).Scan(&count); err != nil {
+			return err
+		}
+		if count > 0 {
+			return ErrIncompatibleModel
+		}
+		return nil
+	}
+	var generation string
+	if err := s.db.QueryRow(`SELECT generation FROM model_generation WHERE id=1`).Scan(&generation); err != nil {
+		return fmt.Errorf("%w: %v", ErrIncompatibleModel, err)
+	}
+	if generation != ModelGeneration {
+		return fmt.Errorf("%w（%s）", ErrIncompatibleModel, generation)
+	}
+	return nil
 }
 
 // LatestVersion 返回本程序支持的最高 schema 版本。
@@ -66,6 +89,9 @@ func currentVersion(db *sql.DB) (int, error) {
 // 单个迁移在事务中执行：失败时整体回滚且版本号保持不变。
 // 数据库版本高于程序支持的最高版本时返回 ErrDatabaseNewer。
 func (s *Store) Migrate() error {
+	if err := s.checkModelGeneration(); err != nil {
+		return err
+	}
 	cur, err := currentVersion(s.db)
 	if err != nil {
 		return err

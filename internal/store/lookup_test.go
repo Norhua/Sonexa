@@ -52,21 +52,19 @@ func TestFuzzyScopeExcludesMatchedTracks(t *testing.T) {
 	}
 }
 
-// TestFuzzyRequiresDurationWithin3s 覆盖第三步的时长判据。
-func TestFuzzyRequiresDurationWithin3s(t *testing.T) {
+// 本地输入不产生无来源的只读时长快照；未知时长不作否决证据。
+func TestUnboundInputDoesNotInventDuration(t *testing.T) {
 	s := openTestStore(t)
-	id, _ := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "That Girl", Credit: ptr("Natalia Lesz"),
-		Metadata: &MetadataInput{DurationMS: ptr(221000)},
-	})
-
-	// 时长差 2s：命中
-	if got, _ := s.FindUnmatchedByText("thatgirl", "natalialesz", ptr(223000)); got != id {
-		t.Errorf("时长差 2s 应命中, 得到 %d", got)
+	id, err := s.CreateTrackWithProvenance(NewTrackInput{Title: "That Girl", Credit: ptr("Natalia Lesz"), Metadata: &MetadataInput{DurationMS: ptr(221000)}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	// 时长差 20s：不命中
-	if got, _ := s.FindUnmatchedByText("thatgirl", "natalialesz", ptr(241000)); got != 0 {
-		t.Errorf("时长差 20s 不应命中, 得到 %d", got)
+	meta, err := s.GetMetadata(id)
+	if err != nil || meta.DurationMS != nil {
+		t.Fatal("local input invented upstream duration", err)
+	}
+	if got, err := s.FindUnmatchedByText("thatgirl", "natalialesz", ptr(241000)); err != nil || got != id {
+		t.Fatal("unknown duration rejected text candidate", got, err)
 	}
 }
 

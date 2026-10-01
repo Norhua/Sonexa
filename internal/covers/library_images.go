@@ -5,10 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -19,11 +17,13 @@ import (
 // LibraryImages 串行化文件落盘和引用提交。调用方必须在网络/文件读取完成后
 // 交付字节；持锁期间不出网，不删除任何尚被引用的用户选择。
 type LibraryImages struct {
-	mu       sync.Mutex
-	files    *AlbumFiles
-	store    *store.Store
-	maxBytes int64
-	ttl      time.Duration
+	mu          sync.Mutex
+	files       *AlbumFiles
+	store       *store.Store
+	maxBytes    int64
+	ttl         time.Duration
+	catalogKeys func(*store.Release) []store.CoverCatalogKey
+	drafts      map[string]stagedArtwork
 }
 
 func NewLibraryImages(st *store.Store, dir string) (*LibraryImages, error) {
@@ -31,10 +31,20 @@ func NewLibraryImages(st *store.Store, dir string) (*LibraryImages, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &LibraryImages{files: files, store: st}, nil
+	library := &LibraryImages{files: files, store: st}
+	if err := library.discardAllArtworkLocked(); err != nil {
+		files.Close()
+		return nil, err
+	}
+	return library, nil
 }
 
-func (l *LibraryImages) Close() error { l.mu.Lock(); defer l.mu.Unlock(); return l.files.Close() }
+func (l *LibraryImages) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_ = l.discardAllArtworkLocked()
+	return l.files.Close()
+}
 
 func (l *LibraryImages) SaveVariant(releaseID int64, variantID int64, data []byte, adopt bool, revision int64) (*store.CoverFile, *store.CoverSelection, error) {
 	l.mu.Lock()
@@ -138,10 +148,20 @@ func (l *LibraryImages) Read(file store.CoverFile) ([]byte, error) {
 // ReuseReleasePreviews 在已入库歌集需要图片时惰性复制同身份预览，不发网络请求。
 // 无需侵入导入事务；调用它不会创建歌集或改变用户采用关系。
 func (l *LibraryImages) ReuseReleasePreviews(releaseID int64) error {
-	keys, err := l.store.CatalogsForRelease(releaseID)
+	release, err := l.store.GetRelease(releaseID)
 	if err != nil {
 		return err
 	}
+	if release == nil {
+		return nil
+	}
+	l.mu.Lock()
+	resolver := l.catalogKeys
+	l.mu.Unlock()
+	if resolver == nil {
+		return nil
+	}
+	keys := resolver(release)
 	existing, err := l.store.ListReleaseCoverFiles(releaseID)
 	if err != nil {
 		return err
@@ -230,73 +250,4 @@ func (l *LibraryImages) ImportLocal(releaseID int64, data []byte, revision int64
 	}
 	_, selection, err := l.SaveVariant(releaseID, catalog.Images[0].Variants[0].ID, data, true, revision)
 	return selection, err
-}
-
-// MigrateLegacy 可重复运行；先落盘并采用再标 complete。中断后已有采用关系
-// 使重试只完成标记，不再覆盖用户之后选的新图。旧文件始终保留以便回滚。
-func (l *LibraryImages) MigrateLegacy(rootDir string) []error {
-	pending, err := l.store.PendingLegacyCovers()
-	if err != nil {
-		return []error{err}
-	}
-	var failures []error
-	for _, item := range pending {
-		err := l.migrateLegacyOne(rootDir, item)
-		if err != nil {
-			_ = l.store.SetLegacyCoverMigration(item.ReleaseID, false, err.Error())
-			failures = append(failures, fmt.Errorf("歌集 %d 封面迁移: %w", item.ReleaseID, err))
-		}
-	}
-	return failures
-}
-
-func (l *LibraryImages) migrateLegacyOne(rootDir string, legacy store.LegacyCover) error {
-	selected, err := l.store.GetCoverSelection(legacy.ReleaseID)
-	if err != nil {
-		return err
-	}
-	if selected != nil {
-		return l.store.SetLegacyCoverMigration(legacy.ReleaseID, true, "")
-	}
-	relative, err := filepath.Rel(rootDir, legacy.Path)
-	if err != nil {
-		return err
-	}
-	data, err := l.files.Read(filepath.ToSlash(relative))
-	if err != nil {
-		return err
-	}
-	info, err := InspectImage(data)
-	if err != nil {
-		return err
-	}
-	key := store.CoverCatalogKey{Source: legacyCoverSource(legacy.SourceURL), ObjectType: "legacy-image", SourceRef: info.Hash}
-	if _, err := l.store.SaveCoverCatalog(key, []store.CoverImage{{SourceImageID: info.Hash, PrimaryType: "Front", Types: []string{"Front"}, Front: true,
-		OriginalURL: legacy.SourceURL, Variants: []store.CoverVariant{{Spec: "original", URL: legacy.SourceURL}}}}); err != nil {
-		return err
-	}
-	catalog, err := l.store.GetCoverCatalog(key)
-	if err != nil {
-		return err
-	}
-	if _, _, err := l.SaveVariant(legacy.ReleaseID, catalog.Images[0].Variants[0].ID, data, true, 0); err != nil {
-		return err
-	}
-	return l.store.SetLegacyCoverMigration(legacy.ReleaseID, true, "")
-}
-
-func legacyCoverSource(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "unknown"
-	}
-	host := strings.ToLower(u.Hostname())
-	for _, source := range []struct{ domain, name string }{
-		{"coverartarchive.org", "caa"}, {"archive.org", "caa"}, {"mzstatic.com", "itunes"}, {"y.qq.com", "qq"}, {"music.126.net", "163"},
-	} {
-		if host == source.domain || strings.HasSuffix(host, "."+source.domain) {
-			return source.name
-		}
-	}
-	return "unknown"
 }

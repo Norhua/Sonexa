@@ -52,11 +52,15 @@ func NewAlbumFiles(dir string) (*AlbumFiles, error) {
 func (f *AlbumFiles) Close() error { return f.root.Close() }
 
 func coverFileStem(identity FileIdentity, info ImageInfo) (string, error) {
-	switch identity.Source {
-	case "caa", "itunes", "qq", "163", "local", "unknown":
-	default:
-		return "", fmt.Errorf("未知封面来源")
+	if identity.Source == "" {
+		return "", fmt.Errorf("封面来源不能为空")
 	}
+	for _, c := range identity.Source {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+			return "", fmt.Errorf("封面来源包含非法字符")
+		}
+	}
+
 	if identity.ImageID == "" || identity.ReleaseID < 0 {
 		return "", fmt.Errorf("封面图片身份无效")
 	}

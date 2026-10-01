@@ -16,6 +16,7 @@ type ArtworkStrategy struct {
 	Specs         func(detail bool) []string
 	ImageURLs     func(string) []string
 	LegacyLadder  func(releaseRef, artworkURL, groupRef string) []string
+	CatalogKeys   func(releaseRef, groupRef string) []domain.CoverCatalogKey
 	GroupFallback bool
 }
 type ArtworkIO struct {

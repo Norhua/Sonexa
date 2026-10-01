@@ -25,42 +25,6 @@ func openV1CoverStore(t *testing.T) (*Store, string) {
 	return s, path
 }
 
-func TestCoverMigrationPreservesLegacyRelease(t *testing.T) {
-	s, path := openV1CoverStore(t)
-	id, err := s.CreateTrack(&Track{Title: "旧曲目", Album: ptr("旧歌集")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SetCover(id, CoverRecord{Path: "/old/adopted/hash.jpg"}); err != nil {
-		t.Fatal(err)
-	}
-	before, _ := s.GetTrack(id)
-	s.Close()
-	next, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer next.Close()
-	var legacy string
-	if err := next.db.QueryRow(`SELECT legacy_path FROM cover_legacy_migration WHERE release_id = ?`, *before.ReleaseID).Scan(&legacy); err != nil {
-		t.Fatal(err)
-	}
-	if legacy != "/old/adopted/hash.jpg" {
-		t.Fatalf("旧文件引用被改变: %s", legacy)
-	}
-	meta, err := next.GetMetadata(id)
-	if err != nil || meta.CoverPath == nil || *meta.CoverPath != legacy || *meta.ReleaseID != *before.ReleaseID {
-		t.Fatalf("旧封面/歌集丢失: %+v, %v", meta, err)
-	}
-	if err := next.Migrate(); err != nil {
-		t.Fatal(err)
-	}
-	var n int
-	if err := next.db.QueryRow(`SELECT COUNT(*) FROM cover_legacy_migration`).Scan(&n); err != nil || n != 1 {
-		t.Fatalf("迁移不幂等: %d, %v", n, err)
-	}
-}
-
 func TestCoverMigrationFailureRollsBackAllTables(t *testing.T) {
 	s, _ := openV1CoverStore(t)
 	if err := s.applyMigration(Migration{Version: 2, Name: "broken_cover", SQL: migration0002CoverCatalog + " INVALID SQL;"}); err == nil {
@@ -90,7 +54,8 @@ func TestCoverSchemaIdentityConstraints(t *testing.T) {
 	exec(`INSERT INTO cover_catalog(id,source,object_type,source_ref) VALUES(1,'caa','release','r'),(2,'caa','release-group','r')`)
 	exec(`INSERT INTO cover_image(id,catalog_id,source_image_id) VALUES(1,1,'front'),(2,1,'back'),(3,2,'front')`)
 	exec(`INSERT INTO cover_variant(id,image_id,spec) VALUES(1,1,'250'),(2,1,'1200'),(3,2,'250')`)
-	exec(`INSERT INTO release(id,title,created_at,updated_at) VALUES(1,'歌集',datetime('now'),datetime('now'))`)
+	exec(`INSERT INTO release_group(id,created_at,updated_at) VALUES(1,datetime('now'),datetime('now'))`)
+	exec(`INSERT INTO release(id,release_group_id,created_at,updated_at) VALUES(1,1,datetime('now'),datetime('now'))`)
 	exec(`INSERT INTO release_cover_selection VALUES(1,1,1,1,datetime('now'))`)
 	for _, query := range []string{
 		`INSERT INTO cover_catalog(source,object_type,source_ref) VALUES('caa','release','r')`,

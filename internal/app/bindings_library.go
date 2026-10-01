@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/store"
 )
 
@@ -50,9 +51,12 @@ type ParticipantGroup struct {
 
 // Participant 是一位参与者。
 type Participant struct {
-	ArtistID  int64   `json:"artistId"`
-	Name      string  `json:"name"`
-	Attribute *string `json:"attribute"`
+	ArtistID   int64            `json:"artistId"`
+	Name       string           `json:"name"`
+	Attribute  *string          `json:"attribute"`
+	Attributes []string         `json:"attributes"`
+	Identity   *domain.Identity `json:"identity"`
+	Source     *string          `json:"source"`
 }
 
 // FieldSource 是某个字段的来源。
@@ -253,7 +257,7 @@ func (a *App) creditSpans(trackID int64, text string) ([]CreditSpan, error) {
 // participantGroups 按 role 分组并按固定顺序排列。
 func (a *App) participantGroups(trackID int64) ([]ParticipantGroup, error) {
 	rows, err := a.store.DB().Query(`
-		SELECT ta.role, ta.artist_id, ar.name, ta.attribute, ta.position
+		SELECT ta.role, ta.artist_id, ar.name, ta.attribute, ta.position, ta.attributes_json, ar.provider, ar.provider_ref, ta.source
 		FROM track_artist ta JOIN artist ar ON ar.id = ta.artist_id
 		WHERE ta.track_id = ?
 		ORDER BY ta.position`, trackID)
@@ -268,11 +272,25 @@ func (a *App) participantGroups(trackID int64) ([]ParticipantGroup, error) {
 		var artistID int64
 		var attribute *string
 		var position *int
-		if err := rows.Scan(&role, &artistID, &name, &attribute, &position); err != nil {
+		var attributes string
+		var source, provider, ref *string
+		if err := rows.Scan(&role, &artistID, &name, &attribute, &position, &attributes, &provider, &ref, &source); err != nil {
 			return nil, err
+		}
+		var attrs []string
+		if err := json.Unmarshal([]byte(attributes), &attrs); err != nil {
+			return nil, err
+		}
+		if attrs == nil {
+			attrs = []string{}
+		}
+		var identity *domain.Identity
+		if provider != nil && ref != nil {
+			identity = &domain.Identity{Provider: domain.ProviderID(*provider), Ref: *ref}
 		}
 		byRole[role] = append(byRole[role], Participant{
 			ArtistID: artistID, Name: name, Attribute: attribute,
+			Attributes: attrs, Identity: identity, Source: source,
 		})
 	}
 	if err := rows.Err(); err != nil {

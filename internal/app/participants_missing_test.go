@@ -76,7 +76,7 @@ func TestSnowCreditSurvivesEnrichmentWithoutInventedParticipants(t *testing.T) {
 		t.Fatal(err)
 	}
 	detail, err = app.GetTrackDetail(id)
-	if err != nil || len(detail.CreditSpans) != 0 {
+	if err != nil || (len(detail.CreditSpans) != 1 || detail.CreditSpans[0].Text != "新しい名前") {
 		t.Fatalf("stale spans linked edited credit: %+v, %v", detail, err)
 	}
 }

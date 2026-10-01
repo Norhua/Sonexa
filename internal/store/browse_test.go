@@ -95,9 +95,9 @@ func TestLocalAlbumHasNoTotal(t *testing.T) {
 	}
 
 	a := albums[0]
-	// 本地歌集不属于任何发行组，也没有上游标识
-	if a.GroupID != 0 {
-		t.Errorf("本地歌集不应属于发行组, 得到 %d", a.GroupID)
+	// 本地发行也归本地组，但没有上游标识
+	if a.GroupID == 0 {
+		t.Errorf("本地发行应有本地组, 得到 %d", a.GroupID)
 	}
 	if a.RepresentativeRef != nil {
 		t.Errorf("本地歌集没有上游标识, 得到 %v", a.RepresentativeRef)
@@ -594,14 +594,14 @@ func TestLockedFieldsSurviveMatch(t *testing.T) {
 	if got.Title != "用户设定的曲名" {
 		t.Errorf("曲名 = %q, 期望保持用户设定的值", got.Title)
 	}
-	if got.Credit == nil || *got.Credit != "上游的艺术家" {
-		t.Errorf("署名 = %v, 期望被上游值覆盖", got.Credit)
+	if got.Credit == nil || *got.Credit != "艺术家" {
+		t.Errorf("署名 = %v, 本地无绑定字段应保持用户值", got.Credit)
 	}
 	if !got.Locked["title"] {
 		t.Error("曲名应仍处于加锁状态")
 	}
-	if got.Locked["credit"] {
-		t.Error("未被用户改过的署名不应加锁")
+	if !got.Locked["credit"] {
+		t.Error("本地无绑定的署名应是用户值")
 	}
 	// 歌集名归歌集，一次曲目匹配不该动它
 	if got.Album == nil || *got.Album != "旧专辑" {

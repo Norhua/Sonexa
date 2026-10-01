@@ -51,7 +51,7 @@ func syncFTS(tx *sql.Tx, trackID int64) error {
 // 歌集名进 FTS 的 album 列，改歌集名要连带刷新它的每一首曲目——
 // 否则搜专辑名会搜到旧名字。
 func syncFTSForRelease(tx *sql.Tx, releaseID int64) error {
-	rows, err := tx.Query(`SELECT id FROM track WHERE release_id = ?`, releaseID)
+	rows, err := tx.Query(`SELECT id FROM track_read WHERE release_id = ?`, releaseID)
 	if err != nil {
 		return err
 	}

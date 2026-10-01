@@ -17,7 +17,7 @@ func TestSchemaTablesExist(t *testing.T) {
 		"import_batch", "import_item",
 		"provider_cache", "track_fts", "track_fts_shadow",
 		"cover_catalog", "cover_image", "cover_variant", "cover_file",
-		"release_cover_selection", "cover_legacy_migration",
+		"release_cover_selection", "track_current", "track_snapshot",
 		"schema_version",
 	}
 	for _, table := range want {
@@ -49,8 +49,8 @@ func TestMatchRefPartialUnique(t *testing.T) {
 
 	newTrack := func(title string, source, ref any) error {
 		_, err := db.Exec(
-			`INSERT INTO track (title, match_source, match_ref, created_at, updated_at)
-			 VALUES (?, ?, ?, datetime('now'), datetime('now'))`, title, source, ref)
+			`INSERT INTO track (match_source, match_ref, created_at, updated_at)
+			 VALUES (?, ?, datetime('now'), datetime('now'))`, source, ref)
 		return err
 	}
 
@@ -89,15 +89,15 @@ func TestArtistUniqueWithDisambiguation(t *testing.T) {
 	if err := add("平野綾", nil); err != nil {
 		t.Fatalf("插入失败: %v", err)
 	}
-	if err := add("平野綾", nil); err == nil {
-		t.Error("同名且都无歧义消解的艺术家应被拒绝")
+	if err := add("平野綾", nil); err != nil {
+		t.Error("名称不构成身份唯一约束", err)
 	}
 	// 带歧义消解的同名者是另一条独立记录
 	if err := add("平野綾", "US band"); err != nil {
 		t.Errorf("同名但有歧义消解应可插入: %v", err)
 	}
-	if err := add("平野綾", "US band"); err == nil {
-		t.Error("同名且歧义消解相同的艺术家应被拒绝")
+	if err := add("平野綾", "US band"); err != nil {
+		t.Error("来源身份可区分同名者", err)
 	}
 }
 
@@ -132,55 +132,43 @@ func TestCollectionNameUniquePerKind(t *testing.T) {
 // 靠 (标题, 署名) 归拢，不受这个索引约束。
 func TestReleaseRefUnique(t *testing.T) {
 	s := openTestStore(t)
-	db := s.DB()
-
-	add := func(provider, ref, title string) error {
-		_, err := db.Exec(
-			`INSERT INTO release (provider, provider_ref, title, tracklist_state, created_at, updated_at)
-			 VALUES (?, ?, ?, 'none', datetime('now'), datetime('now'))`, provider, ref, title)
+	group, err := s.DB().Exec("INSERT INTO release_group(created_at,updated_at) VALUES(datetime('now'),datetime('now'))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := group.LastInsertId()
+	add := func(source, ref any) error {
+		_, err := s.DB().Exec("INSERT INTO release(release_group_id,provider,provider_ref,created_at,updated_at) VALUES(?,?,?,datetime('now'),datetime('now'))", id, source, ref)
 		return err
 	}
-
-	if err := add("musicbrainz", "rel-1", "专辑"); err != nil {
-		t.Fatalf("插入发行失败: %v", err)
+	if err := add("musicbrainz", "rel-1"); err != nil {
+		t.Fatal(err)
 	}
-	if err := add("musicbrainz", "rel-1", "专辑（重复）"); err == nil {
-		t.Error("重复的 (provider, provider_ref) 应被拒绝")
+	if err := add("musicbrainz", "rel-1"); err == nil {
+		t.Fatal("duplicate identity accepted")
 	}
-	if err := add("itunes", "rel-1", "同标识不同来源"); err != nil {
-		t.Errorf("不同来源的同一标识不应冲突: %v", err)
+	if err := add("itunes", "rel-1"); err != nil {
+		t.Fatal(err)
 	}
-	// 本地歌集没有上游标识，索引不约束它们
-	if _, err := db.Exec(
-		`INSERT INTO release (title, tracklist_state, created_at, updated_at)
-		 VALUES ('本地歌集', 'none', datetime('now'), datetime('now'))`); err != nil {
-		t.Fatalf("插入本地歌集失败: %v", err)
-	}
-	if _, err := db.Exec(
-		`INSERT INTO release (title, tracklist_state, created_at, updated_at)
-		 VALUES ('另一张本地歌集', 'none', datetime('now'), datetime('now'))`); err != nil {
-		t.Errorf("多条无上游标识的歌集应可并存: %v", err)
+	for i := 0; i < 2; i++ {
+		if err := add(nil, nil); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
-// TestReleaseGroupRefUnique 覆盖 2.7 的发行组一侧：
-// (provider, provider_ref) 唯一——同一发行组不被重复登记。
 func TestReleaseGroupRefUnique(t *testing.T) {
 	s := openTestStore(t)
-	db := s.DB()
-
-	add := func(ref, title string) error {
-		_, err := db.Exec(
-			`INSERT INTO release_group (provider, provider_ref, title, created_at, updated_at)
-			 VALUES ('musicbrainz', ?, ?, datetime('now'), datetime('now'))`, ref, title)
-		return err
+	for _, query := range []string{
+		"INSERT INTO release_group(id,created_at,updated_at) VALUES(1,datetime('now'),datetime('now')),(2,datetime('now'),datetime('now'))",
+		"INSERT INTO release_group_ref(group_id,provider,group_ref) VALUES(1,'musicbrainz','rg-1'),(1,'itunes','rg-2')",
+	} {
+		if _, err := s.DB().Exec(query); err != nil {
+			t.Fatal(err)
+		}
 	}
-
-	if err := add("rg-1", "涼宮ハルヒの詰合"); err != nil {
-		t.Fatalf("插入发行组失败: %v", err)
-	}
-	if err := add("rg-1", "重复的发行组"); err == nil {
-		t.Error("重复的 (provider, provider_ref) 应被拒绝")
+	if _, err := s.DB().Exec("INSERT INTO release_group_ref(group_id,provider,group_ref) VALUES(2,'musicbrainz','rg-1')"); err == nil {
+		t.Fatal("duplicate group identity accepted")
 	}
 }
 

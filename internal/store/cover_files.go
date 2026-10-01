@@ -102,47 +102,76 @@ func (s *Store) SaveCoverFile(file CoverFile) (int64, error) {
 // AdoptCoverFile 在图片已校验落盘后一次提交文件记录与歌集采用关系。
 // expectedRevision=0 表示尚无选择；迟到的采用不得覆盖另一次用户选择。
 func (s *Store) AdoptCoverFile(file CoverFile, expectedRevision int64) (*CoverSelection, error) {
-	if file.ReleaseID == nil || *file.ReleaseID <= 0 {
-		return nil, fmt.Errorf("没有所属歌集，无法采用封面")
-	}
-	selection := &CoverSelection{ReleaseID: *file.ReleaseID, VariantID: file.VariantID, Revision: expectedRevision + 1, AdoptedAt: time.Now().UTC()}
+	var selection *CoverSelection
 	err := s.withTx(func(tx *sql.Tx) error {
-		// 先写以取得 SQLite 写锁，再检查版本，避免并发读升级导致 BUSY。
-		if _, err := tx.Exec(`UPDATE release SET updated_at=updated_at WHERE id=?`, selection.ReleaseID); err != nil {
-			return err
-		}
-		var exists int
-		if err := tx.QueryRow(`SELECT 1 FROM release WHERE id=?`, selection.ReleaseID).Scan(&exists); err != nil {
-			return err
-		}
-		var revision int64
-		err := tx.QueryRow(`SELECT revision FROM release_cover_selection WHERE release_id=?`, selection.ReleaseID).Scan(&revision)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if revision != expectedRevision {
-			return ErrCoverSelectionChanged
-		}
-		if err := tx.QueryRow(`SELECT image_id FROM cover_variant WHERE id=?`, file.VariantID).Scan(&selection.ImageID); err != nil {
-			return err
-		}
-		file.Protected = true
-		if _, err := saveCoverFileTx(tx, file); err != nil {
-			return err
-		}
-		_, err = tx.Exec(`INSERT INTO release_cover_selection(release_id,image_id,variant_id,revision,adopted_at) VALUES(?,?,?,?,?)
-			ON CONFLICT(release_id) DO UPDATE SET image_id=excluded.image_id,variant_id=excluded.variant_id,
-			revision=excluded.revision,adopted_at=excluded.adopted_at`, selection.ReleaseID, selection.ImageID, selection.VariantID, selection.Revision, selection.AdoptedAt)
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(`UPDATE release SET updated_at=? WHERE id=?`, selection.AdoptedAt, selection.ReleaseID)
+		var err error
+		selection, err = adoptCoverFileTx(tx, file, expectedRevision)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return selection, nil
+}
+
+func adoptCoverFileTx(tx *sql.Tx, file CoverFile, expectedRevision int64) (*CoverSelection, error) {
+	if file.ReleaseID == nil || *file.ReleaseID <= 0 {
+		return nil, fmt.Errorf("没有所属歌集，无法采用封面")
+	}
+	selection := &CoverSelection{ReleaseID: *file.ReleaseID, VariantID: file.VariantID, Revision: expectedRevision + 1, AdoptedAt: time.Now().UTC()}
+
+	// 先写以取得 SQLite 写锁，再检查版本，避免并发读升级导致 BUSY。
+	if _, err := tx.Exec(`UPDATE release SET updated_at=updated_at WHERE id=?`, selection.ReleaseID); err != nil {
+		return nil, err
+	}
+	var exists int
+	if err := tx.QueryRow(`SELECT 1 FROM release_read WHERE id=?`, selection.ReleaseID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	var revision int64
+	err := tx.QueryRow(`SELECT revision FROM release_cover_selection WHERE release_id=?`, selection.ReleaseID).Scan(&revision)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if revision != expectedRevision {
+		return nil, ErrCoverSelectionChanged
+	}
+	if file.VariantID == 0 {
+		catalog, err := ensureCoverCatalogTx(tx, CoverCatalogKey{Source: "local", ObjectType: "image", SourceRef: file.ContentHash})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec("INSERT INTO cover_image(catalog_id,source_image_id,types_json,primary_type,is_front) VALUES(?,?,?, 'Front',1) ON CONFLICT(catalog_id,source_image_id) DO NOTHING", catalog, file.ContentHash, `["Front"]`); err != nil {
+			return nil, err
+		}
+		var imageID int64
+		if err := tx.QueryRow("SELECT id FROM cover_image WHERE catalog_id=? AND source_image_id=?", catalog, file.ContentHash).Scan(&imageID); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec("INSERT INTO cover_variant(image_id,spec) VALUES(?,'original') ON CONFLICT(image_id,spec) DO NOTHING", imageID); err != nil {
+			return nil, err
+		}
+		if err := tx.QueryRow("SELECT id FROM cover_variant WHERE image_id=? AND spec='original'", imageID).Scan(&file.VariantID); err != nil {
+			return nil, err
+		}
+		selection.VariantID = file.VariantID
+	}
+
+	if err := tx.QueryRow(`SELECT image_id FROM cover_variant WHERE id=?`, file.VariantID).Scan(&selection.ImageID); err != nil {
+		return nil, err
+	}
+	file.Protected = true
+	if _, err := saveCoverFileTx(tx, file); err != nil {
+		return nil, err
+	}
+	_, err = tx.Exec(`INSERT INTO release_cover_selection(release_id,image_id,variant_id,revision,adopted_at) VALUES(?,?,?,?,?)
+			ON CONFLICT(release_id) DO UPDATE SET image_id=excluded.image_id,variant_id=excluded.variant_id,
+			revision=excluded.revision,adopted_at=excluded.adopted_at`, selection.ReleaseID, selection.ImageID, selection.VariantID, selection.Revision, selection.AdoptedAt)
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.Exec(`UPDATE release SET revision=revision+1,updated_at=? WHERE id=?`, selection.AdoptedAt, selection.ReleaseID)
+	return selection, err
 }
 
 func (s *Store) GetCoverSelection(releaseID int64) (*CoverSelection, error) {
@@ -207,8 +236,8 @@ func (s *Store) ClearCoverSelection(releaseID, expectedRevision int64) (*CoverSe
 		if err != nil {
 			return err
 		}
-		// 旧版 cover_path 同样计入「有封面」，清除后一并置空；旧文件保留以便回滚。
-		_, err = tx.Exec(`UPDATE release SET cover_path=NULL,cover_source_url=NULL,cover_width=NULL,cover_height=NULL,updated_at=? WHERE id=?`,
+		// 封面属于共享发行字段，改变它必须令发行保存计划失效。
+		_, err = tx.Exec(`UPDATE release SET revision=revision+1,updated_at=? WHERE id=?`,
 			selection.AdoptedAt, releaseID)
 		return err
 	})

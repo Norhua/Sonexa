@@ -109,7 +109,7 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 		Title: "God knows...", Credit: strPtrOrNil(credit),
 		Album: strPtrOrNil("涼宮ハルヒの詰合"), AlbumCredit: strPtrOrNil(credit),
 		MatchSource: &providerID,
-		MatchRef:    strPtrOrNil("aaaaaaaa-1111-2222-3333-444444444444"),
+		MatchRef:    strPtrOrNil("trk-cd-jp-02"),
 		Metadata: &store.MetadataInput{
 			RecordingRef: strPtrOrNil("rec-0001-god-knows"),
 		},

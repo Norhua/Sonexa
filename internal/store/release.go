@@ -100,9 +100,9 @@ type Release struct {
 
 // Year 返回歌集年份：取发行日期的前四位。
 //
-// 不单独存一列——曲目的年份本来就是发行年份，存两份必然漂移。
+// 仅返回具体发行日期的年份；曲目的独立当前年份由同步规则决定。
 func (r *Release) Year() *int {
-	for _, d := range []*string{r.ReleaseDate, r.FirstReleaseDate} {
+	for _, d := range []*string{r.ReleaseDate} {
 		if d == nil || len(*d) < 4 {
 			continue
 		}
@@ -133,7 +133,7 @@ const releaseColumns = `
 	r.release_status, r.medium_format, r.country, r.release_date, r.first_release_date,
 	r.label, r.catalog_number, r.tracklist_state, r.fetched_at,
 	r.provenance_json, r.locked_json,
-	(SELECT rg.provider_ref FROM release_group rg WHERE rg.id = r.release_group_id)`
+	(SELECT rg.provider_ref FROM release_group_read rg WHERE rg.id = r.release_group_id)`
 
 func scanRelease(sc interface{ Scan(...any) error }) (*Release, error) {
 	var r Release
@@ -163,31 +163,7 @@ func (s *Store) UpsertReleaseGroup(g *ReleaseGroup) (int64, error) {
 }
 
 func upsertReleaseGroupTx(tx *sql.Tx, g *ReleaseGroup) (int64, error) {
-	if g.ProviderRef == nil || *g.ProviderRef == "" {
-		return 0, fmt.Errorf("发行组需要上游标识")
-	}
-	now := time.Now().UTC()
-	if _, err := tx.Exec(`
-		INSERT INTO release_group (
-			provider, provider_ref, title, primary_type, secondary_types,
-			first_release_date, release_count, release_count_fetched_at, created_at, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(provider, provider_ref) WHERE provider_ref IS NOT NULL DO UPDATE SET
-			title              = COALESCE(NULLIF(excluded.title,''), release_group.title),
-			primary_type       = COALESCE(excluded.primary_type, release_group.primary_type),
-			secondary_types    = COALESCE(excluded.secondary_types, release_group.secondary_types),
-			first_release_date = COALESCE(excluded.first_release_date, release_group.first_release_date),
-			release_count      = COALESCE(excluded.release_count, release_group.release_count),
-			release_count_fetched_at = COALESCE(excluded.release_count_fetched_at, release_group.release_count_fetched_at),
-			updated_at         = excluded.updated_at`,
-		g.Provider, g.ProviderRef, g.Title, g.PrimaryType, g.SecondaryTypes,
-		g.FirstReleaseDate, g.ReleaseCount, countFetchedAt(g.ReleaseCount, now), now, now); err != nil {
-		return 0, fmt.Errorf("写入发行组失败: %w", err)
-	}
-	var id int64
-	err := tx.QueryRow(`SELECT id FROM release_group WHERE provider IS ? AND provider_ref = ?`,
-		g.Provider, g.ProviderRef).Scan(&id)
-	return id, err
+	return writeLegacyGroupTx(tx, g)
 }
 
 func countFetchedAt(count *int, now time.Time) *time.Time {
@@ -200,11 +176,7 @@ func countFetchedAt(count *int, now time.Time) *time.Time {
 // SetReleaseGroupCount 记录某发行组下的 release 数。
 func (s *Store) SetReleaseGroupCount(groupID int64, count int) error {
 	return s.withTx(func(tx *sql.Tx) error {
-		now := time.Now().UTC()
-		_, err := tx.Exec(`
-			UPDATE release_group
-			SET release_count = ?, release_count_fetched_at = ?, updated_at = ?
-			WHERE id = ?`, count, now, now, groupID)
+		_, err := tx.Exec("UPDATE release_group_snapshot SET release_count=?,revision=revision+1 WHERE group_id=?", count, groupID)
 		return err
 	})
 }
@@ -215,7 +187,7 @@ func (s *Store) GetReleaseGroup(id int64) (*ReleaseGroup, error) {
 	err := s.db.QueryRow(`
 		SELECT id, provider, provider_ref, title, primary_type, secondary_types,
 		       first_release_date, release_count
-		FROM release_group WHERE id = ?`, id).Scan(
+		FROM release_group_read WHERE id = ?`, id).Scan(
 		&g.ID, &g.Provider, &g.ProviderRef, &g.Title, &g.PrimaryType,
 		&g.SecondaryTypes, &g.FirstReleaseDate, &g.ReleaseCount)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -241,62 +213,7 @@ func (s *Store) UpsertRelease(r *Release) (int64, error) {
 	return id, err
 }
 
-func upsertReleaseTx(tx *sql.Tx, r *Release) (int64, error) {
-	if r.ProviderRef == nil || *r.ProviderRef == "" {
-		return createLocalReleaseTx(tx, r)
-	}
-	now := time.Now().UTC()
-	if _, err := tx.Exec(`
-		INSERT INTO release (
-			release_group_id, provider, provider_ref, title, credit,
-			primary_type, secondary_types, disc_total, track_total,
-			cover_path, cover_source_url, cover_width, cover_height,
-			release_status, medium_format, country, release_date, first_release_date,
-			label, catalog_number, tracklist_state, fetched_at, created_at, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(provider, provider_ref) WHERE provider_ref IS NOT NULL DO UPDATE SET
-			release_group_id   = COALESCE(excluded.release_group_id, release.release_group_id),
-			title              = COALESCE(NULLIF(excluded.title,''), release.title),
-			credit             = COALESCE(excluded.credit, release.credit),
-			primary_type       = COALESCE(excluded.primary_type, release.primary_type),
-			secondary_types    = COALESCE(excluded.secondary_types, release.secondary_types),
-			disc_total         = COALESCE(excluded.disc_total, release.disc_total),
-			track_total        = COALESCE(excluded.track_total, release.track_total),
-			cover_path         = COALESCE(excluded.cover_path, release.cover_path),
-			cover_source_url   = COALESCE(excluded.cover_source_url, release.cover_source_url),
-			cover_width        = COALESCE(excluded.cover_width, release.cover_width),
-			cover_height       = COALESCE(excluded.cover_height, release.cover_height),
-			release_status     = COALESCE(excluded.release_status, release.release_status),
-			medium_format      = COALESCE(excluded.medium_format, release.medium_format),
-			country            = COALESCE(excluded.country, release.country),
-			release_date       = COALESCE(excluded.release_date, release.release_date),
-			first_release_date = COALESCE(excluded.first_release_date, release.first_release_date),
-			label              = COALESCE(excluded.label, release.label),
-			catalog_number     = COALESCE(excluded.catalog_number, release.catalog_number),
-			-- 清单状态只升不降：已有完整清单时，一次只写 release 行的调用
-			-- 不该把它退回 none
-			tracklist_state    = CASE
-				WHEN excluded.tracklist_state = 'complete' THEN 'complete'
-				WHEN release.tracklist_state = 'complete' THEN 'complete'
-				ELSE excluded.tracklist_state END,
-			fetched_at         = COALESCE(excluded.fetched_at, release.fetched_at),
-			updated_at         = excluded.updated_at`,
-		r.ReleaseGroupID, r.Provider, r.ProviderRef, r.Title, r.Credit,
-		r.PrimaryType, r.SecondaryTypes, r.DiscTotal, r.TrackTotal,
-		r.CoverPath, r.CoverSourceURL, r.CoverWidth, r.CoverHeight,
-		r.ReleaseStatus, r.MediumFormat, r.Country, r.ReleaseDate, r.FirstReleaseDate,
-		r.Label, r.CatalogNumber, stateOrNone(r.TracklistState), r.FetchedAt, now, now); err != nil {
-		return 0, fmt.Errorf("写入歌集失败: %w", err)
-	}
-
-	var id int64
-	if err := tx.QueryRow(
-		`SELECT id FROM release WHERE provider IS ? AND provider_ref = ?`,
-		r.Provider, r.ProviderRef).Scan(&id); err != nil {
-		return 0, fmt.Errorf("读取歌集 id 失败: %w", err)
-	}
-	return id, nil
-}
+func upsertReleaseTx(tx *sql.Tx, r *Release) (int64, error) { return writeLegacyReleaseTx(tx, r) }
 
 func stateOrNone(s TracklistState) string {
 	if s == "" {
@@ -305,26 +222,7 @@ func stateOrNone(s TracklistState) string {
 	return string(s)
 }
 
-func createLocalReleaseTx(tx *sql.Tx, r *Release) (int64, error) {
-	now := time.Now().UTC()
-	res, err := tx.Exec(`
-		INSERT INTO release (
-			release_group_id, provider, provider_ref, title, credit,
-			primary_type, secondary_types, disc_total, track_total,
-			cover_path, cover_source_url, cover_width, cover_height,
-			release_status, medium_format, country, release_date, first_release_date,
-			label, catalog_number, tracklist_state, fetched_at, created_at, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		r.ReleaseGroupID, r.Provider, r.ProviderRef, r.Title, r.Credit,
-		r.PrimaryType, r.SecondaryTypes, r.DiscTotal, r.TrackTotal,
-		r.CoverPath, r.CoverSourceURL, r.CoverWidth, r.CoverHeight,
-		r.ReleaseStatus, r.MediumFormat, r.Country, r.ReleaseDate, r.FirstReleaseDate,
-		r.Label, r.CatalogNumber, stateOrNone(r.TracklistState), r.FetchedAt, now, now)
-	if err != nil {
-		return 0, fmt.Errorf("创建歌集失败: %w", err)
-	}
-	return res.LastInsertId()
-}
+func createLocalReleaseTx(tx *sql.Tx, r *Release) (int64, error) { return writeLegacyReleaseTx(tx, r) }
 
 // FindOrCreateLocalRelease 按 (标题, 署名) 找到或创建一条本地歌集。
 //
@@ -351,7 +249,7 @@ func findOrCreateLocalReleaseTx(tx *sql.Tx, title string, credit *string) (int64
 	}
 	var id int64
 	err := tx.QueryRow(`
-		SELECT id FROM release
+		SELECT id FROM release_read
 		WHERE provider_ref IS NULL
 		  AND LOWER(title) = LOWER(?)
 		  AND LOWER(COALESCE(credit,'')) = LOWER(COALESCE(?,''))
@@ -398,7 +296,7 @@ func (s *Store) ReplaceTracklist(releaseID int64, tracks []ReleaseTrack, state T
 // GetRelease 按 id 读取歌集。
 func (s *Store) GetRelease(id int64) (*Release, error) {
 	r, err := scanRelease(s.db.QueryRow(
-		"SELECT "+releaseColumns+" FROM release r WHERE r.id = ?", id))
+		"SELECT "+releaseColumns+" FROM release_read r WHERE r.id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -408,7 +306,7 @@ func (s *Store) GetRelease(id int64) (*Release, error) {
 // GetReleaseByRef 按 (provider, provider_ref) 读取歌集。
 func (s *Store) GetReleaseByRef(provider, ref string) (*Release, error) {
 	r, err := scanRelease(s.db.QueryRow(
-		"SELECT "+releaseColumns+" FROM release r WHERE r.provider = ? AND r.provider_ref = ?",
+		"SELECT "+releaseColumns+" FROM release_read r WHERE r.provider = ? AND r.provider_ref = ?",
 		provider, ref))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -456,53 +354,8 @@ var releaseEditColumns = map[string]string{
 }
 
 // UpdateReleaseFields 逐字段写入歌集，并更新逐字段来源与用户锁。
-func (s *Store) UpdateReleaseFields(releaseID int64, edits map[string]string,
-	provenance map[string]string, locked map[string]bool) error {
-	if len(edits) == 0 && len(provenance) == 0 && len(locked) == 0 {
-		return nil
-	}
-	return s.withTx(func(tx *sql.Tx) error {
-		sets := []string{}
-		args := []any{}
-		for key, value := range edits {
-			column, ok := releaseEditColumns[key]
-			if !ok {
-				continue
-			}
-			if column == "title" && strings.TrimSpace(value) == "" {
-				return fmt.Errorf("歌集名不能为空")
-			}
-			if column == "primary_type" {
-				value = NormalizeReleaseType(value)
-			}
-			sets = append(sets, column+" = ?")
-			if isIntColumn(column) {
-				args = append(args, parseIntOrNil(value))
-			} else {
-				args = append(args, nullIfBlank(value))
-			}
-		}
-		if len(provenance) > 0 || len(locked) > 0 {
-			provJSON, lockedJSON, err := marshalProvLock(provenance, locked)
-			if err != nil {
-				return err
-			}
-			sets = append(sets, "provenance_json = ?", "locked_json = ?")
-			args = append(args, provJSON, lockedJSON)
-		}
-		if len(sets) == 0 {
-			return nil
-		}
-		sets = append(sets, "updated_at = ?")
-		args = append(args, time.Now().UTC(), releaseID)
-
-		if _, err := tx.Exec(
-			"UPDATE release SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
-			return err
-		}
-		// 歌集名进 FTS 的 album 列，改名要刷该歌集全部曲目的索引
-		return syncFTSForRelease(tx, releaseID)
-	})
+func (s *Store) UpdateReleaseFields(releaseID int64, edits map[string]string, provenance map[string]string, locked map[string]bool) error {
+	return s.editLegacyFields("release", releaseID, edits, provenance, locked)
 }
 
 // DeleteOrphanLocalRelease 删除不再被任何曲目引用的本地歌集。
@@ -510,12 +363,20 @@ func (s *Store) UpdateReleaseFields(releaseID int64, edits map[string]string,
 // 只删本地的：上游来源的歌集同时是清单缓存，曲目删光后仍应保留，
 // 这一条 library/release-catalog 已有规定。
 func (s *Store) DeleteOrphanLocalRelease(releaseID int64) error {
-	return s.withTx(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`
-			DELETE FROM release
-			WHERE id = ? AND provider_ref IS NULL
-			  AND NOT EXISTS (SELECT 1 FROM track WHERE release_id = ?)`,
-			releaseID, releaseID)
+	return s.withTx(func(tx *sql.Tx) error { return deleteOrphanLocalReleaseTx(tx, releaseID) })
+}
+
+func deleteOrphanLocalReleaseTx(tx *sql.Tx, releaseID int64) error {
+	var groupID int64
+	if err := tx.QueryRow("SELECT release_group_id FROM release WHERE id=?", releaseID).Scan(&groupID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
 		return err
-	})
+	}
+	if _, err := tx.Exec("DELETE FROM release WHERE id=? AND provider_ref IS NULL AND NOT EXISTS (SELECT 1 FROM track WHERE release_id=?)", releaseID, releaseID); err != nil {
+		return err
+	}
+	_, err := tx.Exec("DELETE FROM release_group WHERE id=? AND NOT EXISTS (SELECT 1 FROM release WHERE release_group_id=?) AND NOT EXISTS (SELECT 1 FROM release_group_ref WHERE group_id=?)", groupID, groupID, groupID)
+	return err
 }
