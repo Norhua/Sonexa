@@ -45,3 +45,18 @@
 #### Scenario: 预览后加入
 - **WHEN** 用户预览某发行图片后加入该发行曲目
 - **THEN** 以相同稳定发行/图片身份复用已获取内容，收藏前不创建虚假发行
+
+### Requirement: 演唱角色来源适配
+来源 SHALL 按明确的歌曲角色证据生成演唱集合，遵循艺术家规格中的独立语义与未知值规则。MusicBrainz 从目标 recording 的 artist relations 读取 vocal 及其 attributes；QQ 音乐从歌曲详情 info 中标题为“演唱者”“合声”的 content 读取成员并保留合声属性；当前 iTunes Search/Lookup 不提供独立演唱角色，应声明不支持并返回 unknown。三来源的歌曲署名字段均不得作为演唱集合的替代来源，能力声明不代表单条记录完整。
+
+#### Scenario: MusicBrainz 录音演唱关系
+- **WHEN** 目标 recording 提供带属性的 vocal 关系，艺术家署名未包含该演唱者
+- **THEN** 保存演唱者身份及全部已提供关系属性，不要求其出现在 artist-credit 中
+
+#### Scenario: QQ 歌曲角色与署名分离
+- **WHEN** 歌曲 singer 包含创作者，info 明确给出演唱者及合声成员
+- **THEN** singer 仅形成署名，演唱集合仅由明确角色条目形成，合声属性保留
+
+#### Scenario: iTunes 不支持演唱角色
+- **WHEN** iTunes 返回 artistName 但没有独立演唱信息
+- **THEN** 演唱快照为 unknown，不复制 artistName，不清除已保存演唱者，编辑器仍允许用户补录
