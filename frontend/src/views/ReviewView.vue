@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAdmissionStore } from '@/stores/admission'
+const admission = useAdmissionStore()
 /**
  * 复核队列。
  *
@@ -36,7 +38,10 @@ const expanded = ref(false)
 /** 可改写的重新搜索表单。改写只影响本次查询，不动原始导入值。 */
 const research = ref({ title: '', artist: '', album: '' })
 /** 上游为单选下拉，默认 MusicBrainz。 */
-const researchProvider = ref('musicbrainz')
+const researchProvider = ref('')
+watch(() => settings.providers, providers => {
+  if (!providers.some(p => p.id === researchProvider.value)) researchProvider.value = providers[0]?.id ?? ''
+}, { immediate: true })
 const country = ref('')
 const countries = ref<Models.app.CountryOption[]>([])
 const hint = ref<Models.app.CountryHint | null>(null)
@@ -45,6 +50,16 @@ const researching = ref(false)
 const searched = ref(false)
 
 const current = computed(() => queue.value?.items[index.value] ?? null)
+
+const reviewReason = computed(() => ({
+  new_release: '新增发行加入已有专辑组，接受后还需确认成员变化',
+  group_insufficient: '判组资料不足，可按已知信息保存', group_conflict: '专辑组证据冲突，需要明确合组方案',
+  unknown_total: '发行总曲数未知，需要人工选版', no_match: '没有高置信匹配', ambiguous: '候选存在歧义', duplicate: '可能与已有收藏重复',
+}[current.value?.reviewReason ?? ''] ?? current.value?.reviewReason ?? ''))
+const reviewEvidence = computed(() => {
+  try { return JSON.parse(current.value?.reviewEvidence || 'null') as (Models.domain.AdmissionBaseline & { proposed?: Models.domain.ReleaseSnapshot }) | null }
+  catch { return null }
+})
 
 /** 地区下拉仅在选中需要地区参数的上游时出现。 */
 const showCountry = computed(() => settings.anyNeedsCountry([researchProvider.value]))
@@ -154,8 +169,8 @@ async function doResearch() {
 async function act(fn: () => Promise<unknown>) {
   error.value = ''
   try {
-    await fn()
-    await load()
+    const result = await fn()
+    if (result !== null) await load()
   } catch (e) {
     error.value = String(e)
   }
@@ -169,7 +184,13 @@ function accept(row: Models.app.CandidateRow) {
     void act(() => App.MergeCandidate(current.value!.id, row.localTrackId))
     return
   }
-  void act(() => App.AcceptCandidate(current.value!.id, row))
+  const itemId = current.value.id
+  void act(() => admission.run(() => App.PrepareAdmission(row, itemId)))
+}
+
+function noMatchNeeded() {
+  const itemId = current.value?.id
+  if (itemId) void act(() => admission.run(() => App.PrepareNoMatchNeeded(itemId)))
 }
 
 /** 空态的引导动作。上游搜索现在是搜索页的一种范围，不再是独立视图。 */
@@ -178,7 +199,7 @@ async function onEmptyAction(key: string) {
     await library.goTo('all')
     return
   }
-  search.setScope(settings.providers[0]?.id ?? 'musicbrainz')
+  search.setScope(settings.providers[0]?.id ?? 'library')
   await library.goTo('search')
 }
 
@@ -224,6 +245,16 @@ function next() {
           />
         </div>
 
+        <div v-if="reviewReason" class="mt-3 space-y-2 rounded border p-3 text-xs">
+          <p class="font-medium">{{ reviewReason }}</p>
+          <div v-for="group in reviewEvidence?.resolution?.groups ?? []" :key="group.id">
+            <p>已有专辑组：{{ group.title || '未命名专辑' }} · {{ display(group.credit) }}</p>
+            <p v-for="member in group.members" :key="member.id" class="text-muted-color">已有发行：{{ member.title || '未命名发行' }} · {{ member.identity?.provider || '本地' }} · {{ display(member.identity?.ref) }} · 收藏 {{ member.trackIds?.length || 0 }} 首</p>
+          </div>
+          <p v-if="reviewEvidence?.proposed">拟加入发行：{{ reviewEvidence.proposed.title?.value || '未命名发行' }} · {{ reviewEvidence.proposed.identity?.provider }} · {{ reviewEvidence.proposed.identity?.ref }}</p>
+          <p v-for="(e, i) in reviewEvidence?.resolution?.evidence ?? []" :key="i">判组依据：{{ e.kind === 'native' ? '相同上游组身份' : '专辑名与专辑艺术家相同' }} · {{ e.title }} · {{ e.credit }}</p>
+        </div>
+        <p v-if="!current.inTitle || !current.inArtist || !current.inAlbum" class="mt-2 text-xs text-muted-color">部分基本信息缺失，仍可选择候选或按已知原始信息无需匹配保存。</p>
         <!-- 逐条浏览保留在条目标题下方。 -->
         <div v-if="queue && queue.items.length > 0" class="mt-3 flex items-center gap-2 text-sm">
           <SecondaryButton variant="outlined" size="small" :disabled="index === 0" @click="prev">
@@ -292,7 +323,7 @@ function next() {
           <SecondaryButton variant="outlined" size="small" @click="restoreOriginal">
             恢复原始信息
           </SecondaryButton>
-          <SecondaryButton variant="outlined" size="small" @click="act(() => App.NoMatchNeeded(current!.id))">
+          <SecondaryButton variant="outlined" size="small" @click="noMatchNeeded">
             无需匹配
           </SecondaryButton>
           <SecondaryButton variant="outlined" size="small" @click="act(() => App.DiscardReviewItem(current!.id))">

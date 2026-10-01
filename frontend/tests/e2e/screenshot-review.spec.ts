@@ -101,7 +101,7 @@ test('drawer shows one complete vocal group, single-column release data and no f
   const labels = release.locator('dt')
   const coords = await labels.evaluateAll(els => els.map(el => ({ x: el.getBoundingClientRect().x, y: el.getBoundingClientRect().y })))
   expect(new Set(coords.map(p => p.x)).size).toBe(1)
-  expect(new Set(coords.map(p => p.y)).size).toBe(8)
+  expect(new Set(coords.map(p => p.y)).size).toBe(await labels.count())
   await page.screenshot({ path: testInfo.outputPath('compact-detail.png') })
   await drawer.getByRole('button', { name: '编辑', exact: true }).click()
   await expect(page.getByRole('dialog').getByText('用户', { exact: true })).toHaveCount(0)
@@ -158,7 +158,7 @@ test('review removes marked text, moves actions below inputs and restores only t
   await restore.click()
   await expect(title).toHaveValue('you')
   await noMatch.click()
-  await expect.poll(() => page.evaluate(() => (window as any).__calls.includes('NoMatchNeeded'))).toBe(true)
+  await expect.poll(() => page.evaluate(() => (window as any).__calls.includes('PrepareNoMatchNeeded'))).toBe(true)
 })
 
 test('late review research cannot overwrite the next item', async ({ page }) => {

@@ -31,8 +31,9 @@ type AlbumRow struct {
 	// 不计入选中计数与曲目数、不参与导出。
 	Ghost bool `json:"ghost"`
 	// TrackRef 供灰色行的「加入曲库」直接带溯源入库。
-	TrackRef     *string `json:"trackRef"`
-	RecordingRef *string `json:"recordingRef"`
+	TrackRef         *string `json:"trackRef"`
+	RecordingRef     *string `json:"recordingRef"`
+	OutsideTracklist bool    `json:"outsideTracklist"`
 }
 
 // AlbumDetail 是专辑详情视图。
@@ -44,15 +45,16 @@ type AlbumDetail struct {
 	Title   string  `json:"title"`
 	Credit  *string `json:"credit"`
 	// 头部发行信息
-	PrimaryType   *string `json:"primaryType"`
-	Year          *int    `json:"year"`
-	MediumFormat  *string `json:"mediumFormat"`
-	Country       *string `json:"country"`
-	Label         *string `json:"label"`
-	CatalogNumber *string `json:"catalogNumber"`
-	DiscTotal     *int    `json:"discTotal"`
-	Provider      *string `json:"provider"`
-	ReleaseRef    *string `json:"releaseRef"`
+	PrimaryType   *string       `json:"primaryType"`
+	Year          *int          `json:"year"`
+	MediumFormat  *string       `json:"mediumFormat"`
+	Country       *string       `json:"country"`
+	Label         *string       `json:"label"`
+	CatalogNumber *string       `json:"catalogNumber"`
+	DiscTotal     *int          `json:"discTotal"`
+	Media         []AlbumMedium `json:"media"`
+	Provider      *string       `json:"provider"`
+	ReleaseRef    *string       `json:"releaseRef"`
 	// ReleaseGroupRef 与 Provider/ReleaseRef 一起构成封面地址的来源。
 	ReleaseGroupRef *string `json:"releaseGroupRef"`
 	// CoverPath 非空时是已采用封面的落盘路径，优先于临时缩略图。
@@ -78,6 +80,60 @@ type AlbumDetail struct {
 	TotalCount *int `json:"totalCount"`
 	// Incomplete 为真时末尾显示「清单不完整」与补全动作。
 	Incomplete bool `json:"incomplete"`
+}
+
+type AlbumMedium struct {
+	Number     int  `json:"number"`
+	TrackTotal *int `json:"trackTotal"`
+}
+
+// AlbumGroupDetail 保留所有发行边界，组收藏数不按录音去重。
+type AlbumGroupDetail struct {
+	GroupID          int64          `json:"groupId"`
+	Title            string         `json:"title"`
+	Credit           *string        `json:"credit"`
+	RepresentativeID int64          `json:"representativeId"`
+	OwnedCount       int            `json:"ownedCount"`
+	MemberCount      int            `json:"memberCount"`
+	Releases         []*AlbumDetail `json:"releases"`
+}
+
+func (a *App) GetAlbumGroupDetail(groupID int64) (*AlbumGroupDetail, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	members, err := a.store.ListGroupReleases(groupID)
+	if err != nil {
+		return nil, err
+	}
+	group, err := a.store.GetReleaseGroup(groupID)
+	if err != nil {
+		return nil, err
+	}
+	if group == nil {
+		return nil, fmt.Errorf("专辑组不存在")
+	}
+	result := &AlbumGroupDetail{GroupID: groupID, Title: group.Title, MemberCount: len(members), Releases: []*AlbumDetail{}}
+	result.Credit, err = a.store.GroupCredit(groupID)
+	if err != nil {
+		return nil, err
+	}
+	rep, err := a.store.RepresentativeRelease(groupID)
+	if err != nil {
+		return nil, err
+	}
+	if rep != nil {
+		result.RepresentativeID = rep.ID
+	}
+	for _, member := range members {
+		detail, err := a.GetAlbumDetail(member.ID)
+		if err != nil {
+			return nil, err
+		}
+		result.Releases = append(result.Releases, detail)
+		result.OwnedCount += detail.OwnedCount
+	}
+	return result, nil
 }
 
 // GetAlbumDetail 读取专辑详情。
@@ -113,6 +169,19 @@ func (a *App) GetAlbumDetail(releaseID int64) (*AlbumDetail, error) {
 		TracklistState: string(store.TracklistNone),
 		FetchedAt:      formatTime(rel.FetchedAt),
 	}
+	media, err := a.store.ReleaseMedia(rel.ID)
+	if err != nil {
+		return nil, err
+	}
+	detail.Media = []AlbumMedium{}
+	for _, m := range media {
+		var count *int
+		if m.TrackTotal.State == domain.Value {
+			n := m.TrackTotal.Value
+			count = &n
+		}
+		detail.Media = append(detail.Media, AlbumMedium{Number: m.Number, TrackTotal: count})
+	}
 	if rel.ReleaseGroupID != nil {
 		detail.GroupID = *rel.ReleaseGroupID
 		if g, err := a.store.GetReleaseGroup(*rel.ReleaseGroupID); err == nil && g != nil {
@@ -127,10 +196,22 @@ func (a *App) GetAlbumDetail(releaseID int64) (*AlbumDetail, error) {
 	}
 	detail.OwnedCount = len(owned)
 
-	// 本地歌集没有上游事实：不显示灰色行也不显示总数
+	// 本地发行只按用户完整填写的碟结构显示总数，不虚构灰色行
 	if rel.ProviderRef == nil || rel.Provider == nil {
+		if detail.DiscTotal != nil && *detail.DiscTotal == len(detail.Media) {
+			total, known := 0, true
+			for _, m := range detail.Media {
+				if m.TrackTotal == nil {
+					known = false
+					break
+				}
+				total += *m.TrackTotal
+			}
+			if known {
+				detail.TotalCount = &total
+			}
+		}
 		detail.Rows = owned
-		detail.TotalCount = nil
 		return detail, nil
 	}
 
@@ -142,7 +223,6 @@ func (a *App) GetAlbumDetail(releaseID int64) (*AlbumDetail, error) {
 		// 不伪装完整：只列已入库曲目，末尾提示清单不完整
 		detail.Rows = owned
 		detail.Incomplete = true
-		detail.TotalCount = nil
 		if rel.TracklistState == store.TracklistFailed {
 			detail.TracklistError = "清单获取失败"
 		}
@@ -154,8 +234,27 @@ func (a *App) GetAlbumDetail(releaseID int64) (*AlbumDetail, error) {
 	if err != nil {
 		return nil, err
 	}
-	detail.Rows = rowsFromPositions(positions)
-	detail.OwnedCount = countOwned(detail.Rows)
+	// 清单提供灰色位置；收藏始终显示当前值，清单外收藏也不能丢失。
+	detail.Rows = []AlbumRow{}
+	inList := map[int64]bool{}
+	current := map[int64]AlbumRow{}
+	for _, row := range owned {
+		current[row.TrackID] = row
+	}
+	for _, row := range rowsFromPositions(positions) {
+		if row.TrackID != 0 {
+			inList[row.TrackID] = true
+			row = current[row.TrackID]
+		}
+		detail.Rows = append(detail.Rows, row)
+	}
+	for _, row := range owned {
+		if !inList[row.TrackID] {
+			row.OutsideTracklist = true
+			detail.Rows = append(detail.Rows, row)
+		}
+	}
+	sortRows(detail.Rows)
 	if rel.TrackTotal == nil {
 		total := len(positions)
 		detail.TotalCount = &total
@@ -204,9 +303,6 @@ func countOwned(rows []AlbumRow) int {
 // 详情也该显示用户在这张专辑上拥有的全部曲目，而不只是代表版本那一条上的。
 func (a *App) ownedRowsFor(rel *store.Release) ([]AlbumRow, error) {
 	f := store.TrackFilter{ReleaseID: rel.ID}
-	if rel.ReleaseGroupID != nil {
-		f = store.TrackFilter{ReleaseGroupID: *rel.ReleaseGroupID}
-	}
 
 	tracks, err := a.store.ListTracks(f)
 	if err != nil {
@@ -222,8 +318,6 @@ func (a *App) ownedRowsFor(rel *store.Release) ([]AlbumRow, error) {
 		}
 		if t.DiscNumber != nil {
 			row.DiscNumber = *t.DiscNumber
-		} else {
-			row.DiscNumber = 1
 		}
 		if t.TrackNumber != nil {
 			row.TrackNumber = *t.TrackNumber

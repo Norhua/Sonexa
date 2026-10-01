@@ -163,6 +163,7 @@ func TestResolveTracklistExactIdentityOnly(t *testing.T) {
 	ownedID, _ := s.CreateTrackWithProvenance(NewTrackInput{
 		Title:       "冒険でしょでしょ?",
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-digital-01"),
+		Release: &ReleaseInput{Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-digital")},
 	})
 
 	// 当前专辑视图显示的是数字版清单

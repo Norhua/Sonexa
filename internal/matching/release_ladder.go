@@ -119,6 +119,9 @@ func (cfg LadderConfig) less(a, b provider.Candidate) bool {
 		return a.HasCover
 	}
 	// 6. 上游标识字典序——纯为确定性
+	if a.Provider != b.Provider {
+		return a.Provider < b.Provider
+	}
 	return a.MatchRef < b.MatchRef
 }
 

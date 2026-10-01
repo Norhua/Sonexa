@@ -120,8 +120,8 @@ func (s *Store) ResolveTracklist(releaseID int64, provider string) ([]ResolvedPo
 		if t.TrackRef != nil && *t.TrackRef != "" {
 			var id int64
 			var createdAt time.Time
-			err := s.db.QueryRow(`SELECT id, created_at FROM track_read WHERE match_source = ? AND match_ref = ?`,
-				provider, *t.TrackRef).Scan(&id, &createdAt)
+			err := s.db.QueryRow(`SELECT id, created_at FROM track_read WHERE match_source = ? AND match_ref = ? AND release_id = ?`,
+				provider, *t.TrackRef, releaseID).Scan(&id, &createdAt)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return nil, err
 			}

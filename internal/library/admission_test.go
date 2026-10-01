@@ -200,8 +200,19 @@ func TestDualEvidenceConflictAndExplicitMerge(t *testing.T) {
 	if _, err := s.ConfirmReleaseAdditions(plan.ID, plan.Hash); !errors.Is(err, store.ErrGroupConflict) {
 		t.Fatal(err)
 	}
-	conflictSeed.MergeTargetID = second.GroupID
-	merged := prepare(t, s, conflictSeed)
+	if _, err := s.ReplanAdmissionGroup(context.Background(), plan.ID, plan.Hash, 99999); !errors.Is(err, store.ErrGroupConflict) {
+		t.Fatalf("unknown merge target: %v", err)
+	}
+	merged, err := s.ReplanAdmissionGroup(context.Background(), plan.ID, plan.Hash, second.GroupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Seed.MergeTargetID != 0 || merged.Seed.Snapshot.Track.Identity != plan.Seed.Snapshot.Track.Identity {
+		t.Fatal("replan mutated candidate")
+	}
+	if _, err := s.CommitAdmission(context.Background(), merged.ID, merged.Hash, domain.AdmissionApproval{}); !errors.Is(err, store.ErrConfirmationRequired) {
+		t.Fatalf("merge bypass: %v", err)
+	}
 	if !merged.Baseline.RequiresConfirmation {
 		t.Fatal("merge bypassed approval")
 	}

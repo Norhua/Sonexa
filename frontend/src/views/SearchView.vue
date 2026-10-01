@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAdmissionStore } from '@/stores/admission'
+const admission = useAdmissionStore()
 /**
  * 搜索页。
  *
@@ -123,7 +125,9 @@ async function run() {
 
 async function addToLibrary(row: Models.app.CandidateRow) {
   try {
-    const id = await App.AddToLibrary(row)
+    const result = await admission.run(() => App.PrepareAdmission(row, 0))
+    if (!result) return
+    const id = result.trackId
     row.localTrackId = id
     row.action = '已在库中'
     if (!row.badges.includes('本地')) row.badges = ['本地', ...row.badges]

@@ -231,3 +231,22 @@ func (s *Service) PrepareGhostAdmission(ctx context.Context, releaseID int64, di
 	}
 	return nil, fmt.Errorf("该发行清单位置不存在")
 }
+
+// ReplanAdmissionGroup 只修改服务端已保存计划的合组意图，候选与原始条目保持不变。
+func (s *Service) ReplanAdmissionGroup(ctx context.Context, id, hash string, target int64) (*domain.AdmissionPlan, error) {
+	plan, err := s.plan(id, hash)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	for _, group := range plan.Baseline.Resolution.Groups {
+		if group.ID == target {
+			found = true
+		}
+	}
+	if !found {
+		return nil, store.ErrGroupConflict
+	}
+	plan.Seed.MergeTargetID = target
+	return s.PrepareAdmission(ctx, plan.Seed)
+}

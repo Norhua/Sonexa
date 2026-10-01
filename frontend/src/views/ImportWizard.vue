@@ -220,6 +220,7 @@ async function submit() {
               [!] {{ preview.preview.skipSummary }}
             </span>
           </div>
+          <p v-if="preview.preview.missingSummary" class="mb-2 text-xs text-muted-color">{{ preview.preview.missingSummary }}</p>
           <DataTable :value="preview.preview.rows" scrollable scroll-height="16rem">
             <Column header="曲名">
               <template #body="{ data }">

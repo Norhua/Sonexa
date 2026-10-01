@@ -7,6 +7,9 @@
  * 见 ArtistsView / AlbumsView 各自的 PaneHeader。
  */
 import { ref, watch } from 'vue'
+import CreateTrackDialog from '@/components/CreateTrackDialog.vue'
+import SecondaryButton from '@/volt/SecondaryButton.vue'
+const creating = ref(false)
 import PaneHeader from '@/components/PaneHeader.vue'
 import ViewOptionsMenu from '@/components/ViewOptionsMenu.vue'
 import ViewSearchBox from '@/components/ViewSearchBox.vue'
@@ -36,6 +39,7 @@ async function run() {
 <template>
   <PaneHeader>
     <h2 class="min-w-0 flex-1 truncate text-xl font-bold">{{ library.contextTitle }}</h2>
+    <SecondaryButton v-if="library.view === 'all'" size="small" variant="text" @click="creating = true">新建曲目</SecondaryButton>
     <ViewOptionsMenu />
     <ViewSearchBox
       v-model="text"
@@ -44,6 +48,7 @@ async function run() {
     />
   </PaneHeader>
 
+  <CreateTrackDialog v-model:visible="creating" />
   <FilterChips />
   <Message v-if="library.error" severity="error" size="small" class="shrink-0 rounded-none">{{ library.error }}</Message>
 </template>

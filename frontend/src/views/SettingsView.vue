@@ -259,7 +259,8 @@ defineExpose({ active })
         <p class="text-xs text-muted-color">
           高置信是结构性条件（曲名匹配 且 署名或歌集精确匹配），不是分数线。
         </p>
-        <label class="block text-sm">偏好国家列表
+        <p class="text-xs text-muted-color">国家和载体偏好仅决定专辑展示代表。自动选版固定优先库内已有发行，再按发行总曲数与非世界国家选择；已有收藏绑定不变。</p>
+        <label class="block text-sm">展示代表：偏好国家列表
           <InputText
             :model-value="draft.matching.preferredCountries?.join(', ')"
             size="small"
@@ -267,7 +268,7 @@ defineExpose({ active })
             @update:model-value="draft.matching.preferredCountries = ($event ?? '').split(',').map((s: string) => s.trim()).filter(Boolean)"
           />
         </label>
-        <label class="block text-sm">载体格式优先级
+        <label class="block text-sm">展示代表：载体格式优先级
           <InputText
             :model-value="draft.matching.mediumPriority?.join(', ')"
             size="small"

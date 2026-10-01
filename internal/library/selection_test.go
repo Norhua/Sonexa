@@ -94,3 +94,45 @@ func TestAutomaticSelectionAmbiguityUnknownTotalAndWorldTie(t *testing.T) {
 		t.Fatal("different content accepted", selected, err)
 	}
 }
+
+func TestDisplayPreferencesDoNotChangeSelectionOrBindings(t *testing.T) {
+	s, st, _ := newTestService(t)
+	s.registry.Register(&summaryProvider{})
+	makeVersion := func(ref, format, country string) domain.AdmissionResult {
+		input := seed(ref, ref+"-owned", "group", "Album", "Artist")
+		input.Snapshot.Release.Media = domain.Known([]domain.Medium{{Number: 1, Format: domain.Known(format)}})
+		input.Snapshot.Release.Country = domain.Known(country)
+		input.Snapshot.Release.Status = domain.Known("Official")
+		return *commit(t, s, prepare(t, s, input), ref == "b")
+	}
+	a := makeVersion("a", "CD", "JP")
+	b := makeVersion("b", "Digital Media", "US")
+	short, long := 14, 15
+	candidates := high(candidate("a", "a-next", &short), candidate("b", "b-next", &long))
+	for i, order := range [][]string{{"CD", "Digital Media"}, {"Digital Media", "CD"}} {
+		cfg := matching.DefaultLadderConfig()
+		cfg.MediumPriority = order
+		st.SetLadderConfig(cfg)
+		rep, err := st.RepresentativeRelease(a.GroupID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := a.ReleaseID
+		if i == 1 {
+			want = b.ReleaseID
+		}
+		if rep.ID != want {
+			t.Fatalf("representative: %d want %d", rep.ID, want)
+		}
+		selected, err := s.SelectCandidate(context.Background(), candidates, 0)
+		if err != nil || selected.Candidate == nil || selected.Candidate.MatchRef != "b-next" {
+			t.Fatalf("preference affected admission: %+v %v", selected, err)
+		}
+		for _, saved := range []domain.AdmissionResult{a, b} {
+			track, err := st.GetTrack(saved.TrackID)
+			if err != nil || track.ReleaseID == nil || *track.ReleaseID != saved.ReleaseID {
+				t.Fatal("preference rebound collection", err)
+			}
+		}
+	}
+}

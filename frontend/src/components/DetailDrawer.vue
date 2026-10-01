@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import GroupProposals from '@/components/GroupProposals.vue'
 /**
  * 详情抽屉。宽度 340px。
  *
@@ -111,12 +112,17 @@ const fallbackCredit = computed(() => creditParts(
 
 /** 发行信息：缺失字段显示占位短横线。 */
 const releaseInfo = computed(() => [
-  { label: '类型', value: display(meta.value?.primaryType) },
+  { label: '专辑', value: display(props.detail?.release?.title) },
+  { label: '专辑艺术家', value: display(props.detail?.release?.credit) },
+  { label: '类型', value: display(props.detail?.release?.primaryType ?? meta.value?.primaryType) },
   { label: '年份', value: display(meta.value?.year) },
   { label: '载体', value: display(meta.value?.mediumFormat) },
   { label: '国家/地区', value: display(meta.value?.country) },
   { label: '音轨', value: display(meta.value?.trackNumber) },
   { label: '碟号', value: display(meta.value?.discNumber) },
+  { label: '发行收藏数', value: display(props.detail?.release?.ownedCount) },
+  { label: '发行总曲数', value: display(props.detail?.release?.totalCount) },
+  { label: '每碟曲数', value: props.detail?.release?.media?.map(m => `第 ${m.number} 碟 ${display(m.trackTotal)}`).join(' · ') || '—' },
   { label: '时长', value: duration(meta.value?.durationMs) },
   { label: '风格', value: display(meta.value?.genre) },
 ])
@@ -200,10 +206,11 @@ const releaseInfo = computed(() => [
           </template>
         </dl>
         <p v-if="detail.participants.length === 0" class="mt-1.5 text-xs text-muted-color">
-          暂无参与角色信息<span v-if="meta?.matchSource === 'itunes'">：iTunes 不提供演唱、作曲、作词等角色数据</span><span v-else-if="meta?.matchSource === 'qq'">：QQ 音乐未列出该曲的角色，或尚未补全详情</span>
+          <span>暂无参与角色信息</span><span v-if="meta?.matchSource && !settings.providerById(meta.matchSource)?.capabilities?.includes('PerformerRoles')">：当前来源不提供演唱者角色，仍可在编辑页补录</span><span v-else>：尚未提供明确角色信息</span>
         </p>
       </section>
 
+      <GroupProposals v-if="detail.track.releaseId" :release-id="detail.track.releaseId" />
       <!-- 发行信息 -->
       <section>
         <h3 class="mb-2 text-xs font-medium text-muted-color">发行信息</h3>

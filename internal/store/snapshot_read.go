@@ -27,3 +27,23 @@ func (s *Store) GetReleaseSnapshot(id int64) (*domain.ReleaseSnapshot, error) {
 	}
 	return &snapshot, nil
 }
+
+// ReleaseMedia 读取当前碟结构；unknown 总数保留为空。
+func (s *Store) ReleaseMedia(id int64) ([]domain.Medium, error) {
+	var raw *string
+	if err := s.db.QueryRow("SELECT media_json FROM release_current WHERE release_id=?", id).Scan(&raw); err != nil {
+		return nil, err
+	}
+	media := []domain.Medium{}
+	if raw != nil {
+		if err := json.Unmarshal([]byte(*raw), &media); err != nil {
+			return nil, err
+		}
+	}
+	return media, nil
+}
+func (s *Store) GroupCredit(id int64) (*string, error) {
+	var credit *string
+	err := s.db.QueryRow("SELECT credit FROM release_group_current WHERE group_id=?", id).Scan(&credit)
+	return credit, err
+}

@@ -12,6 +12,7 @@ import { App as Api, Events, EventsOn, display } from '@/api'
 import type { Models } from '@/api'
 import AppSidebar from '@/components/AppSidebar.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import AdmissionDialog from '@/components/AdmissionDialog.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
 import TrackTable, { type Row } from '@/components/TrackTable.vue'
 import ViewHeader from '@/components/ViewHeader.vue'
@@ -166,7 +167,8 @@ async function onEmptyAction(key: string) {
 
 /** 到上游搜索：搜索页 + 范围切到主上游。 */
 async function goUpstreamSearch(prefill?: { title: string; artist: string; album: string }) {
-  const provider = settings.providers[0]?.id ?? 'musicbrainz'
+  const provider = settings.providers[0]?.id
+  if (!provider) return
   if (prefill) search.prefillUpstream(provider, prefill)
   else search.setScope(provider)
   await library.goTo('search')
@@ -502,5 +504,6 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
     <SettingsDialog v-if="ui.settingsOpen" />
     <PromptDialog />
     <ConfirmDialog />
+    <AdmissionDialog />
   </div>
 </template>

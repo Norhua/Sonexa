@@ -41,7 +41,7 @@ test('same album rows and drawer update to newest revision without refreshing ot
 test('album header and rows refresh while late detail response cannot switch the album', async ({ page }) => {
   await page.evaluate(() => {
     const api = (window as any).go.app.App, detail = api.GetAlbumDetail
-    api.ListAlbums = async () => [20, 21].map(id => ({ releaseId: id, title: `专辑${id}`, coverRevision: 0, ownedCount: 2 }))
+    api.ListAlbums = async () => [20, 21].map(id => ({ releaseId: id, groupId: id, memberCount: 1, title: `专辑${id}`, coverRevision: (window as any).__albumRevision ?? 0, ownedCount: 2 }))
     api.GetAlbumDetail = async (id: number) => {
       const d = { ...await detail(id), releaseId: id, title: `专辑${id}`, coverRevision: (window as any).__albumRevision ?? 0 }
       if ((window as any).__holdAlbum && id === 20) return new Promise(resolve => { (window as any).__finishAlbum = () => resolve(d) })

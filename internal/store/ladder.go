@@ -3,6 +3,7 @@ package store
 import (
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
+	"strconv"
 )
 
 // matchingCandidate 是传给优选阶梯的候选类型别名。
@@ -13,12 +14,13 @@ type matchingCandidate = provider.Candidate
 // 这样专辑视图选「代表 release」与匹配阶段的多候选优选走同一套阶梯，
 // 不另写一份排序代码。
 func toLadderCandidate(r Release) matchingCandidate {
-	ref := ""
+	ref := strconv.FormatInt(r.ID, 10)
 	if r.ProviderRef != nil {
 		ref = *r.ProviderRef
 	}
 	return provider.Candidate{
 		MatchRef:         ref,
+		Provider:         provider.ProviderID(deref(r.Provider)),
 		ReleaseRef:       r.ProviderRef,
 		ReleaseGroupRef:  r.ReleaseGroupRef,
 		ReleaseStatus:    r.ReleaseStatus,
@@ -98,7 +100,7 @@ func (s *Store) RepresentativeRelease(groupID int64) (*Release, error) {
 		return &releases[0], nil
 	}
 	for i := range releases {
-		if releases[i].ProviderRef != nil && *releases[i].ProviderRef == best.MatchRef {
+		if c := toLadderCandidate(releases[i]); c.Provider == best.Provider && c.MatchRef == best.MatchRef {
 			return &releases[i], nil
 		}
 	}

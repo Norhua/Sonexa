@@ -24,7 +24,7 @@ test('iTunes drawer uses release detail cover and explains unavailable participa
   const drawer = page.locator('aside').filter({ hasText: '参与者' })
   await expect(drawer.getByText('ツバサ', { exact: true })).toBeVisible()
   await expect(drawer.getByRole('button', { name: '4円', exact: true })).toBeVisible()
-  await expect(drawer.getByText('iTunes 不提供演唱、作曲、作词等角色数据', { exact: false })).toBeVisible()
+  await expect(drawer.getByText('当前来源不提供演唱者角色，仍可在编辑页补录', { exact: false })).toBeVisible()
   await expect(drawer.locator('img')).toHaveAttribute('src', /usage=detail.*releaseId=20/)
   await expect(drawer.getByText('J-Pop', { exact: true })).toBeVisible()
   await expect(drawer.getByText('nil', { exact: true })).toHaveCount(0)

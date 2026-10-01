@@ -129,7 +129,7 @@ test('tag filters artist/album lists and current tracks without losing browse co
   await page.getByRole('button', { name: /测试专辑/ }).click()
   await expect(rows(page)).toHaveCount(1)
   await expect(rows(page).first()).toHaveAttribute('data-ghost', 'false')
-  expect(await page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ releaseId: 20, tagId: 21 })
+  await expect.poll(() => page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ releaseGroupId: 20, tagId: 21 })
   await pickTag(page, '全部标签')
   await expect(rows(page)).toHaveCount(5)
   await page.getByRole('button', { name: '仅显示已有', exact: true }).click()

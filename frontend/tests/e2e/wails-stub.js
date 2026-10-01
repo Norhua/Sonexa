@@ -154,7 +154,8 @@
           ]
         }),
         DiscardReviewItem: record('DiscardReviewItem', async () => {}),
-        NoMatchNeeded: record('NoMatchNeeded', async () => 1),
+        PrepareNoMatchNeeded: record('PrepareNoMatchNeeded', async () => ({ id: 'no-match', hash: 'hash', baseline: { conflict: false, requiresConfirmation: false } })),
+        CommitAdmission: record('CommitAdmission', async () => ({ trackId: 1 })),
         GetImportQueue: async () => [{
           id: 1, filename: '/tmp/music_extracted.csv', status: 'done',
           running: false, processed: 10, totalRows: 10, fileRows: 12,
@@ -197,7 +198,13 @@
         ApplyEdits: async () => {},
         ClearProvenance: async () => {},
         ListArtists: async () => [],
-        ListAlbums: async () => [{ releaseId: 20, groupId: 0, title: '测试专辑', ownedCount: 2, totalCount: 5 }],
+        ListGroupProposals: async () => [],
+        ListAlbums: async () => [{ releaseId: 20, groupId: 20, title: '测试专辑', ownedCount: 2, memberCount: 1, ownedReleaseCount: 1, totalCount: 5 }],
+        GetAlbumGroupDetail: async (groupId) => {
+          const release = await window.go.app.App.GetAlbumDetail(groupId)
+          return { groupId, title: release.title, representativeId: release.releaseId, ownedCount: release.ownedCount, memberCount: 1, releases: [release] }
+        },
+        ListAlbumsForTag: async () => window.go.app.App.ListAlbums(),
         GetAlbumDetail: async () => ({
           releaseId: 20, title: '测试专辑', ownedCount: 2, totalCount: 5, tracklistState: 'complete',
           rows: [

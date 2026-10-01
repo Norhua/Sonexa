@@ -190,7 +190,9 @@ type AlbumListItem struct {
 	Credit *string `json:"credit"`
 	Year   *int    `json:"year"`
 	// OwnedCount 是用户已入库的曲目数。
-	OwnedCount int `json:"ownedCount"`
+	OwnedCount        int `json:"ownedCount"`
+	MemberCount       int `json:"memberCount"`
+	OwnedReleaseCount int `json:"ownedReleaseCount"`
 	// TotalCount 是上游声明的清单总数；本地歌集为 nil，界面呈现为 `3/-`。
 	TotalCount *int `json:"totalCount"`
 	// RepresentativeRef 是代表 release 的标识，供清单读取使用。
@@ -211,61 +213,69 @@ func (a AlbumListItem) CountLabel() string {
 	return fmt.Sprintf("%d/%d", a.OwnedCount, *a.TotalCount)
 }
 
-// ListAlbums 列出用户至少拥有一首曲目的歌集。
-//
-// 发行组存在时，同组的多条 release 合为一条，代表 release 由优选阶梯选出
-// （偏好实体载体、偏好国家等），封面与总数取自它。发行组不存在时一条
-// release 就是一条专辑。一张专辑仅在用户至少拥有其中一首时出现——
-// 灰色行用于补全已开始的收藏，不是上游目录浏览。
+// ListAlbums 按本地组统计收藏，展示代表只提供摘要图片和发行事实。
 func (s *Store) ListAlbums() ([]AlbumListItem, error) {
-	rows, err := s.db.Query(`
-		SELECT r.id, r.release_group_id, r.title, r.credit, r.provider, r.provider_ref,
-		       r.release_date, r.first_release_date, r.track_total,
-		       r.cover_path, r.cover_source_url,
-		       (SELECT rg.provider_ref FROM release_group_read rg WHERE rg.id = r.release_group_id),
-		       COUNT(t.id)
-		FROM release_read r
-		JOIN track_read t ON t.release_id = r.id
-		GROUP BY r.id
-		ORDER BY r.title`)
+	rows, err := s.db.Query(`SELECT g.id, COALESCE(c.title,''), c.credit,
+ COUNT(t.id), COUNT(DISTINCT r.id), COUNT(DISTINCT CASE WHEN t.id IS NOT NULL THEN r.id END)
+ FROM release_group g JOIN release_group_current c ON c.group_id=g.id
+ JOIN release r ON r.release_group_id=g.id LEFT JOIN track t ON t.release_id=r.id
+ GROUP BY g.id HAVING COUNT(t.id)>0 ORDER BY c.title,g.id`)
 	if err != nil {
-		return nil, fmt.Errorf("查询专辑失败: %w", err)
-	}
-	defer rows.Close()
-
-	var flat []AlbumListItem
-	for rows.Next() {
-		var (
-			it                            AlbumListItem
-			groupID                       *int64
-			releaseDate, firstReleaseDate *string
-		)
-		if err := rows.Scan(&it.ReleaseID, &groupID, &it.Title, &it.Credit,
-			&it.Provider, &it.RepresentativeRef, &releaseDate, &firstReleaseDate,
-			&it.TotalCount, &it.CoverPath, &it.CoverSourceURL,
-			&it.ReleaseGroupRef, &it.OwnedCount); err != nil {
-			return nil, err
-		}
-		if groupID != nil {
-			it.GroupID = *groupID
-		}
-		it.Year = (&Release{ReleaseDate: releaseDate, FirstReleaseDate: firstReleaseDate}).Year()
-		flat = append(flat, it)
-	}
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	albums := s.mergeAlbumGroups(flat)
-	for i := range albums {
-		selection, err := s.GetCoverSelection(albums[i].ReleaseID)
+	out := []AlbumListItem{}
+	for rows.Next() {
+		var it AlbumListItem
+		if err := rows.Scan(&it.GroupID, &it.Title, &it.Credit, &it.OwnedCount, &it.MemberCount, &it.OwnedReleaseCount); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		rep, err := s.RepresentativeRelease(out[i].GroupID)
+		if err != nil {
+			return nil, err
+		}
+		if rep == nil {
+			continue
+		}
+		summary := albumItemFromRelease(rep, out[i].GroupID)
+		summary.Title, summary.Credit = out[i].Title, out[i].Credit
+		summary.OwnedCount, summary.MemberCount, summary.OwnedReleaseCount = out[i].OwnedCount, out[i].MemberCount, out[i].OwnedReleaseCount
+		selection, err := s.GetCoverSelection(rep.ID)
 		if err != nil {
 			return nil, err
 		}
 		if selection != nil {
-			albums[i].CoverRevision = selection.Revision
+			summary.CoverRevision = selection.Revision
 		}
+		out[i] = summary
 	}
-	return albums, nil
+	return out, nil
+}
+
+// ListGroupReleases 返回所有已保存成员，包括暂无收藏的上游发行。
+func (s *Store) ListGroupReleases(groupID int64) ([]Release, error) {
+	rows, err := s.db.Query("SELECT "+releaseColumns+" FROM release_read r WHERE r.release_group_id=? ORDER BY r.id", groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Release{}
+	for rows.Next() {
+		r, err := scanRelease(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
 }
 
 // ListAlbumsForTag 仅保留拥有带标签曲目的专辑；不改变代表版本、收藏数与清单总数。
@@ -302,89 +312,6 @@ func (s *Store) ListAlbumsForTag(tagID int64) ([]AlbumListItem, error) {
 		}
 	}
 	return out, nil
-}
-
-// mergeAlbumGroups 把同一发行组的多条 release 合并为一条，保持首次出现的顺序。
-//
-// 合并后已入库数求和，代表 release 由优选阶梯选出，封面与清单总数取代表的、
-// 缺失时退到组内任一非空值——同一张专辑的 CD 版与数字版在列表里是一条，
-// 不该因为用户恰好从数字版入库而丢掉 CD 版已有的封面。
-func (s *Store) mergeAlbumGroups(flat []AlbumListItem) []AlbumListItem {
-	out := []AlbumListItem{}
-	slotOfGroup := map[int64]int{}
-	membersOfGroup := map[int64][]AlbumListItem{}
-
-	for _, it := range flat {
-		if it.GroupID == 0 {
-			out = append(out, it)
-			continue
-		}
-		if _, seen := slotOfGroup[it.GroupID]; !seen {
-			slotOfGroup[it.GroupID] = len(out)
-			out = append(out, it)
-		}
-		membersOfGroup[it.GroupID] = append(membersOfGroup[it.GroupID], it)
-	}
-
-	for groupID, members := range membersOfGroup {
-		out[slotOfGroup[groupID]] = s.mergeOneGroup(groupID, members)
-	}
-	return out
-}
-
-// mergeOneGroup 合并一个发行组内的多条 release。
-//
-// 代表 release 由优选阶梯在**整个发行组**里选，而列表成员只有「用户有曲目的」
-// 那几条。两者不一定重合：用户可能只从数字版入库，而阶梯偏好实体载体。
-// 此时仍以阶梯选的那一条为代表——RepresentativeRef 是清单读取的依据，
-// 它必须与 RepresentativeRelease 给出的一致，否则专辑视图会去读另一个版本的清单。
-//
-// 已入库数是全组求和；封面与清单总数取代表的，缺失时退到组内任一非空值——
-// 同一张专辑的 CD 版与数字版在列表里是一条，不该因为用户恰好从数字版入库
-// 而丢掉 CD 版已有的封面。
-func (s *Store) mergeOneGroup(groupID int64, members []AlbumListItem) AlbumListItem {
-	merged := members[0]
-	if rep, err := s.RepresentativeRelease(groupID); err == nil && rep != nil {
-		if owned := findByReleaseID(members, rep.ID); owned != nil {
-			merged = *owned
-		} else {
-			// 阶梯选中的那一条上一首都不剩（例如用户删光了 CD 版那几首，
-			// 而 release 行作为清单缓存保留）。它仍是代表，但本身没有
-			// 已入库曲目，因此只取它的身份与发行事实。
-			merged = albumItemFromRelease(rep, members[0].GroupID)
-		}
-	}
-
-	owned := 0
-	for _, m := range members {
-		owned += m.OwnedCount
-		if merged.CoverPath == nil {
-			merged.CoverPath = m.CoverPath
-		}
-		if merged.CoverSourceURL == nil {
-			merged.CoverSourceURL = m.CoverSourceURL
-		}
-		if merged.TotalCount == nil {
-			merged.TotalCount = m.TotalCount
-		}
-		if merged.Credit == nil {
-			merged.Credit = m.Credit
-		}
-		if merged.Year == nil {
-			merged.Year = m.Year
-		}
-	}
-	merged.OwnedCount = owned
-	return merged
-}
-
-func findByReleaseID(items []AlbumListItem, id int64) *AlbumListItem {
-	for i := range items {
-		if items[i].ReleaseID == id {
-			return &items[i]
-		}
-	}
-	return nil
 }
 
 // albumItemFromRelease 由一条 release 构造列表项（不含已入库数）。

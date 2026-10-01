@@ -275,7 +275,10 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	candidatesJSON, _ := json.Marshal(res.Scored)
 	evidence := ""
 	if selection.Plan != nil {
-		raw, _ := json.Marshal(selection.Plan.Baseline)
+		raw, _ := json.Marshal(struct {
+			domain.AdmissionBaseline
+			Proposed *domain.ReleaseSnapshot `json:"proposed"`
+		}{selection.Plan.Baseline, selection.Plan.Seed.Snapshot.Release})
 		evidence = string(raw)
 	}
 	if err := r.store.MarkReview(item.ID, reason, string(candidatesJSON), string(variantsJSON), evidence); err != nil {

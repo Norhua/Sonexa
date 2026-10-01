@@ -70,6 +70,7 @@ type FieldSource struct {
 
 // TrackDetail 是详情抽屉的完整内容。
 type TrackDetail struct {
+	Release  *AlbumDetail         `json:"release"`
 	Track    store.TrackView      `json:"track"`
 	Metadata *store.TrackMetadata `json:"metadata"`
 	/** Sources 保留逐字段来源数据；当前前端暂不显示来源徽标。 */
@@ -117,6 +118,12 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 	}
 
 	detail := &TrackDetail{Track: *track, Metadata: meta, Tags: tags}
+	if track.ReleaseID != nil {
+		detail.Release, err = a.GetAlbumDetail(*track.ReleaseID)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// 署名原串与成员区间：抽屉在无角色分组时以「署名」兜底，不推断演唱。
 	if meta != nil && meta.Credit != nil {

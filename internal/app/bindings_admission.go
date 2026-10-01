@@ -141,3 +141,11 @@ func (a *App) commitUnconfirmedAdmission(plan *domain.AdmissionPlan) (int64, err
 	}
 	return result.TrackID, nil
 }
+
+func (a *App) ReplanAdmissionGroup(id, hash string, target int64) (*domain.AdmissionPlan, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	return service.ReplanAdmissionGroup(a.ctx, id, hash, target)
+}

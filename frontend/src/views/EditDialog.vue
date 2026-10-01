@@ -27,7 +27,7 @@ const session = ref<Models.app.EditSession | null>(null)
 const fill = ref<Record<string, boolean>>({})
 /** 用户手动改写的值。 */
 const manual = ref<Record<string, string>>({})
-const rematchProvider = ref('musicbrainz')
+const rematchProvider = ref('')
 const manualRef = ref('')
 const loading = ref(false)
 const error = ref('')
@@ -51,6 +51,7 @@ async function load() {
   error.value = ''
   try {
     session.value = await App.GetEditSession(props.trackId)
+    rematchProvider.value = session.value.matchSource || settings.providers[0]?.id || ''
     resetFill()
   } catch (e) {
     error.value = String(e)
@@ -221,7 +222,7 @@ const groups = computed(() => [
           <label class="flex-1">手动填入标识
             <InputText
               v-model="manualRef"
-              placeholder="MB 为 track MBID；iTunes 为 地区:编号"
+              :placeholder="settings.providerById(rematchProvider)?.refs?.trackHint"
               size="small"
               class="mt-1 block w-full"
             />
