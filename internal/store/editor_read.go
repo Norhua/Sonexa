@@ -260,3 +260,17 @@ func readEditRolesTx(tx *sql.Tx, id int64) (map[string][]domain.Role, error) {
 	}
 	return out, rows.Err()
 }
+
+// ReadEditorReleaseCurrent also supports a saved upstream release with no collection.
+func (s *Store) ReadEditorReleaseCurrent(id int64) (domain.EditFields, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	fields := domain.EditFields{}
+	if err := readEditCurrentTx(tx, "release", id, fields); err != nil {
+		return nil, err
+	}
+	return fields, nil
+}

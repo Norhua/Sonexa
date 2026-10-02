@@ -140,29 +140,44 @@ func TestEditorBindingAndSharedImpactRemainDraftOnly(t *testing.T) {
 	}
 	draft := domain.EditDraft{TrackID: id, Revisions: before.Revisions, BindingAction: "clear_track"}
 	impact, err := a.PreviewEditSave(draft)
-	if err != nil || impact.NeedsScope || impact.TargetReleaseID != before.ReleaseID || !impact.DetachesTrack {
+	if err != nil || impact.NeedsAlbumConfirmation || impact.TargetReleaseID != before.ReleaseID || !impact.DetachesTrack {
 		t.Fatalf("clear song: %+v %v", impact, err)
 	}
 	draft.BindingAction = "clear_release"
 	impact, err = a.PreviewEditSave(draft)
-	if err != nil || !impact.NeedsScope {
+	if err != nil || !impact.NeedsAlbumConfirmation {
 		t.Fatalf("shared: %+v %v", impact, err)
 	}
-	draft.Scope = "all"
+	draft.Mappings = []domain.EditMapping{{TrackID: id, Selected: true}, {TrackID: second, Selected: true}}
 	impact, err = a.PreviewEditSave(draft)
-	if err != nil || !reflect.DeepEqual(impact.SourceTrackIDs, []int64{id, second}) || impact.CreatesRelease {
+	if err != nil || !reflect.DeepEqual(impact.SourceTrackIDs, []int64{id, second}) || !impact.CreatesRelease {
 		t.Fatalf("whole release: %+v %v", impact, err)
 	}
-	draft.Scope = "single"
+	draft.Mappings = []domain.EditMapping{{TrackID: id, Selected: true}}
 	impact, err = a.PreviewEditSave(draft)
 	if err != nil || !impact.CreatesRelease || impact.Admission == nil || !impact.Admission.RequiresConfirmation {
 		t.Fatalf("partial detach: %+v %v", impact, err)
 	}
+	for _, selections := range [][]domain.EditMapping{
+		{{TrackID: id, Selected: true}},
+		{{TrackID: id, Selected: true}, {TrackID: second, Selected: true}},
+	} {
+		draft.Mappings = selections
+		plan, err := a.PlanAlbumChange(draft)
+		if err != nil || !plan.CanSubmit || len(plan.Rows) != 2 || len(plan.SelectedTrackIDs) != len(selections) || !plan.Impact.CreatesRelease || plan.Impact.TargetReleaseID != 0 {
+			t.Fatalf("local migration: %+v %v", plan, err)
+		}
+		for _, row := range plan.Rows {
+			if !row.Stay && row.AfterIdentity != nil {
+				t.Fatal("local migration copied source identity")
+			}
+		}
+	}
 	draft.BindingAction = "keep"
 	draft.Fields = domain.EditFields{"release.credit": {State: domain.Value, ValueJSON: `"新专辑署名"`}}
-	draft.Scope = ""
+	draft.Mappings = nil
 	impact, err = a.PreviewEditSave(draft)
-	if err != nil || !impact.NeedsScope {
+	if err != nil || !impact.NeedsAlbumConfirmation {
 		t.Fatalf("album credit bypassed scope: %+v %v", impact, err)
 	}
 	draft.Fields = domain.EditFields{"track.year": {State: domain.Value, ValueJSON: `0`}}
@@ -200,7 +215,7 @@ func TestEditorSingleTrackStillPreviewsAdmissionAndProtectsExistingTarget(t *tes
 	}
 	draft := domain.EditDraft{TrackID: id, Revisions: before.Revisions, BindingAction: "set", PreviewID: preview.ID}
 	impact, err := a.PreviewEditSave(draft)
-	if err != nil || impact.NeedsScope || !impact.CreatesRelease || impact.Admission == nil || !impact.Admission.RequiresConfirmation {
+	if err != nil || !impact.NeedsAlbumConfirmation || !impact.CreatesRelease || impact.Admission == nil || !impact.Admission.RequiresConfirmation {
 		t.Fatalf("single skipped membership: %+v %v", impact, err)
 	}
 	plan, err := a.PrepareAdmission(rowFrom(matching.ScoredCandidate{Candidate: c}), 0)

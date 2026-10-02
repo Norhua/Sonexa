@@ -90,15 +90,13 @@ func EditorFields(snapshot Snapshot) (EditFields, error) {
 	return out, nil
 }
 
-// EditDraft 只携带触碰字段和明确的绑定/范围意图；预览 token 指向服务端暂存事实。
+// EditDraft 只携带触碰字段和明确的绑定/迁入意图；预览 token 指向服务端暂存事实。
 type EditDraft struct {
-	ModifyTarget  bool             `json:"modifyTarget"`
 	TrackID       int64            `json:"trackId"`
 	Revisions     map[string]int64 `json:"revisions"`
 	Fields        EditFields       `json:"fields"`
 	BindingAction string           `json:"bindingAction"` // keep | set | clear_track | clear_release
 	PreviewID     string           `json:"previewId"`
-	Scope         string           `json:"scope"`       // single | all，影响未决时为空
 	CoverAction   string           `json:"coverAction"` // keep | clear | replace
 	CoverToken    string           `json:"coverToken"`
 	Mappings      []EditMapping    `json:"mappings"`
@@ -107,21 +105,23 @@ type EditDraft struct {
 type EditMapping struct {
 	TrackID     int64  `json:"trackId"`
 	TargetRef   string `json:"targetRef"`
-	Stay        bool   `json:"stay"`
+	Selected    bool   `json:"selected"`
 	DiscNumber  *int   `json:"discNumber"`
 	TrackNumber *int   `json:"trackNumber"`
 }
 type EditImpact struct {
-	Admission             *AdmissionBaseline `json:"admission"`
-	Source                *EditorSession     `json:"source"`
-	NeedsScope            bool               `json:"needsScope"`
-	SharedChange          bool               `json:"sharedChange"`
-	CreatesRelease        bool               `json:"createsRelease"`
-	DetachesTrack         bool               `json:"detachesTrack"`
-	TargetReleaseID       int64              `json:"targetReleaseId"`
-	TargetTrackIDs        []int64            `json:"targetTrackIds"`
-	PreservesTargetValues bool               `json:"preservesTargetValues"`
-	SourceTrackIDs        []int64            `json:"sourceTrackIds"`
+	Admission              *AdmissionBaseline `json:"admission"`
+	Source                 *EditorSession     `json:"source"`
+	NeedsAlbumConfirmation bool               `json:"needsAlbumConfirmation"`
+	TargetCurrent          EditFields         `json:"targetCurrent"`
+	LinksNewUpstream       bool               `json:"linksNewUpstream"`
+	SharedChange           bool               `json:"sharedChange"`
+	CreatesRelease         bool               `json:"createsRelease"`
+	DetachesTrack          bool               `json:"detachesTrack"`
+	TargetReleaseID        int64              `json:"targetReleaseId"`
+	TargetTrackIDs         []int64            `json:"targetTrackIds"`
+	PreservesTargetValues  bool               `json:"preservesTargetValues"`
+	SourceTrackIDs         []int64            `json:"sourceTrackIds"`
 }
 
 type AlbumMappingTarget struct {
@@ -132,18 +132,23 @@ type AlbumMappingTarget struct {
 	OwnedTrackID int64  `json:"ownedTrackId"`
 }
 type AlbumChangeRow struct {
-	TrackID   int64                `json:"trackId"`
-	Before    EditFields           `json:"before"`
-	After     EditFields           `json:"after"`
-	TargetRef string               `json:"targetRef"`
-	Evidence  string               `json:"evidence"`
-	Stay      bool                 `json:"stay"`
-	Conflict  string               `json:"conflict"`
-	Choices   []AlbumMappingTarget `json:"choices"`
+	BeforeIdentity *Identity            `json:"beforeIdentity"`
+	AfterIdentity  *Identity            `json:"afterIdentity"`
+	Revisions      map[string]int64     `json:"revisions"`
+	TrackID        int64                `json:"trackId"`
+	Before         EditFields           `json:"before"`
+	After          EditFields           `json:"after"`
+	TargetRef      string               `json:"targetRef"`
+	Evidence       string               `json:"evidence"`
+	Stay           bool                 `json:"stay"`
+	Conflict       string               `json:"conflict"`
+	Choices        []AlbumMappingTarget `json:"choices"`
 }
 type AlbumChangePlan struct {
-	Impact       *EditImpact          `json:"impact"`
-	Rows         []AlbumChangeRow     `json:"rows"`
-	Targets      []AlbumMappingTarget `json:"targets"`
-	HasConflicts bool                 `json:"hasConflicts"`
+	Impact           *EditImpact          `json:"impact"`
+	Rows             []AlbumChangeRow     `json:"rows"`
+	Targets          []AlbumMappingTarget `json:"targets"`
+	HasConflicts     bool                 `json:"hasConflicts"`
+	SelectedTrackIDs []int64              `json:"selectedTrackIds"`
+	CanSubmit        bool                 `json:"canSubmit"`
 }

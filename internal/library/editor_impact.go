@@ -102,9 +102,6 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 	if !reflect.DeepEqual(source.Revisions, draft.Revisions) {
 		return nil, store.ErrRevisionConflict
 	}
-	if draft.Scope != "" && draft.Scope != "single" && draft.Scope != "all" {
-		return nil, fmt.Errorf("影响范围无效")
-	}
 	switch draft.CoverAction {
 	case "", "keep", "clear":
 	case "replace":
@@ -115,7 +112,14 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 		return nil, fmt.Errorf("封面动作无效")
 	}
 	impact := &domain.EditImpact{Source: source, TargetReleaseID: source.ReleaseID, SourceTrackIDs: []int64{draft.TrackID}, TargetTrackIDs: []int64{}}
-	shared := draft.CoverAction == "clear" || draft.CoverAction == "replace"
+	shared := draft.CoverAction == "replace"
+	if draft.CoverAction == "clear" {
+		var cover struct {
+			Cleared bool `json:"cleared"`
+		}
+		_ = json.Unmarshal([]byte(source.Current["release.cover"].ValueJSON), &cover)
+		shared = source.ReleaseID != 0 && !cover.Cleared
+	}
 	for key, value := range draft.Fields {
 		if strings.HasPrefix(key, "release.") && !sameEditValue(value, source.Current[key]) {
 			shared = true
@@ -126,7 +130,7 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 	case "clear_track":
 		impact.DetachesTrack = source.TrackIdentity != nil
 	case "clear_release":
-		shared = source.ReleaseID != 0
+		shared = shared || source.ReleaseIdentity != nil
 		impact.DetachesTrack = true
 	case "set":
 		snapshot, err := s.editPreview(draft.PreviewID)
@@ -143,6 +147,7 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 		if target != nil {
 			if source.ReleaseIdentity == nil || *source.ReleaseIdentity != target.Identity {
 				shared = true
+				impact.LinksNewUpstream = true
 				impact.TargetReleaseID = 0
 				existing, err := s.store.GetReleaseByRef(string(target.Identity.Provider), target.Identity.Ref)
 				if err != nil {
@@ -159,21 +164,16 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 		return nil, fmt.Errorf("绑定动作无效")
 	}
 	impact.SharedChange = shared
-	impact.NeedsScope = shared && source.OtherReleaseTracks > 0 && draft.Scope == ""
-	if draft.Scope == "all" && shared {
-		impact.SourceTrackIDs = append([]int64{}, source.ReleaseTrackIDs...)
-	}
-	if shared && draft.Scope == "single" && source.ReleaseID != 0 && source.OtherReleaseTracks > 0 && impact.TargetReleaseID == source.ReleaseID {
-		impact.TargetReleaseID = 0
-		impact.CreatesRelease = true
-		impact.DetachesTrack = true
-	}
-	if draft.BindingAction == "clear_release" && draft.Scope == "single" && source.OtherReleaseTracks > 0 {
-		impact.TargetReleaseID = 0
-		impact.CreatesRelease = true
-	}
-	if impact.TargetReleaseID == 0 && shared {
-		impact.CreatesRelease = true
+	impact.NeedsAlbumConfirmation = shared
+	if shared {
+		if source.ReleaseID != 0 {
+			impact.SourceTrackIDs = append([]int64{}, source.ReleaseTrackIDs...)
+		}
+		if !impact.LinksNewUpstream {
+			impact.TargetReleaseID = 0
+			impact.DetachesTrack = true
+		}
+		impact.CreatesRelease = impact.TargetReleaseID == 0
 	}
 	if impact.TargetReleaseID != 0 && impact.TargetReleaseID != source.ReleaseID {
 		tracks, err := s.store.ListTracks(store.TrackFilter{ReleaseID: impact.TargetReleaseID})
@@ -183,7 +183,20 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 		for _, track := range tracks {
 			impact.TargetTrackIDs = append(impact.TargetTrackIDs, track.ID)
 		}
-		impact.PreservesTargetValues = !draft.ModifyTarget
+		impact.PreservesTargetValues = true
+		if len(impact.TargetTrackIDs) > 0 {
+			existing, err := s.store.ReadEditorSession(impact.TargetTrackIDs[0])
+			if err != nil {
+				return nil, err
+			}
+			impact.TargetCurrent = existing.Current
+		} else {
+			current, err := s.store.ReadEditorReleaseCurrent(impact.TargetReleaseID)
+			if err != nil {
+				return nil, err
+			}
+			impact.TargetCurrent = current
+		}
 	}
 	merged := domain.EditFields{}
 	for k, v := range source.Current {
