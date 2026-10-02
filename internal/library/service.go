@@ -26,6 +26,7 @@ func (systemClock) Now() time.Time { return time.Now() }
 const PlanTTL = 15 * time.Minute
 
 type Service struct {
+	editMu   sync.Mutex
 	mu       sync.Mutex
 	registry *provider.Registry
 	store    *store.Store
@@ -250,4 +251,10 @@ func (s *Service) ReplanAdmissionGroup(ctx context.Context, id, hash string, tar
 	}
 	plan.Seed.MergeTargetID = target
 	return s.PrepareAdmission(ctx, plan.Seed)
+}
+
+func (s *Service) SetFiles(files *covers.LibraryImages) {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	s.files = files
 }

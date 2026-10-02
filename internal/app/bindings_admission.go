@@ -33,6 +33,9 @@ func (a *App) libraryServiceLocked() (*library.Service, error) {
 		}
 	} else {
 		a.library.SetRegistry(a.registry)
+		if a.coverSvc != nil {
+			a.library.SetFiles(a.coverSvc.Library())
+		}
 	}
 	return a.library, nil
 }

@@ -180,8 +180,19 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 		if err != nil {
 			return nil, err
 		}
+		impact.TargetPositions = map[string]int64{}
 		for _, track := range tracks {
 			impact.TargetTrackIDs = append(impact.TargetTrackIDs, track.ID)
+			current, err := s.store.ReadEditorSession(track.ID)
+			if err != nil {
+				return nil, err
+			}
+			var disc, position int
+			_ = json.Unmarshal([]byte(current.Current["track.discNumber"].ValueJSON), &disc)
+			_ = json.Unmarshal([]byte(current.Current["track.trackNumber"].ValueJSON), &position)
+			if disc > 0 && position > 0 {
+				impact.TargetPositions[fmt.Sprintf("%d:%d", disc, position)] = track.ID
+			}
 		}
 		impact.PreservesTargetValues = true
 		if len(impact.TargetTrackIDs) > 0 {
@@ -190,12 +201,14 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 				return nil, err
 			}
 			impact.TargetCurrent = existing.Current
+			impact.TargetRevisions = existing.Revisions
 		} else {
-			current, err := s.store.ReadEditorReleaseCurrent(impact.TargetReleaseID)
+			current, revisions, err := s.store.ReadEditorReleaseCurrent(impact.TargetReleaseID)
 			if err != nil {
 				return nil, err
 			}
 			impact.TargetCurrent = current
+			impact.TargetRevisions = revisions
 		}
 	}
 	merged := domain.EditFields{}
@@ -225,7 +238,7 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 		}
 		membership := snapshot
 		membership.Track = &domain.TrackSnapshot{}
-		baseline, err := s.store.PreviewAdmission(domain.AdmissionSeed{Snapshot: membership, MergeTargetID: draft.MergeTargetID})
+		baseline, err := s.store.PreviewAdmission(editAdmissionSeed(draft, impact, membership))
 		if err != nil {
 			return nil, err
 		}
@@ -281,4 +294,22 @@ func (s *Service) editTargetSnapshot(draft domain.EditDraft, impact *domain.Edit
 		return domain.Snapshot{}, err
 	}
 	return domain.Snapshot{Release: &release, Track: &domain.TrackSnapshot{}}, nil
+}
+
+func editAdmissionSeed(draft domain.EditDraft, impact *domain.EditImpact, snapshot domain.Snapshot) domain.AdmissionSeed {
+	fields := domain.EditFields{}
+	for k, v := range impact.Source.Current {
+		fields[k] = v
+	}
+	applyAlbumFields(fields, snapshot, impact, draft.Fields)
+	current := &domain.ReleaseSnapshot{}
+	if f := fields["release.title"]; f.State == domain.Value {
+		current.Title.State = domain.Value
+		_ = json.Unmarshal([]byte(f.ValueJSON), &current.Title.Value)
+	}
+	if f := fields["release.credit"]; f.State == domain.Value {
+		current.Credit.State = domain.Value
+		_ = json.Unmarshal([]byte(f.ValueJSON), &current.Credit.Value.Text)
+	}
+	return domain.AdmissionSeed{Snapshot: snapshot, CurrentRelease: current, MergeTargetID: draft.MergeTargetID}
 }

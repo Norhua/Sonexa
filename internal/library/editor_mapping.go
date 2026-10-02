@@ -141,6 +141,11 @@ func planAlbumRows(draft domain.EditDraft, impact *domain.EditImpact, sources []
 			if target.Track != nil && target.Track.Identity == track.Identity {
 				track = *target.Track
 			}
+			body, err := json.Marshal(track)
+			if err != nil {
+				return nil, err
+			}
+			row.TargetSnapshotJSON = string(body)
 			fields, err := domain.EditorFields(domain.Snapshot{Track: &track})
 			if err != nil {
 				return nil, err
@@ -262,7 +267,7 @@ func applyAlbumFields(fields domain.EditFields, target domain.Snapshot, impact *
 		values = impact.TargetCurrent
 	}
 	for key, value := range values {
-		if strings.HasPrefix(key, "release.") {
+		if strings.HasPrefix(key, "release.") && value.State != domain.Unknown {
 			fields[key] = value
 		}
 	}
@@ -357,6 +362,11 @@ func validateAlbumPositions(plan *domain.AlbumChangePlan) {
 		}
 		if disc > 0 && track > 0 {
 			key := fmt.Sprintf("%d:%d", disc, track)
+			if plan.Impact != nil {
+				if id := plan.Impact.TargetPositions[key]; id != 0 && id != row.TrackID {
+					row.Conflict = "目标位置已收藏"
+				}
+			}
 			positions[key] = append(positions[key], i)
 		}
 	}

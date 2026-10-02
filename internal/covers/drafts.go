@@ -130,3 +130,34 @@ func (l *LibraryImages) discardAllArtworkLocked() error {
 	l.drafts = map[string]stagedArtwork{}
 	return l.files.root.RemoveAll(filepath.FromSlash(".edit-drafts"))
 }
+
+// StageReleaseArtwork copies the currently adopted immutable image into an edit draft.
+// The caller retains the source revision and rechecks it when committing the edit.
+func (l *LibraryImages) StageReleaseArtwork(releaseID int64) (*ArtworkDraft, bool, error) {
+	selection, err := l.store.GetCoverSelection(releaseID)
+	if err != nil {
+		return nil, false, err
+	}
+	if selection == nil {
+		return nil, false, nil
+	}
+	if selection.Cleared {
+		return nil, true, nil
+	}
+	files, err := l.store.ListReleaseCoverFiles(releaseID)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, file := range files {
+		if file.VariantID != selection.VariantID || !file.Available {
+			continue
+		}
+		data, err := l.Read(file)
+		if err != nil {
+			return nil, false, err
+		}
+		draft, err := l.StageArtwork(data, file.VariantID)
+		return &draft, false, err
+	}
+	return nil, false, fmt.Errorf("当前采用封面文件不可读")
+}

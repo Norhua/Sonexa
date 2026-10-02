@@ -34,12 +34,14 @@ type GroupResolution struct {
 // AdmissionSeed 同时承载已归一化的上游事实和本地当前值；空身份层仅用于本地创建。
 // 保存本地层时不将它伪装成上游快照。
 type AdmissionSeed struct {
-	MoveReleaseID int64    `json:"moveReleaseId"`
-	ProposalID    int64    `json:"proposalId"`
-	Snapshot      Snapshot `json:"snapshot"`
-	ImportItemID  int64    `json:"importItemId"`
-	ItemStatus    string   `json:"itemStatus"`
-	MergeTargetID int64    `json:"mergeTargetId"`
+	CurrentRelease *ReleaseSnapshot `json:"currentRelease,omitempty"`
+	EditJSON       string           `json:"editJson,omitempty"`
+	MoveReleaseID  int64            `json:"moveReleaseId"`
+	ProposalID     int64            `json:"proposalId"`
+	Snapshot       Snapshot         `json:"snapshot"`
+	ImportItemID   int64            `json:"importItemId"`
+	ItemStatus     string           `json:"itemStatus"`
+	MergeTargetID  int64            `json:"mergeTargetId"`
 }
 type AdmissionBaseline struct {
 	NewNativeMapping     bool            `json:"newNativeMapping"`

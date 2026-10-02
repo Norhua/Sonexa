@@ -67,6 +67,9 @@ func (s *Store) AdmissionResult(id, hash string) (*domain.AdmissionResult, error
 }
 
 func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.AdmissionApproval) (*domain.AdmissionResult, error) {
+	if plan.Seed.EditJSON != "" {
+		return nil, fmt.Errorf("编辑计划必须通过 SaveEdit 提交")
+	}
 	hash, err := AdmissionHash(plan)
 	if err != nil {
 		return nil, err
@@ -182,6 +185,9 @@ func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result domain.Admi
 }
 
 func insertAdmissionTx(tx *sql.Tx, seed domain.AdmissionSeed, baseline domain.AdmissionBaseline) (*domain.AdmissionResult, error) {
+	return insertAdmissionEntitiesTx(tx, seed, baseline, true, 0)
+}
+func insertAdmissionEntitiesTx(tx *sql.Tx, seed domain.AdmissionSeed, baseline domain.AdmissionBaseline, createTrack bool, plannedReleaseID int64) (*domain.AdmissionResult, error) {
 	snapshot := seed.Snapshot
 	result := &domain.AdmissionResult{ReleaseID: baseline.ExistingReleaseID, GroupID: baseline.TargetGroupID}
 	now := time.Now().UTC()
@@ -247,7 +253,7 @@ func insertAdmissionTx(tx *sql.Tx, seed domain.AdmissionSeed, baseline domain.Ad
 		}
 		if result.ReleaseID == 0 {
 			source, ref := nonblank(string(r.Identity.Provider)), nonblank(r.Identity.Ref)
-			row, err := tx.Exec("INSERT INTO release(release_group_id,provider,provider_ref,created_at,updated_at) VALUES(?,?,?,?,?)", result.GroupID, source, ref, now, now)
+			row, err := tx.Exec("INSERT INTO release(id,release_group_id,provider,provider_ref,created_at,updated_at) VALUES(?,?,?,?,?,?)", nullableID(plannedReleaseID), result.GroupID, source, ref, now, now)
 			if err != nil {
 				return nil, err
 			}
@@ -260,39 +266,42 @@ func insertAdmissionTx(tx *sql.Tx, seed domain.AdmissionSeed, baseline domain.Ad
 				return nil, err
 			}
 		}
-		if r.Identity.Ref != "" {
-			if _, err := saveSnapshotTx(tx, "release", result.ReleaseID, r); err != nil {
+		if createTrack || baseline.ExistingReleaseID == 0 {
+			if r.Identity.Ref != "" {
+				if _, err := saveSnapshotTx(tx, "release", result.ReleaseID, r); err != nil {
+					return nil, err
+				}
+			}
+			fields, err := layerFields(r)
+			if err != nil {
 				return nil, err
 			}
-		}
-		fields, err := layerFields(r)
-		if err != nil {
-			return nil, err
-		}
-		if err := writeCurrentTx(tx, "release", result.ReleaseID, fields, string(r.Identity.Provider), false, nil); err != nil {
-			return nil, err
-		}
-		if r.Tracklist.IsKnown() {
-			var body string
-			if err := tx.QueryRow("SELECT body FROM release_snapshot WHERE release_id=?", result.ReleaseID).Scan(&body); err != nil {
+			if err := writeCurrentTx(tx, "release", result.ReleaseID, fields, string(r.Identity.Provider), false, nil); err != nil {
 				return nil, err
 			}
-			var merged domain.ReleaseSnapshot
-			if err := json.Unmarshal([]byte(body), &merged); err != nil {
+			if r.Tracklist.IsKnown() {
+				var body string
+				if err := tx.QueryRow("SELECT body FROM release_snapshot WHERE release_id=?", result.ReleaseID).Scan(&body); err != nil {
+					return nil, err
+				}
+				var merged domain.ReleaseSnapshot
+				if err := json.Unmarshal([]byte(body), &merged); err != nil {
+					return nil, err
+				}
+				if err := syncSnapshotTracklistTx(tx, result.ReleaseID, merged); err != nil {
+					return nil, err
+				}
+			}
+			if err := refreshCreditsTx(tx, "release", result.ReleaseID); err != nil {
 				return nil, err
 			}
-			if err := syncSnapshotTracklistTx(tx, result.ReleaseID, merged); err != nil {
-				return nil, err
-			}
-		}
-		if err := refreshCreditsTx(tx, "release", result.ReleaseID); err != nil {
-			return nil, err
+
 		}
 		if _, err := tx.Exec("UPDATE release_group SET revision=revision+1,updated_at=? WHERE id=?", now, result.GroupID); err != nil {
 			return nil, err
 		}
 	}
-	if seed.MoveReleaseID != 0 {
+	if seed.MoveReleaseID != 0 || !createTrack {
 		return result, nil
 	}
 	trackCopy := *snapshot.Track

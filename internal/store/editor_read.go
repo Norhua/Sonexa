@@ -262,15 +262,39 @@ func readEditRolesTx(tx *sql.Tx, id int64) (map[string][]domain.Role, error) {
 }
 
 // ReadEditorReleaseCurrent also supports a saved upstream release with no collection.
-func (s *Store) ReadEditorReleaseCurrent(id int64) (domain.EditFields, error) {
+
+func (s *Store) ReadEditorReleaseCurrent(id int64) (domain.EditFields, map[string]int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer tx.Rollback()
 	fields := domain.EditFields{}
+	revisions := map[string]int64{}
 	if err := readEditCurrentTx(tx, "release", id, fields); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return fields, nil
+	var revision, groupID, groupRevision int64
+	if err := tx.QueryRow("SELECT r.revision,r.release_group_id,g.revision FROM release r JOIN release_group g ON g.id=r.release_group_id WHERE r.id=?", id).Scan(&revision, &groupID, &groupRevision); err != nil {
+		return nil, nil, err
+	}
+	revisions["release:"+strconv.FormatInt(id, 10)] = revision
+	revisions["release_group:"+strconv.FormatInt(groupID, 10)] = groupRevision
+	revision = 0
+	err = tx.QueryRow("SELECT revision FROM release_snapshot WHERE release_id=?", id).Scan(&revision)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, nil, err
+	}
+	revisions["release_snapshot:"+strconv.FormatInt(id, 10)] = revision
+	var imageID *int64
+	var cleared bool
+	revision = 0
+	err = tx.QueryRow("SELECT revision,image_id,image_id IS NULL FROM release_cover_selection WHERE release_id=?", id).Scan(&revision, &imageID, &cleared)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, nil, err
+	}
+	revisions["cover_selection:"+strconv.FormatInt(id, 10)] = revision
+	body, _ := json.Marshal(map[string]any{"releaseId": id, "imageId": imageID, "cleared": cleared})
+	fields["release.cover"] = domain.EditValue{State: domain.Value, ValueJSON: string(body)}
+	return fields, revisions, nil
 }

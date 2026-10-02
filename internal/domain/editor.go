@@ -110,6 +110,8 @@ type EditMapping struct {
 	TrackNumber *int   `json:"trackNumber"`
 }
 type EditImpact struct {
+	TargetPositions        map[string]int64   `json:"targetPositions"`
+	TargetRevisions        map[string]int64   `json:"targetRevisions"`
 	Admission              *AdmissionBaseline `json:"admission"`
 	Source                 *EditorSession     `json:"source"`
 	NeedsAlbumConfirmation bool               `json:"needsAlbumConfirmation"`
@@ -132,17 +134,18 @@ type AlbumMappingTarget struct {
 	OwnedTrackID int64  `json:"ownedTrackId"`
 }
 type AlbumChangeRow struct {
-	BeforeIdentity *Identity            `json:"beforeIdentity"`
-	AfterIdentity  *Identity            `json:"afterIdentity"`
-	Revisions      map[string]int64     `json:"revisions"`
-	TrackID        int64                `json:"trackId"`
-	Before         EditFields           `json:"before"`
-	After          EditFields           `json:"after"`
-	TargetRef      string               `json:"targetRef"`
-	Evidence       string               `json:"evidence"`
-	Stay           bool                 `json:"stay"`
-	Conflict       string               `json:"conflict"`
-	Choices        []AlbumMappingTarget `json:"choices"`
+	TargetSnapshotJSON string               `json:"targetSnapshotJson"`
+	BeforeIdentity     *Identity            `json:"beforeIdentity"`
+	AfterIdentity      *Identity            `json:"afterIdentity"`
+	Revisions          map[string]int64     `json:"revisions"`
+	TrackID            int64                `json:"trackId"`
+	Before             EditFields           `json:"before"`
+	After              EditFields           `json:"after"`
+	TargetRef          string               `json:"targetRef"`
+	Evidence           string               `json:"evidence"`
+	Stay               bool                 `json:"stay"`
+	Conflict           string               `json:"conflict"`
+	Choices            []AlbumMappingTarget `json:"choices"`
 }
 type AlbumChangePlan struct {
 	Impact           *EditImpact          `json:"impact"`
@@ -151,4 +154,14 @@ type AlbumChangePlan struct {
 	HasConflicts     bool                 `json:"hasConflicts"`
 	SelectedTrackIDs []int64              `json:"selectedTrackIds"`
 	CanSubmit        bool                 `json:"canSubmit"`
+}
+
+// EditSaveContent is sealed inside an admission plan, never accepted directly from the UI.
+type EditSaveContent struct {
+	Draft        EditDraft        `json:"draft"`
+	Album        *AlbumChangePlan `json:"album"`
+	Impact       *EditImpact      `json:"impact"`
+	Target       Snapshot         `json:"target"`
+	Revisions    map[string]int64 `json:"revisions"`
+	NewReleaseID int64            `json:"newReleaseId"`
 }

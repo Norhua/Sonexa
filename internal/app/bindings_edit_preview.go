@@ -73,3 +73,22 @@ func (a *App) PlanAlbumChange(draft domain.EditDraft) (*domain.AlbumChangePlan, 
 	}
 	return service.PlanAlbumChange(a.ctx, draft)
 }
+
+func (a *App) PlanEditSave(draft domain.EditDraft) (*domain.AdmissionPlan, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	return service.PlanEditSave(a.ctx, draft)
+}
+func (a *App) SaveEdit(id, hash string, approval domain.AdmissionApproval) (*domain.AdmissionResult, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	result, err := service.SaveEdit(a.ctx, id, hash, approval)
+	if err == nil {
+		a.notifyLibraryChanged()
+	}
+	return result, err
+}

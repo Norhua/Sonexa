@@ -37,7 +37,7 @@ func groupNameEvidenceTx(tx *sql.Tx) ([]domain.GroupEvidence, error) {
 	}
 	return out, rows.Err()
 }
-func resolveGroupTx(tx *sql.Tx, snapshot domain.Snapshot) (domain.GroupResolution, error) {
+func resolveGroupTx(tx *sql.Tx, snapshot domain.Snapshot, current ...*domain.ReleaseSnapshot) (domain.GroupResolution, error) {
 	out := domain.GroupResolution{Evidence: []domain.GroupEvidence{}, Groups: []domain.GroupMatch{}}
 	if snapshot.Release == nil {
 		out.Insufficient = true
@@ -62,16 +62,29 @@ func resolveGroupTx(tx *sql.Tx, snapshot domain.Snapshot) (domain.GroupResolutio
 			out.Evidence = append(out.Evidence, domain.GroupEvidence{GroupID: id, Kind: "native", SourceID: string(native.Provider) + ":" + native.Ref, Native: native})
 		}
 	}
-	if title != "" && credit != "" {
-		evidence, err := groupNameEvidenceTx(tx)
-		if err != nil {
-			return out, err
+	names := [][2]string{{title, credit}}
+	for _, values := range current {
+		if values != nil {
+			t, c := domain.NameEvidence(values.Title, values.Credit)
+			names = append(names, [2]string{t, c})
 		}
-		for _, e := range evidence {
-			if e.Title == title && e.Credit == credit {
+	}
+	evidence, err := groupNameEvidenceTx(tx)
+	if err != nil {
+		return out, err
+	}
+	for _, e := range evidence {
+		for _, name := range names {
+			if name[0] != "" && name[1] != "" && e.Title == name[0] && e.Credit == name[1] {
 				groups[e.GroupID] = true
 				out.Evidence = append(out.Evidence, e)
+				break
 			}
+		}
+	}
+	for _, name := range names {
+		if name[0] != "" && name[1] != "" {
+			out.Insufficient = false
 		}
 	}
 	if r.Identity.Provider != "" && r.Identity.Ref != "" {
@@ -231,7 +244,7 @@ func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.Admissio
 		}
 		baseline.ExistingReleaseID = seed.MoveReleaseID
 	}
-	resolution, err := resolveGroupTx(tx, seed.Snapshot)
+	resolution, err := resolveGroupTx(tx, seed.Snapshot, seed.CurrentRelease)
 	if err != nil {
 		return baseline, err
 	}
