@@ -70,7 +70,7 @@
           emit('settings:saved', settings)
         },
         ListProviders: async () => [
-          { id: 'musicbrainz', displayName: 'MusicBrainz', configured: true, reason: '', capabilities: ['label'], needsCountry: false },
+          { id: 'musicbrainz', displayName: 'MusicBrainz', configured: true, reason: '', capabilities: ['label'], needsCountry: false, supportsVersions: true },
           { id: 'itunes', displayName: 'iTunes', configured: true, reason: '', capabilities: [], needsCountry: true },
           { id: 'qq', displayName: 'QQ 音乐', configured: true, reason: '', capabilities: [], needsCountry: false },
         ],
