@@ -83,7 +83,7 @@ func newTestApp(t *testing.T) (*App, func()) {
 
 // TestApplyDetailToTrackWiresArtistSubsystem 是审计发现的回归测试。
 //
-// 它调用**真正的生产方法** ApplyDetailToTrack，而不是手工调用 store 原语，
+// 它调用**真正的生产方法** applyDetailToTrack，而不是手工调用 store 原语，
 // 因此若该方法被跳过、或它的任一步骤被漏掉，本测试会失败。
 func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 	app, cleanup := newTestApp(t)
@@ -124,8 +124,8 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 	}
 
 	// 调真正的生产方法
-	if err := app.ApplyDetailToTrack(context.Background(), trackID, "musicbrainz", detail); err != nil {
-		t.Fatalf("ApplyDetailToTrack 失败: %v", err)
+	if err := app.applyDetailToTrack(context.Background(), trackID, "musicbrainz", detail); err != nil {
+		t.Fatalf("applyDetailToTrack 失败: %v", err)
 	}
 
 	// 曲目级署名应已落库（供后续解析）

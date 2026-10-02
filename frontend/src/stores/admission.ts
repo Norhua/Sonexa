@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { App, type Models } from '@/api'
 
-type Plan = Models.domain.AdmissionPlan
+type Plan = Models.app.AdmissionPlanView
 type Result = Models.domain.AdmissionResult
 /** 所有交互入库共用同一计划确认；取消返回 null，来源页面保持原选择。 */
 export const useAdmissionStore = defineStore('admission', () => {
@@ -12,6 +12,7 @@ export const useAdmissionStore = defineStore('admission', () => {
   let prepare: (() => Promise<Plan>) | null = null
   let settle: ((result: Result | null) => void) | null = null
   let generation = 0
+  let commitPlan = App.CommitAdmission
   function finish(result: Result | null) {
     generation++
     plan.value = null
@@ -19,13 +20,14 @@ export const useAdmissionStore = defineStore('admission', () => {
     prepare = null
     const done = settle; settle = null; done?.(result)
   }
-  async function run(next: () => Promise<Plan>): Promise<Result | null> {
+  async function run(next: () => Promise<Plan>, commit = App.CommitAdmission): Promise<Result | null> {
     if (busy.value || plan.value) throw new Error('请先完成当前入库确认')
+    commitPlan = commit
     busy.value = true; error.value = ''
     try {
       const first = await next()
       if (!first.baseline.conflict && !first.baseline.requiresConfirmation) {
-        try { return await App.CommitAdmission(first.id, first.hash, {} as Models.domain.AdmissionApproval) }
+        try { return await commitPlan(first.id, first.hash, {} as Models.domain.AdmissionApproval) }
         catch (e) { error.value = String(e) }
       }
       prepare = next
@@ -56,7 +58,7 @@ export const useAdmissionStore = defineStore('admission', () => {
       const approval = current.baseline.requiresConfirmation
         ? await App.ConfirmReleaseAdditions(current.id, current.hash)
         : {} as Models.domain.AdmissionApproval
-      finish(await App.CommitAdmission(current.id, current.hash, approval))
+      finish(await commitPlan(current.id, current.hash, approval))
     } catch (e) { error.value = String(e); busy.value = false }
   }
   function cancel() { if (!busy.value) finish(null) }

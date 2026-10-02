@@ -43,7 +43,7 @@ func TestVocaloidAndCreditedComposerReachArtistView(t *testing.T) {
 			{Name: "某位编曲者", Role: "arranger"},
 		},
 	}
-	if err := app.ApplyDetailToTrack(context.Background(), trackID, "musicbrainz", detail); err != nil {
+	if err := app.applyDetailToTrack(context.Background(), trackID, "musicbrainz", detail); err != nil {
 		t.Fatalf("应用详情失败: %v", err)
 	}
 

@@ -74,12 +74,12 @@ func (a *App) PlanAlbumChange(draft domain.EditDraft) (*domain.AlbumChangePlan, 
 	return service.PlanAlbumChange(a.ctx, draft)
 }
 
-func (a *App) PlanEditSave(draft domain.EditDraft) (*domain.AdmissionPlan, error) {
+func (a *App) PlanEditSave(draft domain.EditDraft) (*AdmissionPlanView, error) {
 	service, err := a.libraryService()
 	if err != nil {
 		return nil, err
 	}
-	return service.PlanEditSave(a.ctx, draft)
+	return admissionView(service.PlanEditSave(a.ctx, draft))
 }
 func (a *App) SaveEdit(id, hash string, approval domain.AdmissionApproval) (*domain.AdmissionResult, error) {
 	service, err := a.libraryService()
@@ -91,4 +91,54 @@ func (a *App) SaveEdit(id, hash string, approval domain.AdmissionApproval) (*dom
 		a.notifyLibraryChanged()
 	}
 	return result, err
+}
+
+func (a *App) PreviewCurrentEditUpstream(trackID int64) (*domain.EditPreview, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	return service.PreviewCurrentEditUpstream(trackID)
+}
+
+type EditVersion struct {
+	Ref        string `json:"ref"`
+	Title      string `json:"title"`
+	Credit     string `json:"credit"`
+	Country    string `json:"country"`
+	TrackTotal int    `json:"trackTotal"`
+}
+type EditVersions struct {
+	Items []EditVersion `json:"items"`
+	Total *int          `json:"total"`
+}
+
+func (a *App) ListEditVersions(source, groupRef string, offset int) (*EditVersions, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	if gate := a.CheckOutbound(); !gate.Allowed {
+		return nil, fmt.Errorf("%s", gate.Reason)
+	}
+	p, err := a.registry.Get(provider.ProviderID(source))
+	if err != nil {
+		return nil, err
+	}
+	if err := p.IsConfigured(); err != nil {
+		return nil, err
+	}
+	if offset < 0 {
+		return nil, fmt.Errorf("页码无效")
+	}
+	done := a.beginInteractive()
+	defer done()
+	page, err := a.registry.ListVersions(provider.WithPriority(a.ctx, provider.PriorityInteractive), domain.Identity{Provider: domain.ProviderID(source), Ref: groupRef}, provider.Page{Offset: offset, Limit: 25})
+	if err != nil {
+		return nil, err
+	}
+	out := &EditVersions{Items: []EditVersion{}, Total: page.Total}
+	for _, r := range page.Releases {
+		out.Items = append(out.Items, EditVersion{Ref: r.Identity.Ref, Title: r.Title.Value, Credit: r.Credit.Value.Text, Country: r.Country.Value, TrackTotal: r.ReleaseTrackTotal.Value})
+	}
+	return out, nil
 }

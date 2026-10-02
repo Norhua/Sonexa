@@ -105,7 +105,7 @@ test('drawer shows one complete vocal group, single-column release data and no f
   await page.screenshot({ path: testInfo.outputPath('compact-detail.png') })
   await drawer.getByRole('button', { name: '编辑', exact: true }).click()
   await expect(page.getByRole('dialog').getByText('用户', { exact: true })).toHaveCount(0)
-  await expect(page.getByRole('dialog').getByText('歌集', { exact: true })).toBeVisible()
+  await expect(page.getByRole('dialog').getByRole('heading', { name: '专辑信息', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await drawer.getByRole('button', { name: 'Kitsui Akira', exact: true }).click()
   await expect(page.getByRole('heading', { name: '艺术家', exact: true })).toBeVisible()

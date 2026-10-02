@@ -42,6 +42,10 @@ func (s *Service) storeEditPreview(snapshot domain.Snapshot) (*domain.EditPrevie
 	s.previews[id] = storedEditPreview{snapshot: copy, expires: expires}
 	s.mu.Unlock()
 	preview := &domain.EditPreview{ID: id, ExpiresAt: expires.UTC().Format(time.RFC3339Nano), SnapshotJSON: string(raw), Fields: fields}
+	preview.TrackStates, err = s.store.EditorTracklistStates(copy.Release)
+	if err != nil {
+		return nil, err
+	}
 	if copy.Track != nil && copy.Track.Identity.Ref != "" {
 		identity := copy.Track.Identity
 		preview.TrackIdentity = &identity
@@ -120,4 +124,37 @@ func (s *Service) LoadEditUpstream(ctx context.Context, source, releaseInput, tr
 		return nil, store.ErrSnapshotTarget
 	}
 	return s.storeEditPreview(*snapshot)
+}
+
+func (s *Service) PreviewCurrentEditUpstream(trackID int64) (*domain.EditPreview, error) {
+	session, err := s.store.ReadEditorSession(trackID)
+	if err != nil {
+		return nil, err
+	}
+	var snapshot domain.Snapshot
+	if err := json.Unmarshal([]byte(session.SnapshotJSON), &snapshot); err != nil {
+		return nil, err
+	}
+	if snapshot.Track == nil {
+		return nil, nil
+	}
+	if f := session.Upstream["track.lyrics"]; f.State == domain.Value {
+		snapshot.Track.Lyrics.State = domain.Value
+		if err := json.Unmarshal([]byte(f.ValueJSON), &snapshot.Track.Lyrics.Value); err != nil {
+			return nil, err
+		}
+	}
+	return s.storeEditPreview(snapshot)
+}
+
+func (s *Service) EditArtworkTarget(previewID string) (*domain.Identity, error) {
+	snapshot, err := s.editPreview(previewID)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot.Release == nil || snapshot.Release.Artwork.State != domain.Value || len(snapshot.Release.Artwork.Value) == 0 {
+		return nil, nil
+	}
+	target := snapshot.Release.Identity
+	return &target, nil
 }

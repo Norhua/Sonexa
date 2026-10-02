@@ -18,3 +18,10 @@ describe('generated editor DTO constructors', () => {
     expect(preview.fields['release.credit']!.state).toBe('empty')
   })
 })
+
+import { app } from '../../wailsjs/go/models'
+it('constructs admission projections without generic snapshot conversion',()=>{
+ const view=app.AdmissionPlanView.createFrom({id:'plan',hash:'hash',seed:{snapshot:{release:{identity:{provider:'itunes',ref:'cn:1'},title:{state:'value',value:'Album'},credit:{state:'value',value:{text:'Artist'}}}}},baseline:{resolution:{groups:[],evidence:[]}}})
+ expect(view.seed.snapshot.release?.credit.value.text).toBe('Artist')
+ expect('seal' in view).toBe(false)
+})

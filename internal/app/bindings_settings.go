@@ -16,10 +16,11 @@ import (
 //
 // 所有「选择上游」的位置都从这里渲染，禁止硬编码 provider 名称或数量。
 type ProviderInfo struct {
-	Refs         provider.RefDescription `json:"refs"`
-	ID           string                  `json:"id"`
-	DisplayName  string                  `json:"displayName"`
-	Capabilities []string                `json:"capabilities"`
+	SupportsVersions bool                    `json:"supportsVersions"`
+	Refs             provider.RefDescription `json:"refs"`
+	ID               string                  `json:"id"`
+	DisplayName      string                  `json:"displayName"`
+	Capabilities     []string                `json:"capabilities"`
 	// Configured 为假时相关入口禁用，Reason 给出可展示的原因。
 	Configured bool   `json:"configured"`
 	Reason     string `json:"reason"`
@@ -40,6 +41,7 @@ func (a *App) ListProviders() ([]ProviderInfo, error) {
 			Capabilities: p.Capabilities().Names(),
 			Configured:   true,
 		}
+		_, info.SupportsVersions = p.(provider.VersionLister)
 		if p.Refs() != nil {
 			info.Refs = p.Refs().Description()
 			info.NeedsCountry = info.Refs.RequiresRegion

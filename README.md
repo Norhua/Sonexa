@@ -4,6 +4,10 @@
 
 技术栈：Wails v2 + Go + Vue 3 + TypeScript + Tailwind CSS v4 + Volt + Lucide Icons + Pinia。
 
+基本信息允许缺失；具体发行按本地组聚合展示，各版本保留自己的收藏、结构和封面。编辑器采用两栏草稿、明确“使用”、逐曲迁入确认及原子保存，专辑改动不会原地覆盖原发行。
+
+当前开发模型需要在清空历史应用数据后初始化；旧模型会明确拒绝打开，程序不会自动删除或转换。原生输入法、文件对话框和窗口交互仍需单独验收。
+
 ## 文档
 
 - [功能规格与术语](openspec/README.md)
@@ -17,8 +21,10 @@
 main.go               Wails 启动与前端资源嵌入
 internal/
   app/                应用协调、前端绑定、后台补全与桌面配置
-  store/              SQLite、迁移、查询、来源与锁
-  provider/           上游接口、限流、重试、MusicBrainz / iTunes
+  store/              SQLite、当前值/快照、事务、查询与文件引用
+  provider/           上游接口、限流、重试、MusicBrainz / iTunes / QQ 音乐
+  domain/             三层身份、统一快照和跨层契约
+  library/            归组、准入及编辑保存计划
   matching/           文本处理、评分、入库判定
   importer/           表格解析与持久化导入队列
   covers/             封面下载、缓存与本地服务

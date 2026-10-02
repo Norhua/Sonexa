@@ -5,7 +5,7 @@ import { useAdmissionStore } from '@/stores/admission'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import Message from '@/volt/Message.vue'
 const props = defineProps<{ releaseId?: number }>()
-const proposals = ref<Models.store.GroupProposal[]>([])
+const proposals = ref<Models.app.GroupProposalView[]>([])
 const error = ref('')
 const admission = useAdmissionStore()
 let generation = 0

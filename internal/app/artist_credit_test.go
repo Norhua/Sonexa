@@ -37,7 +37,7 @@ func TestStructuredCreditsAndRolesStaySeparate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.ApplyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
+	if err := app.applyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
 		t.Fatal(err)
 	}
 	artists, err := app.ListArtists()
@@ -67,7 +67,7 @@ func TestStructuredCreditsAndRolesStaySeparate(t *testing.T) {
 	}
 	// 未提供关系为 unknown，保留已知角色；明确 empty 才清除 follow。
 	detail.Artists = nil
-	if err := app.ApplyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
+	if err := app.applyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
 		t.Fatal(err)
 	}
 	d, err = app.GetTrackDetail(id)
@@ -105,7 +105,7 @@ func TestCVDetailUsesOneArtistWithoutVoiceLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.ApplyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
+	if err := app.applyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
 		t.Fatal(err)
 	}
 	artists, err := app.ListArtists()
@@ -151,7 +151,7 @@ func TestCVSplitAcrossUpstreamCreditPartsStaysWhole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.ApplyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
+	if err := app.applyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := app.store.GetTrackCredits(id)
@@ -182,7 +182,7 @@ func TestRecordingCreditDoesNotInventVocal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.ApplyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
+	if err := app.applyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
 		t.Fatal(err)
 	}
 	artists, _ := app.ListArtists()
@@ -221,7 +221,7 @@ func TestStructuredBandAndRepeatedCredit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := app.ApplyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
+		if err := app.applyDetailToTrack(context.Background(), id, "musicbrainz", detail); err != nil {
 			t.Fatal(err)
 		}
 		entries, err := app.store.GetTrackCredits(id)
@@ -234,7 +234,7 @@ func TestStructuredBandAndRepeatedCredit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.ApplyDetailToTrack(context.Background(), id, "itunes", detail); err != nil {
+	if err := app.applyDetailToTrack(context.Background(), id, "itunes", detail); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := app.store.GetTrackCredits(id)

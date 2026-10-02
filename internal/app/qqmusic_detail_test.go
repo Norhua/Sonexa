@@ -28,7 +28,7 @@ func TestQQMusicDetailAppliedToTrack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.ApplyDetailToTrack(context.Background(), id, "qq", detail); err != nil {
+	if err := app.applyDetailToTrack(context.Background(), id, "qq", detail); err != nil {
 		t.Fatal(err)
 	}
 	d, err := app.GetTrackDetail(id)

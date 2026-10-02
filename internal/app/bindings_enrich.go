@@ -9,12 +9,12 @@ import (
 	"github.com/norhua/sonexa/internal/store"
 )
 
-// ApplyDetailToTrack 把一次详情拉取的结果落到某首曲目上。
+// applyDetailToTrack 把一次详情拉取的结果落到某首曲目上。
 //
 // 这是**唯一**把上游详情转为本地数据的地方：丰富信息、参与者关系、
 // 可点击区间、清单都在这里写入。此前这些写入散落且从未被调用——
 // 结果是艺术家子系统在生产路径上完全没跑起来，而单元测试各自都通过。
-func (a *App) ApplyDetailToTrack(
+func (a *App) applyDetailToTrack(
 	ctx context.Context,
 	trackID int64,
 	providerID string,

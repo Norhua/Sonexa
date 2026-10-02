@@ -10,7 +10,8 @@ Wails v2 + Go；Vue 3 + TypeScript + Tailwind CSS v4 + Volt + Lucide Icons + Pin
 | --- | --- |
 | `main.go`、`internal/app/desktop.go` | 嵌入前端资源、启动 Wails、配置生命周期和本地封面服务 |
 | `internal/app/` | 前端绑定、业务协调、导入与详情补全调度 |
-| `internal/store/` | SQLite、迁移、查询、字段来源与锁、全文索引 |
+| `internal/domain/`、`internal/library/` | 三层快照与字段状态；归组、准入、编辑预览及保存计划 |
+| `internal/store/` | SQLite、模型代际、当前值/快照、事务引用、查询和全文索引 |
 | `internal/provider/` | 上游注册、HTTP 缓存、限流、重试和出网检查（支持 GET 与 POST JSON）；MusicBrainz、iTunes、QQ 音乐实现 |
 | `internal/matching/` | 文本处理、候选评分、本地重复检查与自动入库判定 |
 | `internal/importer/`、`internal/export/` | 表格解析、持久化队列、CSV / JSON 导出 |
@@ -21,44 +22,32 @@ Volt 组件源码位于 `frontend/src/volt/`，基于 `primevue@4.5.5` 的无样
 
 ## 数据模型
 
-```text
-release_group ──< release ──< track
-                     └────< release_track
-track ──< track_credit >── artist
-track ──< track_artist >── artist
-collection ──< collection_item >── track
-import_batch ──< import_item
-cover_catalog ──< cover_image ──< cover_variant ──< cover_file >── release
-release ──  release_cover_selection >── cover_variant
-```
+`release_group → release → track` 分别管理本地组、具体发行和收藏；曲目可无发行。每层身份、`*_current` 与 `*_snapshot` 分开，字段状态区分 unknown、empty、value，当前值记录 follow/user。名称和署名均可空，不写入“未知专辑”等展示占位。
 
-- `track` 保存曲名、署名、碟号、音轨号、时长、风格、注释、歌词、匹配身份和补全状态。歌词是上游原文，详情写入时不以空值覆盖。
-- `release` 保存共享标题、署名、类型、日期、总数、厂牌、载体和国家。`track.release_id` 可空；年份由发行日期或首次发行日期派生。旧版 `release.cover_path` 只作为迁移来源，由 `cover_legacy_migration` 记录迁移进度。
-- `track` 与 `release` 分别保存 `provenance_json`、`locked_json`。来源为上游标识或 `user`；未记录的来源为未知。自动写入的锁保护尚不完整，见 G01。
-- `release_track` 保存上游清单位置，不与 `track` 建外键；按同来源、同曲目标识判断是否收藏。
-- 本地歌集按去除首尾空白后的标题、署名做大小写不敏感精确匹配。无歌集名时不建本地歌集；无曲目引用的本地歌集可删除，上游歌集和清单保留。
-- `track_credit` 保存署名成员、顺序、实际写法及 UTF-8 字节区间；`track_artist` 保存真实角色、顺序、来源与属性（如乐器名）。`release_credit` 有存储接口，尚无业务写入入口。
-- `collection.kind` 区分歌单与标签；歌单顺序保存在 `collection_item.position`。
-- `import_item` 保存原始行、解析输入、候选、状态、复核原因和失败信息。原始行不随改搜修改。
-- 封面按“来源目录 → 图片 → 规格 → 文件”分层：`cover_catalog` 以来源、对象类型和来源标识唯一，记录 unqueried、found、empty、error；`cover_image` 保存上游图片身份与类型；`cover_variant` 保存上游档位、地址、是否构造及实际宽高；`cover_file` 保存受控相对路径、内容哈希、实际尺寸和是否受采用保护，`release_id` 为空表示未采用的预览。`release_cover_selection` 每个歌集至多一条显式采用记录，带递增 revision。
+- 年份、位置、风格、演唱/作曲/作词及歌词归曲目；专辑标题、艺术家、类型、碟数/每碟曲数与采用封面归具体发行。其他参与角色、厂牌、国家、标识等为只读事实。
+- `release_group_ref` 保存组的多来源身份；完整的名称/署名与原生身份独立提供归组证据。多组冲突由用户确认合组，后台补全只保存独立提议。
+- `release_snapshot_track` 保存上游清单，收藏按精确来源/发行/曲目身份判断；同录音的不同收藏不合并。各发行分区保留全部收藏，展示代表不决定收藏清单。
+- 当前署名成员、角色、标识投影和 FTS 在写事务中同步；演唱者不从署名、feat 或 CV 配音关系推断。
+- 歌词采用 UTF-8 不可变文件；封面继续使用来源目录、图片、规格、文件与采用引用。临时草稿和正式引用分开，数据库失败可回收本次无引用产物，旧文件保持可读。
 
-SQLite 使用 `modernc.org/sqlite`，开启 WAL 与外键。迁移按编号逐个事务执行，版本记录在 `schema_version`；当前为 v5（初始结构、封面目录、iTunes 缓存改为不过期、预览来源字段、曲目歌词）。旧版本程序遇到更高版本数据库时拒绝打开，回滚需恢复升级前的数据库与封面目录备份。
-
-FTS5 使用 contentless 索引和影子表：影子表保存删除索引所需的原值。索引覆盖曲名、署名、歌集名与关联艺术家；曲目和关系写入时更新。
+SQLite 开启 WAL 与外键，先检查 `upstream-snapshot-v1` 模型代际，再执行新模型编号事务迁移。旧模型明确拒绝打开，不自动清理或转换；不将移除旧转换视为历史升级验收。新模型中版本过高同样拒绝打开。
 
 ## 主要流程
 
-1. **检索**：导入、搜索、复核改搜、编辑重匹配共用 `matching.Engine`。查询变体用于召回，原始输入用于评分；具体规则见 [文本处理](specs/matching/text-processing/spec.md)与[评分](specs/matching/confidence/spec.md)。
-2. **入库**：候选统一经 `store.AdmitCandidate` 写入，只使用候选已知值。搜索加入和复核接受不等待详情请求；无需匹配按原始曲名、艺术家、专辑入库。灰色行参数与部分字段映射限制见 G02、G06。
-3. **补全**：后台按加入顺序处理 `pending` 曲目，向导入和用户检索让出请求机会。共用详情入口在请求前后核对来源、发行、曲目标识，再写字段、成员、角色及清单；整个流程尚非单一事务。
-4. **请求**：每个上游共用一个进程级令牌桶，交互请求优先。传输层最多尝试 6 次，条目层默认累计失败 5 次后停止自动重试。原始响应先缓存再解析，带请求体的请求以请求体参与缓存键；同发行响应可复用，但按每首目标重新解析。导入自动匹配只用 MusicBrainz；上游搜索、复核改搜和编辑重匹配可选 MusicBrainz、iTunes 或 QQ 音乐。
-5. **封面**：图片地址携带歌集或候选身份及 thumbnail/detail 用途，AssetServer 与批量预取共用同一解析器：先看显式采用，再看本地文件（缩略图取 <600px 最小、高清取 >800px 最大），缺图时按来源身份取目录并只下载所需档位：MusicBrainz 发行复用或获取 CAA 目录，iTunes 专辑使用 artwork 目录或精确 Lookup，QQ 专辑由 MID 直接构造目录，不跨来源取图。目录与规格分别合并请求，CAA 索引、图片、预览和采用共用可调并发的封面工作池，所有出网前检查出网条件。歌集文件位于 `albums/release-<id>/`，按“类型-来源-规格”命名；未收藏候选的预览位于 `cache/sources/`。采用先写临时文件、校验后改名，再提交记录；失败保留旧选择。网络搜索按来源渐进返回；163 仅作为封面来源，不进入元数据注册表，QQ 同时是元数据上游，但封面搜索中的 QQ 查询走 `covers/sources/` 适配与独立配额。
+1. 上游经注册表提供候选转换、精确补全、摘要、身份解析及可选版本/封面能力。三来源输出同一快照语义；导入只使用 MusicBrainz，交互入口使用设置排序的注册表来源。
+2. 自动选版先限定同组和可靠的同曲目候选，优先库内已有发行，再比较发行总数、非世界国家和稳定身份；展示载体/国家偏好不参与选版。未知总数或对应歧义进入复核。
+3. 所有创建发行和成员变化经 library 准入计划；已有组新增成员需要独立批准。服务端计划有 15 分钟有效期、内容签名和幂等结果；提交在 SQLite 写事务内重查身份、证据和成员。
+4. 精确补全按请求前修订和身份同步，只更新跟随字段，unknown 不降级事实，用户角色按角色保护；不拥有迁组或换绑权限。
+5. 编辑器分开离线基线、上游预览与草稿。“使用”确认后一次填入已知值；专辑实际改动统一准备新建或精确目标复用。影响页列原发行全部收藏，只有明确勾选歌曲迁入；完整位置重复、目标占用和越界阻止提交。取消保留底层草稿。
+6. 保存固定字段、绑定、迁入集合、对应位置及文件动作，事务内重验相关修订与准入。新发行提前选择 JavaScript 安全整数 ID 而不创建实体，用于提交前准备最终封面目录；事务检验碰撞。失败保留旧正式数据与草稿，成功发布统一刷新事件。
+7. 封面来源策略保留缓存、配额、共享工作池和取消语义；编辑采用先暂存，不调用立即采用接口。明确使用上游封面时读取上游预览，不把目标的用户采用误当上游值；既有详情页独立采用入口仍可使用。
 
 ## 前端约定
 
 - `TrackTable`、`CandidateTable` 分别统一曲目和候选列表。`useListSelection` 管理选择、焦点与锚点，`trackRows` 管理排序和稳定行标识，避免组件内部再次排序或选择。
 - 普通列表与专辑列表分别保存列偏好；专辑固定位置顺序。浏览条件取交集，名单查找与曲目搜索分别处理。
 - 详情、设置、导入、编辑使用应用内组件。模态限制尺寸并内部滚动，`dialogStack` 控制 Escape 只关闭顶层。
+- `useEditDraft` 管理草稿与请求归属；准入和归组提议使用具体展示 DTO，完整快照及计划签名留在服务端，避免 Wails 泛型数组构造问题。
 - 前端通过 `frontend/src/api/` 调用 `frontend/wailsjs/go/app/`；模型命名空间为 `Models.app`。时间跨绑定传递为 RFC3339 字符串。
 - `App.emitEvent` 统一发送事件，测试可替换事件发送函数。导入与补全进度由事件更新；封面采用后发送带歌集与 revision 的封面变更事件，列表、详情、专辑和候选按目标与版本刷新。
 - 封面搜索大弹窗由 `App.vue` 挂载，会话状态在 `stores/coverSearch.ts`；打开时背景设为 inert，关闭或目标变化即取消会话。

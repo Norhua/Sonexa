@@ -57,7 +57,7 @@ const reviewReason = computed(() => ({
   unknown_total: '发行总曲数未知，需要人工选版', no_match: '没有高置信匹配', ambiguous: '候选存在歧义', duplicate: '可能与已有收藏重复',
 }[current.value?.reviewReason ?? ''] ?? current.value?.reviewReason ?? ''))
 const reviewEvidence = computed(() => {
-  try { return JSON.parse(current.value?.reviewEvidence || 'null') as (Models.domain.AdmissionBaseline & { proposed?: Models.domain.ReleaseSnapshot }) | null }
+  try { return JSON.parse(current.value?.reviewEvidence || 'null') as (Models.domain.AdmissionBaseline & { proposed?: Models.app.PlanReleaseView }) | null }
   catch { return null }
 })
 

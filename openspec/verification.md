@@ -1,42 +1,24 @@
 # 文档与实现核对
 
-日期：2026-09-23。代码基线：`edb175a` 加 `revise-album-cover-workflow` 的实现改动。本次将该变更的八个能力增量同步到主规格，并更新架构设计、功能索引、已知问题和本说明；历史归档不改。上一次全面核对（2026-09-20，基线 `8efba1a`）覆盖全部 22 份规格，记录见 Git 历史。
+日期：2026-10-02。范围：`unify-upstream-and-redesign-track-editor`，覆盖三层快照、统一准入、多版本读取、编辑计划、两栏草稿和逐曲迁入。历史验证记录保留在 Git 与变更实施记录中，不以旧模型升级演练证明当前模型可升级。
 
-## 结果
+## 核对结果
 
-| 维度 | 结论 |
+主规格共 26 份，本次同步 16 个能力，包括新增的发行归组和统一准入；保留未受变更影响的需求与场景。更新编辑、曲目和清单 Purpose，删除已失效的字段锁、灰色行、旧编辑事务及计数限制。
+
+| 范围 | 实现与证据 |
 | --- | --- |
-| 完整性 | 主规格共 23 份，新增 [封面搜索](specs/upstream/cover-search/spec.md)；歌集清单、界面与交互、数据存储、设置、封面、iTunes、统一接口的增量需求全部进入主规格，原有场景未被删除。 |
-| 正确性 | 封面需求对照用途解析、CAA 目录、封面工作池、专辑图片文件、四来源适配、绑定和 Vue 页面核对；iTunes 需求对照缓存迁移、清单状态和设置字段核对。未完成部分记入[已知问题](known-gaps.md)的 G05、G09、G12、G14、G15；G10 的 iTunes 期限目标取消。 |
-| 一致性 | 现行规格和设计不再包含列表与详情共用 250px 缓存键、详情重新获取图标、按内容哈希命名采用文件或 iTunes 保存期限；保留其他来源的通用缓存有效期、来源署名和导出不含图片的规则。 |
+| 上游契约 | `internal/domain`、`internal/provider`；三来源字段状态、署名/演唱分离和两组 MusicBrainz 14/15 首固定样本 |
+| 当前值与准入 | `internal/store`、`internal/library`；用户值保护、身份唯一、并发成员检查、幂等与原子提交 |
+| 业务入口 | `internal/app`；搜索、复核、灰色行、本地创建和保存计划测试，旧编辑写绑定已移除 |
+| 编辑器 | `useEditDraft`、`EditDialog`、`EditFieldInput`；预览不写草稿、使用确认、逐曲迁入、位置冲突、取消层级及错误恢复 |
+| 文件 | 歌词和封面暂存、不可变路径、事务引用、数据库末尾故障回滚及原采用文件保护 |
+| 绑定 | 准入和提议使用具体展示 DTO；生成构造器测试覆盖值状态和角色属性，已移除旧泛型数组警告 |
 
-## 核对依据
+## 检查与边界
 
-| 范围 | 主要实现与回归 |
-| --- | --- |
-| 封面解析与存储 | `internal/covers/{resolver,pool,library_images,library_cache,files,transport}.go`、`internal/store/{migration_covers,cover_catalog,cover_files,cover_cache,cover_legacy}.go` 及对应测试 |
-| 封面来源与绑定 | `internal/covers/sources/`、`internal/app/{bindings_covers,bindings_cover_search,bindings_cover_targets}.go`；`internal/app/cover_*_test.go` |
-| 封面界面 | `frontend/src/{components/CoverArt.vue,components/CoverPreview.vue,components/DetailDrawer.vue,views/CoverSearchView.vue,stores/coverSearch.ts,lib/useCandidateCovers.ts}`；`frontend/tests/e2e/cover-*.spec.ts` |
-| iTunes 期限移除 | `internal/provider/itunes/`、`internal/store/migrate.go`（iTunes 缓存改为不过期）、`internal/config/settings.go`、`internal/app/{bindings_albums,bindings_settings}.go`；清单日期判定所在的 `internal/store/stale.go` 已删除 |
+Go 全量、library/store/app/covers 的 race 测试及 go vet 通过；前端 44 项单元测试与构建通过，Chromium/WebKit 结果和日志记录在变更的 `implementation.md`。OpenSpec 主规格严格校验 26/26 通过。Wails darwin/arm64 构建通过。
 
-## 本次执行的检查
+浏览器使用 Wails 替身，不能替代原生输入法、系统文件选择、窗口尺寸和退出行为验收。原生检查因 Computer Use 未获准访问 Sonexa 而停止，仍待完成；真实上游网络、历史库升级及大曲库性能不包含在本轮离线证据中。Vite 主包大于 500 kB 的提示仍保留。
 
-| 检查 | 结果 |
-| --- | --- |
-| `openspec validate --specs --strict --no-interactive` | 23/23 通过 |
-| `openspec validate revise-album-cover-workflow --strict` | 通过 |
-| `go test -count=1 -race ./internal/...` | 12 个包通过 |
-| `go vet ./...` | 通过 |
-| `npm --prefix frontend test` | 6 个文件、37 项通过 |
-| `npm --prefix frontend run build` | 类型检查和 Vite 构建通过；主包约 925 kB，仍有超过 500 kB 告警 |
-| `cd frontend && SONEXA_E2E_PREVIEW=1 npm run test:e2e` | Chromium/WebKit 共 102 项通过 |
-| 旧数据库升级、中断续迁、目录变更与备份回滚演练 | 通过；无丢图、无额外收藏或歌集，旧版本拒绝打开新库 |
-| 真实来源 | CAA、iTunes、163 完成搜索、预览和采用；QQ 搜索接口返回 HTTP 500，见 G14 |
-| 本地 Markdown 链接与锚点 | 通过 |
-| `git diff --check` | 通过 |
-
-WebKit 下 `frontend/tests/e2e/image11-refinements.spec.ts:12`（侧栏按钮键盘激活）存在既有的间歇失败：变更前基线重复 20 次失败 3 次，当前失败 6 次，均为回车后新建对话框未出现；该测试不在本次改动范围内。
-
-## 边界
-
-本报告不是逐场景动态验收。原生 Wails 窗口中的系统文件选择器、右键与键盘操作、搜索弹窗和真实断网尚未人工验收（G14），也不覆盖外部条款合规和大曲库性能。浏览器回归基于 Wails 测试替身。命令输出、演练数据和真实来源样例见变更目录中的 `acceptance.md`。
+G01/G02/G03/G06/G08 已有对应实现与业务测试，移出已知问题。G11 仅关闭初次成员建立及标记独立持久化部分，专门的署名边界确认界面仍待完成。G15 改为旧模型不转换的明确边界，不宣称历史数据可保留升级。

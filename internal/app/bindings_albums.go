@@ -396,12 +396,12 @@ func (a *App) FetchTracklist(providerID, releaseRef string, force bool) error {
 }
 
 // PrepareGhostAdmission 根据发行及位置预览准入。
-func (a *App) PrepareGhostAdmission(releaseID int64, disc, position int) (*domain.AdmissionPlan, error) {
+func (a *App) PrepareGhostAdmission(releaseID int64, disc, position int) (*AdmissionPlanView, error) {
 	service, err := a.libraryService()
 	if err != nil {
 		return nil, err
 	}
-	return service.PrepareGhostAdmission(a.ctx, releaseID, disc, position)
+	return admissionView(service.PrepareGhostAdmission(a.ctx, releaseID, disc, position))
 }
 func (a *App) AddGhostRowToLibrary(releaseID int64, disc, position int) (int64, error) {
 	plan, err := a.PrepareGhostAdmission(releaseID, disc, position)

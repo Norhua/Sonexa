@@ -7,7 +7,6 @@ import (
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/library"
 	"github.com/norhua/sonexa/internal/provider"
-	"github.com/norhua/sonexa/internal/store"
 )
 
 func (a *App) libraryService() (*library.Service, error) {
@@ -39,12 +38,12 @@ func (a *App) libraryServiceLocked() (*library.Service, error) {
 	}
 	return a.library, nil
 }
-func (a *App) PrepareAdmission(row CandidateRow, itemID int64) (*domain.AdmissionPlan, error) {
+func (a *App) PrepareAdmission(row CandidateRow, itemID int64) (*AdmissionPlanView, error) {
 	service, err := a.libraryService()
 	if err != nil {
 		return nil, err
 	}
-	return service.PrepareCandidate(a.ctx, row.toCandidate(), itemID)
+	return admissionView(service.PrepareCandidate(a.ctx, row.toCandidate(), itemID))
 }
 func (a *App) ConfirmReleaseAdditions(planID, hash string) (*domain.AdmissionApproval, error) {
 	service, err := a.libraryService()
@@ -66,19 +65,28 @@ func (a *App) CommitAdmission(planID, hash string, approval domain.AdmissionAppr
 	return result, err
 }
 
-func (a *App) ListGroupProposals() ([]store.GroupProposal, error) {
+func (a *App) ListGroupProposals() ([]GroupProposalView, error) {
 	service, err := a.libraryService()
 	if err != nil {
 		return nil, err
 	}
-	return service.ListGroupProposals()
+	proposals, err := service.ListGroupProposals()
+	if err != nil {
+		return nil, err
+	}
+	out := []GroupProposalView{}
+	for _, p := range proposals {
+		view, _ := admissionView(&domain.AdmissionPlan{Seed: domain.AdmissionSeed{Snapshot: p.Snapshot}}, nil)
+		out = append(out, GroupProposalView{ID: p.ID, ReleaseID: p.ReleaseID, BaselineRevision: p.BaselineRevision, Status: p.Status, Resolution: p.Resolution, Snapshot: view.Seed.Snapshot})
+	}
+	return out, nil
 }
-func (a *App) PrepareGroupProposal(id, targetGroup int64) (*domain.AdmissionPlan, error) {
+func (a *App) PrepareGroupProposal(id, targetGroup int64) (*AdmissionPlanView, error) {
 	service, err := a.libraryService()
 	if err != nil {
 		return nil, err
 	}
-	return service.PrepareGroupProposal(a.ctx, id, targetGroup)
+	return admissionView(service.PrepareGroupProposal(a.ctx, id, targetGroup))
 }
 func (a *App) DismissGroupProposal(id, revision int64) error {
 	service, err := a.libraryService()
@@ -103,10 +111,10 @@ type LocalAdmissionInput struct {
 	TrackNumber *int    `json:"trackNumber"`
 }
 
-func (a *App) PrepareLocalAdmission(input LocalAdmissionInput) (*domain.AdmissionPlan, error) {
+func (a *App) PrepareLocalAdmission(input LocalAdmissionInput) (*AdmissionPlanView, error) {
 	return a.prepareLocalAdmission(input, 0)
 }
-func (a *App) prepareLocalAdmission(input LocalAdmissionInput, itemID int64) (*domain.AdmissionPlan, error) {
+func (a *App) prepareLocalAdmission(input LocalAdmissionInput, itemID int64) (*AdmissionPlanView, error) {
 	service, err := a.libraryService()
 	if err != nil {
 		return nil, err
@@ -122,9 +130,9 @@ func (a *App) prepareLocalAdmission(input LocalAdmissionInput, itemID int64) (*d
 			snapshot.Release.Credit = domain.Known(domain.Credit{Text: *input.AlbumArtist})
 		}
 	}
-	return service.PrepareAdmission(a.ctx, domain.AdmissionSeed{Snapshot: snapshot, ImportItemID: itemID, ItemStatus: "imported"})
+	return admissionView(service.PrepareAdmission(a.ctx, domain.AdmissionSeed{Snapshot: snapshot, ImportItemID: itemID, ItemStatus: "imported"}))
 }
-func (a *App) PrepareNoMatchNeeded(itemID int64) (*domain.AdmissionPlan, error) {
+func (a *App) PrepareNoMatchNeeded(itemID int64) (*AdmissionPlanView, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
@@ -137,7 +145,7 @@ func (a *App) PrepareNoMatchNeeded(itemID int64) (*domain.AdmissionPlan, error) 
 	}
 	return a.prepareLocalAdmission(LocalAdmissionInput{Title: item.InTitle, Artist: item.InArtist, Album: item.InAlbum, Year: item.InYear, DiscNumber: item.InDiscNo, TrackNumber: item.InTrackNo}, itemID)
 }
-func (a *App) commitUnconfirmedAdmission(plan *domain.AdmissionPlan) (int64, error) {
+func (a *App) commitUnconfirmedAdmission(plan *AdmissionPlanView) (int64, error) {
 	result, err := a.CommitAdmission(plan.ID, plan.Hash, domain.AdmissionApproval{})
 	if err != nil {
 		return 0, err
@@ -145,10 +153,10 @@ func (a *App) commitUnconfirmedAdmission(plan *domain.AdmissionPlan) (int64, err
 	return result.TrackID, nil
 }
 
-func (a *App) ReplanAdmissionGroup(id, hash string, target int64) (*domain.AdmissionPlan, error) {
+func (a *App) ReplanAdmissionGroup(id, hash string, target int64) (*AdmissionPlanView, error) {
 	service, err := a.libraryService()
 	if err != nil {
 		return nil, err
 	}
-	return service.ReplanAdmissionGroup(a.ctx, id, hash, target)
+	return admissionView(service.ReplanAdmissionGroup(a.ctx, id, hash, target))
 }

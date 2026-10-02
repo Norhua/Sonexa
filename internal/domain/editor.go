@@ -30,12 +30,13 @@ type EditorSession struct {
 }
 
 type EditPreview struct {
-	ID              string     `json:"id"`
-	ExpiresAt       string     `json:"expiresAt"`
-	SnapshotJSON    string     `json:"snapshotJson"`
-	Fields          EditFields `json:"fields"`
-	TrackIdentity   *Identity  `json:"trackIdentity"`
-	ReleaseIdentity *Identity  `json:"releaseIdentity"`
+	TrackStates     map[string]string `json:"trackStates"`
+	ID              string            `json:"id"`
+	ExpiresAt       string            `json:"expiresAt"`
+	SnapshotJSON    string            `json:"snapshotJson"`
+	Fields          EditFields        `json:"fields"`
+	TrackIdentity   *Identity         `json:"trackIdentity"`
+	ReleaseIdentity *Identity         `json:"releaseIdentity"`
 }
 
 func EditorFields(snapshot Snapshot) (EditFields, error) {

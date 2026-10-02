@@ -22,6 +22,7 @@ const (
 
 // Target 以本地歌集或明确的上游发行定位。Ref 不再接受图片 URL。
 type Target struct {
+	Preview   bool   `json:"-"`
 	ReleaseID int64  `json:"releaseId"`
 	Provider  string `json:"provider"`
 	Ref       string `json:"ref"`
@@ -29,6 +30,9 @@ type Target struct {
 }
 
 func (t Target) Key(usage Usage, revision int64) string {
+	if t.Preview {
+		return fmt.Sprintf("preview:%s|%s|%s|%s|%d", t.Provider, t.Ref, t.GroupRef, usage, revision)
+	}
 	if t.ReleaseID > 0 {
 		return fmt.Sprintf("release:%d|%s|%d", t.ReleaseID, usage, revision)
 	}
@@ -65,7 +69,7 @@ func (s *Service) resolveTarget(target Target) (Target, error) {
 		if release.ReleaseGroupRef != nil {
 			target.GroupRef = *release.ReleaseGroupRef
 		}
-	} else if target.Provider != "" && target.Ref != "" {
+	} else if !target.Preview && target.Provider != "" && target.Ref != "" {
 		release, err := s.library.store.GetReleaseByRef(target.Provider, target.Ref)
 		if err != nil {
 			return target, err

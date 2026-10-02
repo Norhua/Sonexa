@@ -330,7 +330,11 @@ func (a *App) admitCandidate(c provider.Candidate) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return a.commitUnconfirmedAdmission(plan)
+	view, err := admissionView(plan, nil)
+	if err != nil {
+		return 0, err
+	}
+	return a.commitUnconfirmedAdmission(view)
 }
 
 // PrefetchCovers 批量预取一页列表的封面。

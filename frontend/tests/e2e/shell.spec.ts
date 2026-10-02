@@ -103,14 +103,11 @@ test('import errors before preview are visible, success shows mapping and submis
 test('edit nested rename dialog only closes the top modal with Escape', async ({ page }) => {
   await rows(page).first().click({ button: 'right' })
   await page.getByRole('menuitem', { name: '编辑', exact: true }).click()
-  const editor = page.getByRole('dialog', { name: '编辑 / 重新匹配', exact: true })
+  const editor = page.getByRole('dialog', { name: '编辑曲目', exact: true })
   await expect(editor).toBeVisible()
-  await page.evaluate(() => {
-    ;(window as any).go.app.App.PlanAlbumRename = async () => ({ needsConfirm: true, trackCount: 3, currentTitle: 'old', existingReleaseId: 0 })
-  })
-  await editor.locator('tr').filter({ hasText: '歌集名' }).getByRole('textbox').fill('new album')
+  await editor.getByRole('textbox', {name:'专辑名',exact:true}).fill('new album')
   await editor.getByRole('button', { name: '保存', exact: true }).click()
-  const nested = page.getByRole('dialog', { name: '选择歌集改名范围' })
+  const nested = page.getByRole('dialog', { name: '专辑信息有改动' })
   await expect(nested).toBeVisible()
   await expect.poll(() => nested.evaluate(el => el.contains(document.activeElement))).toBe(true)
   await page.keyboard.press('Escape')

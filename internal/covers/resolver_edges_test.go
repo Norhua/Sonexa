@@ -137,3 +137,26 @@ func TestResolverAdopted800WinsOverAutomatic1200AndMissingFails(t *testing.T) {
 		t.Fatal("已采用文件丢失应报告故障")
 	}
 }
+
+func TestEditUpstreamPreviewDoesNotUseOrChangeAdoptedCover(t *testing.T) {
+	svc, st := resolverService(t)
+	source, ref := "musicbrainz", testReleaseMBID
+	id, err := st.UpsertRelease(&store.Release{Title: "album", Provider: &source, ProviderRef: &ref, TracklistState: store.TracklistNone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adopted, err := svc.Library().ImportLocal(id, pngBytes(800, 800), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls, mu := map[string]int{}, &sync.Mutex{}
+	setResolverResponse(svc, twoSizeIndex, 200, calls, mu)
+	preview, err := svc.Resolve(context.Background(), Target{Provider: source, Ref: ref, Preview: true}, Detail)
+	if err != nil || preview.File == nil || preview.File.Width != 1200 {
+		t.Fatalf("upstream preview: %+v %v", preview, err)
+	}
+	selection, err := st.GetCoverSelection(id)
+	if err != nil || selection.VariantID != adopted.VariantID || selection.Revision != adopted.Revision {
+		t.Fatal("preview changed adoption")
+	}
+}

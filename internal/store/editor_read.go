@@ -298,3 +298,44 @@ func (s *Store) ReadEditorReleaseCurrent(id int64) (domain.EditFields, map[strin
 	fields["release.cover"] = domain.EditValue{State: domain.Value, ValueJSON: string(body)}
 	return fields, revisions, nil
 }
+
+func (s *Store) EditorTracklistStates(release *domain.ReleaseSnapshot) (map[string]string, error) {
+	out := map[string]string{}
+	if release == nil {
+		return out, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	for _, entry := range release.Tracklist.Value {
+		key := fmt.Sprintf("%d:%d", entry.DiscNumber, entry.TrackNumber)
+		out[key] = "未收藏"
+		if entry.Track.State == domain.Value {
+			var provider, ref *string
+			err := tx.QueryRow("SELECT r.provider,r.provider_ref FROM track t LEFT JOIN release r ON r.id=t.release_id WHERE t.match_source=? AND t.match_ref=?", entry.Track.Value.Provider, entry.Track.Value.Ref).Scan(&provider, &ref)
+			if err != nil && err != sql.ErrNoRows {
+				return nil, err
+			}
+			if err == nil {
+				out[key] = "其他版本已收藏"
+				if provider != nil && ref != nil && *provider == string(release.Identity.Provider) && *ref == release.Identity.Ref {
+					out[key] = "本版本已收藏"
+				}
+				continue
+			}
+		}
+		if entry.Recording.State == domain.Value {
+			var count int
+			err := tx.QueryRow("SELECT count(*) FROM track_snapshot s JOIN track t ON t.id=s.track_id WHERE t.match_source=json_extract(s.body,'$.identity.provider') AND t.match_ref=json_extract(s.body,'$.identity.ref') AND json_extract(s.body,'$.recording.value.provider')=? AND json_extract(s.body,'$.recording.value.ref')=?", entry.Recording.Value.Provider, entry.Recording.Value.Ref).Scan(&count)
+			if err != nil {
+				return nil, err
+			}
+			if count > 0 {
+				out[key] = "其他版本已收藏"
+			}
+		}
+	}
+	return out, nil
+}

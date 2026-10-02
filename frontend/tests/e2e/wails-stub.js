@@ -6,6 +6,8 @@
     enrich: { state: 'idle', done: 4, total: 7, pending: 3, skipped: 1, reason: '', lastError: '' },
   }
 
+  const ef=value=>({state:value==null?'empty':'value',valueJson:value==null?'':JSON.stringify(value),mode:'user',source:'user'})
+  const editorFields=(title='夕立')=>({'track.title':ef(title),'track.credit':ef("CROW'SCLAW"),'track.discNumber':ef(1),'track.trackNumber':ef(1),'release.title':ef('原专辑'),'release.credit':ef('专辑艺术家'),'release.discTotal':ef(2),'release.media':ef([{number:1,trackTotal:{state:'value',value:6}},{number:2,trackTotal:{state:'value',value:6}}]),'track.roles.vocal':ef([]),'track.roles.composer':ef([]),'track.roles.lyricist':ef([])})
   const TITLES = [
     ['綿雪の夢', 'ハトリアヤ', '狼と巫女とお菓子の家'],
     ['夕立', "CROW'SCLAW", 'アコースティック・エピソード'],
@@ -180,23 +182,23 @@
         }),
         RemapImportColumns: async (...a) => window.go.app.App.AnalyzeImportFile(...a),
         SubmitImport: async () => 2,
-        GetEditSession: async (trackId) => ({
-          matchLabel: 'MusicBrainz · rec-1', matchSource: 'musicbrainz', matchRef: 'trk-1',
-          fields: [
-            { key: 'title', label: '曲名', group: 'basic', current: '夕立',
-              upstream: '夕立 (Remastered)', same: false, userLocked: false,
-              fillByDefault: true, releaseScoped: false },
-            { key: 'artist', label: '艺术家', group: 'basic', current: "CROW'SCLAW",
-              upstream: "CROW'SCLAW", same: true, userLocked: true,
-              fillByDefault: false, releaseScoped: false },
-            { key: 'album', label: '歌集名', group: 'rich', current: 'アコースティック・エピソード',
-              upstream: null, same: false, userLocked: false,
-              fillByDefault: false, releaseScoped: true },
-          ],
-        }),
-        PlanAlbumRename: async () => ({ needsConfirm: false, trackCount: 1, currentTitle: '', existingReleaseId: 0 }),
-        ApplyEdits: async () => {},
-        ClearProvenance: async () => {},
+        GetEditSession: async (trackId) => ({ editor: {
+          trackId, releaseId:20, groupId:20, trackIdentity:{provider:'musicbrainz',ref:'track-1'},releaseIdentity:{provider:'musicbrainz',ref:'release-1'},
+          current:editorFields(),upstream:{'track.title':ef('上游曲名')},revisions:{'track:1':1},releaseTrackIds:[trackId,trackId+1],otherReleaseTracks:1,otherGroupTracks:0,coverRevision:0,snapshotJson:'{}',
+        }, providers:[] }),
+        PreviewCurrentEditUpstream: async () => ({id:'preview-1',snapshotJson:JSON.stringify({}),fields:{'track.title':ef('上游曲名')},trackIdentity:{provider:'musicbrainz',ref:'track-1'},releaseIdentity:{provider:'musicbrainz',ref:'release-1'}}),
+        PreviewEditSave: async draft => ({sharedChange:Object.keys(draft.fields).some(k=>k.startsWith('release.'))||draft.bindingAction==='clear_release'||draft.coverAction==='replace',sourceTrackIds:[draft.trackId,draft.trackId+1]}),
+        PlanAlbumChange: async draft => {
+          const rows=[draft.trackId,draft.trackId+1].map((id,i)=>{const choice=draft.mappings.find(m=>m.trackId===id);const before=editorFields(i?'第二首':'夕立');return {trackId:id,before,after:choice?.selected?{...before,...draft.fields,'track.discNumber':ef(choice.discNumber),'track.trackNumber':ef(choice.trackNumber)}:before,stay:!choice?.selected,choices:[],conflict:'',evidence:choice?.selected?'已明确迁入':'未确认迁入',beforeIdentity:{ref:'track-'+id},afterIdentity:null}})
+          const selected=rows.filter(r=>!r.stay)
+          if(selected.length===2&&draft.mappings[0].discNumber!=null&&draft.mappings[0].trackNumber!=null&&draft.mappings[0].discNumber===draft.mappings[1].discNumber&&draft.mappings[0].trackNumber===draft.mappings[1].trackNumber)selected.forEach(r=>r.conflict='所选歌曲位置重复')
+          return {impact:{linksNewUpstream:false,preservesTargetValues:false},rows,targets:[],selectedTrackIds:selected.map(r=>r.trackId),hasConflicts:rows.some(r=>r.conflict),canSubmit:selected.length>0&&!rows.some(r=>r.conflict)}
+        },
+        PlanEditSave: async draft => {window.__editDraft=JSON.parse(JSON.stringify(draft));return {id:'edit-save',hash:'hash',baseline:{conflict:false,requiresConfirmation:false,resolution:{groups:[],evidence:[]}},seed:{snapshot:{},moveReleaseId:0,mergeTargetId:0}}},
+        SaveEdit: async () => {window.__editSaved=true;return {trackId:1,releaseId:21}},
+        SearchEditCandidates: async () => [{title:'另一首候选',artist:'候选艺术家',album:'候选专辑',provider:'musicbrainz',matchRef:'candidate'}],
+        PreviewEditCandidate: async () => ({id:'preview-2',snapshotJson:'{}',fields:{'track.title':ef('另一首候选')},trackIdentity:{provider:'musicbrainz',ref:'candidate'},releaseIdentity:{provider:'musicbrainz',ref:'release-1'}}),
+        DiscardEditCover: async () => {},
         ListArtists: async () => [],
         ListGroupProposals: async () => [],
         ListAlbums: async () => [{ releaseId: 20, groupId: 20, title: '测试专辑', ownedCount: 2, memberCount: 1, ownedReleaseCount: 1, totalCount: 5 }],

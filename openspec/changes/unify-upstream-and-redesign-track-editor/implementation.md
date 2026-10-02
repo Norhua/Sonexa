@@ -153,3 +153,32 @@
 新增真实 App 测试覆盖部分迁入、未批准不写入、修订过期、幂等、缺失封面失败、歌词/封面共同保存、事务末尾故障回滚和原封面保留；library 测试覆盖两组 14/15 首正反向实际保存、目标用户值保护、篡改计划、旧准入入口拒绝编辑计划及并发成员变化。
 
 本阶段未替换旧编辑界面或旧写入口，6.6/4.6 与第 7 阶段仍待完成，因此不宣称新流程已经端到端可用。Wails 旧泛型 DTO 警告、Vite 大包提示仍保留，未执行本轮 Playwright 或原生验收，第 8 阶段仍未勾选。
+
+
+## 统一编辑入口、两栏界面与软件验收（2026-10-02）
+
+完成 4.6、6.6、7.1–7.7、8.1、8.2、8.4、8.5，累计 52/53；仅 8.3 原生验收尚未完成。本轮按用户要求持续推进至实际工具访问阻碍，不归档变更。
+
+- 移除 App 的 ApplyEdits、RematchTrack、ClearProvenance、SetProvenanceManual、UpdateTrackBasic、PlanAlbumRename、ApplyAlbumRename；旧详情辅助写方法改为包内函数。生产创建/迁移调用均经过 library 准入或编辑计划，存储旧构造辅助仅供测试装配使用。新增反射审计，验证旧写绑定不再暴露，伪造保存计划不能提交。
+- 新 EditDialog 与 useEditDraft 分离基线、当前草稿、左侧预览及有效绑定快照。来源按注册表排列；版本浏览按来源接口能力显示，清单标明本版本、其他版本或未收藏。迟到搜索/预览不覆盖新选择，重新预览保留手工字段。
+- “使用”先确认，再一次应用确定值；未知保留、明确空值清空，可只换绑定。上游封面先读取独立上游预览并暂存，不借当前用户采用作为上游值，也不提前采用。歌曲、角色、专辑类型/结构、歌词及本地封面均进入草稿；演唱者标签与署名独立，保留角色属性。
+- 专辑改动只提供新建专辑/取消，进入左右影响页。列表焦点与迁入勾选独立，已选绿字、未选灰字，冲突图标有可访问说明；位置方案改变期间禁用提交。单首、精确目标复用及新增成员取消都保留草稿。未解析确认的绑定文本也触发未保存提示，保存不会静默忽略它。
+- 保存/关闭/Esc 统一走未保存决策；正在提交时禁止退出。错误保留输入，成功刷新全库视图。新增成员确认共用 admission store，并按计划类型委托 SaveEdit。
+- 准入计划与归组提议改为具体展示 DTO，完整快照及签名不再暴露给前端模型；Wails 生成不再出现旧泛型数组 Not found 警告，构造器测试通过。
+- 已合并 16 个 delta 能力至主规格，新增 library/admission 和 library/release-grouping；更新 Purpose、README、架构与核对记录。G01/G02/G03/G06/G08 移除，G11 保留专门署名人工确认缺口，G15 改为旧模型不转换的边界。
+
+验证证据：
+
+- `go test ./... -timeout=120s`：通过（`/tmp/sonexa-editor-ui-full.log`）。
+- `go test -race ./internal/library ./internal/store ./internal/app ./internal/covers -timeout=180s`：通过（`/tmp/sonexa-editor-ui-race-final.log`）；`go vet ./...` 通过。
+- `npm test`：9 个文件、44 项通过；`npm run build` 通过，仍有 Vite 大包提示。
+- Chromium/WebKit 全量静态前端回归 132/132 通过（`/tmp/sonexa-editor-ui-static-final.log`）；随后补严绑定原始输入保护，相关编辑回归 14/14 通过（`/tmp/sonexa-editor-ui-last-e2e.log`）。初轮旧文案失败已更新，构建并行时的三个列表失败在静态前端复跑通过；以上最后结果为准。
+- 浏览器截图：`frontend/test-results/editor-preview-and-confirmed-use-dirty-exit-and-cancellation-{chromium,webkit}/editor-desktop.png`，不代表原生截图。
+- `openspec validate --specs --strict`：26/26 通过；变更严格校验与 git diff 检查通过。
+- `/Users/amadeus/.go/bin/wails build`：darwin/arm64 构建成功（`/tmp/sonexa-editor-native-build-final.log`）。其后绑定文本保护的前端构建及浏览器检查通过，恢复原生验收时需重建最新原生包。
+
+### 原生验收停止原因
+
+调用 Computer Use 选择 `build/bin/sonexa.app` 时，工具明确拒绝：`Computer Use was not approved to use sonexa`。依 openspec-apply-change 的“Error or blocker encountered → report and wait for guidance”停止原生操作；没有改用其他技术绕过访问限制，没有修改或删除用户历史应用数据。
+
+8.3 保持未勾选：原生输入法、窗口尺寸、嵌套弹窗、未保存退出、系统文件选择及歌词/封面离线读取均不能由浏览器替身和构建结果代替。恢复前需允许 Computer Use 访问 Sonexa，并使用隔离的新模型验收数据；本机历史应用目录不应被隐式清空。
