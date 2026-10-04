@@ -72,6 +72,9 @@ func TestAlbumVersionsKeepEveryCollectionAndOwnFacts(t *testing.T) {
 		}
 		for _, row := range r.Rows {
 			if !row.Ghost {
+				if row.RecordingRef == nil || *row.RecordingRef != "same-recording" {
+					t.Fatalf("owned row missing recording evidence: %+v", row)
+				}
 				if seen[row.TrackID] {
 					t.Fatal("duplicate collection")
 				}

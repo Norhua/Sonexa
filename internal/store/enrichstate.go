@@ -127,6 +127,24 @@ func (s *Store) EnrichStats() (EnrichCounts, error) {
 	return c, nil
 }
 
+// PendingEnrichTrackIDs 包含达到重试上限的待补曲目，供当前任务进度和重试入口使用。
+func (s *Store) PendingEnrichTrackIDs() ([]int64, error) {
+	rows, err := s.db.Query("SELECT id FROM track WHERE enrich_state='pending'")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // EnrichStateOf 读取某曲目的补全状态。
 //
 // 没有丰富信息行（或行上没有状态）时按「无需匹配」处理，与列的默认值一致。

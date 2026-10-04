@@ -3,7 +3,7 @@
 (() => {
   const listeners = {}
   const state = {
-    enrich: { state: 'idle', done: 4, total: 7, pending: 3, skipped: 1, reason: '', lastError: '' },
+    enrich: { state: 'idle', done: 0, total: 3, pending: 3, skipped: 1, reason: '', lastError: '' },
   }
 
   const ef=value=>({state:value==null?'empty':'value',valueJson:value==null?'':JSON.stringify(value),mode:'user',source:'user'})
@@ -198,6 +198,7 @@
         SaveEdit: async () => {window.__editSaved=true;return {trackId:1,releaseId:21}},
         SearchEditCandidates: async () => [{title:'另一首候选',artist:'候选艺术家',album:'候选专辑',provider:'musicbrainz',matchRef:'candidate'}],
         PreviewEditCandidate: async () => ({id:'preview-2',snapshotJson:'{}',fields:{'track.title':ef('另一首候选')},trackIdentity:{provider:'musicbrainz',ref:'candidate'},releaseIdentity:{provider:'musicbrainz',ref:'release-1'}}),
+        LoadEditUpstream: async (provider, releaseRef, trackRef) => ({id:'full-'+trackRef,snapshotJson:JSON.stringify({release:{tracklistCompleteness:'complete',tracklist:{state:'value',value:[]}}}),fields:{'track.title':ef(trackRef==='candidate'?'另一首候选':'上游曲名')},trackIdentity:{provider,ref:trackRef},releaseIdentity:{provider,ref:releaseRef}}),
         DiscardEditCover: async () => {},
         ListArtists: async () => [],
         ListGroupProposals: async () => [],
@@ -208,7 +209,7 @@
         },
         ListAlbumsForTag: async () => window.go.app.App.ListAlbums(),
         GetAlbumDetail: async () => ({
-          releaseId: 20, title: '测试专辑', ownedCount: 2, totalCount: 5, tracklistState: 'complete',
+          releaseId: 20, title: '测试专辑', ownedCount: 2, totalCount: 5, tracklistState: 'complete', provider:'musicbrainz', releaseRef:'test-release',
           rows: [
             { trackId: 1, title: '已拥有 A', discNumber: 1, trackNumber: 1, ghost: false },
             { trackId: 0, title: '缺少 B', discNumber: 1, trackNumber: 2, ghost: true },

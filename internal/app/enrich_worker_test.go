@@ -102,14 +102,60 @@ func TestNoMatchNeededNeedsNoEnrichment(t *testing.T) {
 
 // TestEnrichWorkerDrainsPendingTracks 覆盖后台补全任务：
 // 它把待补条目逐条补完，并把状态推到「已匹配」。
+func TestEnrichProgressPreservesRetriesAndStartsANewBatch(t *testing.T) {
+	app, cleanup := newTestApp(t)
+	defer cleanup()
+	a := createPendingTrack(t, app, "待补 A")
+	b := createPendingTrack(t, app, "待补 B")
+	if s := app.enricher.Status(); s.Done != 0 || s.Total != 2 {
+		t.Fatalf("initial: %+v", s)
+	}
+	if err := app.store.SetEnrichState(a, store.EnrichFetched); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.store.RecordEnrichFailure(b, "暂时失败"); err != nil {
+		t.Fatal(err)
+	}
+	app.enricher.Pause()
+	if s := app.enricher.Status(); s.Done != 1 || s.Total != 2 || s.Pending != 1 {
+		t.Fatalf("paused: %+v", s)
+	}
+	c := createPendingTrack(t, app, "新加入 C")
+	if s := app.enricher.Status(); s.Done != 1 || s.Total != 3 {
+		t.Fatalf("new work: %+v", s)
+	}
+	for _, id := range []int64{b, c} {
+		if err := app.store.SetEnrichState(id, store.EnrichAbsent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s := app.enricher.Status(); s.Done != 3 || s.Total != 3 || s.Pending != 0 {
+		t.Fatalf("complete: %+v", s)
+	}
+	createPendingTrack(t, app, "下一轮 D")
+	if s := app.enricher.Status(); s.Done != 0 || s.Total != 1 {
+		t.Fatalf("next batch: %+v", s)
+	}
+}
+
 func TestEnrichWorkerDrainsPendingTracks(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
+	// 历史九首已补全不参与本轮三首待补的进度。
+	for i := 0; i < 9; i++ {
+		id := createPendingTrack(t, app, fmt.Sprintf("历史曲目 %d", i))
+		if err := app.store.SetEnrichState(id, store.EnrichFetched); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	// 造三条待补的曲目
 	var ids []int64
 	for i := 0; i < 3; i++ {
 		ids = append(ids, createPendingTrack(t, app, fmt.Sprintf("曲目 %d", i)))
+	}
+	if s := app.enricher.Status(); s.Done != 0 || s.Total != 3 || s.Pending != 3 {
+		t.Fatalf("initial progress: %+v", s)
 	}
 
 	// 把取详情换成一个不出网的记账函数（真实取数在 provider 各自的测试里）

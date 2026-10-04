@@ -4,6 +4,25 @@ import (
 	"fmt"
 )
 
+// ReleaseRecordingRefs 提供在库曲目的录音证据，供专辑合并展示使用。
+func (s *Store) ReleaseRecordingRefs(releaseID int64) (map[int64]string, error) {
+	rows, err := s.db.Query("SELECT id,recording_ref FROM track_read WHERE release_id=? AND recording_ref IS NOT NULL", releaseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	refs := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var ref string
+		if err := rows.Scan(&id, &ref); err != nil {
+			return nil, err
+		}
+		refs[id] = ref
+	}
+	return refs, rows.Err()
+}
+
 // ArtistListItem 是艺术家列表（中列）的一项。
 type ArtistListItem struct {
 	ID         int64   `json:"id"`

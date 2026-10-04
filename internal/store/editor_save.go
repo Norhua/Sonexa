@@ -407,6 +407,11 @@ func (s *Store) CommitEdit(ctx context.Context, plan domain.AdmissionPlan, appro
 				return err
 			}
 		}
+		if content.Impact.SharedChange && source.ReleaseID != result.ReleaseID {
+			if err := deleteOrphanReleaseTx(tx, source.ReleaseID); err != nil {
+				return err
+			}
+		}
 		if err := rebuildGroupKeysTx(tx); err != nil {
 			return err
 		}

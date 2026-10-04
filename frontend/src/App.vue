@@ -393,6 +393,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
             v-if="rows.length > 0"
             v-model:sort-key="sortKey"
             v-model:sort-desc="sortDesc"
+            :show-enrichment="library.view === 'all'"
             :context-key="tableContext"
             :rows="rows"
             :collection-id="library.view === 'playlist' ? library.contextId : 0"

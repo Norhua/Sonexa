@@ -22,6 +22,8 @@ export interface Row {
   recordingRef?: string | null
   /** 清单行由父级提供稳定位置；普通库内行不需要。 */
   rowKey?: string
+  /** 合并专辑视图的一行可对应多份收藏；批量操作仍覆盖这些本地身份。 */
+  groupMembers?: Row[]
 }
 export interface ListRow extends Row { key: string }
 
@@ -60,5 +62,5 @@ function timestamp(value: string | null | undefined) {
 
 /** 对外批量操作面向曲目而非清单位置，同一 id 只传一次。 */
 export function uniqueTracks(rows: Row[]): Row[] {
-  return [...new Map(rows.filter(row => !row.ghost && row.id > 0).map(row => [row.id, row])).values()]
+  return [...new Map(rows.flatMap(row => row.groupMembers ?? [row]).filter(row => !row.ghost && row.id > 0).map(row => [row.id, row])).values()]
 }

@@ -161,15 +161,15 @@ func TestAlbumDisappearsWhenLastTrackDeleted(t *testing.T) {
 	if len(albums) != 0 {
 		t.Errorf("删光后专辑数 = %d, 期望 0", len(albums))
 	}
-	// 但 release 行保留作缓存——它同时是清单缓存
+	// 最后一首删除后清理发行及清单，不留下空成员。
 	kept, _ := s.GetReleaseByRef("musicbrainz", "rel-1")
-	if kept == nil {
-		t.Fatal("release 行应保留作缓存")
+	if kept != nil {
+		t.Fatal("无收藏发行应清理")
 	}
 	var tracklistRows int
 	s.DB().QueryRow(`SELECT COUNT(*) FROM release_track WHERE release_id = ?`, rel.ID).Scan(&tracklistRows)
-	if tracklistRows != 1 {
-		t.Errorf("清单行数 = %d, 期望 1（删曲目不动清单，该位置回落为灰色行）", tracklistRows)
+	if tracklistRows != 0 {
+		t.Errorf("孤立清单行数 = %d, 期望 0", tracklistRows)
 	}
 }
 

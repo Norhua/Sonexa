@@ -358,15 +358,12 @@ func (s *Store) UpdateReleaseFields(releaseID int64, edits map[string]string, pr
 	return s.editLegacyFields("release", releaseID, edits, provenance, locked)
 }
 
-// DeleteOrphanLocalRelease 删除不再被任何曲目引用的本地歌集。
-//
-// 只删本地的：上游来源的歌集同时是清单缓存，曲目删光后仍应保留，
-// 这一条 library/release-catalog 已有规定。
-func (s *Store) DeleteOrphanLocalRelease(releaseID int64) error {
-	return s.withTx(func(tx *sql.Tx) error { return deleteOrphanLocalReleaseTx(tx, releaseID) })
+// DeleteOrphanRelease 清理无收藏的发行及空组；清单缓存不构成保留成员的依据。
+func (s *Store) DeleteOrphanRelease(releaseID int64) error {
+	return s.withTx(func(tx *sql.Tx) error { return deleteOrphanReleaseTx(tx, releaseID) })
 }
 
-func deleteOrphanLocalReleaseTx(tx *sql.Tx, releaseID int64) error {
+func deleteOrphanReleaseTx(tx *sql.Tx, releaseID int64) error {
 	var groupID int64
 	if err := tx.QueryRow("SELECT release_group_id FROM release WHERE id=?", releaseID).Scan(&groupID); err != nil {
 		if err == sql.ErrNoRows {
@@ -374,9 +371,20 @@ func deleteOrphanLocalReleaseTx(tx *sql.Tx, releaseID int64) error {
 		}
 		return err
 	}
-	if _, err := tx.Exec("DELETE FROM release WHERE id=? AND provider_ref IS NULL AND NOT EXISTS (SELECT 1 FROM track WHERE release_id=?)", releaseID, releaseID); err != nil {
+	result, err := tx.Exec("DELETE FROM release WHERE id=? AND NOT EXISTS (SELECT 1 FROM track WHERE release_id=?)", releaseID, releaseID)
+	if err != nil {
 		return err
 	}
-	_, err := tx.Exec("DELETE FROM release_group WHERE id=? AND NOT EXISTS (SELECT 1 FROM release WHERE release_group_id=?) AND NOT EXISTS (SELECT 1 FROM release_group_ref WHERE group_id=?)", groupID, groupID, groupID)
+	deleted, err := result.RowsAffected()
+	if err != nil || deleted == 0 {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM release_group_match_key WHERE source_kind IN ('release-current','release-snapshot') AND source_id=CAST(? AS TEXT)", releaseID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE release_group SET revision=revision+1, representative_id=CASE WHEN representative_id=? THEN NULL ELSE representative_id END WHERE id=?", releaseID, groupID); err != nil {
+		return err
+	}
+	_, err = tx.Exec("DELETE FROM release_group WHERE id=? AND NOT EXISTS (SELECT 1 FROM release WHERE release_group_id=?)", groupID, groupID)
 	return err
 }

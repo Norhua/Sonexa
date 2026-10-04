@@ -328,7 +328,7 @@ func (s *Store) MoveTrackToRelease(trackID, releaseID int64) error {
 		return err
 	}
 	if oldID != nil && *oldID != releaseID {
-		return s.DeleteOrphanLocalRelease(*oldID)
+		return s.DeleteOrphanRelease(*oldID)
 	}
 	return nil
 }

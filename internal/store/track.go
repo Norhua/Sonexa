@@ -92,8 +92,7 @@ func (s *Store) UpdateTrackFields(id int64, title, credit *string, byUser bool) 
 // 但不动 release_track——清单与曲目本就没有外键，该位置自然回落为灰色行。
 // 这正是期望行为：用户删掉一首歌，专辑视图应显示「这张专辑你还缺这首」。
 //
-// 所属歌集若是本地歌集且再无曲目引用，顺带删除——上游来源的保留，
-// 它同时是清单缓存。
+// 删除最后一首后同时清理无收藏发行；还有其他收藏时保留清单及封面。
 func (s *Store) DeleteTrack(id int64) error {
 	s.fileMu.Lock()
 	defer s.fileMu.Unlock()
@@ -112,7 +111,7 @@ func (s *Store) DeleteTrack(id int64) error {
 			return fmt.Errorf("删除曲目失败: %w", err)
 		}
 		if releaseID != nil {
-			return deleteOrphanLocalReleaseTx(tx, *releaseID)
+			return deleteOrphanReleaseTx(tx, *releaseID)
 		}
 		return nil
 	})

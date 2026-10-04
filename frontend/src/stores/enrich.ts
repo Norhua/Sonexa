@@ -25,7 +25,7 @@ export const useEnrichStore = defineStore('enrich', () => {
   /** 工具栏上的 `xx/xx`。 */
   const label = computed(() => `${done.value}/${total.value}`)
   /** 没有任何需要补全的曲目时按钮无事可做。 */
-  const idleEmpty = computed(() => total.value === 0)
+  const idleEmpty = computed(() => (status.value?.pending ?? 0) === 0)
 
   /** 悬浮提示：说明它此刻在等什么或最近为什么失败。 */
   const hint = computed(() => {

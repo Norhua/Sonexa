@@ -299,12 +299,15 @@ func countOwned(rows []AlbumRow) int {
 
 // ownedRowsFor 返回某专辑已入库曲目的行，按碟号与音轨号排序。
 //
-// 有发行组时取整组的曲目：列表里同组的多条 release 合为一条，
-// 详情也该显示用户在这张专辑上拥有的全部曲目，而不只是代表版本那一条上的。
+// 每个分区仅取自己的收藏；录音证据供合并视图判断歌曲，不改变具体发行归属。
 func (a *App) ownedRowsFor(rel *store.Release) ([]AlbumRow, error) {
 	f := store.TrackFilter{ReleaseID: rel.ID}
 
 	tracks, err := a.store.ListTracks(f)
+	if err != nil {
+		return nil, err
+	}
+	refs, err := a.store.ReleaseRecordingRefs(rel.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -315,6 +318,9 @@ func (a *App) ownedRowsFor(rel *store.Release) ([]AlbumRow, error) {
 			Title: t.Title, Credit: t.Artist, DurationMS: t.DurationMS,
 			State: string(store.PositionOwned), TrackID: t.ID,
 			TrackRef: t.MatchRef, AddedAt: &t.AddedAt,
+		}
+		if ref := refs[t.ID]; ref != "" {
+			row.RecordingRef = &ref
 		}
 		if t.DiscNumber != nil {
 			row.DiscNumber = *t.DiscNumber

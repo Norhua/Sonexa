@@ -11,12 +11,8 @@ import (
 
 // EnrichStatus 是「补全信息匹配」任务的状态快照。
 //
-// Done / Total 是**全库**口径而不是本轮口径：`已匹配 / (已匹配 + 未匹配)`。
-// 本轮口径在这里读起来是错的——用户接受一条候选、任务跑起来、他再接受一条，
-// 本轮的分母就变了，界面上那个数字会往回跳。全库口径的分母只随入库变动，
-// 而每补完一条，分子加一，分母不变。
-//
-// 无需匹配的曲目不在这两个数里：它们不需要补，算进分母只会让它永远到不了头。
+// Done / Total 只统计当前待补工作集；历史已补全和无需匹配曲目不进入分母。
+// 新入库的待补曲目加入本轮，暂停/重试保留进度，完成后下一批从零开始。
 type EnrichStatus struct {
 	// State 为 idle | running | waiting | paused | stalled。
 	State string `json:"state"`
@@ -90,7 +86,9 @@ type enrichWorker struct {
 	//
 	// 不等的话，退出应用时 store 会在补全还在写库的那一刻被关掉——
 	// 测试里的表现是临时目录清理不掉（WAL 文件在 Close 之后又被建了出来）。
-	done chan struct{}
+	done            chan struct{}
+	progressPending map[int64]bool
+	progressDone    int
 }
 
 func newEnrichWorker(st *store.Store) *enrichWorker {
@@ -100,15 +98,29 @@ func newEnrichWorker(st *store.Store) *enrichWorker {
 // Status 返回当前状态快照，计数现算。
 func (w *enrichWorker) Status() EnrichStatus {
 	w.mu.Lock()
+	defer w.mu.Unlock()
 	s := EnrichStatus{State: w.state, Reason: w.reason, LastError: w.lastError}
-	w.mu.Unlock()
 
 	if w.store != nil {
 		if counts, err := w.store.EnrichStats(); err == nil {
-			s.Done = counts.Matched
-			s.Pending = counts.Pending
 			s.Skipped = counts.Skipped
-			s.Total = counts.Matched + counts.Pending
+		}
+		if ids, err := w.store.PendingEnrichTrackIDs(); err == nil {
+			pending := make(map[int64]bool, len(ids))
+			for _, id := range ids {
+				pending[id] = true
+			}
+			if len(w.progressPending) == 0 && len(pending) > 0 {
+				w.progressDone = 0
+			}
+			for id := range w.progressPending {
+				if !pending[id] {
+					w.progressDone++
+				}
+			}
+			w.progressPending = pending
+			s.Done, s.Pending = w.progressDone, len(pending)
+			s.Total = s.Done + s.Pending
 		}
 	}
 	return s
@@ -177,8 +189,9 @@ func (w *enrichWorker) launch(ctx context.Context) error {
 	w.reason = ""
 	w.mu.Unlock()
 
-	go w.run(runCtx, targets, done)
+	// 在首个完成之前固定待补集合，即使没有事件订阅者也不漏记进度。
 	w.publish()
+	go w.run(runCtx, targets, done)
 	return nil
 }
 
@@ -348,7 +361,8 @@ func (w *enrichWorker) setError(msg string) {
 }
 
 func (w *enrichWorker) publish() {
+	status := w.Status()
 	if w.emit != nil {
-		w.emit(w.Status())
+		w.emit(status)
 	}
 }

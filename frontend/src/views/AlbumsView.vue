@@ -21,6 +21,8 @@ import ViewSearchBox from '@/components/ViewSearchBox.vue'
 import Message from '@/volt/Message.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import { useLibraryStore } from '@/stores/library'
+import { mergeAlbumRows, type AlbumTrackRow } from '@/lib/albumRows'
+import { uniqueTracks } from '@/lib/trackRows'
 
 defineProps<{ drawerOpen?: boolean }>()
 const library = useLibraryStore()
@@ -32,8 +34,9 @@ const selected = ref(new Map<number, number[]>())
 const loading = ref(false)
 const error = ref('')
 
-/** 「仅显示已有」开关的状态被记住。 */
-const onlyOwned = ref(localStorage.getItem('sonexa.onlyOwned') === '1')
+const merged = ref(localStorage.getItem('sonexa.mergeAlbumGroup') === '1')
+const mergedExpanded = ref(true)
+const mergedRows = computed(() => mergeAlbumRows((detail.value?.releases ?? []).flatMap(release => toRows(release, mergedExpanded.value))))
 /** 中列的就地过滤：这一列是专辑名单，不是曲目，因此不走曲目筛选。 */
 const filter = ref('')
 
@@ -103,7 +106,8 @@ async function open(a: Models.store.AlbumListItem) {
     await library.goTo('album', { id: a.releaseId, groupId: a.groupId, title: a.title || '未命名专辑' })
     if (request !== selectionRequest) return
     const representative = next.releases.find(r => r.releaseId === next.representativeId)
-    if (representative?.incomplete) void completeTracklist(representative, false)
+    if (merged.value && mergedExpanded.value) void completeMergedTracklists()
+    else if (representative?.incomplete) void completeTracklist(representative, false)
   } catch (e) { if (request === selectionRequest) error.value = String(e) }
 }
 function coverSourceOf(a: { releaseId: number; coverRevision?: number }) {
@@ -123,16 +127,39 @@ function toggleRelease(release: Models.app.AlbumDetail) {
   if (expanded.value.has(release.releaseId)) expanded.value.delete(release.releaseId)
   else { expanded.value.add(release.releaseId); if (release.incomplete) void completeTracklist(release, false) }
 }
-function toggleOnlyOwned() {
-  onlyOwned.value = !onlyOwned.value
-  localStorage.setItem('sonexa.onlyOwned', onlyOwned.value ? '1' : '0')
+function toggleMerged() {
+  merged.value = !merged.value
+  localStorage.setItem('sonexa.mergeAlbumGroup', merged.value ? '1' : '0')
+  selected.value.clear()
+  emit('selectionChange', [])
+  if (merged.value && mergedExpanded.value) void completeMergedTracklists()
 }
-function toRows(release: Models.app.AlbumDetail): Row[] {
+async function completeMergedTracklists() {
+  const groupId = detail.value?.groupId
+  for (const release of detail.value?.releases ?? []) {
+    if (detail.value?.groupId !== groupId || !merged.value || !mergedExpanded.value) return
+    if (release.incomplete) await completeTracklist(release, false)
+  }
+}
+function toggleMergedTracklist() {
+  mergedExpanded.value = !mergedExpanded.value
+  if (mergedExpanded.value) void completeMergedTracklists()
+}
+async function addMergedGhost(row: Row) {
+  const release = detail.value?.releases.find(release => release.releaseId === (row as AlbumTrackRow).releaseId)
+  if (release) await addGhost(release, row)
+}
+function mergedSelectionChanged(ids: number[]) {
+  emit('selectionChange', uniqueTracks(mergedRows.value.filter(row => ids.includes(row.id))).map(row => row.id))
+}
+function toRows(release: Models.app.AlbumDetail, showMissing = expanded.value.has(release.releaseId)): AlbumTrackRow[] {
   const taggedIds = new Set(library.tracks.map(track => track.id))
-  return release.rows.filter(r => (!r.ghost || (!onlyOwned.value && expanded.value.has(release.releaseId))) &&
+  return release.rows.filter(r => (!r.ghost || showMissing) &&
     (!library.filter.tagId || (!r.ghost && taggedIds.has(r.trackId))))
     .map(r => ({ id: r.trackId, rowKey: r.ghost ? `release:${release.releaseId}:${r.discNumber}:${r.trackNumber}:${r.trackRef ?? ''}` : `track:${r.trackId}`,
+      releaseId: release.releaseId, provider: release.provider,
       title: r.title, artist: r.credit, album: release.title, durationMs: r.durationMs, addedAt: r.addedAt,
+      mediumFormat: release.mediumFormat, country: release.country,
       trackNumber: r.trackNumber || null, discNumber: r.discNumber || null, ghost: r.ghost, trackRef: r.trackRef,
       recordingRef: r.recordingRef, coverSource: coverSourceOf(release), adoptedCoverPath: release.coverPath ?? null }))
 }
@@ -172,12 +199,32 @@ function selectionChanged(id: number, ids: number[]) {
         <div class="flex shrink-0 items-center gap-3 px-4 pb-3">
           <div class="min-w-0 flex-1">
             <h3 class="text-base font-semibold">{{ detail.title || '未命名专辑' }}</h3>
-            <p class="text-xs text-muted-color">收藏 {{ detail.ownedCount }} 首 · {{ detail.memberCount }} 个在库版本（包含已保存空发行）</p>
+            <p class="text-xs text-muted-color">收藏 {{ detail.ownedCount }} 首 · {{ detail.memberCount }} 个在库版本</p>
           </div>
-          <SecondaryButton size="small" :class="onlyOwned ? 'bg-highlight!' : ''" @click="toggleOnlyOwned">仅显示已有</SecondaryButton>
+          <SecondaryButton v-if="detail.releases.length > 1" size="small" @click="toggleMerged">{{ merged ? '拆分 group' : '合并 group' }}</SecondaryButton>
         </div>
         <div class="min-h-0 flex-1 overflow-auto">
-          <section v-for="release in detail.releases" :key="release.releaseId" :data-release-id="release.releaseId" class="border-t">
+          <section v-if="merged && detail.releases.length > 1" class="border-t" data-testid="merged-album">
+            <div class="flex items-center justify-between gap-3 px-4 py-3">
+              <p class="text-xs text-muted-color">合并显示 {{ mergedRows.length }} 首歌曲 · 相同歌曲优先显示收藏，拆分后可查看各版本。</p>
+              <SecondaryButton size="small" variant="text" @click="toggleMergedTracklist">{{ mergedExpanded ? '收起清单' : '展开发行清单' }}</SecondaryButton>
+            </div>
+            <div :style="{ height: `${Math.min(720, 120 + mergedRows.length * 44)}px` }">
+              <TrackTable :drawer-open="drawerOpen" :rows="mergedRows" :loading="library.loading"
+                :context-key="`album-group:${detail.groupId}`" column-context="album" fixed-order
+                @open="r => emit('openTrack', r.id)" @edit="r => emit('editTrack', r.id)"
+                @add-ghost-to-library="addMergedGhost"
+                @add-to-collection="(rows, kind) => emit('addToCollection', rows, kind)"
+                @view-artist="r => emit('viewArtist', r)" @copy-info="rows => emit('copyInfo', rows)"
+                @remove="rows => emit('removeTracks', rows)" @view-upstream="r => emit('viewUpstream', r)"
+                @export-scope="scope => emit('exportScope', scope)" @selection-change="mergedSelectionChanged" />
+            </div>
+            <div v-for="release in detail.releases.filter(r => r.incomplete)" :key="release.releaseId" class="flex items-center gap-2 px-4 pb-3 text-xs text-muted-color">
+              <span>{{ release.title }} · {{ release.tracklistError || '清单不完整' }}</span>
+              <SecondaryButton size="small" variant="text" :disabled="fetching.has(release.releaseId)" @click="completeTracklist(release, true)">{{ fetching.has(release.releaseId) ? '获取中…' : '补全清单' }}</SecondaryButton>
+            </div>
+          </section>
+          <section v-for="release in (merged && detail.releases.length > 1 ? [] : detail.releases)" :key="release.releaseId" :data-release-id="release.releaseId" class="border-t">
             <div class="flex items-start gap-3 px-4 py-3">
               <CoverArt :source="coverSourceOf(release)" usage="detail" class="size-16 shrink-0 rounded" icon-class="size-5" />
               <div class="min-w-0 flex-1">

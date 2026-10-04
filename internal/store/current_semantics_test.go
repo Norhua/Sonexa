@@ -220,8 +220,8 @@ func TestLyricsRestartWriteFailureAndConcurrentReferences(t *testing.T) {
 		t.Fatalf("delete retained unreferenced lyrics: %v %v", files, err)
 	}
 	var releases int
-	if err := s.db.QueryRow("SELECT count(*) FROM release").Scan(&releases); err != nil || releases != 1 {
-		t.Fatal("empty upstream release lost membership", err)
+	if err := s.db.QueryRow("SELECT count(*) FROM release").Scan(&releases); err != nil || releases != 0 {
+		t.Fatal("empty upstream release retained", err)
 	}
 }
 
@@ -269,7 +269,7 @@ func TestGroupSnapshotsAndAlbumCreditProjection(t *testing.T) {
 	if err := s.DeleteTrack(id); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.db.QueryRow("SELECT count(*) FROM release WHERE id=?", *upstream.ReleaseID).Scan(&n); err != nil || n != 1 {
-		t.Fatal("empty upstream member deleted", err)
+	if err := s.db.QueryRow("SELECT count(*) FROM release WHERE id=?", *upstream.ReleaseID).Scan(&n); err != nil || n != 0 {
+		t.Fatal("empty upstream member retained", err)
 	}
 }

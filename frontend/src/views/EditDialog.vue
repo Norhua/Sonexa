@@ -19,6 +19,7 @@ const props = defineProps<{ trackId: number }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 const settings = useSettingsStore(), admission = useAdmissionStore(), edit = useEditDraft()
 const loading = ref(false), error = ref('')
+const preparingUse = ref(false)
 const source = ref(''), region = ref(''), searchTitle = ref(''), searchArtist = ref(''), searchAlbum = ref('')
 const candidates = ref<Models.app.CandidateRow[]>([]), searched = ref(false), showCandidates = ref(true), selectedCandidate = ref('')
 const versions = ref<Models.app.EditVersion[]>([]), versionTotal = ref<number | null>(null), showVersions = ref(false), versionsLoaded = ref(false)
@@ -59,7 +60,7 @@ const readonlyFields = computed(() => {
 })
 const bindingStatus = computed(() => ({ set: '已更换绑定 · 未保存', clear_track: '将清除歌曲绑定', clear_release: '将解除发行绑定' })[edit.bindingAction.value as 'set' | 'clear_track' | 'clear_release'] ?? '')
 const currentTitle = computed(() => valueOf(edit.baseSession.value?.current['track.title']) || '未命名歌曲')
-const currentCover = computed(() => valueOf(edit.baseSession.value?.current['release.cover'])?.imageId)
+const currentCover = computed(() => edit.baseSession.value?.releaseId && !valueOf(edit.baseSession.value?.current['release.cover'])?.cleared)
 const upstreamArtwork = computed(() => edit.upstream.value['release.artwork'])
 function providerName(id?: string) { return settings.providerById(id ?? '')?.displayName ?? (id ? '上游' : '本地') }
 function identityLabel(identity?: Models.domain.Identity | null) { return identity?.ref ? `${providerName(identity.provider)} · 已绑定` : '未绑定' }
@@ -96,7 +97,27 @@ watch(source, () => { edit.invalidateRequests(); candidates.value = []; searched
 watch(() => `${previewGroup.value?.provider}:${previewGroup.value?.ref}`, () => { versions.value = []; versionTotal.value = null; showVersions.value = false; versionsLoaded.value = false })
 watch([bindingSource, bindingRegion, trackRef, releaseRef], () => { bindingParsed.value = null }, { flush: 'sync' })
 function close() { if (loading.value) return; if (edit.dirty.value) exitPrompt.value = true; else emit('close') }
-function confirmUse(fill = true) { if (!edit.preview.value) return; useValues.value = fill; useConfirmation.value = copy(edit.preview.value) }
+async function confirmUse(fill = true) {
+  const current = edit.preview.value
+  if (!current || loading.value) return
+  const owner = edit.requestOwner()
+  preparingUse.value = true
+  await run(async () => {
+    let preview = current
+    if (current.releaseIdentity && snapshot.value?.release?.tracklistCompleteness !== 'complete') {
+      if (!settings.outboundAllowed) throw new Error(`${settings.outboundReason}；获取完整预览后才能使用此上游。`)
+      preview = await App.LoadEditUpstream(current.releaseIdentity.provider, current.releaseIdentity.ref, current.trackIdentity?.ref ?? '', region.value, false)
+      if (!alive || !edit.acceptPreview(owner, preview)) return
+      if (JSON.parse(preview.snapshotJson).release?.tracklistCompleteness !== 'complete') {
+        throw new Error('上游暂未提供完整发行清单，请重试获取完整预览后再使用。')
+      }
+    }
+    if (!alive || !edit.ownsRequest(owner)) return
+    useValues.value = fill
+    useConfirmation.value = copy(preview)
+  })
+  preparingUse.value = false
+}
 async function stageCover(preview: Models.domain.EditPreview) {
   const existing = previewCovers.value[preview.id]
   if (existing) return existing
@@ -228,8 +249,8 @@ async function rebase() {
         <form class="space-y-3" @submit.prevent="search">
           <div class="flex items-center gap-2">
             <Select v-model="source" :disabled="loading" :options="settings.providers" option-label="displayName" option-value="id" aria-label="上游来源" class="min-w-0 flex-1" />
-            <SecondaryButton type="submit" aria-label="搜索候选" :disabled="loading || !settings.outboundAllowed"><Search class="size-4" />搜索</SecondaryButton>
-            <Button type="button" :disabled="!edit.preview.value?.trackIdentity || loading" @click="confirmUse()">使用</Button>
+            <Button type="submit" aria-label="搜索候选" :disabled="loading || !settings.outboundAllowed"><Search class="size-4" />搜索</Button>
+            <SecondaryButton type="button" aria-label="使用" :aria-busy="preparingUse" :disabled="!edit.preview.value?.trackIdentity || loading" @click="confirmUse()"><LoaderCircle v-if="preparingUse" class="size-4 animate-spin" /><span>{{ preparingUse ? '获取中…' : '使用' }}</span></SecondaryButton>
           </div>
           <div class="search-fields grid grid-cols-3 gap-2">
             <label>曲名<InputText v-model="searchTitle" aria-label="搜索曲名" placeholder="曲名" class="mt-1 w-full min-w-0" /></label>
@@ -250,7 +271,7 @@ async function rebase() {
           </div>
         </section>
         <template v-if="edit.preview.value">
-          <div class="flex items-center justify-between gap-2 text-xs text-muted-color"><span>{{ providerName(edit.preview.value.releaseIdentity?.provider) }} · {{ selectedCandidate ? '所选候选' : '上游预览' }}</span><button :disabled="loading || !settings.outboundAllowed || !edit.preview.value.releaseIdentity" class="inline-flex items-center gap-1 disabled:opacity-40" @click="fetchPreview"><RefreshCw class="size-3.5" />重新获取预览</button></div>
+          <div class="flex items-center justify-between gap-2 text-xs text-muted-color"><span>{{ providerName(edit.preview.value.releaseIdentity?.provider) }} · {{ selectedCandidate ? '所选候选' : '上游预览' }}</span><button :disabled="loading || !settings.outboundAllowed || !edit.preview.value.releaseIdentity" class="inline-flex items-center gap-1 disabled:opacity-40" @click="fetchPreview"><RefreshCw class="size-3.5" />获取完整预览</button></div>
           <section class="preview-card p-4" aria-label="上游歌曲信息">
             <h3 class="section-heading"><Music2 class="size-4" />歌曲信息</h3>
             <p class="mb-4 mt-3 break-words text-lg font-semibold">{{ fieldText(edit.preview.value.fields['track.title']) }}</p>
@@ -277,7 +298,7 @@ async function rebase() {
             <div class="border-t">
               <button class="disclosure" :aria-expanded="showTracklist" @click="showTracklist = !showTracklist"><span>{{ showTracklist ? '收起' : '展开' }}当前发行清单</span><ChevronDown class="size-4" :class="{ '-rotate-90': !showTracklist }" /></button>
               <div v-if="showTracklist" class="px-3 pb-3">
-                <p v-if="!tracklist.length" class="py-2 text-xs text-muted-color">清单未提供，请重新获取预览。</p>
+                <p v-if="!tracklist.length" class="py-2 text-xs text-muted-color">清单未提供，请点击获取完整预览。</p>
                 <p v-else-if="snapshot?.release?.tracklistCompleteness !== 'complete'" class="pb-2 text-xs text-muted-color">当前清单尚不完整。</p>
                 <div v-for="disc in tracklistDiscs" :key="disc.number"><p class="border-b py-2 text-xs font-medium text-muted-color">第 {{ disc.number }} 碟</p><button v-for="(row, i) in disc.rows" :key="i" class="tracklist-row" :disabled="loading || !settings.outboundAllowed || !row.track?.value?.ref" :aria-current="trackState(row) === '本曲' ? 'true' : undefined" @click="chooseTrack(row.track.value!.ref)"><span class="w-6 shrink-0 text-xs tabular-nums text-muted-color">{{ row.trackNumber }}</span><span class="min-w-0 flex-1 break-words">{{ display(row.title) }}</span><span class="shrink-0 text-[10px] text-muted-color">{{ trackState(row) }}</span></button></div>
               </div>
@@ -304,7 +325,7 @@ async function rebase() {
           <h3 class="section-heading"><ImageIcon class="size-4" />封面<span v-if="edit.coverAction.value !== 'keep'" class="status-chip">未保存</span></h3>
           <div class="flex items-start gap-4">
             <img v-if="coverURL && edit.coverAction.value === 'replace'" :src="coverURL" alt="封面草稿" class="size-24 shrink-0 rounded-md border object-contain" />
-            <CoverArt v-else-if="edit.coverAction.value !== 'clear' && currentCover" usage="detail" :source="{ releaseId: edit.baseSession.value.releaseId }" class="size-24 shrink-0 rounded-md" />
+            <CoverArt v-else-if="edit.coverAction.value !== 'clear' && currentCover" usage="detail" :source="{ releaseId: edit.baseSession.value.releaseId, revision: edit.baseSession.value.coverRevision }" aria-label="当前封面" class="size-24 shrink-0 rounded-md" />
             <div v-else class="flex size-24 shrink-0 flex-col items-center justify-center gap-2 rounded-md border bg-app-chrome text-xs text-muted-color"><ImageIcon class="size-6" />{{ edit.coverAction.value === 'clear' ? '保存后清除' : '暂无封面' }}</div>
             <div class="space-y-2"><div class="flex flex-wrap gap-2"><SecondaryButton size="small" :disabled="loading" @click="pickCover">选择本地封面</SecondaryButton><SecondaryButton v-if="upstreamArtwork && upstreamArtwork.state !== 'unknown'" size="small" :disabled="loading" @click="applyUpstreamCover"><ArrowLeft class="size-3.5" />应用上游封面</SecondaryButton></div><div class="flex flex-wrap gap-3 text-xs text-muted-color"><button :disabled="loading || (!currentCover && edit.coverAction.value !== 'replace')" @click="edit.coverAction.value = 'clear'; edit.coverToken.value = ''">清除封面</button><button v-if="edit.coverAction.value !== 'keep'" :disabled="loading" @click="edit.coverAction.value = 'keep'; edit.coverToken.value = ''">撤销封面修改</button></div><p class="text-xs text-muted-color">封面属于当前发行，保存后生效。</p></div>
           </div>

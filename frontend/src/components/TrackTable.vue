@@ -19,6 +19,7 @@ export type { Row } from '@/lib/trackRows'
 
 const props = withDefaults(defineProps<{
   drawerOpen?: boolean
+  showEnrichment?: boolean
   rows: Row[]
   collectionId?: number
   fixedOrder?: boolean
@@ -242,7 +243,7 @@ defineExpose({ selectedCount, trackCount, selectedRows })
     <div data-track-toolbar class="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs text-muted-color">
       <span role="status"><template v-if="loading">正在加载曲目…</template><template v-else>{{ trackCount }} 首曲目<span v-if="selectedCount"> · 已选 {{ selectedCount }} 项</span></template></span>
       <div class="flex-1" />
-      <div class="flex items-center gap-1.5" :title="enrich.hint">
+      <div v-if="showEnrichment && !enrich.idleEmpty" class="flex items-center gap-1.5" :title="enrich.hint" data-testid="enrichment-progress">
         <span>补全信息匹配</span>
         <SecondaryButton size="small" variant="text" pt:root:class="h-6 gap-1 p-small:px-1.5 p-small:py-0 p-small:text-xs" :disabled="enrich.idleEmpty && !enrich.running" @click="enrich.toggle()">
           <component :is="enrich.running ? Pause : Play" class="size-3" />{{ enrich.running ? '暂停' : '开始' }}
@@ -251,7 +252,7 @@ defineExpose({ selectedCount, trackCount, selectedRows })
       </div>
     </div>
     <!-- lazy 只关闭内部排序/过滤；无服务端分页。屏幕与选择共用同一份 orderedRows。 -->
-    <DataTable :value="orderedRows" data-key="key" lazy scrollable scroll-height="flex" removable-sort
+    <DataTable class="min-h-0 flex-1" :value="orderedRows" data-key="key" lazy scrollable scroll-height="flex" removable-sort
       :selection="selection.selectedRows.value" :pt="tablePT" :loading="loading"
       :sort-field="sortField" :sort-order="sortDesc ? -1 : 1"
       :table-style="{ minWidth: `${columns.widthFor(columnContext)}px`, tableLayout: 'fixed' }" @sort="onSort">

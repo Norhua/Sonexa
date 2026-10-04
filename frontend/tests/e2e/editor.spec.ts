@@ -2,6 +2,57 @@ import { test,expect } from './fixtures'
 import { fileURLToPath } from 'node:url'
 const stub=fileURLToPath(new URL('./wails-stub.js',import.meta.url))
 test.beforeEach(async({page})=>{await page.addInitScript({path:stub});await page.goto('/');await page.locator('.track-list [data-row-key]').first().click({button:'right'});await page.getByRole('menuitem',{name:'编辑',exact:true}).click();await expect(page.getByRole('dialog',{name:'编辑曲目',exact:true})).toBeVisible()})
+test('use loads complete preview once, shows busy state and keeps drafts after failure', async ({ page }) => {
+ const editor = page.getByRole('dialog', { name: '编辑曲目', exact: true })
+ await editor.getByRole('textbox', { name: '曲名', exact: true }).fill('保留手工输入')
+ await page.evaluate(() => {
+  const api = (window as any).go.app.App, load = api.LoadEditUpstream
+  ;(window as any).__loadCount = 0
+  api.LoadEditUpstream = (...args: any[]) => new Promise((resolve, reject) => {
+   ;(window as any).__loadCount++
+   ;(window as any).__failPreview = () => reject(new Error('完整预览获取失败'))
+   ;(window as any).__finishPreview = async () => resolve(await load(...args))
+  })
+ })
+ const use = editor.getByRole('button', { name: '使用', exact: true })
+ await use.click()
+ await expect(use).toHaveAttribute('aria-busy', 'true')
+ await expect(use).toBeDisabled()
+ await expect(use.locator('.animate-spin')).toBeVisible()
+ await page.evaluate(() => (window as any).__failPreview())
+ await expect(editor.getByRole('alert')).toContainText('完整预览获取失败')
+ await expect(editor.getByRole('textbox', { name: '曲名', exact: true })).toHaveValue('保留手工输入')
+ await use.click()
+ await page.evaluate(() => (window as any).__finishPreview())
+ const confirm = page.getByRole('dialog', { name: '使用当前上游信息' })
+ await confirm.getByRole('button', { name: '取消', exact: true }).click()
+ await use.click()
+ await expect.poll(() => page.evaluate(() => (window as any).__loadCount)).toBe(2)
+ await confirm.getByRole('button', { name: '确认使用', exact: true }).click()
+ await expect(editor.getByRole('textbox', { name: '曲名', exact: true })).toHaveValue('上游曲名')
+})
+
+test('partial upstream result fails before use confirmation and automatic current cover remains visible', async ({ page }) => {
+ const editor = page.getByRole('dialog', { name: '编辑曲目', exact: true })
+ await page.route('**/cover?**', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="#447788"/></svg>' }))
+ await page.evaluate(() => (window as any).runtime.EventsEmit('cover:changed', { releaseId: 20, revision: 1 }))
+ await editor.getByLabel('当前封面', { exact: true }).scrollIntoViewIfNeeded()
+ const image = editor.getByLabel('当前封面', { exact: true }).locator('img')
+ await expect(image).toHaveAttribute('src', /releaseId=20/)
+ await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
+ await editor.getByRole('button', { name: '清除封面', exact: true }).click()
+ await expect(image).toHaveCount(0)
+ await editor.getByRole('button', { name: '撤销封面修改', exact: true }).click()
+ await expect(image).toBeVisible()
+ await page.evaluate(() => {
+  const api = (window as any).go.app.App, load = api.LoadEditUpstream
+  api.LoadEditUpstream = async (...args: any[]) => ({ ...await load(...args), snapshotJson: JSON.stringify({ release: { tracklistCompleteness: 'partial' } }) })
+ })
+ await editor.getByRole('button', { name: '使用', exact: true }).click()
+ await expect(editor.getByRole('alert')).toContainText('上游暂未提供完整发行清单')
+ await expect(page.getByRole('dialog', { name: '使用当前上游信息' })).toHaveCount(0)
+ await expect(editor.getByRole('button', { name: '保存', exact: true })).toBeDisabled()
+})
 test('preview and confirmed use, dirty exit and cancellation',async({page},testInfo)=>{
  const editor=page.getByRole('dialog',{name:'编辑曲目',exact:true})
  await expect(editor.getByRole('textbox',{name:'曲名',exact:true})).toHaveValue('夕立')
@@ -187,7 +238,7 @@ test('lyrics stay in the draft and Escape closes only the lyrics dialog', async 
 test('parsed binding can be changed without replacing current values, then undone', async ({ page }) => {
  await page.evaluate(() => {
   const api = (window as any).go.app.App
-  api.LoadEditUpstream = async (...args: any[]) => { (window as any).__bindingArgs = args; return { id: 'manual', snapshotJson: '{}', fields: { 'track.title': { state: 'value', valueJson: '"链接歌曲"' } }, trackIdentity: { provider: 'musicbrainz', ref: 'manual-track' }, releaseIdentity: { provider: 'musicbrainz', ref: 'manual-release' } } }
+  api.LoadEditUpstream = async (...args: any[]) => { (window as any).__bindingArgs = args; return { id: 'manual', snapshotJson: JSON.stringify({release:{tracklistCompleteness:'complete'}}), fields: { 'track.title': { state: 'value', valueJson: '"链接歌曲"' } }, trackIdentity: { provider: 'musicbrainz', ref: 'manual-track' }, releaseIdentity: { provider: 'musicbrainz', ref: 'manual-release' } } }
  })
  const editor = page.getByRole('dialog', { name: '编辑曲目', exact: true })
  await editor.getByRole('button', { name: '修改绑定', exact: true }).click()

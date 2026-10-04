@@ -54,8 +54,19 @@ func TestEditSaveResearchVersionsBothDirections(t *testing.T) {
 					t.Fatalf("migration: %d %v", len(tracks), err)
 				}
 				oldAfter, _ := st.GetRelease(current.ReleaseID)
-				if !reflect.DeepEqual(oldRelease, oldAfter) {
+				if len(choices) == len(ids) && oldAfter != nil {
+					t.Fatal("empty source release retained")
+				}
+				if len(choices) < len(ids) && !reflect.DeepEqual(oldRelease, oldAfter) {
 					t.Fatal("source release changed")
+				}
+				members, err := st.ListGroupReleases(result.GroupID)
+				want := 1
+				if len(choices) < len(ids) {
+					want = 2
+				}
+				if err != nil || len(members) != want {
+					t.Fatalf("members=%d want=%d: %v", len(members), want, err)
 				}
 				for _, choice := range choices {
 					after, err := st.ReadEditorSession(choice.TrackID)
