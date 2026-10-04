@@ -249,8 +249,8 @@ async function rebase() {
         <form class="space-y-3" @submit.prevent="search">
           <div class="flex items-center gap-2">
             <Select v-model="source" :disabled="loading" :options="settings.providers" option-label="displayName" option-value="id" aria-label="上游来源" class="min-w-0 flex-1" />
-            <Button type="submit" aria-label="搜索候选" :disabled="loading || !settings.outboundAllowed"><Search class="size-4" />搜索</Button>
-            <SecondaryButton type="button" aria-label="使用" :aria-busy="preparingUse" :disabled="!edit.preview.value?.trackIdentity || loading" @click="confirmUse()"><LoaderCircle v-if="preparingUse" class="size-4 animate-spin" /><span>{{ preparingUse ? '获取中…' : '使用' }}</span></SecondaryButton>
+            <Button class="upstream-action" type="submit" aria-label="搜索候选" :disabled="loading || !settings.outboundAllowed"><Search class="size-4" />搜索</Button>
+            <Button class="upstream-action" type="button" aria-label="使用" :aria-busy="preparingUse" :disabled="!edit.preview.value?.trackIdentity || loading" @click="confirmUse()"><LoaderCircle v-if="preparingUse" class="size-4 shrink-0 animate-spin" /><Check v-else class="size-4 shrink-0" aria-hidden="true" /><span>{{ preparingUse ? '获取中…' : '使用' }}</span></Button>
           </div>
           <div class="search-fields grid grid-cols-3 gap-2">
             <label>曲名<InputText v-model="searchTitle" aria-label="搜索曲名" placeholder="曲名" class="mt-1 w-full min-w-0" /></label>
@@ -379,6 +379,7 @@ async function rebase() {
 .editor-pane { min-width: 0; overflow-y: auto; padding: 22px 24px; scrollbar-gutter: stable; }
 .editor-pane > * + * { margin-top: 20px; }
 .upstream-pane { border-right: 1px solid var(--p-content-border-color); background: var(--p-app-chrome-background); }
+.upstream-action { width: 85px; height: 35px; padding: 0; flex-shrink: 0; }
 .current-pane { container: editor-fields / inline-size; }
 .pane-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
 .pane-heading h2 { font-size: 15px; font-weight: 600; }
