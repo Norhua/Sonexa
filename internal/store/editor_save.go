@@ -37,8 +37,9 @@ func (s *Store) CommitEdit(ctx context.Context, plan domain.AdmissionPlan, appro
 	if content.Impact == nil {
 		return nil, ErrPlanStale
 	}
+	migrates := content.Impact.SharedChange && !content.Impact.UpdatesRelease
 	writes := []editWrite{}
-	if content.Impact.SharedChange {
+	if migrates {
 		if content.Album == nil || !content.Album.CanSubmit || len(content.Album.SelectedTrackIDs) == 0 {
 			return nil, ErrPlanStale
 		}
@@ -203,7 +204,7 @@ func (s *Store) CommitEdit(ctx context.Context, plan domain.AdmissionPlan, appro
 			return ErrConfirmationRequired
 		}
 		result = &domain.AdmissionResult{TrackID: content.Draft.TrackID, ReleaseID: source.ReleaseID, GroupID: source.GroupID}
-		if content.Impact.SharedChange {
+		if migrates {
 			if content.Impact.CreatesRelease {
 				var exists int
 				if err := tx.QueryRow("SELECT count(*) FROM release WHERE id=?", content.NewReleaseID).Scan(&exists); err != nil {
@@ -242,10 +243,39 @@ func (s *Store) CommitEdit(ctx context.Context, plan domain.AdmissionPlan, appro
 				}
 			}
 		}
+		if content.Impact.UpdatesRelease {
+			if result.ReleaseID == 0 || result.ReleaseID != content.Impact.TargetReleaseID || content.Draft.AlbumAction != "update" {
+				return ErrPlanStale
+			}
+			if content.Draft.BindingAction == "set" && content.Target.Release != nil {
+				if source.ReleaseIdentity == nil || *source.ReleaseIdentity != content.Target.Release.Identity {
+					return ErrSnapshotTarget
+				}
+				body, err := saveSnapshotTx(tx, "release", result.ReleaseID, content.Target.Release)
+				if err != nil {
+					return err
+				}
+				if content.Target.Release.Tracklist.IsKnown() {
+					var snapshot domain.ReleaseSnapshot
+					if err := json.Unmarshal(body, &snapshot); err != nil {
+						return err
+					}
+					if err := syncSnapshotTracklistTx(tx, result.ReleaseID, snapshot); err != nil {
+						return err
+					}
+				}
+			}
+			if err := writeEditorFieldsTx(tx, "release", result.ReleaseID, content.Draft.Fields); err != nil {
+				return err
+			}
+			if err := syncFTSForRelease(tx, result.ReleaseID); err != nil {
+				return err
+			}
+		}
 		// Recheck complete positions and identities even for callers bypassing the UI.
 		seen := map[string]bool{}
 		for _, write := range writes {
-			if content.Impact.SharedChange {
+			if migrates {
 				var releaseID *int64
 				if err := tx.QueryRow("SELECT release_id FROM track WHERE id=?", write.id).Scan(&releaseID); err != nil {
 					return err
@@ -330,7 +360,7 @@ func (s *Store) CommitEdit(ctx context.Context, plan domain.AdmissionPlan, appro
 					return err
 				}
 			}
-			if content.Impact.SharedChange {
+			if migrates {
 				if _, err := tx.Exec("UPDATE track SET release_id=?,revision=revision+1,updated_at=? WHERE id=?", result.ReleaseID, time.Now().UTC(), write.id); err != nil {
 					return err
 				}
@@ -390,12 +420,20 @@ func (s *Store) CommitEdit(ctx context.Context, plan domain.AdmissionPlan, appro
 				if cover.ReleaseID == nil || *cover.ReleaseID != result.ReleaseID {
 					return ErrPlanStale
 				}
-				if _, err := adoptCoverFileTx(tx, *cover, 0); err != nil {
+				expectedRevision := int64(0)
+				if content.Impact.UpdatesRelease {
+					expectedRevision = source.CoverRevision
+				}
+				if _, err := adoptCoverFileTx(tx, *cover, expectedRevision); err != nil {
 					return err
 				}
 			}
 			if content.Draft.CoverAction == "clear" {
-				if _, err := tx.Exec("INSERT INTO release_cover_selection(release_id,image_id,variant_id,revision,adopted_at) VALUES(?,NULL,NULL,1,?)", result.ReleaseID, time.Now().UTC()); err != nil {
+				if _, err := tx.Exec(`INSERT INTO release_cover_selection(release_id,image_id,variant_id,revision,adopted_at) VALUES(?,NULL,NULL,1,?)
+					ON CONFLICT(release_id) DO UPDATE SET image_id=NULL,variant_id=NULL,revision=release_cover_selection.revision+1,adopted_at=excluded.adopted_at`, result.ReleaseID, time.Now().UTC()); err != nil {
+					return err
+				}
+				if _, err := tx.Exec("UPDATE release SET revision=revision+1,updated_at=? WHERE id=?", time.Now().UTC(), result.ReleaseID); err != nil {
 					return err
 				}
 			}
@@ -407,7 +445,7 @@ func (s *Store) CommitEdit(ctx context.Context, plan domain.AdmissionPlan, appro
 				return err
 			}
 		}
-		if content.Impact.SharedChange && source.ReleaseID != result.ReleaseID {
+		if migrates && source.ReleaseID != result.ReleaseID {
 			if err := deleteOrphanReleaseTx(tx, source.ReleaseID); err != nil {
 				return err
 			}

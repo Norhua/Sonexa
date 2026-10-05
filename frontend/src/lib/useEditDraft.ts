@@ -15,12 +15,13 @@ export function useEditDraft() {
  const fields = ref<EditFields>({})
  const bindingAction = ref('keep'), previewId = ref(''), coverAction = ref('keep'), coverToken = ref('')
  const mappings = ref<Models.domain.EditMapping[]>([])
+ const albumAction = ref<'create' | 'update'>('create')
  let generation = 0
  const changes = computed(() => Object.fromEntries(Object.entries(fields.value).filter(([key,v]) => !same(v,baseSession.value?.current[key]))))
  const dirty = computed(() => Object.keys(changes.value).length>0 || bindingAction.value!=='keep' || coverAction.value!=='keep' || mappings.value.length>0)
  function open(session: Models.domain.EditorSession) {
   generation++; baseSession.value=copy(session);fields.value=copy(session.current);upstream.value=copy(session.upstream)
-  preview.value=null;bindingPreview.value=null;bindingAction.value='keep';previewId.value='';coverAction.value='keep';coverToken.value='';mappings.value=[]
+  preview.value=null;bindingPreview.value=null;bindingAction.value='keep';previewId.value='';coverAction.value='keep';coverToken.value='';mappings.value=[];albumAction.value='create'
  }
  function requestOwner() { return ++generation }
  function acceptPreview(owner:number,next:Models.domain.EditPreview) { if(owner!==generation)return false;preview.value=copy(next);return true }
@@ -38,8 +39,8 @@ export function useEditDraft() {
  function clearBinding(release=false){bindingAction.value=release?'clear_release':'clear_track';previewId.value='';bindingPreview.value=null;upstream.value=release?{}:Object.fromEntries(Object.entries(upstream.value).filter(([k])=>k.startsWith('release.')));mappings.value=[]}
  function draft():Models.domain.EditDraft{
   if(!baseSession.value)throw new Error('编辑会话未就绪')
-  return {trackId:baseSession.value.trackId,revisions:copy(baseSession.value.revisions),fields:copy(changes.value),bindingAction:bindingAction.value,previewId:previewId.value,coverAction:coverAction.value,coverToken:coverToken.value,mappings:copy(mappings.value),mergeTargetId:0} as Models.domain.EditDraft
+  return {trackId:baseSession.value.trackId,revisions:copy(baseSession.value.revisions),fields:copy(changes.value),bindingAction:bindingAction.value,previewId:previewId.value,coverAction:coverAction.value,coverToken:coverToken.value,albumAction:albumAction.value,mappings:copy(mappings.value),mergeTargetId:0} as Models.domain.EditDraft
  }
  function rebase(session:Models.domain.EditorSession){const retained=copy(changes.value);baseSession.value=copy(session);fields.value={...copy(session.current),...retained}}
- return {baseSession,preview,bindingPreview,refreshBinding,upstream,fields,bindingAction,previewId,coverAction,coverToken,mappings,changes,dirty,open,requestOwner,acceptPreview,ownsRequest,invalidateRequests,set,undo,usePreview,clearBinding,draft,rebase}
+ return {baseSession,preview,bindingPreview,refreshBinding,upstream,fields,bindingAction,previewId,coverAction,coverToken,albumAction,mappings,changes,dirty,open,requestOwner,acceptPreview,ownsRequest,invalidateRequests,set,undo,usePreview,clearBinding,draft,rebase}
 }

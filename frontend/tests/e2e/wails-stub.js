@@ -187,7 +187,11 @@
           current:editorFields(),upstream:{'track.title':ef('上游曲名')},revisions:{'track:1':1},releaseTrackIds:[trackId,trackId+1],otherReleaseTracks:1,otherGroupTracks:0,coverRevision:0,snapshotJson:'{}',
         }, providers:[] }),
         PreviewCurrentEditUpstream: async () => ({id:'preview-1',snapshotJson:JSON.stringify({}),fields:{'track.title':ef('上游曲名')},trackIdentity:{provider:'musicbrainz',ref:'track-1'},releaseIdentity:{provider:'musicbrainz',ref:'release-1'}}),
-        PreviewEditSave: async draft => ({sharedChange:Object.keys(draft.fields).some(k=>k.startsWith('release.'))||draft.bindingAction==='clear_release'||draft.coverAction==='replace',sourceTrackIds:[draft.trackId,draft.trackId+1]}),
+        PreviewEditSave: async draft => {
+          const linksNewUpstream=draft.bindingAction==='set'&&draft.previewId==='changed-release'
+          const sharedChange=Object.keys(draft.fields).some(k=>k.startsWith('release.'))||draft.bindingAction==='clear_release'||['replace','clear'].includes(draft.coverAction)||linksNewUpstream
+          return {sharedChange,linksNewUpstream,needsAlbumConfirmation:sharedChange&&(draft.albumAction!=='update'||linksNewUpstream),sourceTrackIds:[draft.trackId,draft.trackId+1]}
+        },
         PlanAlbumChange: async draft => {
           const rows=[draft.trackId,draft.trackId+1].map((id,i)=>{const choice=draft.mappings.find(m=>m.trackId===id);const before=editorFields(i?'第二首':'夕立');return {trackId:id,before,after:choice?.selected?{...before,...draft.fields,'track.discNumber':ef(choice.discNumber),'track.trackNumber':ef(choice.trackNumber)}:before,stay:!choice?.selected,choices:[],conflict:'',evidence:choice?.selected?'已明确迁入':'未确认迁入',beforeIdentity:{ref:'track-'+id},afterIdentity:null}})
           const selected=rows.filter(r=>!r.stay)

@@ -15,7 +15,7 @@ func (s *Service) PlanAlbumChange(ctx context.Context, draft domain.EditDraft) (
 	if err != nil {
 		return nil, err
 	}
-	if !impact.SharedChange {
+	if !impact.SharedChange || impact.UpdatesRelease {
 		return nil, fmt.Errorf("没有需要迁入确认的专辑改动")
 	}
 	target, err := s.editTargetSnapshot(draft, impact)

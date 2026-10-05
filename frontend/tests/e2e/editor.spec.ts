@@ -53,6 +53,45 @@ test('partial upstream result fails before use confirmation and automatic curren
  await expect(page.getByRole('dialog', { name: '使用当前上游信息' })).toHaveCount(0)
  await expect(editor.getByRole('button', { name: '保存', exact: true })).toBeDisabled()
 })
+
+for (const expiresDuringConfirmation of [false, true]) test(`complete preview expiry refreshes before accepting use (${expiresDuringConfirmation})`, async ({ page }) => {
+ const now = Date.now()
+ await page.clock.setFixedTime(new Date(now))
+ await page.getByRole('dialog', { name: '编辑曲目', exact: true }).getByRole('button', { name: '取消', exact: true }).click()
+ await page.evaluate(({ now, expiresDuringConfirmation }) => {
+  const api = (window as any).go.app.App
+  const original = api.PreviewCurrentEditUpstream
+  api.PreviewCurrentEditUpstream = async () => ({ ...await original(), id: 'expires-soon', expiresAt: new Date(now + (expiresDuringConfirmation ? 60000 : -1000)).toISOString(), snapshotJson: JSON.stringify({ release: { tracklistCompleteness: 'complete' } }) })
+  api.LoadEditUpstream = async (...args: any[]) => {
+   ;(window as any).__refreshArgs = args
+   ;(window as any).__refreshCount = ((window as any).__refreshCount || 0) + 1
+   return { ...await original(), id: 'renewed-complete', expiresAt: new Date(now + 3600000).toISOString(), fields: { 'track.title': { state: 'value', valueJson: '"刷新后曲名"' } }, snapshotJson: JSON.stringify({ release: { tracklistCompleteness: 'complete' } }) }
+  }
+  const save = api.PlanEditSave
+  api.PlanEditSave = async (draft: any) => {
+   if (draft.previewId !== 'renewed-complete') throw new Error('仍在使用过期预览')
+   return save(draft)
+  }
+ }, { now, expiresDuringConfirmation })
+ await page.locator('.track-list [data-row-key]').first().click({ button: 'right' })
+ await page.getByRole('menuitem', { name: '编辑', exact: true }).click()
+ const editor = page.getByRole('dialog', { name: '编辑曲目', exact: true })
+ await editor.getByRole('button', { name: '使用', exact: true }).click()
+ const confirm = page.getByRole('dialog', { name: '使用当前上游信息' })
+ if (expiresDuringConfirmation) {
+  await page.clock.setFixedTime(new Date(now + 120000))
+  await confirm.getByRole('button', { name: '确认使用', exact: true }).click()
+  await expect(editor.getByRole('textbox', { name: '曲名', exact: true })).toHaveValue('夕立')
+ }
+ await expect(confirm).toContainText('刷新后曲名')
+ expect(await page.evaluate(() => (window as any).__refreshArgs)).toEqual(['musicbrainz', 'release-1', 'track-1', '', true])
+ await confirm.getByRole('button', { name: '确认使用', exact: true }).click()
+ await expect(editor.getByRole('textbox', { name: '曲名', exact: true })).toHaveValue('刷新后曲名')
+ await editor.getByRole('button', { name: '保存', exact: true }).click()
+ await expect(editor).toHaveCount(0)
+ expect(await page.evaluate(() => (window as any).__refreshCount)).toBe(1)
+})
+
 test('preview and confirmed use, dirty exit and cancellation',async({page},testInfo)=>{
  const editor=page.getByRole('dialog',{name:'编辑曲目',exact:true})
  await expect(editor.getByRole('textbox',{name:'曲名',exact:true})).toHaveValue('夕立')
@@ -78,8 +117,8 @@ test('explicit per-track migration, duplicate positions and empty positions',asy
  await editor.getByRole('textbox',{name:'专辑名',exact:true}).fill('新专辑')
  await editor.getByRole('button',{name:'保存',exact:true}).click()
  const prompt=page.getByRole('dialog',{name:'专辑信息有改动'})
- await expect(prompt.getByRole('button',{name:'修改全部'})).toHaveCount(0)
- await prompt.getByRole('button',{name:'新建专辑',exact:true}).click()
+ await expect(prompt.getByRole('button',{name:'修改专辑信息',exact:true})).toBeEnabled()
+ await prompt.getByRole('button',{name:'新建专辑信息',exact:true}).click()
  const impact=page.getByRole('dialog',{name:'确认迁入歌曲'})
  await expect(impact.getByRole('button',{name:'确认影响并继续'})).toBeDisabled()
  await impact.getByRole('button',{name:'查看第二首',exact:true}).click()
@@ -97,6 +136,69 @@ test('explicit per-track migration, duplicate positions and empty positions',asy
  await impact.getByRole('button',{name:'确认影响并继续'}).click()
  await expect(editor).toHaveCount(0)
  expect(await page.evaluate(()=>(window as any).__editDraft.mappings.filter((m:any)=>m.selected).map((m:any)=>m.trackId))).toEqual([2])
+ expect(await page.evaluate(()=>(window as any).__editDraft.albumAction)).toBe('create')
+})
+
+test('album prompt offers three actions, cancellation keeps draft and update preserves binding', async ({ page }, testInfo) => {
+ const editor = page.getByRole('dialog', { name: '编辑曲目', exact: true })
+ await editor.getByRole('textbox', { name: '专辑名', exact: true }).fill('保留上游的专辑名')
+ await editor.getByRole('button', { name: '保存', exact: true }).click()
+ const prompt = page.getByRole('dialog', { name: '专辑信息有改动', exact: true })
+ for (const name of ['新建专辑信息', '修改专辑信息', '取消']) await expect(prompt.getByRole('button', { name, exact: true })).toBeEnabled()
+ await expect(prompt).toContainText('保留上游绑定')
+ for (const dark of [false, true]) {
+  await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), dark)
+  await expect.poll(async () => {
+   const colors = await Promise.all(['新建专辑信息', '修改专辑信息', '取消'].map(name => prompt.getByRole('button', { name, exact: true }).evaluate(el => JSON.stringify({ background: getComputedStyle(el).backgroundColor, text: getComputedStyle(el).color }))))
+   return colors[0] === colors[1] && colors[0] !== colors[2]
+  }).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath(`album-actions-${dark ? 'dark' : 'light'}.png`), animations: 'disabled' })
+ }
+ await page.screenshot({ path: testInfo.outputPath('album-save-actions.png'), animations: 'disabled' })
+ await page.setViewportSize({ width: 390, height: 760 })
+ expect(await prompt.evaluate(el => el.scrollWidth > el.clientWidth + 2)).toBe(false)
+ await expect(prompt.getByRole('button', { name: '取消', exact: true })).toBeInViewport()
+ await page.screenshot({ path: testInfo.outputPath('album-save-actions-narrow.png'), animations: 'disabled' })
+ await prompt.getByRole('button', { name: '取消', exact: true }).click()
+ await expect(editor.getByRole('textbox', { name: '专辑名', exact: true })).toHaveValue('保留上游的专辑名')
+ expect(await page.evaluate(() => (window as any).__editSaved)).toBeUndefined()
+ await editor.getByRole('button', { name: '保存', exact: true }).click()
+ await prompt.getByRole('button', { name: '修改专辑信息', exact: true }).click()
+ await expect(editor).toHaveCount(0)
+ await expect(page.getByRole('dialog', { name: '确认迁入歌曲' })).toHaveCount(0)
+ expect(await page.evaluate(() => ({ action: (window as any).__editDraft.albumAction, binding: (window as any).__editDraft.bindingAction, mappings: (window as any).__editDraft.mappings }))).toEqual({ action: 'update', binding: 'keep', mappings: [] })
+})
+
+test('failed album update preserves draft and allows choosing create afterwards', async ({ page }) => {
+ const editor = page.getByRole('dialog', { name: '编辑曲目', exact: true })
+ await page.evaluate(() => { (window as any).go.app.App.PlanEditSave = async () => { throw new Error('专辑结构与已有歌曲位置冲突') } })
+ await editor.getByRole('textbox', { name: '专辑名', exact: true }).fill('保留修改')
+ await editor.getByRole('button', { name: '保存', exact: true }).click()
+ await page.getByRole('button', { name: '修改专辑信息', exact: true }).click()
+ await expect(editor.getByRole('alert')).toContainText('专辑结构与已有歌曲位置冲突')
+ await expect(editor.getByRole('textbox', { name: '专辑名', exact: true })).toHaveValue('保留修改')
+ await editor.getByRole('button', { name: '保存', exact: true }).click()
+ await page.getByRole('button', { name: '新建专辑信息', exact: true }).click()
+ await expect(page.getByRole('dialog', { name: '确认迁入歌曲' })).toBeVisible()
+})
+
+test('changed upstream only offers create and requires migration', async ({ page }) => {
+ await page.evaluate(() => {
+  const api = (window as any).go.app.App
+  api.LoadEditUpstream = async () => ({ id: 'changed-release', snapshotJson: JSON.stringify({ release: { tracklistCompleteness: 'complete' } }), fields: { 'release.title': { state: 'value', valueJson: '"新上游专辑"' } }, trackIdentity: { provider: 'musicbrainz', ref: 'new-track' }, releaseIdentity: { provider: 'musicbrainz', ref: 'new-release' } })
+ })
+ const editor = page.getByRole('dialog', { name: '编辑曲目', exact: true })
+ await editor.getByRole('button', { name: '使用', exact: true }).click()
+ await page.getByRole('button', { name: '确认使用', exact: true }).click()
+ await editor.getByRole('button', { name: '保存', exact: true }).click()
+ await expect(page.getByRole('dialog', { name: '专辑信息有改动' })).toContainText('保留所选上游绑定')
+ await expect(page.getByRole('button', { name: '修改专辑信息', exact: true })).toHaveCount(0)
+ await page.getByRole('button', { name: '新建专辑信息', exact: true }).click()
+ const impact = page.getByRole('dialog', { name: '确认迁入歌曲' })
+ await expect(impact).toBeVisible()
+ await impact.getByRole('checkbox').check()
+ await impact.getByRole('button', { name: '确认影响并继续' }).click()
+ expect(await page.evaluate(() => ({ action: (window as any).__editDraft.albumAction, binding: (window as any).__editDraft.bindingAction, preview: (window as any).__editDraft.previewId }))).toEqual({ action: 'create', binding: 'set', preview: 'changed-release' })
 })
 
 test('narrow editor keeps editable roles and unsaved input after errors',async({page})=>{
@@ -140,7 +242,7 @@ test('single-track migration still confirms members and cancellation keeps draft
  const editor=page.getByRole('dialog',{name:'编辑曲目',exact:true})
  await editor.getByRole('textbox',{name:'专辑名',exact:true}).fill('单首新专辑')
  await editor.getByRole('button',{name:'保存',exact:true}).click()
- await page.getByRole('button',{name:'新建专辑',exact:true}).click()
+ await page.getByRole('button',{name:'新建专辑信息',exact:true}).click()
  const impact=page.getByRole('dialog',{name:'确认迁入歌曲'})
  await impact.getByRole('checkbox').check()
  await impact.getByRole('button',{name:'确认影响并继续'}).click()
@@ -162,7 +264,7 @@ test('existing upstream target shows reuse and uses target-list positions',async
  const editor=page.getByRole('dialog',{name:'编辑曲目',exact:true})
  await editor.getByRole('textbox',{name:'专辑名',exact:true}).fill('待变更专辑')
  await editor.getByRole('button',{name:'保存',exact:true}).click()
- await page.getByRole('button',{name:'新建专辑',exact:true}).click()
+ await page.getByRole('button',{name:'新建专辑信息',exact:true}).click()
  const impact=page.getByRole('dialog',{name:'确认迁入歌曲'})
  await expect(impact).toContainText('复用在库发行')
  await expect(impact).toContainText('目标用户标题')

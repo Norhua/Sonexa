@@ -100,6 +100,7 @@ type EditDraft struct {
 	PreviewID     string           `json:"previewId"`
 	CoverAction   string           `json:"coverAction"` // keep | clear | replace
 	CoverToken    string           `json:"coverToken"`
+	AlbumAction   string           `json:"albumAction"` // create (default) | update
 	Mappings      []EditMapping    `json:"mappings"`
 	MergeTargetID int64            `json:"mergeTargetId"`
 }
@@ -119,6 +120,7 @@ type EditImpact struct {
 	TargetCurrent          EditFields         `json:"targetCurrent"`
 	LinksNewUpstream       bool               `json:"linksNewUpstream"`
 	SharedChange           bool               `json:"sharedChange"`
+	UpdatesRelease         bool               `json:"updatesRelease"`
 	CreatesRelease         bool               `json:"createsRelease"`
 	DetachesTrack          bool               `json:"detachesTrack"`
 	TargetReleaseID        int64              `json:"targetReleaseId"`

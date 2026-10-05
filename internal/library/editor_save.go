@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/store"
+	"strings"
 )
 
 func (s *Service) PlanEditSave(ctx context.Context, draft domain.EditDraft) (*domain.AdmissionPlan, error) {
@@ -31,7 +32,7 @@ func (s *Service) PlanEditSave(ctx context.Context, draft domain.EditDraft) (*do
 	if err := mergeRevisions(impact.TargetRevisions); err != nil {
 		return nil, err
 	}
-	if impact.SharedChange {
+	if impact.SharedChange && !impact.UpdatesRelease {
 		content.Album, err = s.PlanAlbumChange(ctx, draft)
 		if err != nil {
 			return nil, err
@@ -43,6 +44,44 @@ func (s *Service) PlanEditSave(ctx context.Context, draft domain.EditDraft) (*do
 			if err := mergeRevisions(row.Revisions); err != nil {
 				return nil, err
 			}
+		}
+	}
+	if impact.UpdatesRelease {
+		// Every member participates in structural validation and the sealed revision baseline,
+		// but only the edited song receives song-field changes.
+		positions := &domain.AlbumChangePlan{}
+		for _, id := range impact.SourceTrackIDs {
+			session, err := s.store.ReadEditorSession(id)
+			if err != nil {
+				return nil, err
+			}
+			if err := mergeRevisions(session.Revisions); err != nil {
+				return nil, err
+			}
+			fields := session.Current
+			for key, value := range draft.Fields {
+				if strings.HasPrefix(key, "release.") || id == draft.TrackID {
+					fields[key] = value
+				}
+			}
+			positions.Rows = append(positions.Rows, domain.AlbumChangeRow{TrackID: id, After: fields})
+		}
+		for _, key := range []string{"release.discTotal", "release.media", "track.discNumber", "track.trackNumber"} {
+			if _, changed := draft.Fields[key]; !changed {
+				continue
+			}
+			validateAlbumPositions(positions)
+			for _, row := range positions.Rows {
+				if row.Conflict != "" {
+					var title string
+					_ = json.Unmarshal([]byte(row.After["track.title"].ValueJSON), &title)
+					if title == "" {
+						title = "未命名曲目"
+					}
+					return nil, fmt.Errorf("不能修改专辑信息：「%s」%s；请调整结构、歌曲位置或选择新建专辑信息", title, row.Conflict)
+				}
+			}
+			break
 		}
 	}
 	content.Target, err = s.editTargetSnapshot(draft, impact)
@@ -99,7 +138,7 @@ func (s *Service) PlanEditSave(ctx context.Context, draft domain.EditDraft) (*do
 	}
 	seed := editAdmissionSeed(draft, impact, content.Target)
 	seed.Snapshot.Track = &domain.TrackSnapshot{}
-	if !impact.SharedChange {
+	if !impact.SharedChange || impact.UpdatesRelease {
 		seed.Snapshot = domain.Snapshot{Track: &domain.TrackSnapshot{}}
 		seed.CurrentRelease = nil
 	}

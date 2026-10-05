@@ -95,6 +95,9 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 	if err := validateEditFields(draft.Fields); err != nil {
 		return nil, err
 	}
+	if draft.AlbumAction != "" && draft.AlbumAction != "create" && draft.AlbumAction != "update" {
+		return nil, fmt.Errorf("专辑保存方式无效")
+	}
 	source, err := s.store.ReadEditorSession(draft.TrackID)
 	if err != nil {
 		return nil, err
@@ -169,7 +172,16 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 		if source.ReleaseID != 0 {
 			impact.SourceTrackIDs = append([]int64{}, source.ReleaseTrackIDs...)
 		}
-		if !impact.LinksNewUpstream {
+		if draft.AlbumAction == "update" {
+			if impact.LinksNewUpstream {
+				return nil, fmt.Errorf("已切换专辑上游，请选择新建专辑信息并确认迁入歌曲")
+			}
+			if source.ReleaseID == 0 || draft.BindingAction == "clear_release" {
+				return nil, fmt.Errorf("没有可原地修改的专辑，请选择新建专辑信息")
+			}
+			impact.UpdatesRelease = true
+			impact.NeedsAlbumConfirmation = false
+		} else if !impact.LinksNewUpstream {
 			impact.TargetReleaseID = 0
 			impact.DetachesTrack = true
 		}

@@ -224,3 +224,66 @@ func TestEditSaveKeepsSourceAdoptedCoverForLocalAlbum(t *testing.T) {
 		t.Fatal("source cover no longer readable")
 	}
 }
+
+func TestEditUpdateReplacesAndClearsSharedCoverAtomically(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.enricher.Pause()
+	if err := a.coverSvc.AttachLibrary(a.store); err != nil {
+		t.Fatal(err)
+	}
+	defer a.coverSvc.Close()
+	first, err := a.AddToLibrary(rowFrom(matching.ScoredCandidate{Candidate: fullCandidate("cover-first")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := a.AddToLibrary(rowFrom(matching.ScoredCandidate{Candidate: fullCandidate("cover-second")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := a.store.ReadEditorSession(first)
+	if _, err := a.coverSvc.Library().ImportLocal(before.ReleaseID, coverPNG(t, 24, 24), 0); err != nil {
+		t.Fatal(err)
+	}
+	before, _ = a.store.ReadEditorSession(first)
+	draft := domain.EditDraft{TrackID: first, Revisions: before.Revisions, AlbumAction: "update", CoverAction: "replace", CoverToken: "missing", Fields: domain.EditFields{"release.title": {State: domain.Value, ValueJSON: `"更新封面"`}}}
+	plan, err := a.PlanEditSave(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.SaveEdit(plan.ID, plan.Hash, domain.AdmissionApproval{}); err == nil {
+		t.Fatal("missing cover was accepted")
+	}
+	unchanged, _ := a.store.ReadEditorSession(first)
+	if !reflect.DeepEqual(before, unchanged) {
+		t.Fatal("failed replacement partially saved")
+	}
+	image, err := a.coverSvc.Library().StageArtwork(coverPNG(t, 32, 32), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft.CoverToken = image.Token
+	plan, err = a.PlanEditSave(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.SaveEdit(plan.ID, plan.Hash, domain.AdmissionApproval{}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := a.store.ReadEditorSession(first)
+	sibling, _ := a.store.ReadEditorSession(second)
+	if after.ReleaseID != before.ReleaseID || sibling.ReleaseID != before.ReleaseID || after.CoverRevision <= before.CoverRevision || sibling.CoverRevision != after.CoverRevision || !reflect.DeepEqual(after.TrackIdentity, before.TrackIdentity) || !reflect.DeepEqual(after.ReleaseIdentity, before.ReleaseIdentity) {
+		t.Fatal("cover replacement changed binding or failed to update shared revision")
+	}
+	plan, err = a.PlanEditSave(domain.EditDraft{TrackID: first, Revisions: after.Revisions, AlbumAction: "update", CoverAction: "clear"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.SaveEdit(plan.ID, plan.Hash, domain.AdmissionApproval{}); err != nil {
+		t.Fatal(err)
+	}
+	selection, err := a.store.GetCoverSelection(before.ReleaseID)
+	if err != nil || selection == nil || !selection.Cleared || selection.Revision <= after.CoverRevision {
+		t.Fatalf("shared clear failed: %+v %v", selection, err)
+	}
+}

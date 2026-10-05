@@ -29,6 +29,8 @@ const bindingOpen = ref(false), bindingSource = ref(''), bindingRegion = ref('')
 const bindingParsed = ref<Models.domain.EditPreview | null>(null)
 const albumPrompt = ref(false), impactOpen = ref(false), exitPrompt = ref(false), impactPending = ref(false)
 const albumPlan = ref<Models.domain.AlbumChangePlan | null>(null), focusId = ref(0), coverURL = ref('')
+const saveImpact = ref<Models.domain.EditImpact | null>(null)
+const albumUpdateReason = computed(() => edit.bindingAction.value === 'clear_release' ? '已选择解除专辑绑定，请新建专辑信息并确认迁入歌曲。' : !edit.baseSession.value?.releaseId && !saveImpact.value?.linksNewUpstream ? '当前歌曲尚无专辑，请先新建专辑信息。' : '')
 const previewCovers = ref<Record<string, Models.app.EditCoverDraft>>({})
 let alive = true, impactGeneration = 0
 const tokens = new Set<string>()
@@ -97,6 +99,7 @@ watch(source, () => { edit.invalidateRequests(); candidates.value = []; searched
 watch(() => `${previewGroup.value?.provider}:${previewGroup.value?.ref}`, () => { versions.value = []; versionTotal.value = null; showVersions.value = false; versionsLoaded.value = false })
 watch([bindingSource, bindingRegion, trackRef, releaseRef], () => { bindingParsed.value = null }, { flush: 'sync' })
 function close() { if (loading.value) return; if (edit.dirty.value) exitPrompt.value = true; else emit('close') }
+function previewExpired(preview: Models.domain.EditPreview) { return !!preview.expiresAt && Date.parse(preview.expiresAt) <= Date.now() }
 async function confirmUse(fill = true) {
   const current = edit.preview.value
   if (!current || loading.value) return
@@ -104,11 +107,12 @@ async function confirmUse(fill = true) {
   preparingUse.value = true
   await run(async () => {
     let preview = current
-    if (current.releaseIdentity && snapshot.value?.release?.tracklistCompleteness !== 'complete') {
+    const expired = previewExpired(current)
+    if (expired || current.releaseIdentity && snapshot.value?.release?.tracklistCompleteness !== 'complete') {
       if (!settings.outboundAllowed) throw new Error(`${settings.outboundReason}；获取完整预览后才能使用此上游。`)
-      preview = await App.LoadEditUpstream(current.releaseIdentity.provider, current.releaseIdentity.ref, current.trackIdentity?.ref ?? '', region.value, false)
+      preview = await App.LoadEditUpstream(current.releaseIdentity?.provider ?? current.trackIdentity!.provider, current.releaseIdentity?.ref ?? '', current.trackIdentity?.ref ?? '', region.value, expired)
       if (!alive || !edit.acceptPreview(owner, preview)) return
-      if (JSON.parse(preview.snapshotJson).release?.tracklistCompleteness !== 'complete') {
+      if (preview.releaseIdentity && JSON.parse(preview.snapshotJson).release?.tracklistCompleteness !== 'complete') {
         throw new Error('上游暂未提供完整发行清单，请重试获取完整预览后再使用。')
       }
     }
@@ -131,6 +135,8 @@ async function viewPreviewCover() {
 }
 async function applyUse() {
   if (!useConfirmation.value) return
+  // A long-lived confirmation must show the refreshed facts before accepting them.
+  if (previewExpired(useConfirmation.value)) { await confirmUse(useValues.value); return }
   const frozen = copy(useConfirmation.value)
   await run(async () => {
     let cover: Models.app.EditCoverDraft | null = null
@@ -224,7 +230,15 @@ async function refreshImpact() {
   catch (e) { if (owner === impactGeneration) { error.value = String(e); albumPlan.value = null } }
   finally { if (owner === impactGeneration) impactPending.value = false }
 }
-async function openImpact() { albumPrompt.value = false; impactOpen.value = true; await run(refreshImpact) }
+async function chooseAlbumAction(action: 'create' | 'update') {
+  edit.albumAction.value = action
+  albumPrompt.value = false
+  await run(async () => {
+    const impact = await App.PreviewEditSave(edit.draft())
+    if (impact.needsAlbumConfirmation) { impactOpen.value = true; await refreshImpact() }
+    else await commit()
+  })
+}
 function mapping(id: number) { return edit.mappings.value.find(row => row.trackId === id) }
 function updateMapping(id: number, patch: Partial<Models.domain.EditMapping>) {
   const row = albumPlan.value?.rows.find(row => row.trackId === id)
@@ -233,7 +247,7 @@ function updateMapping(id: number, patch: Partial<Models.domain.EditMapping>) {
   edit.mappings.value = [...edit.mappings.value.filter(row => row.trackId !== id), { ...existing, ...patch }]; void refreshImpact()
 }
 watch(() => JSON.stringify([edit.fields.value, edit.bindingAction.value, edit.coverAction.value, edit.coverToken.value]), () => { albumPlan.value = null; if (impactOpen.value) void refreshImpact() })
-async function save() { exitPrompt.value = false; await run(async () => { const impact = await App.PreviewEditSave(edit.draft()); if (impact.sharedChange) { albumPrompt.value = true; return } await commit() }) }
+async function save() { exitPrompt.value = false; edit.albumAction.value = 'create'; await run(async () => { const impact = await App.PreviewEditSave(edit.draft()); saveImpact.value = impact; if (impact.sharedChange) { albumPrompt.value = true; return } await commit() }) }
 async function commit() { const saved = await admission.run(() => App.PlanEditSave(edit.draft()), App.SaveEdit); if (saved) { emit('saved'); emit('close') } }
 async function confirmImpact() { if (albumPlan.value?.canSubmit) await run(commit) }
 async function rebase() {
@@ -351,7 +365,12 @@ async function rebase() {
     <div class="grid gap-4 sm:grid-cols-2"><section><h3 class="mb-2 text-sm font-medium">当前值</h3><pre v-if="lyricsPlain" class="lyrics-content">{{ lyricsText(valueOf(edit.fields.value['track.lyrics'])) || '暂无歌词' }}</pre><textarea v-else :value="valueOf(edit.fields.value['track.lyrics']) ?? ''" aria-label="歌词" placeholder="输入歌词，支持 LRC 格式" class="lyrics-content w-full resize-none outline-none focus:border-primary" @input="edit.set('track.lyrics', ($event.target as HTMLTextAreaElement).value || null)" /></section><section><h3 class="mb-2 text-sm font-medium">上游值</h3><pre class="lyrics-content bg-app-chrome">{{ lyricsPlain ? lyricsText(valueOf(edit.upstream.value['track.lyrics'])) || fieldText(edit.upstream.value['track.lyrics']) : fieldText(edit.upstream.value['track.lyrics']) }}</pre></section></div>
     <template #footer><SecondaryButton :disabled="!edit.upstream.value['track.lyrics'] || edit.upstream.value['track.lyrics']?.state === 'unknown' || sameEditorValue(edit.fields.value['track.lyrics'], edit.upstream.value['track.lyrics'])" @click="applyField('track.lyrics')"><ArrowLeft class="size-4" />应用上游歌词</SecondaryButton><SecondaryButton @click="edit.set('track.lyrics', null)">清空歌词</SecondaryButton><SecondaryButton v-if="'track.lyrics' in edit.changes.value" @click="edit.undo('track.lyrics')">撤销歌词修改</SecondaryButton><Button @click="lyricsOpen = false">完成</Button></template>
   </Dialog>
- <Dialog v-model:visible="albumPrompt" modal header="专辑信息有改动" :style="{width:'min(460px,94vw)'}"><p>新建专辑并逐曲确认迁入，原发行及未勾选歌曲保持原状。精确上游目标已在库时复用。</p><template #footer><SecondaryButton @click="albumPrompt=false">取消</SecondaryButton><Button @click="openImpact">新建专辑</Button></template></Dialog>
+ <Dialog v-model:visible="albumPrompt" modal header="专辑信息有改动" :style="{width:'min(540px,94vw)'}">
+  <p v-if="saveImpact?.linksNewUpstream">已切换专辑上游，请新建专辑信息并逐曲确认迁入。新专辑保留所选上游绑定；目标专辑已在库时复用，保留其已有信息。</p>
+  <div v-else class="space-y-2"><p>修改专辑信息：保存到当前专辑，保留上游绑定；该专辑关联的所有歌曲共享更新后的专辑信息。</p><p>新建专辑信息：保存为无上游绑定的本地专辑，并逐曲确认迁入。</p></div>
+  <p v-if="albumUpdateReason" class="mt-2 text-sm text-muted-color">{{ albumUpdateReason }}</p>
+  <template #footer><div class="flex flex-wrap justify-end gap-2"><Button :disabled="loading" @click="chooseAlbumAction('create')">新建专辑信息</Button><Button v-if="!saveImpact?.linksNewUpstream" :disabled="loading || !!albumUpdateReason" @click="chooseAlbumAction('update')">修改专辑信息</Button><SecondaryButton :disabled="loading" @click="albumPrompt=false">取消</SecondaryButton></div></template>
+ </Dialog>
  <Dialog v-model:visible="impactOpen" :closable="!loading" :close-on-escape="!loading" modal header="确认迁入歌曲" :dismissable-mask="false" :style="{width:'min(1100px,96vw)'}">
   <p v-if="albumPlan?.impact?.preservesTargetValues" class="mb-3">复用在库发行，保留目标当前专辑信息。</p>
   <div v-if="albumPlan" class="grid gap-5 md:grid-cols-[42%_1fr]">
