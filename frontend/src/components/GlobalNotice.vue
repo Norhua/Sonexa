@@ -21,17 +21,31 @@ const gateBlocked = computed(() => !settings.outboundAllowed && settings.setting
 </script>
 
 <template>
-  <Message v-if="gateBlocked" severity="secondary" size="small" class="shrink-0 rounded-none">
-    <template #icon><AlertTriangle class="size-4 shrink-0" /></template>
-    <span class="flex-1">{{ settings.outboundReason }}</span>
-    <SecondaryButton variant="outlined" size="small" @click="emit('openSettings')">
+  <Message
+    v-if="gateBlocked"
+    severity="secondary"
+    size="small"
+    class="shrink-0 rounded-none"
+    pt:content:class="items-start!"
+    pt:text:class="min-w-0 flex-1 [overflow-wrap:anywhere]"
+  >
+    <template #icon><AlertTriangle class="mt-0.5 size-4 shrink-0" /></template>
+    <span class="block">{{ settings.outboundReason }}</span>
+    <SecondaryButton class="mt-2" variant="outlined" size="small" @click="emit('openSettings')">
       前往设置
     </SecondaryButton>
   </Message>
 
-  <Message v-else-if="props.offline" severity="secondary" size="small" class="shrink-0 rounded-none">
-    <template #icon><WifiOff class="size-4 shrink-0" /></template>
-    <span class="flex-1">当前无法访问上游，出网功能暂不可用。</span>
+  <Message
+    v-else-if="props.offline"
+    severity="secondary"
+    size="small"
+    class="shrink-0 rounded-none"
+    pt:content:class="items-start!"
+    pt:text:class="min-w-0 flex-1 [overflow-wrap:anywhere]"
+  >
+    <template #icon><WifiOff class="mt-0.5 size-4 shrink-0" /></template>
+    <span>当前无法访问上游，出网功能暂不可用。</span>
   </Message>
 
   <Message
@@ -40,9 +54,11 @@ const gateBlocked = computed(() => !settings.outboundAllowed && settings.setting
     size="small"
     closable
     class="shrink-0 rounded-none"
+    pt:content:class="items-start!"
+    pt:text:class="min-w-0 flex-1 [overflow-wrap:anywhere]"
     @close="emit('dismiss')"
   >
-    <template #icon><AlertTriangle class="size-4 shrink-0" /></template>
-    <span class="flex-1">{{ props.message }}</span>
+    <template #icon><AlertTriangle class="mt-0.5 size-4 shrink-0" /></template>
+    <span>{{ props.message }}</span>
   </Message>
 </template>

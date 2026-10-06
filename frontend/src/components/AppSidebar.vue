@@ -3,7 +3,7 @@
  * 侧栏导航。
  *
  * 形态对齐 Apple Music：分组标题 + 缩进的二级项，红绿灯落在侧栏顶部，
- * 底部只常驻「设置」。
+ * 底部常驻「设置」，全局提示位于设置上方。
  *
  * 顶部留出的那段高度不是装饰：macOS 用 TitleBarHiddenInset 时红绿灯浮在
  * 内容之上，不留位置就会压住第一行。这段区域同时设为可拖拽窗口区。
@@ -220,7 +220,12 @@ function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | '
       </section>
     </div>
 
-    <!-- 底部只有设置，且它是弹窗而非页面 -->
+    <!-- 全局提示固定在设置上方；长提示单独滚动，不挤出设置入口。 -->
+    <div class="max-h-[30vh] shrink-0 overflow-y-auto">
+      <slot name="notice" />
+    </div>
+
+    <!-- 设置固定在底部，且它是弹窗而非页面 -->
     <button
       class="flex shrink-0 items-center gap-2 border-t px-4 py-2.5 text-left hover:bg-emphasis"
       @click="ui.openSettings()"

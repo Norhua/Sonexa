@@ -373,17 +373,18 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
       @new-collection="newCollection"
       @rename-collection="renameCollection"
       @delete-collection="deleteCollection"
-    />
+    >
+      <template #notice>
+        <GlobalNotice
+          :message="offline ? '' : notice"
+          :offline="offline"
+          @dismiss="notice = ''"
+          @open-settings="ui.openSettings('upstream')"
+        />
+      </template>
+    </AppSidebar>
 
     <div class="flex min-w-0 flex-1 flex-col">
-      <!-- 全局提示位置：出网禁用、离线、出网失败统一在这里 -->
-      <GlobalNotice
-        :message="offline ? '' : notice"
-        :offline="offline"
-        @dismiss="notice = ''"
-        @open-settings="ui.openSettings('upstream')"
-      />
-
       <main class="flex min-h-0 min-w-0 flex-1 flex-col">
         <!-- 标准曲目表格：全部曲目 / 最近添加 / 歌单 / 标签 -->
         <template v-if="showTrackTable">
