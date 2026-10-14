@@ -166,11 +166,12 @@ async function doResearch() {
   }
 }
 
-async function act(fn: () => Promise<unknown>) {
+/** 只有调用方明确返回 false 才表示取消；Wails 空结果 null 仍代表操作成功。 */
+async function act(fn: () => Promise<void | boolean>) {
   error.value = ''
   try {
     const result = await fn()
-    if (result !== null) await load()
+    if (result !== false) await load()
   } catch (e) {
     error.value = String(e)
   }
@@ -185,12 +186,12 @@ function accept(row: Models.app.CandidateRow) {
     return
   }
   const itemId = current.value.id
-  void act(() => admission.run(() => App.PrepareAdmission(row, itemId)))
+  void act(async () => (await admission.run(() => App.PrepareAdmission(row, itemId))) !== null)
 }
 
 function noMatchNeeded() {
   const itemId = current.value?.id
-  if (itemId) void act(() => admission.run(() => App.PrepareNoMatchNeeded(itemId)))
+  if (itemId) void act(async () => (await admission.run(() => App.PrepareNoMatchNeeded(itemId))) !== null)
 }
 
 /** 空态的引导动作。上游搜索现在是搜索页的一种范围，不再是独立视图。 */
