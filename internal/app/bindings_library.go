@@ -75,11 +75,11 @@ type TrackDetail struct {
 	/** Sources 保留逐字段来源数据；当前前端暂不显示来源徽标。 */
 	Sources []FieldSource      `json:"sources"`
 	Tags    []store.Collection `json:"tags"`
-	// CreditText 是曲目级署名原串，不作为演唱关系的依据。
+	// CreditText 是曲目级署名原串；可靠 CV 可作为单独标记来源的演唱兜底。
 	CreditText string `json:"creditText"`
 	// CreditSpans 是原串中可点击的片段；对不上的片段不在其中，渲染为纯文本。
 	CreditSpans []CreditSpan `json:"creditSpans"`
-	// Participants 是全部实际角色的分组，按固定顺序排列。
+	// Participants 是角色分组，按固定顺序排列；CV 派生演唱通过 Source 区分。
 	// character 不单独成组——它只出现在署名原串的可点击片段中。
 	Participants []ParticipantGroup `json:"participants"`
 	/** 兼容来源身份字段；本地目标和采用版本由 Track.ReleaseID/CoverRevision 提供。 */
@@ -124,7 +124,7 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 		}
 	}
 
-	// 署名原串与成员区间：抽屉在无角色分组时以「署名」兜底，不推断演唱。
+	// 署名原串与成员区间：抽屉在无角色分组时以「署名」兜底；CV 派生在存储投影中完成。
 	if meta != nil && meta.Credit != nil {
 		detail.CreditText = *meta.Credit
 	} else if track.Artist != nil {

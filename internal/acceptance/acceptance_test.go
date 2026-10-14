@@ -50,15 +50,9 @@ func TestF3_CombinedCVCredit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	artistID, err := s.UpsertArtist(&store.Artist{Name: credit, Type: ptr("person")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	start, end := parsed.Artists[0].Start, parsed.Artists[0].End
-	if err := s.SetTrackCredits(trackID, []store.CreditEntry{{
-		ArtistID: artistID, CreditedName: ptr(credit), SpanStart: &start, SpanEnd: &end,
-	}}); err != nil {
-		t.Fatal(err)
+	entries, err := s.GetTrackCredits(trackID)
+	if err != nil || len(entries) != 2 || entries[0].SpanStart == nil || entries[1].SpanStart != nil {
+		t.Fatalf("whole CV link plus independent actor: %+v, %v", entries, err)
 	}
 	for _, query := range []string{"平野綾", "涼宮ハルヒ"} {
 		hits, err := s.SearchTrackIDs(query, 10)
@@ -67,12 +61,17 @@ func TestF3_CombinedCVCredit(t *testing.T) {
 		}
 	}
 	artists, err := s.ListArtists()
-	if err != nil || len(artists) != 1 || artists[0].Name != credit {
+	if err != nil || len(artists) != 2 {
 		t.Fatalf("artists: %+v, %v", artists, err)
 	}
-	tracks, err := s.ListTracks(store.TrackFilter{ArtistID: artistID})
-	if err != nil || len(tracks) != 1 || tracks[0].ID != trackID {
-		t.Fatalf("tracks: %+v, %v", tracks, err)
+	for _, artist := range artists {
+		if artist.Name != credit && artist.Name != "平野綾" {
+			t.Fatalf("unexpected artist: %+v", artist)
+		}
+		tracks, err := s.ListTracks(store.TrackFilter{ArtistID: artist.ID})
+		if err != nil || len(tracks) != 1 || tracks[0].ID != trackID {
+			t.Fatalf("tracks: %+v, %v", tracks, err)
+		}
 	}
 }
 

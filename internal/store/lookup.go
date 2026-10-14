@@ -172,8 +172,10 @@ func clearTrackBindingTx(tx *sql.Tx, trackID int64) error {
 	if err != nil {
 		return err
 	}
-	for key := range origins {
-		origins[key] = FieldOrigin{Mode: domain.User, Source: "user"}
+	for key, origin := range origins {
+		if origin.Source != CVCreditSource {
+			origins[key] = FieldOrigin{Mode: domain.User, Source: "user"}
+		}
 	}
 	raw, err := json.Marshal(origins)
 	if err != nil {
@@ -182,7 +184,7 @@ func clearTrackBindingTx(tx *sql.Tx, trackID int64) error {
 	if _, err := tx.Exec("UPDATE track_current SET states_json=? WHERE track_id=?", string(raw), trackID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec("UPDATE track_artist SET source='user' WHERE track_id=?", trackID); err != nil {
+	if _, err := tx.Exec("UPDATE track_artist SET source='user' WHERE track_id=? AND (source IS NULL OR source<>?)", trackID, CVCreditSource); err != nil {
 		return err
 	}
 	if _, err := tx.Exec("DELETE FROM track_snapshot WHERE track_id=?", trackID); err != nil {

@@ -196,7 +196,7 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 		t.Error("character 不应单独成组——它只出现在署名原串的可点击片段中")
 	}
 
-	// 艺术家视图：完整 CV 身份含这首歌，不再派生两个条目。
+	// 艺术家视图：完整 CV 身份与独立声优都包含这首歌。
 	artists, err := app.ListArtists()
 	if err != nil {
 		t.Fatalf("ListArtists 失败: %v", err)
@@ -211,7 +211,7 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{credit} {
+	for _, want := range []string{credit, "平野綾"} {
 		var id int64
 		for _, a := range artists {
 			if a.Name == want {

@@ -139,16 +139,46 @@ func refreshCreditsTx(tx *sql.Tx, kind string, id int64) error {
 		}
 	}
 	if uncertain {
+		if kind == "track" {
+			return refreshCVVocalsTx(tx, id, nil)
+		}
 		return nil
 	}
-	for i, m := range members {
+	var actors []int64
+	position := 0
+	for _, m := range members {
 		artist, err := ensureDomainArtistTx(tx, m.Artist)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec("INSERT INTO "+kind+"_credit("+key+",artist_id,position,credited_name,span_start,span_end) VALUES(?,?,?,?,?,?)", id, artist, i, m.CreditedName, m.Start, m.End); err != nil {
+		if _, err := tx.Exec("INSERT INTO "+kind+"_credit("+key+",artist_id,position,credited_name,span_start,span_end) VALUES(?,?,?,?,?,?)", id, artist, position, m.CreditedName, m.Start, m.End); err != nil {
 			return err
 		}
+		position++
+		actor := cvCreditActor(credit, m)
+		if actor == nil {
+			continue
+		}
+		if kind == "track" {
+			resolved, err := resolveCVActorTx(tx, id, *actor)
+			if err != nil {
+				return err
+			}
+			actor = &resolved
+		}
+		actorID, err := ensureDomainArtistTx(tx, *actor)
+		if err != nil {
+			return err
+		}
+		// 声优也是署名成员，但不产生与完整 CV 链接重叠的可点击区间。
+		if _, err := tx.Exec("INSERT INTO "+kind+"_credit("+key+",artist_id,position,credited_name) VALUES(?,?,?,?)", id, actorID, position, actor.Name); err != nil {
+			return err
+		}
+		position++
+		actors = append(actors, actorID)
+	}
+	if kind == "track" {
+		return refreshCVVocalsTx(tx, id, actors)
 	}
 	return nil
 }
@@ -213,6 +243,9 @@ func syncRolesTx(tx *sql.Tx, id int64, roles map[string]domain.Field[[]domain.Ro
 	}
 	_, err = tx.Exec("UPDATE track_current SET states_json=? WHERE track_id=?", string(b), id)
 	if err == nil && changed {
+		if err := refreshCreditsTx(tx, "track", id); err != nil {
+			return err
+		}
 		_, err = tx.Exec("UPDATE track SET revision=revision+1,updated_at=? WHERE id=?", time.Now().UTC(), id)
 	}
 	return err

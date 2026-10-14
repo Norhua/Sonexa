@@ -6,11 +6,11 @@ import (
 	"unicode"
 )
 
-// ParsedArtist 是署名中的一个身份；CV 署名保留完整名字，不派生角色/声优实体。
+// ParsedArtist 是署名中的一个完整身份；CV 的独立声优关联由存储投影派生。
 type ParsedArtist struct {
 	Name string
 	Type string
-	// VoiceActor 仅用于把明确的演唱关系对到完整 CV 身份，不建立配音关系。
+	// VoiceActor 是 CV 注记中的声优文本，供存储层保守验证并建立独立关联。
 	VoiceActor string
 	// Start / End 是原串中的字节区间。
 	Start int

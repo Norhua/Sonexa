@@ -110,21 +110,26 @@ const fallbackCredit = computed(() => creditParts(
   props.detail?.creditSpans ?? [],
 ))
 
-/** 发行信息：缺失字段显示占位短横线。 */
+/** 音轨总数取当前碟，不以整张发行总数或收藏数替代。 */
+const mediumTrackTotal = computed(() => props.detail?.release?.media?.find(
+  medium => medium.number === meta.value?.discNumber,
+)?.trackTotal)
+
+/** 发行信息：缺失字段及未知位置/总数分别显示占位短横线。 */
 const releaseInfo = computed(() => [
   { label: '专辑', value: display(props.detail?.release?.title) },
   { label: '专辑艺术家', value: display(props.detail?.release?.credit) },
-  { label: '类型', value: display(props.detail?.release?.primaryType ?? meta.value?.primaryType) },
+  { label: '专辑类型', value: display(props.detail?.release?.primaryType ?? meta.value?.primaryType) },
   { label: '年份', value: display(meta.value?.year) },
-  { label: '载体', value: display(meta.value?.mediumFormat) },
-  { label: '国家/地区', value: display(meta.value?.country) },
-  { label: '音轨', value: display(meta.value?.trackNumber) },
-  { label: '碟号', value: display(meta.value?.discNumber) },
+  { label: '时长', value: duration(meta.value?.durationMs) },
+  { label: '音轨', value: `${display(meta.value?.trackNumber)}/${display(mediumTrackTotal.value)}` },
+  { label: '碟号', value: `${display(meta.value?.discNumber)}/${display(props.detail?.release?.discTotal)}` },
+  { label: '每碟曲数', value: props.detail?.release?.media?.map(m => `第 ${m.number} 碟 ${display(m.trackTotal)}`).join(' · ') || DASH },
+  { label: '风格', value: display(meta.value?.genre) },
   { label: '发行收藏数', value: display(props.detail?.release?.ownedCount) },
   { label: '发行总曲数', value: display(props.detail?.release?.totalCount) },
-  { label: '每碟曲数', value: props.detail?.release?.media?.map(m => `第 ${m.number} 碟 ${display(m.trackTotal)}`).join(' · ') || '—' },
-  { label: '时长', value: duration(meta.value?.durationMs) },
-  { label: '风格', value: display(meta.value?.genre) },
+  { label: '国家/地区', value: display(meta.value?.country) },
+  { label: '载体', value: display(meta.value?.mediumFormat) },
 ])
 </script>
 
@@ -173,7 +178,7 @@ const releaseInfo = computed(() => [
       <section>
         <h3 class="mb-2 text-xs font-medium text-muted-color">参与者</h3>
         <dl class="detail-fields text-sm">
-          <!-- 全部参与角色统一分组，不把署名另列为演唱 -->
+          <!-- 角色统一分组；CV 兜底明确标注，不冒充上游演唱事实 -->
           <div v-for="group in detail.participants" :key="group.role" class="contents">
             <dt class="text-xs text-muted-color">{{ group.label }}</dt>
             <dd class="min-w-0 break-words">
@@ -186,6 +191,7 @@ const releaseInfo = computed(() => [
                 <span v-if="artist.attribute" class="text-xs text-muted-color">
                   ({{ artist.attribute }})
                 </span>
+                <span v-if="artist.source === 'credit_cv'" class="text-xs text-muted-color">（来自 CV 署名）</span>
               </template>
             </dd>
           </div>

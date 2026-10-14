@@ -90,7 +90,7 @@ func TestStructuredCreditsAndRolesStaySeparate(t *testing.T) {
 	}
 }
 
-func TestCVDetailUsesOneArtistWithoutVoiceLookup(t *testing.T) {
+func TestCVDetailKeepsWholeCreditAndVoiceActorWithoutVoiceLookup(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
 	body, err := os.ReadFile("../../testdata/golden/responses/musicbrainz/release_detail.json")
@@ -155,7 +155,7 @@ func TestCVSplitAcrossUpstreamCreditPartsStaysWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries, err := app.store.GetTrackCredits(id)
-	if err != nil || len(entries) != 2 || deref(entries[0].CreditedName) != "角色 (CV: 声优)" || deref(entries[1].CreditedName) != "Guest" {
+	if err != nil || len(entries) != 3 || deref(entries[0].CreditedName) != "角色 (CV: 声优)" || deref(entries[1].CreditedName) != "声优" || entries[1].SpanStart != nil || deref(entries[2].CreditedName) != "Guest" {
 		t.Fatalf("split CV identity: %+v, %v", entries, err)
 	}
 	d, err := app.GetTrackDetail(id)

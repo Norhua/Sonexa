@@ -1,0 +1,32 @@
+{
+  "id": "fc81342b-44c9-4f8d-9fb7-259128da6f91",
+  "title": "冴えない彼女の育てかた 第4巻 特典CD",
+  "date": "2015-06-03",
+  "country": "JP",
+  "artist-credit": [{"name": "Various Artists", "artist": {"id": "89ad4ac3-39f7-470e-963a-56509c546377", "name": "Various Artists"}}],
+  "release-group": {"id": "c085f961-892b-4232-bc6f-267e72703ef7", "primary-type": "Single"},
+  "media": [{
+    "position": 1, "format": "CD", "track-count": 10,
+    "tracks": [{
+      "id": "f0a33d1a-628a-4a53-bc4e-6af077505956",
+      "title": "(Vocal) you", "position": 1, "number": "1", "length": 243800,
+      "artist-credit": [
+        {"name": "霞ヶ丘詩羽", "joinphrase": "(CV.", "artist": {"id": "3bbe98d8-6ca4-4dbb-bcd9-2edc9c303151", "name": "霞ヶ丘詩羽", "type": "Character"}},
+        {"name": "茅野愛衣", "joinphrase": ")", "artist": {"id": "f74f5468-91f9-443b-aedc-c969a75d1678", "name": "茅野愛衣", "type": "Person"}}
+      ],
+      "recording": {
+        "id": "2283ceda-78b1-4d20-8f52-bdf73bd53686", "title": "you(Vocal)",
+        "relations": [
+          {"type": "arranger", "artist": {"id": "e5c905e3-e32e-4671-b0cb-edb936f49cd2", "name": "中山真斗"}},
+          {"type": "performance", "work": {
+            "id": "5fb917f7-2fb8-4db2-96c9-df2c625fd4cc", "title": "you",
+            "relations": [
+              {"type": "composer", "artist": {"id": "5ef0491f-8d42-4d62-9893-60c66034ab55", "name": "dai"}},
+              {"type": "lyricist", "artist": {"id": "89c282f1-531c-48fc-b323-4f621d89ce19", "name": "癒月"}}
+            ]
+          }}
+        ]
+      }
+    }]
+  }]
+}

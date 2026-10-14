@@ -480,6 +480,11 @@ func writeEditorFieldsTx(tx *sql.Tx, kind string, id int64, values domain.EditFi
 			if role != "vocal" && role != "composer" && role != "lyricist" {
 				continue
 			}
+			// 迁入计划会携带全部当前字段；保留的 CV 派生值应随新署名重建，
+			// 不能因整行复制变成用户演唱。显式补录/清空来自 user，不走此分支。
+			if role == "vocal" && value.Mode == domain.Follow && value.Source == CVCreditSource {
+				continue
+			}
 			field := domain.Field[[]domain.Role]{State: value.State}
 			if value.State == domain.Value {
 				if err := json.Unmarshal([]byte(value.ValueJSON), &field.Value); err != nil {
