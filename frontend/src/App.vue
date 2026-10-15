@@ -76,6 +76,7 @@ onMounted(async () => {
     if (detail.value?.track.releaseId === event.releaseId && drawerOpen.value) await onCoverAdopted()
   })
   offLibrary = EventsOn(Events.LibraryChanged, async () => {
+    void refreshOpenDetail()
     await library.loadCollections()
     await library.loadTracks()
     // 入库或补全会改变「已匹配/未匹配」的计数，工具栏上那个数字要跟着动
@@ -92,6 +93,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  detailRequest++
+  detailTrackId = null
   tasks.unsubscribeAll()
   enrich.unsubscribeAll()
   offLibrary?.()
@@ -175,9 +178,12 @@ async function goUpstreamSearch(prefill?: { title: string; artist: string; album
 }
 
 let detailRequest = 0
+/** 当前请求的目标可能已切到 B，而屏幕仍保留 A；刷新不能抢回旧目标。 */
+let detailTrackId: number | null = null
 watch(drawerOpen, open => {
   if (!open) {
     detailRequest++
+    detailTrackId = null
     if (coverSearch.target) void coverSearch.close()
   }
 }, { flush: 'sync' })
@@ -198,6 +204,7 @@ function markFailure(e: unknown) {
 }
 
 async function openTrackById(trackId: number) {
+  detailTrackId = trackId
   const request = ++detailRequest
   try {
     const next = await Api.GetTrackDetail(trackId)
@@ -276,10 +283,19 @@ async function viewArtist(row: Row) {
   }
 }
 
+/** 只更新仍打开的详情；沿用请求归属校验，不恢复已关闭的抽屉。 */
+async function refreshOpenDetail() {
+  if (drawerOpen.value && detailTrackId !== null) await openTrackById(detailTrackId)
+}
+
+async function onEditSaved() {
+  // 共享专辑修改也可能影响另一首正在展示的歌曲，不能只按编辑歌曲 ID 刷新。
+  await Promise.all([refreshOpenDetail(), library.loadTracks()])
+}
+
 /** 采用封面后重新读一次详情，使抽屉立刻显示新图。 */
 async function onCoverAdopted() {
-  if (detail.value && drawerOpen.value) await openTrackById(detail.value.track.id)
-  await library.loadTracks()
+  await Promise.all([refreshOpenDetail(), library.loadTracks()])
 }
 
 async function goToArtist(artistId: number) {
@@ -499,7 +515,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
       v-if="editing !== null"
       :track-id="editing"
       @close="editing = null"
-      @saved="library.loadTracks()"
+      @saved="onEditSaved"
     />
 
     <CoverSearchView v-if="coverSearch.target" />

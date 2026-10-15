@@ -8,7 +8,7 @@ const admission = useAdmissionStore()
  * 待选 / 匹配中 / 失败只是状态标签，界面结构完全一致。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { App, display, type Models } from '@/api'
+import { App, display, Events, EventsOn, type Models } from '@/api'
 import CandidateTable from '@/components/CandidateTable.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import Button from '@/volt/Button.vue'
@@ -33,6 +33,7 @@ const queue = ref<Models.app.ReviewQueue | null>(null)
 const index = ref(0)
 const loading = ref(false)
 const error = ref('')
+const queueError = ref('')
 const expanded = ref(false)
 
 /** 可改写的重新搜索表单。改写只影响本次查询，不动原始导入值。 */
@@ -74,8 +75,8 @@ const providerCaps = computed(() => {
 const activeCaps = computed(() => settings.providerById(researchProvider.value)?.capabilities ?? [])
 
 onMounted(async () => {
+  void load()
   countries.value = (await App.ListCountries()) ?? []
-  await load()
 })
 
 /**
@@ -95,33 +96,72 @@ watch(researchProvider, async () => {
 })
 
 let researchRequest = 0
-onBeforeUnmount(() => { researchRequest++ })
+let queueRevision = 0
+let queueInvalidation = 0
+let queueLoad: Promise<void> | null = null
+let disposed = false
+// 直接订阅事件而非待复核计数：计数相同时也可能有失败、候选或条目变化。
+const offProgress = EventsOn(Events.ImportProgress, () => { void load(true) })
+onBeforeUnmount(() => {
+  disposed = true
+  researchRequest++
+  queueRevision++
+  offProgress()
+})
 
-watch(current, (item) => {
+watch(() => current.value?.id, (id) => {
   researchRequest++
   researching.value = false
-  if (!item) return
-  restoreOriginal()
   expanded.value = false
-  // 换了条目就还没搜过：此时改选上游不该自动出网
   searched.value = false
+  if (id === undefined) return
+  restoreOriginal()
   void updateHint()
 })
 
-async function load() {
+/** 合并连续进度事件；动作完成后的刷新使旧快照失效，后台事件则安排一次续读。 */
+function load(background = false): Promise<void> {
+  if (disposed) return Promise.resolve()
+  queueRevision++
   loading.value = true
-  error.value = ''
-  try {
-    queue.value = await App.GetReviewQueue()
-    if (index.value >= (queue.value?.items.length ?? 0)) {
-      index.value = Math.max(0, (queue.value?.items.length ?? 1) - 1)
-    }
-    await tasks.refresh()
-  } catch (e) {
-    error.value = String(e)
-  } finally {
-    loading.value = false
+  if (!background) {
+    queueInvalidation++
+    error.value = ''
   }
+  if (!queueLoad) {
+    queueLoad = reloadQueue().finally(() => {
+      queueLoad = null
+      if (!disposed) loading.value = false
+    })
+  }
+  return queueLoad
+}
+
+async function reloadQueue() {
+  let request: number
+  do {
+    request = queueRevision
+    const invalidation = queueInvalidation
+    const candidateRequest = researchRequest
+    const wasResearching = researching.value
+    try {
+      const next = await App.GetReviewQueue()
+      if (disposed) return
+      if (invalidation !== queueInvalidation) continue
+      const item = current.value
+      const position = next.items.findIndex(row => row.id === item?.id)
+      if (position >= 0 && item && (wasResearching || researching.value || candidateRequest !== researchRequest)) {
+        // 搜索中或此快照之后完成了搜索：不以旧快照盖掉交互结果。
+        next.items[position].candidates = item.candidates
+      }
+      queueError.value = ''
+      queue.value = next
+      index.value = position >= 0 ? position : Math.max(0, Math.min(index.value, next.items.length - 1))
+      await tasks.refresh()
+    } catch (e) {
+      if (!disposed && invalidation === queueInvalidation) queueError.value = String(e)
+    }
+  } while (!disposed && request !== queueRevision)
 }
 
 /** 地区下拉的选项：「跟随默认」置顶。 */
@@ -157,8 +197,8 @@ async function doResearch() {
       item.id, research.value.title, research.value.artist,
       research.value.album, researchProvider.value, country.value,
     )
-    if (request !== researchRequest) return
-    item.candidates = rows ?? []
+    if (request !== researchRequest || current.value?.id !== item.id) return
+    current.value.candidates = rows ?? []
   } catch (e) {
     if (request === researchRequest) error.value = String(e)
   } finally {
@@ -168,10 +208,17 @@ async function doResearch() {
 
 /** 只有调用方明确返回 false 才表示取消；Wails 空结果 null 仍代表操作成功。 */
 async function act(fn: () => Promise<void | boolean>) {
+  const itemId = current.value?.id
   error.value = ''
   try {
     const result = await fn()
-    if (result !== false) await load()
+    if (result !== false) {
+      if (current.value?.id === itemId) {
+        researchRequest++
+        researching.value = false
+      }
+      await load()
+    }
   } catch (e) {
     error.value = String(e)
   }
@@ -383,8 +430,8 @@ function next() {
       </section>
     </div>
 
-    <Message v-if="error" severity="error" size="small" class="shrink-0 rounded-none">
-      {{ error }}
+    <Message v-if="error || queueError" severity="error" size="small" class="shrink-0 rounded-none">
+      {{ error || queueError }}
     </Message>
   </div>
 </template>
