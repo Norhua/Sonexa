@@ -52,11 +52,19 @@ func TestVocalYouCVCreditFallbackAndArtistViews(t *testing.T) {
 		t.Fatalf("participant order = %v", roles)
 	}
 	vocal := d.Participants[0].Artists
-	if len(vocal) != 1 || vocal[0].Name != "茅野愛衣" || deref(vocal[0].Source) != store.CVCreditSource || vocal[0].Identity == nil || vocal[0].Identity.Ref != "f74f5468-91f9-443b-aedc-c969a75d1678" {
-		t.Fatalf("CV vocal/source identity = %+v", vocal)
+	if len(vocal) != 1 || vocal[0].Name != "霞ヶ丘詩羽(CV.茅野愛衣)" || deref(vocal[0].Source) != store.CVCreditSource || vocal[0].Identity != nil {
+		t.Fatalf("CV vocal display identity = %+v", vocal)
+	}
+	var actorName, actorRef string
+	if err := app.store.DB().QueryRow(`SELECT a.name,a.provider_ref FROM track_artist ta
+		JOIN artist a ON a.id=ta.artist_id WHERE ta.track_id=? AND ta.role='vocal'`, id).Scan(&actorName, &actorRef); err != nil || actorName != "茅野愛衣" || actorRef != "f74f5468-91f9-443b-aedc-c969a75d1678" {
+		t.Fatalf("stored CV actor changed: %s %s %v", actorName, actorRef, err)
 	}
 	if d.CreditText != "霞ヶ丘詩羽(CV.茅野愛衣)" || len(d.CreditSpans) != 1 || d.CreditSpans[0].Text != d.CreditText {
 		t.Fatalf("whole CV credit/link lost: %+v", d.CreditSpans)
+	}
+	if vocal[0].ArtistID != d.CreditSpans[0].ArtistID {
+		t.Fatalf("CV vocal must link to the whole credit: %+v", vocal)
 	}
 	artists, err := app.ListArtists()
 	if err != nil || len(artists) != 2 {

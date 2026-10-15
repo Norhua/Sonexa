@@ -26,7 +26,7 @@ for (const sample of [
           metadata: { year: 2015, durationMs: 243800, discNumber: sample.disc, trackNumber: sample.track, genre: 'J-Pop', mediumFormat: 'CD', country: 'JP' },
           release: { title: '冴えない彼女の育てかた 第4巻 特典CD', credit: 'Various Artists', primaryType: 'Single', discTotal: sample.discs, media: sample.media, ownedCount: 1, totalCount: sample.total },
           participants: [
-            { role: 'vocal', label: '演唱', artists: [{ artistId: 2, name: '茅野愛衣', source: 'credit_cv' }] },
+            { role: 'vocal', label: '演唱', artists: [{ artistId: 2, name: '霞ヶ丘詩羽(CV.茅野愛衣)', source: 'credit_cv' }] },
             { role: 'composer', label: '作曲', artists: [{ artistId: 3, name: 'dai', source: 'musicbrainz' }] },
           ],
         }
@@ -45,13 +45,14 @@ for (const sample of [
     await expect(value('每碟曲数')).toHaveText(sample.media.map(m => `第 ${m.number} 碟 ${m.trackTotal ?? '—'}`).join(' · '))
     const participants = drawer.locator('section').filter({ has: page.getByRole('heading', { name: '参与者', exact: true }) })
     await expect(participants.locator('dt')).toHaveText(['演唱', '作曲'])
-    await expect(participants.getByRole('button', { name: '茅野愛衣', exact: true })).toBeVisible()
-    await expect(participants.getByText('（来自 CV 署名）', { exact: true })).toHaveCount(1)
+    await expect(participants.getByRole('button', { name: '霞ヶ丘詩羽(CV.茅野愛衣)', exact: true })).toBeVisible()
+    await expect(participants.getByRole('button', { name: '茅野愛衣', exact: true })).toHaveCount(0)
+    await expect(participants.getByText('来自 CV 署名', { exact: false })).toHaveCount(0)
     if (sample.name === 'single disc') await page.screenshot({ path: testInfo.outputPath('cv-detail.png') })
   })
 }
 
-test('CV actor link and both artist entries show the same song', async ({ page }, testInfo) => {
+test('whole CV link and both artist entries show the same song', async ({ page }, testInfo) => {
   await page.goto('/')
   await page.evaluate(() => {
     const api = (window as any).go.app.App
@@ -62,13 +63,14 @@ test('CV actor link and both artist entries show the same song', async ({ page }
     api.GetArtistHeader = async (id: number) => ({ id, title: artists.find(a => a.id === id)?.name, facets: [{ role: '', label: '全部', count: 1 }] })
     api.ListTracks = async () => ({ tracks: [song], total: 1 })
     api.GetTrackDetail = async () => ({ track: song, creditText: credit, creditSpans: [], tags: [], participants: [
-      { role: 'vocal', label: '演唱', artists: [{ artistId: 31, name: '茅野愛衣', source: 'credit_cv' }] },
+      { role: 'vocal', label: '演唱', artists: [{ artistId: 30, name: credit, source: 'credit_cv' }] },
     ] })
   })
   await page.locator('.track-list [data-row-key]').first().locator('td').last().dblclick()
   const participants = page.locator('aside section').filter({ has: page.getByRole('heading', { name: '参与者', exact: true }) })
-  await participants.getByRole('button', { name: '茅野愛衣', exact: true }).click()
+  await participants.getByRole('button', { name: '霞ヶ丘詩羽(CV.茅野愛衣)', exact: true }).click()
   await expect(page.getByRole('heading', { name: '艺术家', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '霞ヶ丘詩羽(CV.茅野愛衣) 1', exact: true })).toHaveAttribute('aria-current', 'true')
   for (const name of ['霞ヶ丘詩羽(CV.茅野愛衣)', '茅野愛衣']) {
     const entry = page.getByRole('button', { name: `${name} 1`, exact: true })
     await expect(entry).toBeVisible()

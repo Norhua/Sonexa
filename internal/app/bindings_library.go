@@ -130,17 +130,17 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 	} else if track.Artist != nil {
 		detail.CreditText = *track.Artist
 	}
-	spans, err := a.creditSpans(trackID, detail.CreditText)
+	entries, err := a.store.GetTrackCredits(trackID)
 	if err != nil {
 		return nil, err
 	}
-	detail.CreditSpans = spans
+	detail.CreditSpans = creditSpans(entries, detail.CreditText)
 
 	groups, err := a.participantGroups(trackID)
 	if err != nil {
 		return nil, err
 	}
-	detail.Participants = groups
+	detail.Participants = displayCVParticipants(groups, entries, detail.CreditText)
 	detail.Sources = sourcesOf(meta, track)
 
 	// 已采用的封面优先：它是用户确认过的那张。封面挂在歌集上——
@@ -235,11 +235,7 @@ func basicSource(provenance map[string]string, key string, locked bool) string {
 //
 // 区间在解析署名时一并生成并落在 track_credit 表上，这里不反向猜测。
 // 对不上的片段不在其中，由前端渲染为纯文本。
-func (a *App) creditSpans(trackID int64, text string) ([]CreditSpan, error) {
-	entries, err := a.store.GetTrackCredits(trackID)
-	if err != nil {
-		return nil, err
-	}
+func creditSpans(entries []store.CreditEntry, text string) []CreditSpan {
 	out := make([]CreditSpan, 0, len(entries))
 	for _, e := range entries {
 		if e.SpanStart == nil || e.SpanEnd == nil {
@@ -257,7 +253,7 @@ func (a *App) creditSpans(trackID int64, text string) ([]CreditSpan, error) {
 			Text: text[start:end],
 		})
 	}
-	return out, nil
+	return out
 }
 
 // participantGroups 按 role 分组并按固定顺序排列。

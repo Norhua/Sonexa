@@ -178,7 +178,7 @@ const releaseInfo = computed(() => [
       <section>
         <h3 class="mb-2 text-xs font-medium text-muted-color">参与者</h3>
         <dl class="detail-fields text-sm">
-          <!-- 角色统一分组；CV 兜底明确标注，不冒充上游演唱事实 -->
+          <!-- 角色统一分组；CV 派生演唱由详情读模型提供完整署名 -->
           <div v-for="group in detail.participants" :key="group.role" class="contents">
             <dt class="text-xs text-muted-color">{{ group.label }}</dt>
             <dd class="min-w-0 break-words">
@@ -191,7 +191,6 @@ const releaseInfo = computed(() => [
                 <span v-if="artist.attribute" class="text-xs text-muted-color">
                   ({{ artist.attribute }})
                 </span>
-                <span v-if="artist.source === 'credit_cv'" class="text-xs text-muted-color">（来自 CV 署名）</span>
               </template>
             </dd>
           </div>
