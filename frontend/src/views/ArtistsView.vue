@@ -4,8 +4,9 @@
  *
  * 艺术家视图是按 artist_id 过滤的标准曲目表格，不是结构不同的独立页面。
  */
-import { computed, ref, watch } from 'vue'
-import { App, type Models } from '@/api'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { App, Events, EventsOn, type Models } from '@/api'
+import { createRefreshQueue } from '@/lib/refreshQueue'
 import PaneHeader from '@/components/PaneHeader.vue'
 import ViewOptionsMenu from '@/components/ViewOptionsMenu.vue'
 import FilterChips from '@/components/FilterChips.vue'
@@ -25,21 +26,25 @@ const error = ref('')
 
 const emit = defineEmits<{ selected: [] }>()
 
-watch(() => library.filter.tagId, async (tagId, _, onCleanup) => {
-  let cancelled = false
-  onCleanup(() => { cancelled = true })
+let listRequest = 0
+let headerRequest = 0
+let disposed = false
+async function loadArtists(clear = false) {
+  const request = ++listRequest
+  const tagId = library.filter.tagId
   loading.value = true
   error.value = ''
-  artists.value = []
+  if (clear) artists.value = []
   try {
     const result = tagId ? await App.ListArtistsForTag(tagId) : await App.ListArtists()
-    if (!cancelled) artists.value = result ?? []
+    if (!disposed && request === listRequest) artists.value = result ?? []
   } catch (e) {
-    if (!cancelled) error.value = String(e)
+    if (!disposed && request === listRequest) error.value = String(e)
   } finally {
-    if (!cancelled) loading.value = false
+    if (!disposed && request === listRequest) loading.value = false
   }
-}, { immediate: true })
+}
+watch(() => library.filter.tagId, () => void loadArtists(true), { immediate: true })
 
 /** 角色艺术家的视图标题从配音关系渲染为「涼宮ハルヒ (CV: 平野綾)」。 */
 function titleOf(a: Models.store.ArtistListItem): string {
@@ -47,25 +52,27 @@ function titleOf(a: Models.store.ArtistListItem): string {
 }
 
 // 头部跟随当前导航，而不是等请求完成后才导航；旧请求不能覆盖分面或抢回视图。
-watch(
-  () => [library.view, library.contextId] as const,
-  async ([view, id], _, onCleanup) => {
-    let cancelled = false
-    onCleanup(() => { cancelled = true })
-    header.value = null
-    error.value = ''
-    if (view !== 'artist' || !id) return
-    try {
-      const result = await App.GetArtistHeader(id)
-      if (cancelled) return
-      header.value = result
-      if (result.title) library.contextTitle = result.title
-    } catch (e) {
-      if (!cancelled) error.value = String(e)
-    }
-  },
-  { immediate: true },
-)
+async function loadHeader(clear = false) {
+  const request = ++headerRequest
+  const id = library.contextId
+  if (clear) header.value = null
+  error.value = ''
+  if (library.view !== 'artist' || !id) return
+  try {
+    const result = await App.GetArtistHeader(id)
+    if (disposed || request !== headerRequest || library.contextId !== id || library.view !== 'artist') return
+    header.value = result
+    if (result?.title) library.contextTitle = result.title
+  } catch (e) {
+    if (!disposed && request === headerRequest) error.value = String(e)
+  }
+}
+watch(() => [library.view, library.contextId], () => void loadHeader(true), { immediate: true })
+const refresh = createRefreshQueue(async () => {
+  if (!disposed) await Promise.all([loadArtists(), loadHeader()])
+})
+const offLibrary = EventsOn(Events.LibraryChanged, () => { void refresh.request() })
+onBeforeUnmount(() => { disposed = true; listRequest++; headerRequest++; refresh.dispose(); offLibrary() })
 
 const visibleArtists = computed(() => {
   const q = filter.value.trim().toLowerCase()

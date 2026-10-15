@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { App, Events, EventsOn } from '@/api'
+import { createRefreshQueue } from '@/lib/refreshQueue'
 import type { ImportProgress, TaskState } from '@/api/events'
 
 /** 一条日志行。 */
@@ -43,13 +44,15 @@ export const useTasksStore = defineStore('tasks', () => {
     unsubscribe = EventsOn(Events.ImportProgress, (p: ImportProgress) => {
       summary.value = {
         activeBatch: p.batchId,
-        filename: summary.value?.filename ?? '',
+        filename: summary.value?.activeBatch === p.batchId ? summary.value.filename : '',
         processed: p.processed,
         total: p.total,
         stats: p.stats,
         running: !p.done && !p.paused,
-        reviewPending: p.stats?.review ?? 0,
+        // 批次统计不是全库待复核总数；保留上次汇总，事件后按全批次重新读取。
+        reviewPending: summary.value?.reviewPending ?? 0,
       }
+      void refresh()
       if (p.line) {
         log.value.push({ at: new Date(), text: p.line })
         // 只保留最近 500 行，避免长任务把内存占满
@@ -61,24 +64,24 @@ export const useTasksStore = defineStore('tasks', () => {
   function unsubscribeAll() {
     unsubscribe?.()
     unsubscribe = null
+    refreshQueue.dispose()
+    refreshQueue = makeRefreshQueue()
   }
 
-  async function refresh() {
-    try {
-      const s = await App.GetTaskSummary()
-      if (!s) return
-      summary.value = {
-        activeBatch: s.activeBatch,
-        filename: s.filename,
-        processed: s.processed,
-        total: s.total,
-        stats: s.stats,
-        running: s.running,
-        reviewPending: s.reviewPending,
+  function makeRefreshQueue() {
+    return createRefreshQueue(async current => {
+      try {
+        const s = await App.GetTaskSummary()
+        if (s && current()) summary.value = s
+      } catch {
+        // 后端尚未就绪/暂时失败时保留已有进度，下一次事件继续读取。
       }
-    } catch {
-      // 后端尚未就绪时静默跳过
-    }
+    })
+  }
+  let refreshQueue = makeRefreshQueue()
+
+  function refresh() {
+    return refreshQueue.request()
   }
 
   return {

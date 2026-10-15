@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { createRefreshQueue } from '@/lib/refreshQueue'
 import { App, Events, EventsOn, type Models } from '@/api'
 
 /**
@@ -42,20 +43,33 @@ export const useEnrichStore = defineStore('enrich', () => {
     if (unsubscribe) return
     unsubscribe = EventsOn(Events.EnrichProgress, (s: Models.app.EnrichStatus) => {
       status.value = s
+      revision++
     })
   }
 
   function unsubscribeAll() {
     unsubscribe?.()
     unsubscribe = null
+    revision++
+    refreshQueue.dispose()
+    refreshQueue = makeRefreshQueue()
   }
 
-  async function refresh() {
-    try {
-      status.value = await App.GetEnrichStatus()
-    } catch {
-      // 后端尚未就绪时静默跳过
-    }
+  let revision = 0
+  function makeRefreshQueue() {
+    return createRefreshQueue(async current => {
+      const token = revision
+      try {
+        const next = await App.GetEnrichStatus()
+        if (current() && token === revision) status.value = next
+      } catch {
+        // 后端尚未就绪时静默跳过
+      }
+    })
+  }
+  let refreshQueue = makeRefreshQueue()
+  function refresh() {
+    return refreshQueue.request()
   }
 
   async function toggle() {

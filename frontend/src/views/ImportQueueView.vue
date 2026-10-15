@@ -8,7 +8,8 @@
  * 日志来自后端推送的进度事件（tasks store），不轮询——
  * 17 分钟的导入任务上轮询会产生数千次无谓的 IPC 调用。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { createRefreshQueue } from '@/lib/refreshQueue'
 import { Pause, Play, Upload } from 'lucide-vue-next'
 import { App, type Models } from '@/api'
 import EmptyState from '@/components/EmptyState.vue'
@@ -42,10 +43,11 @@ const percent = computed(() => {
   return Math.round((b.processed / b.totalRows) * 100)
 })
 
-onMounted(load)
+onMounted(() => void load())
+onBeforeUnmount(() => refreshQueue.dispose())
 
-// 后端每推一条进度就刷新一次计数：页面开着时数字要跟着动
-watch(() => tasks.summary?.processed, () => void refresh())
+// 状态、失败、批次及全局汇总也会变化，不能只监听 processed。
+watch(() => tasks.summary, () => void load())
 
 // 导入向导关掉就重读一次：刚提交的批次要立刻出现在这一页上
 watch(
@@ -64,25 +66,23 @@ watch(
   },
 )
 
-async function load() {
-  loading.value = true
-  error.value = ''
+const refreshQueue = createRefreshQueue(async current => {
   try {
-    batches.value = (await App.GetImportQueue()) ?? []
+    const next = (await App.GetImportQueue()) ?? []
+    if (!current()) return
+    batches.value = next
+    error.value = ''
   } catch (e) {
-    error.value = String(e)
+    if (current()) error.value = String(e)
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
-}
+})
 
-/** 轻量刷新：不打 loading 态，避免进度每跳一条就闪一次。 */
-async function refresh() {
-  try {
-    batches.value = (await App.GetImportQueue()) ?? []
-  } catch {
-    // 刷新失败不覆盖页面上已有的内容
-  }
+function load() {
+  // 后台更新保留原内容；仅首次空页面展示加载态。
+  if (!batches.value.length) loading.value = true
+  return refreshQueue.request()
 }
 
 async function pause(id: number) {

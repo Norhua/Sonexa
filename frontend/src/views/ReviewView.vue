@@ -98,6 +98,7 @@ watch(researchProvider, async () => {
 let researchRequest = 0
 let queueRevision = 0
 let queueInvalidation = 0
+let refreshTasks = false
 let queueLoad: Promise<void> | null = null
 let disposed = false
 // 直接订阅事件而非待复核计数：计数相同时也可能有失败、候选或条目变化。
@@ -125,6 +126,7 @@ function load(background = false): Promise<void> {
   queueRevision++
   loading.value = true
   if (!background) {
+    refreshTasks = true
     queueInvalidation++
     error.value = ''
   }
@@ -157,7 +159,11 @@ async function reloadQueue() {
       queueError.value = ''
       queue.value = next
       index.value = position >= 0 ? position : Math.max(0, Math.min(index.value, next.items.length - 1))
-      await tasks.refresh()
+      // 导入事件的全局汇总由 tasks 自身订阅刷新；这里只补进入页面和处理动作。
+      if (refreshTasks) {
+        refreshTasks = false
+        await tasks.refresh()
+      }
     } catch (e) {
       if (!disposed && invalidation === queueInvalidation) queueError.value = String(e)
     }

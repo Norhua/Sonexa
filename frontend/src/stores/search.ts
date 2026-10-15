@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { App, type Models } from '@/api'
+import { App, Events, EventsOn, type Models } from '@/api'
+import { createRefreshQueue } from '@/lib/refreshQueue'
 
 /** 搜索范围：资料库，或某一个上游。 */
 export const LibraryScope = 'library'
@@ -46,6 +47,7 @@ export const useSearchStore = defineStore('search', () => {
   const upstreamCaps = ref<string[]>([])
   const loading = ref(false)
   const error = ref('')
+  const refreshError = ref('')
   /** 是否已经搜过一次——用于区分「还没搜」与「搜了但没结果」。 */
   const searched = ref(false)
   const country = ref('')
@@ -74,14 +76,28 @@ export const useSearchStore = defineStore('search', () => {
     conditions.value = []
   }
 
-  /** 切换范围时清掉上一次的结果：两种范围的结果结构不同，混着显示会误导。 */
+  let request = 0
+  let libraryRevision = 0
+  let submittedFilter: Models.store.TrackFilter | null = null
+  let unsubscribe: (() => void) | null = null
+
+  function resetResults() {
+    request++
+    loading.value = false
+    libraryRows.value = []
+    upstreamRows.value = []
+    upstreamCaps.value = []
+    searched.value = false
+    submittedFilter = null
+    error.value = ''
+    refreshError.value = ''
+  }
+
+  /** 切换范围时清掉上一次的结果，并使旧搜索与本地刷新失效。 */
   function setScope(next: string) {
     if (scope.value === next) return
     scope.value = next
-    libraryRows.value = []
-    upstreamRows.value = []
-    searched.value = false
-    error.value = ''
+    resetResults()
     // 标签条件只对资料库有意义，切到上游时移除
     if (next !== LibraryScope) removeCondition('tag')
   }
@@ -93,9 +109,7 @@ export const useSearchStore = defineStore('search', () => {
     conditions.value = (['artist', 'album'] as SearchField[])
       .filter((f) => (f === 'artist' ? fields.artist : fields.album).trim() !== '')
       .map((f) => ({ field: f, value: f === 'artist' ? fields.artist : fields.album }))
-    libraryRows.value = []
-    upstreamRows.value = []
-    searched.value = false
+    resetResults()
   }
 
   /** 主搜索框的文本在没有显式「曲名」条件时充当曲名。 */
@@ -104,22 +118,43 @@ export const useSearchStore = defineStore('search', () => {
   }
 
   async function run() {
+    const token = ++request
+    const revision = libraryRevision
+    const local = isLibrary.value
+    const filter = libraryFilter()
     loading.value = true
     error.value = ''
     try {
-      if (isLibrary.value) await runLibrary()
-      else await runUpstream()
+      if (local) {
+        const page = await App.ListTracks(filter)
+        if (token !== request) return
+        libraryRows.value = page.tracks ?? []
+        submittedFilter = filter
+      } else {
+        const res = await App.SearchUpstream(
+          effectiveTitle(), valueOf('artist').trim(), valueOf('album').trim(), [scope.value], country.value,
+        )
+        if (token !== request) return
+        const provider = res?.byProvider?.[0]
+        if (provider?.error) throw new Error(provider.error)
+        upstreamRows.value = provider?.rows ?? []
+        upstreamCaps.value = provider?.capabilities ?? []
+      }
       searched.value = true
+      refreshError.value = ''
     } catch (e) {
-      error.value = String(e)
+      if (token === request) error.value = String(e)
     } finally {
-      loading.value = false
+      if (token === request) {
+        loading.value = false
+        // 搜索在途的库变化不能丢失；只本地重读，不重复出网查询。
+        if (revision !== libraryRevision) void refreshResults()
+      }
     }
   }
 
-  async function runLibrary() {
+  function libraryFilter(): Models.store.TrackFilter {
     const filter: Partial<Models.store.TrackFilter> = {}
-    // 主搜索框走 FTS，覆盖曲名/艺术家/专辑/署名/关联艺术家
     if (query.value.trim()) filter.query = query.value.trim()
     for (const c of conditions.value) {
       const v = c.value.trim()
@@ -127,22 +162,41 @@ export const useSearchStore = defineStore('search', () => {
       if (c.field === 'tag') filter.tagId = Number(v)
       else filter[c.field] = v
     }
-    const page = await App.ListTracks(filter as Models.store.TrackFilter)
-    libraryRows.value = page.tracks ?? []
+    return filter as Models.store.TrackFilter
   }
 
-  async function runUpstream() {
-    const res = await App.SearchUpstream(
-      effectiveTitle(),
-      valueOf('artist').trim(),
-      valueOf('album').trim(),
-      [scope.value],
-      country.value,
-    )
-    const provider = res?.byProvider?.[0]
-    if (provider?.error) throw new Error(provider.error)
-    upstreamRows.value = provider?.rows ?? []
-    upstreamCaps.value = provider?.capabilities ?? []
+  function makeRefreshQueue() {
+    return createRefreshQueue(async current => {
+      if (!searched.value || loading.value) return
+      const token = request
+      try {
+        if (isLibrary.value && submittedFilter) {
+          const page = await App.ListTracks({ ...submittedFilter })
+          if (current() && token === request) libraryRows.value = page.tracks ?? []
+        } else if (!isLibrary.value && upstreamRows.value.length) {
+          const rows = await App.RefreshSearchCandidates(upstreamRows.value)
+          if (current() && token === request) upstreamRows.value = rows ?? []
+        }
+        if (current() && token === request) refreshError.value = ''
+      } catch (e) {
+        if (current() && token === request) refreshError.value = String(e)
+      }
+    })
+  }
+  let refreshQueue = makeRefreshQueue()
+  function refreshResults() {
+    libraryRevision++
+    return refreshQueue.request()
+  }
+  function subscribe() {
+    if (!unsubscribe) unsubscribe = EventsOn(Events.LibraryChanged, () => { void refreshResults() })
+  }
+  function unsubscribeAll() {
+    unsubscribe?.()
+    unsubscribe = null
+    request++
+    refreshQueue.dispose()
+    refreshQueue = makeRefreshQueue()
   }
 
   return {
@@ -153,7 +207,7 @@ export const useSearchStore = defineStore('search', () => {
     upstreamRows,
     upstreamCaps,
     loading,
-    error,
+    error, refreshError,
     searched,
     country,
     isLibrary,
@@ -164,6 +218,6 @@ export const useSearchStore = defineStore('search', () => {
     resetConditions,
     setScope,
     prefillUpstream,
-    run,
+    run, refreshResults, subscribe, unsubscribeAll,
   }
 })

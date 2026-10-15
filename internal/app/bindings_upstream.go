@@ -270,6 +270,25 @@ func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction string) 
 	return rows
 }
 
+// RefreshSearchCandidates 只重查本地身份和封面归属，不请求上游、不改候选事实或顺序。
+func (a *App) RefreshSearchCandidates(rows []CandidateRow) ([]CandidateRow, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	out := make([]CandidateRow, len(rows))
+	for i, row := range rows {
+		// 删除/解除绑定后旧的具体发行不能继续用于封面。
+		row.ReleaseID, row.CoverRevision = 0, 0
+		a.applyLocalMatch(&row, row.toCandidate())
+		row.Action = "加入曲库"
+		if row.LocalTrackID != 0 {
+			row.Action = "已在库中"
+		}
+		out[i] = row
+	}
+	return out, nil
+}
+
 // rowFrom 把一条评分候选映射为行，不查库。与 CandidateRow.toCandidate 互为逆运算。
 func rowFrom(sc matching.ScoredCandidate) CandidateRow {
 	c := sc.Candidate

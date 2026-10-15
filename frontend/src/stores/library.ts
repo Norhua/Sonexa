@@ -90,8 +90,11 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
+  let collectionRequest = 0
   async function loadCollections() {
+    const request = ++collectionRequest
     const [p, t] = await Promise.all([App.ListCollections('playlist'), App.ListCollections('tag')])
+    if (request !== collectionRequest) return
     playlists.value = p ?? []
     tags.value = t ?? []
     const activeTag = filter.value.tagId
@@ -196,7 +199,7 @@ export const useLibraryStore = defineStore('library', () => {
     view, contextId, contextGroupId, contextTitle,
     playlists, tags, tracks, total, loading, error,
     filter, chips, searchPlaceholder, hasViewSearch,
-    baseFilter, loadTracks, loadCollections, goTo,
+    baseFilter, loadTracks, loadCollections, goTo, needsTracks,
     applyFilter, quickSearch, pickTag, removeChip, clearFilter, clearAllFilters,
   }
 })

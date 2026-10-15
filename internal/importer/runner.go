@@ -52,6 +52,8 @@ type Runner struct {
 	// enricher 在「匹配时拉取」开启时被调用，把详情落到刚入库的曲目上。
 	// 由应用层注入，避免 importer 反向依赖 internal/app。
 	enricher func(trackID int64, providerID, releaseRef string)
+	// 成功提交后通知库内容变化，不能等下一次网络补全或整批结束。
+	onLibraryChanged func()
 
 	mu      sync.Mutex
 	running map[int64]context.CancelFunc
@@ -93,6 +95,11 @@ func (r *Runner) SetEnricher(fn func(trackID int64, providerID, releaseRef strin
 	r.enricher = fn
 }
 
+// SetLibraryChanged 在启动前注入成功提交后的通知。
+func (r *Runner) SetLibraryChanged(fn func()) {
+	r.onLibraryChanged = fn
+}
+
 // Start 开始（或恢复）处理某批次。
 func (r *Runner) Start(ctx context.Context, batchID int64) error {
 	if r.initErr != nil {
@@ -108,14 +115,27 @@ func (r *Runner) Start(ctx context.Context, batchID int64) error {
 	r.mu.Unlock()
 
 	if err := r.store.SetBatchStatus(batchID, store.BatchRunning); err != nil {
+		r.mu.Lock()
+		delete(r.running, batchID)
+		r.mu.Unlock()
+		cancel()
 		return err
 	}
+	r.emitProgress(batchID, "", false, false)
 
 	go func() {
 		defer func() {
 			r.mu.Lock()
 			delete(r.running, batchID)
 			r.mu.Unlock()
+			// 先移除运行标记，再通知最终状态；前端事件后立即读到的也是最终状态。
+			if batch, err := r.store.GetBatch(batchID); err == nil && batch != nil {
+				if batch.Status == store.BatchRunning && runCtx.Err() != nil {
+					_ = r.store.SetBatchStatus(batchID, store.BatchPaused)
+					batch.Status = store.BatchPaused
+				}
+				r.emitProgress(batchID, r.summaryFor(batchID), batch.Status == store.BatchDone, batch.Status == store.BatchPaused)
+			}
 			cancel()
 		}()
 		r.loop(runCtx, batchID)
@@ -125,12 +145,15 @@ func (r *Runner) Start(ctx context.Context, batchID int64) error {
 
 // Pause 暂停某批次。恢复时从暂停处继续，不从头开始。
 func (r *Runner) Pause(batchID int64) error {
+	if err := r.store.SetBatchStatus(batchID, store.BatchPaused); err != nil {
+		return err
+	}
 	r.mu.Lock()
 	if cancel, ok := r.running[batchID]; ok {
 		cancel()
 	}
 	r.mu.Unlock()
-	return r.store.SetBatchStatus(batchID, store.BatchPaused)
+	return nil
 }
 
 // IsRunning 报告某批次是否正在处理。
@@ -175,9 +198,6 @@ func (r *Runner) ResumeAll(ctx context.Context) error {
 func (r *Runner) loop(ctx context.Context, batchID int64) {
 	for {
 		if ctx.Err() != nil {
-			// 暂停与完成一样要给出统计：规格要求「导入完成或暂停时」
-			// 都输出各类计数并逐行列出失败条目，空行会让用户无从核对。
-			r.emitProgress(batchID, r.summaryFor(batchID), false, true)
 			return
 		}
 
@@ -191,13 +211,11 @@ func (r *Runner) loop(ctx context.Context, batchID int64) {
 			stats, _ := r.store.Stats(batchID)
 			if stats.Queued == 0 && stats.Matching == 0 {
 				r.store.SetBatchStatus(batchID, store.BatchDone)
-				r.emitProgress(batchID, r.summaryFor(batchID), true, false)
 				return
 			}
 			// 有条目在退避中，稍后再看
 			select {
 			case <-ctx.Done():
-				r.emitProgress(batchID, r.summaryFor(batchID), false, true)
 				return
 			case <-time.After(time.Second):
 				continue
@@ -256,6 +274,9 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	if selection.Candidate != nil && selection.Reason == "" {
 		result, err := r.library.CommitAdmission(ctx, selection.Plan.ID, selection.Plan.Hash, domain.AdmissionApproval{})
 		if err == nil {
+			if r.onLibraryChanged != nil {
+				r.onLibraryChanged()
+			}
 			if r.fetchOnMatch && r.enricher != nil {
 				r.enricher(result.TrackID, string(selection.Candidate.Provider), deref(selection.Candidate.ReleaseRef))
 			}

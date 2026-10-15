@@ -206,7 +206,7 @@ func (a *App) attachEnrichWorker() {
 	a.enricher.emit = a.emitEnrichStatus
 	// 整表重载只在一轮结束时做一次：逐条刷新会让 200 条的补全
 	// 触发 200 次全表查询与 200 次重渲染。
-	a.enricher.onRunFinished = a.notifyLibraryChanged
+	a.enricher.onLibraryChanged = a.notifyLibraryChanged
 }
 
 // rebuildProviders 按当前设置重建上游注册表与令牌桶。
@@ -274,6 +274,7 @@ func (a *App) rebuildRunner(cur config.Settings) {
 		return
 	}
 	a.runner = importer.NewRunner(a.store, engine, mb, retry, fetchOnMatch, a.emitProgress, service)
+	a.runner.SetLibraryChanged(a.notifyLibraryChanged)
 	if fetchOnMatch {
 		// 走后台优先级与同一套补全状态机：这是导入循环内部的一次取数，
 		// 不是用户在等的请求，标成交互式会让它抢在用户的搜索之前。
@@ -284,6 +285,7 @@ func (a *App) rebuildRunner(cur config.Settings) {
 				return
 			}
 			_ = a.store.SetEnrichState(trackID, store.EnrichFetched)
+			a.notifyLibraryChanged()
 		})
 	}
 }

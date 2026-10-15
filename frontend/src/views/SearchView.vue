@@ -131,6 +131,7 @@ async function addToLibrary(row: Models.app.CandidateRow) {
     row.localTrackId = id
     row.action = '已在库中'
     if (!row.badges.includes('本地')) row.badges = ['本地', ...row.badges]
+    await search.refreshResults()
   } catch (e) {
     search.error = String(e)
   }
@@ -259,8 +260,8 @@ async function addToLibrary(row: Models.app.CandidateRow) {
       </div>
     </div>
 
-    <Message v-if="search.error" severity="error" size="small" class="shrink-0 rounded-none">
-      {{ search.error }}
+    <Message v-if="search.error || search.refreshError" severity="error" size="small" class="shrink-0 rounded-none">
+      {{ search.error || search.refreshError }}
     </Message>
   </div>
 </template>

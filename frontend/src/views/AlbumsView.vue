@@ -10,6 +10,7 @@ const admission = useAdmissionStore()
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { App, display, Events, EventsOn, type Models } from '@/api'
+import { createRefreshQueue } from '@/lib/refreshQueue'
 import type { Row } from '@/components/TrackTable.vue'
 import CoverArt from '@/components/CoverArt.vue'
 import GroupProposals from '@/components/GroupProposals.vue'
@@ -67,9 +68,14 @@ const emit = defineEmits<{
 let listRequest = 0
 let detailRequest = 0
 let selectionRequest = 0
-const offCover = EventsOn(Events.CoverChanged, async () => { await load(); await reloadDetail() })
-const offLibrary = EventsOn(Events.LibraryChanged, async () => { await load(); await reloadDetail(); await library.loadTracks() })
-onBeforeUnmount(() => { listRequest++; detailRequest++; selectionRequest++; offCover(); offLibrary() })
+let disposed = false
+const refresh = createRefreshQueue(async () => {
+  if (disposed) return
+  await Promise.all([load(), reloadDetail()])
+})
+const offCover = EventsOn(Events.CoverChanged, () => { void refresh.request() })
+const offLibrary = EventsOn(Events.LibraryChanged, () => { void refresh.request() })
+onBeforeUnmount(() => { disposed = true; listRequest++; detailRequest++; selectionRequest++; refresh.dispose(); offCover(); offLibrary() })
 watch(() => library.filter.tagId, load, { immediate: true })
 
 async function load() {

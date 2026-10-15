@@ -63,6 +63,7 @@
   window.go = {
     app: {
       App: {
+        RefreshSearchCandidates: async rows => JSON.parse(JSON.stringify(rows)),
         GetSettings: async () => settings,
         DefaultSettings: async () => settings,
         SaveSettings: async next => {

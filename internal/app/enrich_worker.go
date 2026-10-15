@@ -66,9 +66,8 @@ type enrichWorker struct {
 	busy func() (bool, string)
 	// emit 把状态推给前端；done 为真表示本轮跑完了。
 	emit func(EnrichStatus)
-	// onRunFinished 在一轮结束后调用，用于刷新界面上的曲目列表。
-	// 逐条刷新会让 200 条的补全触发 200 次整表重载。
-	onRunFinished func()
+	// 每首成功落库即通知；前端合并密集事件，长任务不等待整轮完成。
+	onLibraryChanged func()
 
 	mu sync.Mutex
 	// state 与 reason 只在这里改，读取一律经 Status()。
@@ -251,9 +250,6 @@ func (w *enrichWorker) run(ctx context.Context, targets []store.EnrichTarget, do
 		w.done = nil
 		w.mu.Unlock()
 		w.publish()
-		if w.onRunFinished != nil {
-			w.onRunFinished()
-		}
 	}()
 
 	consecutiveFailures := 0
@@ -284,6 +280,9 @@ func (w *enrichWorker) step(ctx context.Context, target store.EnrichTarget, cons
 		*consecutive = 0
 		_ = w.store.SetEnrichState(target.TrackID, store.EnrichFetched)
 		w.setError("")
+		if w.onLibraryChanged != nil {
+			w.onLibraryChanged()
+		}
 
 	case errors.Is(err, context.Canceled), ctx.Err() != nil:
 		return false

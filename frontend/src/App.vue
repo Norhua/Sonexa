@@ -9,6 +9,7 @@
  */
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { App as Api, Events, EventsOn, display } from '@/api'
+import { createRefreshQueue } from '@/lib/refreshQueue'
 import type { Models } from '@/api'
 import AppSidebar from '@/components/AppSidebar.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -63,25 +64,30 @@ let offLibrary: (() => void) | null = null
 let offCover: (() => void) | null = null
 watch(() => [library.view, library.contextId], () => { if (coverSearch.target) void coverSearch.close() })
 
+const libraryRefresh = createRefreshQueue(async () => {
+  await Promise.all([
+    refreshOpenDetail(),
+    enrich.refresh(),
+    (async () => {
+      await library.loadCollections()
+      if (library.needsTracks(library.view)) await library.loadTracks()
+    })(),
+  ])
+})
 onMounted(async () => {
-  await settings.load()
-  await library.loadCollections()
-  await library.loadTracks()
+  // 先订阅再读初值，启动加载期间的导入/补全通知也不丢失。
   tasks.subscribe()
-  await tasks.refresh()
-  // 补全信息匹配的状态：后端推送，这里只订阅并读一次初值
+  search.subscribe()
   enrich.subscribe()
-  await enrich.refresh()
   offCover = EventsOn(Events.CoverChanged, async (event: { releaseId: number }) => {
     if (detail.value?.track.releaseId === event.releaseId && drawerOpen.value) await onCoverAdopted()
   })
-  offLibrary = EventsOn(Events.LibraryChanged, async () => {
-    void refreshOpenDetail()
-    await library.loadCollections()
-    await library.loadTracks()
-    // 入库或补全会改变「已匹配/未匹配」的计数，工具栏上那个数字要跟着动
-    await enrich.refresh()
-  })
+  offLibrary = EventsOn(Events.LibraryChanged, () => { void libraryRefresh.request().catch(markFailure) })
+  await settings.load()
+  await library.loadCollections()
+  await library.loadTracks()
+  await tasks.refresh()
+  await enrich.refresh()
 
   // 启动时探一次连通性，之后只在出网请求失败时置位——
   // 不做后台轮询，离线提示靠请求结果驱动。
@@ -96,6 +102,8 @@ onUnmounted(() => {
   detailRequest++
   detailTrackId = null
   tasks.unsubscribeAll()
+  search.unsubscribeAll()
+  libraryRefresh.dispose()
   enrich.unsubscribeAll()
   offLibrary?.()
   offCover?.()

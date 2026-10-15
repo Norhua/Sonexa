@@ -402,5 +402,6 @@ test('late queue and search replies cannot restore a previous selection or an un
   await expect(page.locator('.track-list [data-row-key]')).toHaveCount(7)
   await page.evaluate(() => (window as any).__finishQueue())
   await expect(page.locator('main')).not.toContainText('you')
-  expect(await page.evaluate(() => (window as any).__review.taskReads)).toBe(2)
+  // 第二次进度事件仍由全局 tasks 汇总一次；卸载队列的旧响应不得追加读取。
+  expect(await page.evaluate(() => (window as any).__review.taskReads)).toBe(3)
 })
