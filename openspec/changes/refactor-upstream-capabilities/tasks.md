@@ -1,0 +1,68 @@
+# Tasks
+
+本清单用于后续 apply，本次 propose 不执行。行为验收以四份 delta specs 为准；未修改的歌词、封面、元数据、文件和匹配规格仍适用。各组随改动补测试与说明，阶段提交使用中文约定式提交信息；阶段性接线只用于保持可编译，最终不能保留两套生产路径。
+
+## 1. 元数据正名与消费侧能力契约
+
+- [ ] 1.1 将 `provider.Provider` 正名为 `MetadataProvider`，从接口移除 `SearchCovers`，保留快照/详情/Refs 与可选版本、图片契约；更新 Registry、library、importer、app 及测试替身和接口注释。验证 `go test ./internal/provider/... ./internal/matching/... ./internal/importer/... ./internal/library/... ./internal/app/...`，元数据来源排序、字段能力和导入仅 MB 不变。
+- [ ] 1.2 在 provider 父包定义只含稳定 ID/显示名的 `Upstream`，在 `lyrics` 定义窄 Provider 与内部 Payload；保留公共 Query/Candidate/Document DTO 名称和 JSON 结构。以编译期断言及只实现歌词能力的假来源测试验证不需要元数据/封面方法。
+- [ ] 1.3 在 `covers/sources` 定义封面 Query、窄 Provider、来源条目及互斥的 Result 形式（新目录输入/已登记目录引用），复用 domain 图片模型而非 store 写入接口。测试非法双重/空结果被拒绝、可选绑定发行与地区完整传递。
+- [ ] 1.4 实现两个业务的类型化能力集合及统一列表/查找校验，保留默认顺序与显示文案，拒绝重复 ID、未知能力且不出网。通过来源集合单测证明仅歌词/仅封面假来源可登记，元数据 Registry 原有覆盖语义不变；补契约归属与依赖方向的包说明。
+
+## 2. 共享传输与显式缓存策略
+
+- [ ] 2.1 为 `provider.Client` 引入常规读取、刷新写入、完全不缓存三种明确模式，更新所有 GetRequest 调用点，不改变公开 Query/Ref.SkipCache 的刷新含义。以记账 Cache 测试证明 NoStore 零读零写、Refresh 跳过读但写回、普通命中不取令牌，运行 provider 缓存及 iTunes 缓存策略测试。
+- [ ] 2.2 增加请求级 HTTPS 重定向域名/次数策略，保留公共门禁、TLS、4 MiB 可选响应上限和有限重试，禁止并发修改共享 HTTP Client。测试允许与拒绝的重定向、重定向时门禁变化、超限、取消和 Retry-After，运行 `go test -race ./internal/provider/...`。
+- [ ] 2.3 将限流配置与完整元数据接口解耦，建立平台级配额标识及集中配置规则；能力实例构造不新建或重配桶。以 limiter 测试验证实例复用、其他平台独立、原位变速保持排队权、重试重新取令牌，并更新 Client/Limiters 文档明确 API 与图片池边界。
+
+## 3. QQ 与网易云共享协议原语
+
+- [ ] 3.1 在 `provider/qqmusic` 收敛 musicu envelope、歌曲搜索请求和私有歌曲响应解析，让元数据路径先使用同一原语。补请求捕获与投影测试，覆盖查询词、TitleOnly、默认 25/上限 50、错误块、缺失列表、合法空列表、无歌曲 MID 与无专辑身份，不将封面投影约束提前混入元数据解析。
+- [ ] 3.2 收敛 QQ 旧歌词端点请求、JSON/JSONP 与编码/错误解析，保留元数据优先详情歌词、缺失才回退的策略。迁移并补单测证明仅清单不取歌词、失败不影响其他字段，允许手动歌词后续复用已解析通道而不改变元数据存储原文。
+- [ ] 3.3 在 `provider/netease` 扩展现有 WEAPI 为统一请求和歌曲搜索解析原语，保留歌曲及专辑图片所需字段。以 fixture 和请求捕获验证加密表单、Referer、业务错误、合法空结果、limit 20/30 参数化及原生身份，补协议模型/业务投影分工说明。
+
+## 4. 四来源歌词适配与业务服务
+
+本组是依赖方向反转的一个编译闭环：4.1–4.4 同时完成旧导入移除、适配器/服务和调用方切换，4.5 完成测试包迁移后再提交；不能单独提交会导致 `lyrics ↔ provider/qqmusic` 循环的中间态。
+
+- [ ] 4.1 在 QQ 包实现歌词能力，将 `lyrics/qq.go` 中请求、解析和回退逻辑及 `qrc.go`、`qrcdes/` 迁入，保留通用通道操作在 lyrics。连同许可证与来源说明移动；迁移 QQ/QRC 测试，验证批量两块、逐字边界、损坏回退、翻译保留、2 MiB 上限与取消，不丢失现有覆盖。
+- [ ] 4.2 在网易云包实现歌词能力，新增 `provider/kugou`、`provider/kuwo` 承接各自搜索/获取协议。迁移 `lyrics/lyrics_test.go` 中来源解析与下载测试，验证酷狗 hash/时长/下载选择、酷我混合非法时间降为纯文本、网易云占位及通道状态，所有请求使用 NoStore。
+- [ ] 4.3 将 `lyrics.Service` 改为能力注入，统一输入校验、评分、去重、通道合并和 Document，获取总超时 40 秒覆盖配额等待及所有子请求。移除 service/search/text 中按来源解析与协议分支；保留/补充纯业务测试，验证评分、高置信、排序、无原文、附加通道错误和最终合并文本与重构前一致。
+- [ ] 4.4 在 App 装配歌词服务并改造歌词绑定，列表、来源校验和执行共用登记集合，会话持有服务而非每次新建裸 Client 服务。扩展 `internal/app/lyrics_test.go`，通过真实绑定验证假单能力来源、候选归属、过期、预览后采用、修订冲突、门禁和取消，DTO 不变。
+- [ ] 4.5 将歌词在线组合测试改为无循环依赖的外部测试包或 App 测试，保留显式环境变量启用方式；更新相关测试入口与 QRC 所在位置说明。验证默认离线运行会跳过 live 测试、`go test -race ./internal/lyrics/... ./internal/provider/... ./internal/app/...` 通过，当前未实测的来源不写成已验通。
+
+## 5. 四来源封面适配与 CAA 独立化
+
+本组同样以完整编译闭环提交：迁移具体实现时同步清除 sources 对具体上游的旧导入，避免 `sources ↔ provider/itunes` 或 `musicbrainz → caa → sources → musicbrainz` 循环。
+
+- [ ] 5.1 新建 `provider/caa`，迁移 CAA 目录/缩略图解析、URL 策略和所需模型，MusicBrainz 只保留图片关联的薄委托。迁移相应 fixture/测试及 App 解析器引用，验证 Front/其他图、release-group 回退、archive.org 直连/降级、目录错误与实际来源身份不变。
+- [ ] 5.2 实现 CAA 封面搜索能力，注入窄发行召回与共享 Catalog 读取，返回已登记目录引用。迁移 `sources/providers_test.go` 的 CAA 覆盖并增加部分失败测试，验证固定发行优先、去重最多 10 个、目录并发受原池限制、ActualReleaseURL 与既有目录不被二次保存覆盖。
+- [ ] 5.3 在 iTunes、QQ、网易云实现封面能力，QQ/网易云调用各自共享歌曲原语，通用相关性规则留在 sources；删除与新方法冲突的旧具体 `SearchCovers` 实现。迁移封面 fixture/请求测试，验证 30 首召回、最多 20 张、业务关键词、iTunes 地区/异图、QQ MID 与档位、163 `pic-...` 身份和构造尺寸不伪装实测。
+- [ ] 5.4 改造 App 封面搜索为集合分发与通用 Result 登记，不再按 source 选择构造器、判断 CAA 持久化或硬编码校验来源。扩展真实绑定测试覆盖单封面假来源、独立错误、已有结果、迟到取消、预览授权与采用，保持现有 CoverSearch DTO/事件不变。
+- [ ] 5.5 删除 `WebSource`、静态来源名单、剩余旧大接口封面方法、仅由旧链路使用的 CoverGroup/直连请求；保留仍被自动降级链使用的图片工具，必要时随协议迁移。运行 `go test -race ./internal/covers/... ./internal/provider/... ./internal/app/...`，确认无旧生产调用；更新封面来源包和 live 测试入口说明，不删除原工作池/目录回归。
+
+## 6. 集中装配与生命周期闭环
+
+- [ ] 6.1 统一启动和设置更新的能力装配入口，原子发布元数据、歌词和封面集合，共用长期 Limiters，避免 CAA 在 coverSvc 创建前捕获空依赖。用生产接线测试验证各业务准确来源列表/顺序、默认三元数据来源、iTunes 地区及导入仅 MB，装配失败不发布半套服务。
+- [ ] 6.2 保留旧会话服务快照与动态门禁/配额，新会话使用新集合；封面目录移动继续走 MoveRoot，关闭先取消并等待业务请求再关 Store。扩展设置/会话/shutdown 测试，在请求等待、下载和旧候选获取中切换配置、禁网或退出，验证无错误目标写入、无新出网与无 race。
+- [ ] 6.3 新增生产代码依赖边界测试，检查 lyrics、covers（含 sources）不导入具体上游，provider 父包不导入业务/具体来源，业务和歌词/封面查询绑定无上游协议字符串/解析分支。迁移形成循环的同包测试为外部测试或适配器测试；验证 `go list ./internal/...` 及边界测试通过。
+- [ ] 6.4 更新根 README 和 `openspec/design.md` 的实际模块/流程说明，删除已失效的大接口、WebSource 与 lyrics 内专有协议描述，保留自动图片策略和元数据字段能力边界。通过源码路径和接口对照检查，确保文档只描述此时已经完成的接线，不将未验证配额或在线结果写成完成。
+
+## 7. QQ 合并配额、合理提速与设置验证
+
+- [ ] 7.1 将 QQ 封面、元数据、手动歌词及回退全部接到 `qq`，网易云两能力接到 `163`，酷狗/酷我各自平台桶，去掉 `cover-qq`/`cover-163`/`lyrics-*` 生产配额键。扩展 `internal/app/cover_quota_test.go` 为三业务 HTTP 到达记账测试，验证合计速率、burst=1、新实例不能续杯、重试/回退取令牌、其他平台独立与图片/CAA 不占 QQ/MB 配额。
+- [ ] 7.2 在 provider 父包集中定义 QQ 默认 45、范围 1–60 的无业务依赖速率描述，config 与 QQ 构造共用；在 config 实现验证与启动规范化，并在 `SaveSettings` 任何保存/移动/Configure 前拒绝非法值。测试缺失、30、边界、小数、越界、零、负值、非有限值及非法保存伴随目录改动，验证持久化、实际值、运行配额与目录无意外变化。
+- [ ] 7.3 更新 `SettingsView.vue` 的 QQ 上限、默认展示与合计配额说明，保持设置字段路径不变。补前端 QQ 设置测试与后端排队期间变速测试，验证界面/后端相同边界、合法旧值不自动提高、保存不重置桶或既有预约，`npm run typecheck` 与定向测试通过。
+- [ ] 7.4 增加显式环境变量开启的 QQ 元数据单碟/多碟/歌词回退真实来源测试，以及 30/45/60 有界速率样本记录入口；复用生产装配与既有歌词/封面 live 入口，补默认跳过和风控停止条件的测试，记录命令、请求上限及仅输出状态/摘要的约束，不在日志转储歌词全文。
+- [ ] 7.5 根据已通过的配额与设置测试，更新主架构及 G16/G17 中“独立 QQ 封面配额”等失效描述，记录新默认的工程依据与非官方额度边界，保留接口可用性/真实网络未验证事项。核对文档只有一处规范性速率设置规则且无旧配额现状残留，严格验证本变更规格。
+
+## 8. 跨模块验收与证据
+
+- [ ] 8.1 运行 `go test -count=1 -race ./internal/...`，准备前端 embed/绑定后运行 `go vet ./...`；记录完整结果，重点确认元数据快照、自动导入、封面目录/文件回滚与歌词事务不退化。任何既有失败需有基线复现证据，不将新失败标成历史问题。
+- [ ] 8.2 按 README 生成 Wails 绑定，运行 `npm test`、`npm run build` 以及 `SONEXA_E2E_PREVIEW=1 npm run test:e2e -- tests/e2e/lyrics.spec.ts tests/e2e/cover-search.spec.ts tests/e2e/provider-capabilities.spec.ts tests/e2e/editor.spec.ts tests/e2e/shell.spec.ts`（含新增 QQ 设置用例）。记录 Chromium/WebKit 的 API、列表、会话、采用与设置结果，不提交生成绑定/构建产物，不将已知编辑器旧断言失败默认为新功能通过。
+- [ ] 8.3 显式启用 QQ 元数据单碟/多碟/歌词回退的有界真实来源测试，同时复测已迁移的四歌词和四封面入口；从 30 开始、无风控才继续少量 45/60 速率样本，记录请求间隔、错误/429、Retry-After、通道及取消结果。遇限制停止提速，不做压力或绕过测试；无法完成时保留本项未完成并说明阻塞，不能用 fixture 替代在线证据。
+- [ ] 8.4 在 `openspec/verification.md` 记录本次离线、浏览器、在线及原生未验证边界，逐项对照四份 delta 与 design 的关键不变量；执行 `openspec validate refactor-upstream-capabilities --strict`、`git diff --check` 并完成审阅。不得提前关闭 G14/G16/G17 中无本次证据支持的事项。
+
+## Workflow follow-up
+
+- 全部实施与验收完成后由用户决定是否进入 verify/archive；本清单不自动归档，也不在 propose 阶段同步主规格。
