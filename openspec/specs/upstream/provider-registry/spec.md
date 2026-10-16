@@ -75,7 +75,7 @@
 - **THEN** 以相同稳定发行/图片身份复用已获取内容，收藏前不创建虚假发行
 
 ### Requirement: 演唱角色来源适配
-来源 SHALL 按明确的歌曲角色证据生成演唱集合，遵循艺术家规格中的独立语义与未知值规则。MusicBrainz 从目标 recording 的 artist relations 读取 vocal 及其 attributes；QQ 音乐从歌曲详情 info 中标题为“演唱者”“合声”的 content 读取成员并保留合声属性；当前 iTunes Search/Lookup 不提供独立演唱角色，应声明不支持并返回 unknown。三来源的歌曲署名字段均不得作为演唱集合的替代来源，能力声明不代表单条记录完整。
+来源 SHALL 按明确的歌曲角色证据生成演唱集合，遵循艺术家规格中的独立语义与未知值规则。MusicBrainz 从目标 recording 的 artist relations 读取 vocal 及其 attributes；QQ 音乐从歌曲详情 info 中标题为“演唱者”“合声”的 content 读取成员并保留合声属性；当前 iTunes Search/Lookup 不提供独立演唱角色，应声明不支持并返回 unknown。三来源的歌曲署名字段均不得作为上游演唱快照的替代来源，能力声明不代表单条记录完整；可靠 CV 演唱兜底属于[艺术家规格](../../library/artists/spec.md)定义的当前投影，不改变来源能力或原始角色事实。
 
 #### Scenario: MusicBrainz 录音演唱关系
 - **WHEN** 目标 recording 提供带属性的 vocal 关系，艺术家署名未包含该演唱者
