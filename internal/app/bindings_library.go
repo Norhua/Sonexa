@@ -124,7 +124,7 @@ func (a *App) GetTrackDetail(trackID int64) (*TrackDetail, error) {
 		}
 	}
 
-	// 署名原串与成员区间：抽屉在无角色分组时以「署名」兜底；CV 派生在存储投影中完成。
+	// 署名原串与成员区间独立保留，不在抽屉参与者中冒充角色；CV 派生在存储投影中完成。
 	if meta != nil && meta.Credit != nil {
 		detail.CreditText = *meta.Credit
 	} else if track.Artist != nil {

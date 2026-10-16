@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import GroupProposals from '@/components/GroupProposals.vue'
 /**
- * 详情抽屉。宽度 340px。
+ * 详情/歌词双页抽屉。默认 340px，可通过左侧分隔条调整宽度。
  *
  * 纵向顺序：封面 → 歌名 → 艺术家 → 参与者 → 发行信息 → 厂牌与目录号
  * → 标签 chips → 编辑按钮。
@@ -10,10 +10,10 @@ import GroupProposals from '@/components/GroupProposals.vue'
  * 缺失字段显示占位短横线，不报错、不出现空白区域。
  */
 import { computed, ref, watch } from 'vue'
-import { X, Pencil } from 'lucide-vue-next'
+import { X, Pencil, ChevronRight, FileMusic } from 'lucide-vue-next'
 import { App, display, duration, DASH } from '@/api'
 import CoverArt from '@/components/CoverArt.vue'
-import { creditParts } from '@/lib/creditParts'
+import { useDrawerWidth } from '@/lib/useDrawerWidth'
 import { lyricsText } from '@/lib/lyrics'
 import Button from '@/volt/Button.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
@@ -22,6 +22,7 @@ import ContextMenu from '@/volt/ContextMenu.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { useCoverSearchStore } from '@/stores/coverSearch'
+import { useLyricsSearchStore } from '@/stores/lyricsSearch'
 import type { Models } from '@/api'
 
 const props = defineProps<{
@@ -100,15 +101,65 @@ function keyboardMenu(event: KeyboardEvent) {
     showMenu(new MouseEvent('contextmenu', { clientX: rect.left + 20, clientY: rect.top + 20 }))
   }
 }
-watch(() => props.open, open => { if (!open) menu.value?.hide() })
-watch(() => props.detail?.track.id, () => { coverError.value = ''; menu.value?.hide() })
+const lyricsSearch = useLyricsSearchStore()
+const { width, maxWidth, start: startResize, keydown: resizeKey } = useDrawerWidth()
+const lyricsPage = ref(false)
+const lyricMenu = ref<InstanceType<typeof ContextMenu>>()
+const lyricTrigger = ref<HTMLButtonElement>()
+const lyricTarget = ref<Models.app.TrackDetail | null>(null)
+const lyricError = ref('')
+const lyricBusy = ref(false)
+const lyricMenuItems = computed(() => [
+  { label: '从网络搜索歌词', disabled: !settings.outboundAllowed || lyricBusy.value, command: searchLyrics },
+  { label: '从本地选择歌词', disabled: lyricBusy.value, command: pickLyrics },
+  { separator: true },
+  { label: '清除歌词', disabled: !lyricTarget.value?.metadata?.lyrics || lyricBusy.value, command: clearLyrics },
+])
+function searchLyrics() {
+  if (!lyricTarget.value || !settings.outboundAllowed) return
+  lyricMenu.value?.hide()
+  lyricTrigger.value?.focus({ preventScroll: true })
+  void lyricsSearch.open(lyricTarget.value)
+}
+function showLyricMenu(event: MouseEvent) {
+  if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus({ preventScroll: true })
+  lyricTarget.value = props.detail
+  lyricMenu.value?.show(event)
+}
+function lyricKeyboardMenu(event: KeyboardEvent) {
+  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+  event.preventDefault()
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  showLyricMenu(new MouseEvent('contextmenu', { clientX: rect.left, clientY: rect.bottom }))
+}
+async function pickLyrics() {
+  const id = lyricTarget.value?.track.id
+  if (!id || lyricBusy.value) return
+  lyricBusy.value = true; lyricError.value = ''
+  try {
+    const revision = await App.LyricsRevision(id)
+    await App.PickAndAdoptLyrics(id, revision)
+  } catch (e) { if (props.detail?.track.id === id && props.open) lyricError.value = String(e) }
+  finally { lyricBusy.value = false }
+}
+async function clearLyrics() {
+  const id = lyricTarget.value?.track.id
+  if (!id || lyricBusy.value) return
+  lyricBusy.value = true; lyricError.value = ''
+  try {
+    const revision = await App.LyricsRevision(id)
+    if (!await ui.confirm({ title: '清除歌词？', message: '仅清除当前歌曲的歌词，不影响其他歌曲或上游快照。', confirmLabel: '清除', danger: true })) return
+    await App.ClearLyrics(id, revision)
+  } catch (e) { if (props.detail?.track.id === id && props.open) lyricError.value = String(e) }
+  finally { lyricBusy.value = false }
+}
+watch(() => props.open, open => { if (!open) { menu.value?.hide(); lyricMenu.value?.hide(); lyricsPage.value = false } })
+watch(() => props.detail?.track.id, () => {
+  coverError.value = ''; lyricError.value = ''; menu.value?.hide(); lyricMenu.value?.hide(); lyricsPage.value = false
+})
 
 const meta = computed(() => props.detail?.metadata ?? null)
 const lyrics = computed(() => lyricsText(meta.value?.lyrics))
-const fallbackCredit = computed(() => creditParts(
-  props.detail?.creditText || props.detail?.track.artist || '',
-  props.detail?.creditSpans ?? [],
-))
 
 /** 音轨总数取当前碟，不以整张发行总数或收藏数替代。 */
 const mediumTrackTotal = computed(() => props.detail?.release?.media?.find(
@@ -136,16 +187,28 @@ const releaseInfo = computed(() => [
 <template>
   <aside
     v-if="open && detail"
-    class="flex w-[340px] shrink-0 flex-col border-l bg-app-chrome"
+    class="relative flex shrink-0 flex-col border-l bg-app-chrome"
+    :style="{ width: `${width}px` }" aria-label="歌曲详情抽屉"
   >
+    <div role="separator" aria-label="调整详情抽屉宽度" aria-orientation="vertical" :aria-valuenow="width" :aria-valuemin="280" :aria-valuemax="maxWidth" tabindex="0"
+      class="absolute inset-y-0 -left-1 z-10 w-2 touch-none cursor-col-resize hover:bg-primary/20 focus-visible:bg-primary/20"
+      @pointerdown="startResize" @keydown="resizeKey" />
     <header class="flex shrink-0 items-center justify-between border-b px-4 py-2">
-      <span class="text-xs text-muted-color">详情</span>
-      <SecondaryButton variant="text" rounded size="small" title="关闭" @click="emit('close')">
+      <span class="text-xs text-muted-color">{{ lyricsPage ? '歌词' : '详情' }}</span>
+      <SecondaryButton v-if="lyricsPage" variant="text" rounded size="small" title="返回详情" aria-label="返回详情" @click="lyricsPage = false">
+        <ChevronRight class="size-4" />
+      </SecondaryButton>
+      <SecondaryButton v-else variant="text" rounded size="small" title="关闭" @click="emit('close')">
         <X class="size-4" />
       </SecondaryButton>
     </header>
 
-    <div class="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+    <div v-if="lyricsPage" class="min-h-0 flex-1 overflow-auto p-5" aria-label="歌曲歌词">
+      <h2 class="mb-4 break-words text-lg font-semibold">{{ detail.track.title }}</h2>
+      <p v-if="lyrics" class="whitespace-pre-wrap break-words text-sm leading-8">{{ lyrics }}</p>
+      <p v-else class="text-sm text-muted-color">暂无歌词，请返回详情后右键歌词图标添加。</p>
+    </div>
+    <div v-else class="min-h-0 flex-1 space-y-4 overflow-auto p-4">
       <!-- 封面 -->
       <div ref="coverTrigger" class="flex justify-center" tabindex="0" role="button" aria-label="更新歌曲图片"
         @contextmenu.prevent="showMenu" @keydown="keyboardMenu">
@@ -169,7 +232,13 @@ const releaseInfo = computed(() => [
           <h2 class="text-lg font-semibold leading-tight">{{ detail.track.title }}</h2>
           <p class="mt-1 text-sm text-muted-color">{{ display(detail.track.artist) }}</p>
         </div>
+        <button ref="lyricTrigger" class="shrink-0 rounded p-2 hover:bg-emphasis" :class="lyrics ? 'text-green-600' : 'text-black dark:text-surface-100'"
+          :aria-label="lyrics ? '查看歌词（已有歌词）' : '查看歌词（暂无歌词）'" title="左键查看歌词，右键添加或清除" :data-has-lyrics="!!lyrics"
+          @click="lyricsPage = true" @contextmenu.prevent="showLyricMenu" @keydown="lyricKeyboardMenu">
+          <FileMusic class="size-6" />
+        </button>
       </div>
+      <p v-if="lyricError" role="alert" class="text-xs text-danger-color">{{ lyricError }}</p>
 
       <p v-if="!detail.track.releaseId" class="text-xs text-muted-color">此曲目没有所属专辑，无法更新共享封面</p>
       <p v-if="coverError" role="alert" class="text-xs text-danger-color">{{ coverError }}</p>
@@ -194,25 +263,8 @@ const releaseInfo = computed(() => [
               </template>
             </dd>
           </div>
-
-          <template v-if="detail.participants.length === 0">
-            <!-- 署名说明谁被署名，不推断演唱。仅在无角色时兜底，避免完整列表重复。 -->
-            <div v-if="fallbackCredit.length" class="contents">
-              <dt class="text-xs text-muted-color">署名</dt>
-              <dd class="min-w-0 break-words">
-                <template v-for="(part, i) in fallbackCredit" :key="i">
-                  <button v-if="part.artistId"
-                    class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                    @click="emit('viewArtist', part.artistId)"
-                  >{{ part.text }}</button><span v-else>{{ part.text }}</span>
-                </template>
-              </dd>
-            </div>
-          </template>
         </dl>
-        <p v-if="detail.participants.length === 0" class="mt-1.5 text-xs text-muted-color">
-          <span>暂无参与角色信息</span><span v-if="meta?.matchSource && !settings.providerById(meta.matchSource)?.capabilities?.includes('PerformerRoles')">：当前来源不提供演唱者角色，仍可在编辑页补录</span><span v-else>：尚未提供明确角色信息</span>
-        </p>
+        <p v-if="detail.participants.length === 0" class="mt-1.5 pl-3 text-xs text-muted-color">暂无参与角色信息</p>
       </section>
 
       <GroupProposals v-if="detail.track.releaseId" :release-id="detail.track.releaseId" />
@@ -242,14 +294,6 @@ const releaseInfo = computed(() => [
         </dl>
       </section>
 
-      <!-- 歌词：上游事实，只读；默认折叠，避免长文本挤占抽屉 -->
-      <section v-if="lyrics">
-        <details>
-          <summary class="mb-2 cursor-pointer text-xs font-medium text-muted-color">歌词</summary>
-          <p class="whitespace-pre-line break-words text-sm leading-relaxed">{{ lyrics }}</p>
-        </details>
-      </section>
-
       <!-- 标签 chips。歌单不在抽屉显示 -->
       <section>
         <h3 class="mb-2 text-xs font-medium text-muted-color">标签</h3>
@@ -268,8 +312,9 @@ const releaseInfo = computed(() => [
     </div>
 
     <ContextMenu ref="menu" :model="menuItems" />
+    <ContextMenu ref="lyricMenu" :model="lyricMenuItems" />
     <!-- 底部明确的编辑按钮——右键不应是进入编辑的唯一入口 -->
-    <footer class="shrink-0 border-t p-3">
+    <footer v-if="!lyricsPage" class="shrink-0 border-t p-3">
       <Button fluid @click="emit('edit', detail.track.id)">
         <Pencil class="size-4" />
         编辑
@@ -281,6 +326,7 @@ const releaseInfo = computed(() => [
 <style scoped>
 /* 每个小标题独立计算标签宽度，不再用固定宽度强迫所有段落对齐。 */
 .detail-fields {
+  padding-left: 0.75rem;
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: baseline;

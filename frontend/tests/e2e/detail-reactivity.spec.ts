@@ -86,8 +86,8 @@ test('library notifications refresh all detail sections without reopening', asyn
   for (const text of ['更新署名', '更新发行', '更新专辑艺术家', '2026', '4/8', '2/2', '更新演唱者', '#新标签']) {
     await expect(drawer.getByText(text, { exact: true })).toBeVisible()
   }
-  await drawer.locator('summary').filter({ hasText: '歌词' }).click()
-  await expect(drawer.getByText('更新歌词', { exact: true })).toBeVisible()
+  await drawer.getByRole('button', { name: '查看歌词（已有歌词）' }).click()
+  await expect(page.getByLabel('歌曲歌词').getByText('更新歌词', { exact: true })).toBeVisible()
 })
 
 test('background refresh targets pending selection B, not still displayed A, and ignores older replies', async ({ page }) => {

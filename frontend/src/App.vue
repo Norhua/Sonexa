@@ -27,6 +27,8 @@ import ImportQueueView from '@/views/ImportQueueView.vue'
 import ReviewView from '@/views/ReviewView.vue'
 import CoverSearchView from '@/views/CoverSearchView.vue'
 import { useCoverSearchStore } from '@/stores/coverSearch'
+import LyricsSearchView from '@/views/LyricsSearchView.vue'
+import { useLyricsSearchStore } from '@/stores/lyricsSearch'
 /** 模态表单按需载入；首次浏览不解析设置、导入与编辑的控件代码。 */
 const SettingsDialog = defineAsyncComponent(() => import('@/views/SettingsDialog.vue'))
 const ImportWizard = defineAsyncComponent(() => import('@/views/ImportWizard.vue'))
@@ -46,6 +48,7 @@ const enrich = useEnrichStore()
 const search = useSearchStore()
 const ui = useUiStore()
 const coverSearch = useCoverSearchStore()
+const lyricsSearch = useLyricsSearchStore()
 useThemeStore()
 
 const drawerOpen = ref(false)
@@ -62,7 +65,10 @@ const sortDesc = ref(false)
 
 let offLibrary: (() => void) | null = null
 let offCover: (() => void) | null = null
-watch(() => [library.view, library.contextId], () => { if (coverSearch.target) void coverSearch.close() })
+watch(() => [library.view, library.contextId], () => {
+  if (coverSearch.target) void coverSearch.close()
+  if (lyricsSearch.target) void lyricsSearch.close()
+})
 
 const libraryRefresh = createRefreshQueue(async () => {
   await Promise.all([
@@ -108,6 +114,7 @@ onUnmounted(() => {
   offLibrary?.()
   offCover?.()
   void coverSearch.close()
+  void lyricsSearch.close()
 })
 
 /** 把后端的曲目视图转为表格行。 */
@@ -193,10 +200,12 @@ watch(drawerOpen, open => {
     detailRequest++
     detailTrackId = null
     if (coverSearch.target) void coverSearch.close()
+    if (lyricsSearch.target) void lyricsSearch.close()
   }
 }, { flush: 'sync' })
 watch(() => detail.value?.track.id, id => {
   if (coverSearch.target && coverSearch.target.track.id !== id) void coverSearch.close()
+  if (lyricsSearch.target && lyricsSearch.target.track.id !== id) void lyricsSearch.close()
 })
 async function openDetail(row: Row) {
   await openTrackById(row.id)
@@ -392,7 +401,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
 </script>
 
 <template>
-  <div class="flex h-full bg-app text-color" :inert="!!coverSearch.target">
+  <div class="flex h-full bg-app text-color" :inert="!!coverSearch.target || !!lyricsSearch.target">
     <AppSidebar
       @new-collection="newCollection"
       @rename-collection="renameCollection"
@@ -527,6 +536,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
     />
 
     <CoverSearchView v-if="coverSearch.target" />
+    <LyricsSearchView v-if="lyricsSearch.target" />
     <SettingsDialog v-if="ui.settingsOpen" />
     <PromptDialog />
     <ConfirmDialog />

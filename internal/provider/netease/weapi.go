@@ -1,4 +1,4 @@
-package sources
+package netease
 
 import (
 	"bytes"
@@ -44,8 +44,8 @@ func weapiRSA(secret string) string {
 	return fmt.Sprintf("%0256x", new(big.Int).Exp(m, e, n))
 }
 
-// weapiForm 把明文 JSON 参数加密为 params/encSecKey 表单。
-func weapiForm(payload []byte) (url.Values, error) {
+// Form 把明文 JSON 参数加密为 params/encSecKey 表单，供封面和歌词共用。
+func Form(payload []byte) (url.Values, error) {
 	var random [16]byte
 	if _, err := rand.Read(random[:]); err != nil {
 		return nil, err

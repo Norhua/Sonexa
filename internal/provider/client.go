@@ -76,6 +76,8 @@ type GetRequest struct {
 	Body []byte
 	// Headers 是附加请求头，如 Referer。
 	Headers map[string]string
+	// MaxResponseBytes bounds opt-in text endpoints; zero preserves existing callers.
+	MaxResponseBytes int64
 }
 
 // Get 发起一次 GET 请求，先查缓存、再取令牌、最后出网。
@@ -195,7 +197,14 @@ func (c *Client) do(ctx context.Context, req GetRequest) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, readErr := io.ReadAll(resp.Body)
+	reader := io.Reader(resp.Body)
+	if req.MaxResponseBytes > 0 {
+		reader = io.LimitReader(resp.Body, req.MaxResponseBytes+1)
+	}
+	body, readErr := io.ReadAll(reader)
+	if req.MaxResponseBytes > 0 && int64(len(body)) > req.MaxResponseBytes {
+		return nil, fmt.Errorf("上游响应过大")
+	}
 	if resp.StatusCode != http.StatusOK {
 		snippet := string(body)
 		if len(snippet) > 500 {

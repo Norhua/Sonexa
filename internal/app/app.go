@@ -27,19 +27,22 @@ type App struct {
 	ctx     context.Context
 	version string
 
-	paths         config.Paths
-	settings      *config.Store
-	store         *store.Store
-	library       *library.Service
-	registry      *provider.Registry
-	limiters      *provider.Limiters
-	client        *provider.Client
-	coverSvc      *covers.Service
-	coverSessions map[string]*coverSession
-	coverWorkers  sync.WaitGroup
-	coverClosing  bool
-	pickCoverFile func(context.Context, runtime.OpenDialogOptions) (string, error)
-	runner        *importer.Runner
+	paths          config.Paths
+	settings       *config.Store
+	store          *store.Store
+	library        *library.Service
+	registry       *provider.Registry
+	limiters       *provider.Limiters
+	client         *provider.Client
+	coverSvc       *covers.Service
+	coverSessions  map[string]*coverSession
+	coverWorkers   sync.WaitGroup
+	coverClosing   bool
+	pickCoverFile  func(context.Context, runtime.OpenDialogOptions) (string, error)
+	pickLyricsFile func(context.Context, runtime.OpenDialogOptions) (string, error)
+	lyricSessions  map[string]*lyricSession
+	lyricWorkers   sync.WaitGroup
+	runner         *importer.Runner
 	// enricher 是后台的「补全信息匹配」任务：入库不再同步补详情，
 	// 详情由它在空闲时按条补上（见 enrichWorker）。
 	enricher *enrichWorker
@@ -338,8 +341,12 @@ func (a *App) shutdown(ctx context.Context) {
 	for _, session := range a.coverSessions {
 		session.cancel()
 	}
+	for _, session := range a.lyricSessions {
+		session.cancel()
+	}
 	a.mu.Unlock()
 	a.coverWorkers.Wait()
+	a.lyricWorkers.Wait()
 	if a.enricher != nil {
 		a.enricher.Stop()
 	}

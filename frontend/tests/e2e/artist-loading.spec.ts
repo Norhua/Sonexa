@@ -55,7 +55,7 @@ test('artist table loading stays light and only the latest selection can update 
   await expect(page.getByRole('heading', { name: '全部曲目', exact: true })).toBeVisible()
 })
 
-test('missing roles show known credit without inventing vocal or duplicating complete participants', async ({ page }, testInfo) => {
+test('missing roles only show the empty role hint, while explicit roles remain clickable', async ({ page }, testInfo) => {
   await page.evaluate(() => {
     const api = (window as any).go.app.App
     api.GetTrackDetail = async (id: number) => ({
@@ -67,8 +67,8 @@ test('missing roles show known credit without inventing vocal or duplicating com
   })
   await page.locator('.track-list [data-row-key]').first().locator('td').last().dblclick()
   const participants = page.locator('aside section').filter({ has: page.getByRole('heading', { name: '参与者', exact: true }) })
-  await expect(participants.getByText('署名', { exact: true })).toBeVisible()
-  await expect(participants.getByRole('button', { name: 'ハトリアヤ', exact: true })).toBeVisible()
+  await expect(participants.getByText('署名', { exact: true })).toHaveCount(0)
+  await expect(participants.getByRole('button', { name: 'ハトリアヤ', exact: true })).toHaveCount(0)
   await expect(participants.getByText('暂无参与角色信息', { exact: true })).toBeVisible()
   await expect(participants.getByText('演唱', { exact: true })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('credit-without-roles.png') })
@@ -79,7 +79,7 @@ test('missing roles show known credit without inventing vocal or duplicating com
   await page.locator('.track-list [data-row-key]').nth(2).locator('td').last().click()
   await expect(participants.getByRole('button')).toHaveCount(0)
   await expect(participants.getByText('暂无参与角色信息')).toBeVisible()
-  await page.locator('.track-list [data-row-key]').first().locator('td').last().click()
+  await page.locator('.track-list [data-row-key]').nth(1).locator('td').last().click()
   await participants.getByRole('button', { name: 'ハトリアヤ', exact: true }).click()
   // 抽屉立即导航；新挂载的 ArtistsView 读取当前艺术家的头部。
   await expect.poll(() => page.evaluate(() => typeof (window as any).__headers[30])).toBe('function')

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/norhua/sonexa/internal/provider/netease"
 	"github.com/norhua/sonexa/internal/provider/qqmusic"
 	"io"
 	"net/http"
@@ -118,7 +119,7 @@ func (s *WebSource) searchOnce(ctx context.Context, q provider.Query) ([]Result,
 	case "163":
 		payload, _ := json.Marshal(map[string]string{"s": term, "type": "1", "limit": strconv.Itoa(fetchLimit), "offset": "0"})
 		var form url.Values
-		form, err = weapiForm(payload)
+		form, err = netease.Form(payload)
 		if err == nil {
 			req, err = http.NewRequestWithContext(ctx, "POST", "https://music.163.com/weapi/cloudsearch/pc", strings.NewReader(form.Encode()))
 		}
