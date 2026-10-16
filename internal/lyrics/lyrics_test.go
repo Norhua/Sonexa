@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -62,13 +63,13 @@ func TestSearchParsers(t *testing.T) {
 		{"kugou", `{"status":1,"errcode":0,"data":{"info":[{"hash":"abcd","songname":"歌","singername":"人","album_name":"专辑","duration":123}]}}`, "abcd", 123000},
 		{"kuwo", `{"TOTAL":"1","abslist":[{"MUSICRID":"MUSIC_123","NAME":"歌","ARTIST":"人","ALBUM":"专辑","DURATION":"123"}]}`, "123", 123000},
 	} {
-		got, err := parseSearch(tt.source, []byte(tt.body), "")
+		got, err := parseSearch(tt.source, []byte(tt.body), Query{Title: "歌"})
 		if err != nil || len(got) != 1 || got[0].Ref != tt.ref || got[0].DurationMS != tt.ms || got[0].Source != tt.source {
 			t.Fatalf("%s: %+v %v", tt.source, got, err)
 		}
 	}
 	for _, source := range Sources() {
-		if _, err := parseSearch(source.ID, []byte(`{}`), ""); err == nil {
+		if _, err := parseSearch(source.ID, []byte(`{}`), Query{}); err == nil {
 			t.Fatalf("%s accepted malformed response", source.ID)
 		}
 	}
@@ -156,7 +157,12 @@ func TestLiveSources(t *testing.T) {
 			if title == "" {
 				title = "青花瓷"
 			}
-			candidates, err := s.Search(ctx, source.ID, Query{Title: title, Artist: "周杰伦"})
+			artist := os.Getenv("SONEXA_LYRICS_ARTIST")
+			if artist == "" {
+				artist = "周杰伦"
+			}
+			duration, _ := strconv.Atoi(os.Getenv("SONEXA_LYRICS_DURATION_MS"))
+			candidates, err := s.Search(ctx, source.ID, Query{Title: title, Artist: artist, Album: os.Getenv("SONEXA_LYRICS_ALBUM"), DurationMS: duration})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -170,7 +176,7 @@ func TestLiveSources(t *testing.T) {
 					t.Log(err)
 					continue
 				}
-				t.Logf("lyrics candidate=%s ref=%s format=%s bytes=%d", candidate.Title, candidate.Ref, d.Format, len(d.Text))
+				t.Logf("lyrics candidate=%s ref=%s format=%s bytes=%d translation=%+v romanization=%s wordTiming=%s warnings=%v", candidate.Title, candidate.Ref, d.Format, len(d.Text), channelSummary(d.Translation), channelSummary(d.Romanization), d.WordTiming, d.Warnings)
 				return
 			}
 			b, _ := json.Marshal(candidates[:min(3, len(candidates))])

@@ -62,7 +62,7 @@ func ParseText(text string) (*Document, error) {
 func parseNetworkText(text string) (*Document, error) {
 	punctuation := strings.NewReplacer("，", "", ",", "", "。", "", " ", "", "！", "", "!", "")
 	for _, line := range strings.Split(text, "\n") {
-		plain := punctuation.Replace(strings.TrimSpace(lineTime.ReplaceAllString(line, "")))
+		plain := punctuation.Replace(strings.TrimSpace(wordTime.ReplaceAllString(lineTime.ReplaceAllString(line, ""), "")))
 		switch plain {
 		case "纯音乐请欣赏", "纯音乐请您欣赏", "此歌曲为没有填词的纯音乐请您欣赏", "暂无歌词", "此歌曲暂无歌词":
 			return nil, ErrNoLyrics
@@ -84,7 +84,10 @@ func decodeLyric(text string) (string, error) {
 	text = html.UnescapeString(text)
 	// nobase64=1 can be ignored by the endpoint. Only decode valid UTF-8 Base64.
 	if !strings.ContainsAny(text, "[\n ") && text != "" {
-		if b, err := base64.StdEncoding.DecodeString(text); err == nil && utf8.Valid(b) {
+		if b, err := base64.StdEncoding.DecodeString(text); err == nil {
+			if !utf8.Valid(b) {
+				return "", fmt.Errorf("歌词 Base64 解码后不是 UTF-8")
+			}
 			text = html.UnescapeString(string(b))
 		}
 	}
@@ -110,26 +113,22 @@ func parseDocument(source string, body []byte) (*Document, error) {
 		if r.Nolyric || r.Uncollected || strings.TrimSpace(r.Lrc.Lyric) == "" {
 			return nil, ErrNoLyrics
 		}
-		return parseNetworkText(mergeTimed(r.Lrc.Lyric, r.Tlyric.Lyric, r.Romalrc.Lyric))
+		return channelDocument(textChannel(r.Lrc.Lyric, nil), textChannel(r.Tlyric.Lyric, nil), textChannel(r.Romalrc.Lyric, nil), "unsupported", nil)
 	case "qq":
 		var r struct {
 			Code    *int
 			Retcode *int
+			Subcode *int
 			Lyric   string
 			Trans   string
 		}
 		if err := json.Unmarshal(unwrapJSON(body), &r); err != nil {
 			return nil, fmt.Errorf("QQ 歌词解析失败: %w", err)
 		}
-		if r.Code == nil || *r.Code != 0 || (r.Retcode != nil && *r.Retcode != 0) {
+		if r.Code == nil || *r.Code != 0 || (r.Retcode != nil && *r.Retcode != 0) || (r.Subcode != nil && *r.Subcode != 0) {
 			return nil, fmt.Errorf("QQ 歌词接口不可用或需要认证")
 		}
-		text, _ := decodeLyric(r.Lyric)
-		trans, _ := decodeLyric(r.Trans)
-		if strings.TrimSpace(text) == "" {
-			return nil, ErrNoLyrics
-		}
-		return parseNetworkText(mergeTimed(text, trans))
+		return channelDocument(textChannel(decodeLyric(r.Lyric)), textChannel(decodeLyric(r.Trans)), absentChannel(), "unsupported", nil)
 	case "kuwo":
 		var r struct {
 			Status int
@@ -171,7 +170,11 @@ func parseDocument(source string, body []byte) (*Document, error) {
 			}
 			return parseNetworkText(strings.Join(plain, "\n"))
 		}
-		return parseNetworkText(renderTimed(timed))
+		text, err := renderTimed(timed)
+		if err != nil {
+			return nil, err
+		}
+		return parseNetworkText(text)
 	}
 	return nil, fmt.Errorf("未知歌词来源")
 }
@@ -191,20 +194,26 @@ func timestamp(m []string) int {
 	ms, _ := strconv.Atoi(fraction)
 	return (minutes*60+seconds)*1000 + ms
 }
-func renderTimed(lines []timedLine) string {
+func renderTimed(lines []timedLine) (string, error) {
 	sort.SliceStable(lines, func(i, j int) bool { return lines[i].ms < lines[j].ms })
-	out := []string{}
+	var out strings.Builder
 	seen := map[string]bool{}
 	for _, l := range lines {
 		line := fmt.Sprintf("[%02d:%02d.%03d]%s", l.ms/60000, l.ms/1000%60, l.ms%1000, l.text)
 		if !seen[line] {
+			if out.Len()+len(line)+1 > MaxTextBytes {
+				return "", fmt.Errorf("合并后的歌词超过 2 MiB")
+			}
 			seen[line] = true
-			out = append(out, line)
+			if out.Len() > 0 {
+				out.WriteByte('\n')
+			}
+			out.WriteString(line)
 		}
 	}
-	return strings.Join(out, "\n")
+	return out.String(), nil
 }
-func mergeTimed(original string, extras ...string) string {
+func mergeTimed(original string, extras ...string) (string, error) {
 	// Keep enhanced timing and metadata untouched if there is nothing to merge.
 	hasExtra := false
 	for _, extra := range extras {
@@ -212,17 +221,24 @@ func mergeTimed(original string, extras ...string) string {
 			hasExtra = true
 		}
 	}
-	if !hasExtra || !lineTime.MatchString(original) {
-		return original
+	if !hasExtra {
+		return original, nil
+	}
+	if !lineTime.MatchString(original) {
+		// Never drop optional plain-text channels or invent alignment by index.
+		return strings.Join(append([]string{original}, extras...), "\n"), nil
 	}
 	lines := []timedLine{}
 	tags := []string{}
+	untimed := []string{}
 	for index, raw := range append([]string{original}, extras...) {
 		for _, l := range strings.Split(raw, "\n") {
 			matches := lineTime.FindAllStringSubmatch(l, -1)
 			if len(matches) == 0 {
 				if index == 0 {
 					tags = append(tags, l)
+				} else if strings.TrimSpace(l) != "" && !metadata.MatchString(strings.TrimSpace(l)) {
+					untimed = append(untimed, l)
 				}
 				continue
 			}
@@ -232,7 +248,11 @@ func mergeTimed(original string, extras ...string) string {
 			}
 		}
 	}
-	return strings.Join(tags, "\n") + "\n" + renderTimed(lines)
+	rendered, err := renderTimed(lines)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(strings.Join(tags, "\n") + "\n" + rendered + "\n" + strings.Join(untimed, "\n")), nil
 }
 func (s Service) fetchKugou(ctx context.Context, c Candidate) (*Document, error) {
 	body, err := s.request(ctx, "kugou", "https://lyrics.kugou.com", "/search", map[string]string{"ver": "1", "man": "yes", "client": "pc", "keyword": c.Title + " " + c.Artist, "hash": c.Ref, "duration": strconv.Itoa(c.DurationMS)}, nil)

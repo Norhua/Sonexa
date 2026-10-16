@@ -36,22 +36,39 @@ func ValidSource(id string) bool {
 }
 
 type Query struct {
-	Title  string `json:"title"`
-	Artist string `json:"artist"`
-	Album  string `json:"album"`
-}
-type Candidate struct {
-	ID         string `json:"id"`
-	Source     string `json:"source"`
-	Ref        string `json:"-"`
 	Title      string `json:"title"`
 	Artist     string `json:"artist"`
 	Album      string `json:"album"`
 	DurationMS int    `json:"durationMs"`
 }
+type Candidate struct {
+	ID             string   `json:"id"`
+	Source         string   `json:"source"`
+	Ref            string   `json:"-"`
+	Title          string   `json:"title"`
+	Artist         string   `json:"artist"`
+	Album          string   `json:"album"`
+	DurationMS     int      `json:"durationMs"`
+	Score          int      `json:"score"`
+	HighConfidence bool     `json:"highConfidence"`
+	MatchNotes     []string `json:"matchNotes"`
+}
+
+// Channel keeps optional content separate until rendering. A missing translation
+// and a failed decoder must not be presented as the same upstream condition.
+type Channel struct {
+	Text    string `json:"text,omitempty"`
+	Status  string `json:"status"` // available, unavailable, error
+	Message string `json:"message,omitempty"`
+}
 type Document struct {
-	Text   string `json:"text"`
-	Format string `json:"format"`
+	Text         string   `json:"text"`
+	Format       string   `json:"format"`
+	Original     *Channel `json:"original,omitempty"`
+	Translation  *Channel `json:"translation,omitempty"`
+	Romanization *Channel `json:"romanization,omitempty"`
+	WordTiming   string   `json:"wordTiming,omitempty"` // available, unavailable, error, unsupported
+	Warnings     []string `json:"warnings,omitempty"`
 }
 
 type Service struct{ Client *provider.Client }
@@ -148,16 +165,18 @@ func (s Service) Search(ctx context.Context, source string, q Query) ([]Candidat
 	if err != nil {
 		return nil, err
 	}
-	return parseSearch(source, body, q.Album)
+	return parseSearch(source, body, q)
 }
 func (s Service) Fetch(ctx context.Context, c Candidate) (*Document, error) {
+	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	defer cancel()
 	var body []byte
 	var err error
 	switch c.Source {
 	case "163":
 		body, err = s.request(ctx, c.Source, "https://music.163.com", "/weapi/song/lyric", nil, map[string]any{"id": c.Ref, "lv": -1, "kv": -1, "tv": -1, "csrf_token": ""})
 	case "qq":
-		body, err = s.request(ctx, c.Source, "https://c.y.qq.com", "/lyric/fcgi-bin/fcg_query_lyric_new.fcg", map[string]string{"songmid": c.Ref, "g_tk": "5381", "loginUin": "0", "hostUin": "0", "format": "json", "inCharset": "utf8", "outCharset": "utf-8", "notice": "0", "platform": "yqq", "needNewCode": "0", "nobase64": "1"}, nil)
+		return s.fetchQQ(ctx, c)
 	case "kuwo":
 		body, err = s.request(ctx, c.Source, "https://m.kuwo.cn", "/newh5/singles/songinfoandlrc", map[string]string{"musicId": c.Ref}, nil)
 	case "kugou":

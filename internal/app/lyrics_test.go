@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -109,8 +110,9 @@ func TestLyricsSearchSessionOwnershipGateAndCancellation(t *testing.T) {
 	a.client.HTTP.Transport = coverReplayTransport(func(r *http.Request) (*http.Response, error) {
 		calls++
 		body := `{"code":0,"req":{"code":0,"data":{"body":{"song":{"list":[{"mid":"0039MnYb0qxYhV","name":"歌","interval":123}]}}}}}`
-		if strings.Contains(r.URL.Path, "lyric") {
-			body = `{"code":0,"lyric":"[00:01.00]网络歌词"}`
+		requestBody, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(requestBody), "GetPlayLyricInfo") {
+			body = `{"code":0,"req":{"code":0,"data":{"qrc":0,"lyric":"` + base64.StdEncoding.EncodeToString([]byte("[00:01.00]<00:01.00>网络<00:02.00>歌词")) + `","trans":"` + base64.StdEncoding.EncodeToString([]byte("[00:01.00]测试翻译")) + `"}},"plain":{"code":0,"data":{"lyric":""}}}`
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}}, nil
 	})
@@ -131,7 +133,7 @@ func TestLyricsSearchSessionOwnershipGateAndCancellation(t *testing.T) {
 		t.Fatal("forged candidate")
 	}
 	d, err := a.FetchLyrics(session, cards[0].ID)
-	if err != nil || d.Format != "lrc" {
+	if err != nil || d.Format != "enhanced_lrc" {
 		t.Fatalf("%+v %v", d, err)
 	}
 	other, err := a.CreateLyricsSearch(id)
@@ -144,6 +146,10 @@ func TestLyricsSearchSessionOwnershipGateAndCancellation(t *testing.T) {
 	}
 	if _, err := a.AdoptLyrics(session, cards[0].ID, rev); err != nil {
 		t.Fatal(err)
+	}
+	saved, err := a.GetTrackDetail(id)
+	if err != nil || saved.Metadata.Lyrics == nil || *saved.Metadata.Lyrics != d.Text || !strings.Contains(*saved.Metadata.Lyrics, "测试翻译") || !strings.Contains(*saved.Metadata.Lyrics, "<00:02.00>") {
+		t.Fatalf("adoption lost translation or word times: %+v %v", saved, err)
 	}
 	if _, err := a.AdoptLyrics(session, cards[0].ID, rev); !errors.Is(err, store.ErrRevisionConflict) {
 		t.Fatalf("stale adopt: %v", err)

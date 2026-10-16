@@ -56,9 +56,9 @@ test('two-column lyric search previews source, duration and format, handles sour
     const w = window as any, api = w.go.app.App
     api.SearchLyrics = async (_: string, source: string) => {
       if (source === 'kuwo') throw new Error('酷我暂时限流')
-      return [{ id: source, source, title: `歌曲-${source}`, artist: '歌手', album: '专辑', durationMs: 123000 }]
+      return [{ id: source, source, title: `歌曲-${source}`, artist: '歌手', album: '专辑', durationMs: 123000, score: 80, highConfidence: false, matchNotes: ['艺术家不同或缺失，需确认'] }]
     }
-    api.FetchLyrics = async (_: string, id: string) => ({ text: id === 'qq' ? '[00:01.00]<00:01.00>网络<00:02.00>歌词' : '纯文本歌词', format: id === 'qq' ? 'enhanced_lrc' : 'text' })
+    api.FetchLyrics = async (_: string, id: string) => ({ text: id === 'qq' ? '[00:01.00]<00:01.00>网络<00:02.00>歌词\n[00:01.00]测试翻译' : '纯文本歌词', format: id === 'qq' ? 'enhanced_lrc' : 'text', translation: { status: 'available', text: '[00:01.00]测试翻译' }, romanization: { status: 'unavailable' }, wordTiming: 'available' })
     api.AdoptLyrics = async (session: string, id: string, revision: number) => {
       w.__lyricAdopt = { session, id, revision }; w.__lyricText = '[00:01.00]网络歌词'; w.runtime.EventsEmit('library:changed'); return 1
     }
@@ -70,10 +70,17 @@ test('two-column lyric search previews source, duration and format, handles sour
   await expect(dialog.getByText('仅修改当前歌曲的歌词', { exact: false })).toBeVisible()
   await dialog.getByRole('button', { name: '搜索', exact: true }).click()
   const qq = dialog.getByRole('button', { name: /歌曲-qq/ })
+  await expect(qq).toContainText('匹配：需确认')
+  await expect(dialog.getByRole('button', { name: '应用到歌曲' })).toBeDisabled()
+  await expect(dialog.getByLabel('歌词预览').locator('pre')).toHaveCount(0)
   await qq.click()
   await expect(qq).toContainText('来源：QQ 音乐 · 时长：2:03')
   await expect(qq).toContainText('类型：增强型 LRC')
   await expect(dialog.getByLabel('歌词预览').locator('pre')).toContainText('<00:01.00>网络')
+  await expect(dialog.getByLabel('歌词预览').locator('pre')).toContainText('测试翻译')
+  await expect(dialog.getByLabel('歌词通道状态')).toContainText('翻译：已获取')
+  await expect(dialog.getByLabel('歌词通道状态')).toContainText('罗马音：上游未提供')
+  await expect(dialog.getByLabel('歌词通道状态')).toContainText('逐字时间：已获取')
   await expect(dialog.getByText('酷我暂时限流', { exact: false })).toBeVisible()
   const left = (await dialog.getByLabel('歌词候选').boundingBox())!, right = (await dialog.getByLabel('歌词预览').boundingBox())!
   expect(left.x + left.width).toBeLessThanOrEqual(right.x + 1)

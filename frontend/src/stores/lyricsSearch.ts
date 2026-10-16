@@ -16,7 +16,8 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
   const failures = ref<Record<string, string>>({})
   const loading = ref<Record<string, boolean>>({})
   const selected = ref<string | null>(null), error = ref(''), notice = ref(''), ready = ref(false), busy = ref(false)
-  const cards = computed(() => Object.values(results.value).flatMap(r => r.cards))
+  const cards = computed(() => Object.values(results.value).flatMap(r => r.cards).sort((a, b) =>
+    Number(b.highConfidence) - Number(a.highConfidence) || b.score - a.score || a.source.localeCompare(b.source)))
   const selection = computed(() => cards.value.find(c => c.id === selected.value))
   const document = computed(() => selected.value ? documents.value[selected.value] : undefined)
   const sessions = new Map<string, string>()
@@ -50,7 +51,7 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
     if (!chosen.length) { error.value = '请选择歌词来源'; return }
     if (![title.value, artist.value, album.value].some(s => s.trim())) { error.value = '请输入歌词搜索条件'; return }
     const current = generation, trackID = target.value.track.id
-    const query = { title: title.value, artist: artist.value, album: album.value }
+    const query = { title: title.value, artist: artist.value, album: album.value, durationMs: target.value.track.durationMs ?? target.value.metadata?.durationMs ?? 0 }
     error.value = ''; notice.value = ''
     const previous = only ? [sessions.get(only)].filter((v): v is string => !!v) : [...sessions.values()]
     if (!only) { sessions.clear(); jobs.clear(); results.value = {}; documents.value = {}; failures.value = {}; loading.value = {}; selected.value = null }
@@ -75,13 +76,18 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
         const found = await App.SearchLyrics(id, source, query)
         if (!valid()) return
         results.value[source] = { state: 'ok', cards: found, error: '' }
-        if (!selected.value && found[0]) void select(found[0].id)
       } catch (e) {
         if (!valid()) return
         results.value[source] = { state: 'error', cards: [], error: String(e) }
         if (id) { sessions.delete(source); await cancel([id]) }
       }
     }))
+    // Wait for all current sources: network speed is not match confidence.
+    // A manual selection, a replacement search or a closed dialog wins.
+    if (current !== generation || work.some(({ source, token }) => jobs.get(source) !== token) ||
+      selected.value || Object.values(results.value).some(r => r.state === 'loading')) return
+    const best = cards.value.find(c => c.highConfidence)
+    if (best) await select(best.id)
   }
   async function select(id: string) {
     const card = cards.value.find(c => c.id === id)

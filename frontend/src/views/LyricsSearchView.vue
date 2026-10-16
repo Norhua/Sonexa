@@ -12,6 +12,7 @@ import Dialog from '@/volt/Dialog.vue'
 const store = useLyricsSearchStore()
 const settings = useSettingsStore()
 const sources = ref<Models.lyrics.Source[]>([])
+const channelStatus = (status?: string) => ({ available: '已获取', unavailable: '上游未提供', error: '获取或解析失败', unsupported: '此来源暂未接入' }[status ?? ''] ?? '未检查')
 let mounted = true
 onBeforeUnmount(() => { mounted = false })
 onMounted(async () => {
@@ -29,12 +30,13 @@ onMounted(async () => {
         <form class="flex flex-wrap items-end gap-3" @submit.prevent="store.search()">
           <label class="text-xs">歌曲<InputText v-model="store.title" autofocus class="mt-1 block" /></label>
           <label class="text-xs">艺术家<InputText v-model="store.artist" class="mt-1 block" /></label>
-          <label class="text-xs">专辑（优先排序）<InputText v-model="store.album" class="mt-1 block" /></label>
+          <label class="text-xs">专辑（辅助匹配）<InputText v-model="store.album" class="mt-1 block" /></label>
           <Button type="submit" :disabled="!settings.outboundAllowed || !store.ready || store.busy"><Search class="size-4" />搜索</Button>
         </form>
         <div class="mt-3 flex flex-wrap items-center gap-4">
           <label v-for="source in sources" :key="source.id" class="flex items-center gap-2 text-sm"><Checkbox v-model="store.sources" :value="source.id" />{{ source.name }}</label>
         </div>
+        <p class="mt-2 text-xs text-muted-color">已过滤无关曲名和不符版本；结合艺术家、专辑与目标时长排序。仅高置信候选自动预览，其余请手动确认。</p>
         <p v-if="!settings.outboundAllowed" class="mt-2 text-xs text-muted-color">出网未启用，请先在设置中配置联系方式。</p>
       </header>
       <p v-if="store.error" role="alert" class="px-4 py-2 text-sm text-danger-color">{{ store.error }}</p>
@@ -55,6 +57,8 @@ onMounted(async () => {
               <span class="block break-words font-medium">{{ card.title || '未命名歌曲' }}</span>
               <span class="mt-1 block break-words text-xs text-muted-color">{{ card.artist }} · {{ card.album }}</span>
               <span class="mt-2 block text-xs">来源：{{ source.name }} · 时长：{{ duration(card.durationMs) }}</span>
+              <span class="mt-1 block text-xs" :title="card.matchNotes?.join('；')">匹配：{{ card.highConfidence ? '高置信' : '需确认' }} · {{ card.score }} 分</span>
+              <span class="mt-1 block text-xs text-muted-color">{{ card.matchNotes?.join('；') }}</span>
               <span class="mt-1 block text-xs">类型：{{ store.loading[card.id] ? '获取中…' : store.failures[card.id] ? '获取失败 / 无歌词' : lyricFormat(store.documents[card.id]?.format) }}</span>
             </button>
           </section>
@@ -68,7 +72,14 @@ onMounted(async () => {
               <p role="alert" class="text-sm text-danger-color">{{ store.failures[store.selection.id] }}</p>
               <SecondaryButton class="mt-3" :disabled="!settings.outboundAllowed" @click="store.select(store.selection.id)">重新获取歌词</SecondaryButton>
             </template>
-            <pre v-else-if="store.document" class="whitespace-pre-wrap break-words font-sans text-sm leading-7">{{ store.document.text }}</pre>
+            <template v-else-if="store.document">
+              <div class="mb-4 space-y-1 text-xs text-muted-color" aria-label="歌词通道状态">
+                <p>翻译：{{ channelStatus(store.document.translation?.status) }} · 罗马音：{{ channelStatus(store.document.romanization?.status) }}</p>
+                <p>逐字时间：{{ channelStatus(store.document.wordTiming ?? 'unsupported') }}</p>
+                <p v-for="warning in store.document.warnings" :key="warning" role="status">{{ warning }}</p>
+              </div>
+              <pre class="whitespace-pre-wrap break-words font-sans text-sm leading-7">{{ store.document.text }}</pre>
+            </template>
           </template>
           <p v-else class="py-10 text-center text-sm text-muted-color">选择左侧候选预览歌词；歌曲命中不代表已有歌词</p>
         </article>
