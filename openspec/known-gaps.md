@@ -57,10 +57,18 @@
 
 ## G16 — QQ 音乐上游
 
-- **现状**：QQ 音乐元数据上游使用非公开的 `musicu.fcg` 与歌词接口，契约可能不经通知改变。碟序规律（`index_cd` 从 0 开始、`index_album` 为全专辑序号）与字段语义来自少量样本，`recordNum` 语义未核实，因此不映射目录号。`internal/provider/qqmusic/` 只有基于实测响应的离线测试，没有真实来源回归。封面搜索页的 QQ 查询使用独立配额（`cover-qq`，每秒 1 次），不消费 QQ 音乐元数据令牌桶（默认每分钟 30 次），两者同时使用时对同一接口的总请求率可超过设置值；是否合并配额尚未决定。
+- **现状**：QQ 音乐元数据上游使用非公开的 `musicu.fcg` 与歌词接口，契约可能不经通知改变。碟序规律（`index_cd` 从 0 开始、`index_album` 为全专辑序号）与字段语义来自少量样本，`recordNum` 语义未核实，因此不映射目录号。`internal/provider/qqmusic/` 只有基于实测响应的离线测试，没有元数据链路的真实来源回归；新增 `internal/lyrics` 的手动歌词网络回归不覆盖歌曲/专辑详情及清单，不等于解决本项。封面搜索页的 QQ 查询使用独立配额（`cover-qq`，每秒 1 次），不消费 QQ 音乐元数据令牌桶（默认每分钟 30 次），两者同时使用时对同一接口的总请求率可超过设置值；是否合并配额尚未决定。
 - **依据**：`internal/provider/qqmusic/`、`internal/covers/sources/web.go`、`internal/app/bindings_cover_search.go`。
 - **目标与验收**：仿照 `TestLiveCoverSources` 增加以环境变量开启的真实来源测试，覆盖搜索、单碟与多碟详情及歌词回退，接口变化时更新 `testdata/` 样本；确定 QQ 封面查询与元数据请求的合计速率上限，并验证封面搜索与后台补全同时进行时的实际请求率。
 
+## G17 — 独立歌词来源与回归边界
+
+- **现状**：网易云、QQ、酷狗、酷我歌词均使用非公开接口。2026-10-16 实现计划记录四来源均有成功实测，也观察到 QQ `2001` 与酷我 `301` 波动；QQ 新端点已实测原文、翻译、罗马音与增强型 LRC，但不承诺每首歌或任意时刻可用。手动 QQ 歌词共用元数据配额，未解决 G16 中独立 QQ 封面配额的问题。
+- **依据**：`internal/lyrics/lyrics_test.go` 的 `TestLiveSources`、`qq_probe_test.go`、`internal/app/lyrics_test.go`；最新同步与历史验证区分见 [verification.md](verification.md)。
+- **格式范围**：本地只导入 UTF-8 TXT/LRC，不转码 GBK/UTF-16；在线只支持已实现的 QQ QRC 转换，不接入网易云 YRC、酷狗 KRC 或本地二进制 QRC/KRC。没有播放器/播放同步高亮与独立歌词导出 UI，这些不作为当前已交付能力。
+- **回归限制**：第二次实现计划的全量 Playwright 为 241/242，编辑器“用户”徽标旧断言在基线也可复现；歌词定向回归通过不代表该失败已修复。歌词文件选择器只经过可注入 picker 与浏览器替身测试，没有新增原生人工验收。
+- **目标与验收**：按 `SONEXA_LYRICS_LIVE=1 go test ./internal/lyrics -run TestLiveSources -v` 定期复测，使用 `SONEXA_LYRICS_SOURCE/TITLE/ARTIST/ALBUM/DURATION_MS` 限定样例并记录缺失、错误与部分成功；真实网络、原生选择器和既有浏览器断言分别取证，不以离线或桩测试代替。新增逐字格式或播放器需另行定范围。
+
 ## 验证范围
 
-本轮原生人工验收已由用户确认，见 [verification.md](verification.md)。本次文档同步不新增截图或逐项原生实测结论；浏览器测试使用 Wails 替身，不能替代原生验证。大曲库性能与真实网络专项仍按各条目保留。
+此前上游/编辑器的原生人工验收已由用户确认，不覆盖后续独立歌词变更，见 [verification.md](verification.md)。本次文档同步不新增截图或逐项原生实测结论；浏览器测试使用 Wails 替身，不能替代原生验证。大曲库性能与真实网络专项仍按各条目保留。

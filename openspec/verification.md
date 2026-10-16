@@ -1,44 +1,54 @@
 # 文档与实现核对
 
-日期：2026-10-16。范围：`unify-upstream-and-redesign-track-editor` 及测试阶段 `change_record` 中的最终决定。核对当前实现至 `38217fd`，不把早期规划、旧测试决定或已修复遗漏写成当前规则。
+日期：2026-10-16。范围：提交 `a169712d`、`a656ca3` 的详情抽屉与歌词管理，以及 `change_record/spec-diff.md` 的 D01–D08、`5e5b1865-plan.md`、`a169712d-plan.md` 两份计划的最终执行结果。以 `a656ca3` 的现有代码为依据，不把早期方案或尚未实现格式写成当前规则。
 
 ## 核对结果
 
-主规格仍为 26 份：原变更的 16 个能力已在 2026-10-02 首次同步，本次检查全部既有 delta，并更新 15 份主规格及相关架构、README、已知问题；其余未受影响规则保持不变。16 份 delta 的 59 个需求与主规格逐项一致，未删除原主规格需求。
+主规格从 26 份增至 27 份：修改 8 份既有规格，新增 `upstream/lyrics-search`。本次 delta 覆盖 9 个能力、22 个需求，未删除既有需求或场景；未涉及的需求保持不变。索引、架构、已知问题和本记录同步更新。
 
-| 范围 | 最终规则与实现证据 |
-| --- | --- |
-| 编辑（ED-001～ED-004） | 左侧使用、精确完整预览自动补取和过期重确认、语义身份；未换上游可原地修改共享专辑，新建/换上游仍逐曲迁入。`EditDialog`、`useEditDraft`、`internal/library/editor_*`、`internal/store/editor_save.go` |
-| 发行与浏览（LIB-001、LIB-002） | 清理无收藏发行及空组，保留独占曲版本；合并/拆分 group 仅改变展示，保留全部收藏 ID 和灰色行真实发行。`internal/store/release.go`、`AlbumsView`、`albumRows`、`trackRows` |
-| 补全（LIB-003） | 只计当前 pending 工作集，暂停/重试延续，下一批或重启重置；入口仅全部曲目页有 pending 时显示。`enrich_worker`、`TrackTable`、enrich store |
-| CV（ART-001、ART-002） | 完整 CV 加独立声优双关联，可靠 CV 当前演唱兜底有 `credit_cv` 来源，明确集合及用户清空优先；详情显示完整 CV，不改快照和真实角色。`cv_credit`、`credit_projection`、`cv_display`、真实响应摘录 `vocal_you.json` |
-| 外壳（UI-001、UI-002） | 全局提示在侧栏设置上方；详情发行信息固定顺序，音轨分母取当前碟曲数，碟号分母取发行总碟数。`AppSidebar`、`GlobalNotice`、`DetailDrawer` |
-| 状态刷新修复 | 详情、复核、艺术家、搜索、导入队列、全局待复核计数与逐首导入/补全通知已补齐；保留当前草稿/条件，隔离迟到响应，候选本地重判不自动出网。`refreshQueue`、相关 views/stores、`internal/app/reactivity_test.go`、importer runner |
-| 原有基础约束 | 三层身份/当前值/快照、统一准入、精确身份唯一、用户字段保护、文件准备和原子引用、版本对应与独立成员批准继续适用 |
+| 差异 | 主规格去向与最终规则 | 实现证据 |
+| --- | --- | --- |
+| D01 | `platform/app-shell`、`library/artists`：无参与角色时只显示空态，保留可靠 CV 投影，不显示署名兜底或来源说明；不删署名和艺术家关联 | `DetailDrawer.vue`、`bindings_library.go`、既有 CV 读模型 |
+| D02 | `platform/app-shell`：默认 340px、鼠标/键盘调宽和偏好保存、视口范围约束，分组内容缩进 12px | `useDrawerWidth.ts`、`DetailDrawer.vue` |
+| D03 | `platform/app-shell`：常显歌词状态图标，独立歌词页及返回，无歌词引导；详情隐藏时间标签但不改文件 | `DetailDrawer.vue`、`frontend/src/lib/lyrics.ts` |
+| D04 | `editing/track-editing`、`upstream/lyrics-search`：菜单、本地导入、确认清除、双栏搜索与独立来源重试；成功预览后明确采用，只改当前歌词，区别于编辑器草稿 | `bindings_lyrics.go`、`LyricsSearchView.vue`、`lyricsSearch.ts`、`App.vue` |
+| D05 | `upstream/provider-registry`、`platform/data-store`、`upstream/lyrics-search`：四个歌词专用来源、共享配额/出网/取消、40 秒/4 MiB/2 MiB 边界、无响应磁盘缓存、30 分钟会话失效 | `internal/lyrics/service.go`、`text.go`、`provider/client.go`、共享 WEAPI 模块 |
+| D06 | `matching/confidence`、`matching/text-processing`、`upstream/lyrics-search`：默认评分复用、单次关键词、版本过滤、近时长人工确认例外；所有来源完成后才自动预览高置信项，不自动采用或修改元数据全局规则 | `internal/lyrics/search.go`、`search_test.go`、`lyricsSearch.ts` |
+| D07 | `upstream/qqmusic`：仅手动歌词批量取普通与逐字块，显式翻译/罗马音，在线 QRC 有界转换与回退；元数据详情/补全链路不变 | `qq.go`、`qrc.go`、`qrcdes/`、`qq_test.go` |
+| D08 | `upstream/lyrics-search`、`platform/data-store`：通道缺失/失败分离、无时间轴附加正文保留、按真实时间合并；最终预览文本采用，不落诊断和密文，不新增字段、FTS 或导出 | `text.go`、`qq.go`、`bindings_lyrics.go`、`store/lyrics_files.go`、`internal/app/lyrics_test.go` |
+
+同时收窄“共享候选表格”和 QQ 组合词搜索的表述为元数据流程，避免误用于独立歌词；`library/artists` 中重复的旧署名兜底规则已一并移除。
 
 ## 本次实际执行
 
-- `openspec validate --specs --strict`：26/26 通过。
-- `openspec validate unify-upstream-and-redesign-track-editor --strict`：归档前通过。
-- 全部 delta 需求与主规格逐项比对：16 文件、59 需求一致；主文档链接目标检查及 `git diff --check` 通过。
-- `go test ./internal/store ./internal/library ./internal/app`、`go vet ./...`：通过。
-- `cd frontend && npm test`：13 个文件、58 项通过。
+- `openspec validate --specs --strict`：27/27 通过；部分既有长需求有 INFO 提示，无验证失败。
+- `openspec validate sync-lyrics-and-drawer-specs --strict`：通过。
+- 主规格与 status 列出的全部 delta 逐项比较：9 文件、22 需求一致；既有需求和场景保留，未涉及需求不变，主规格无 delta 操作标题。
+- 主文档链接目标检查及 `git diff --check`：通过。
+- `go test ./...`：通过（命中 Go 测试缓存）。
+- `go vet ./...`：通过。
+- `npm --prefix frontend test`：14 文件、69 项通过。
 
-本次仅修改文档、归档和清理记录，未改业务代码，未重跑浏览器、Wails 构建或真实上游网络。
+本次只修改规格、相关文档和清理记录，不修改业务代码；未重跑浏览器、Wails 构建或真实网络接口，未操作真实用户数据或新增原生人工验收。
 
-## 已有测试与人工验收
+## 原实现计划的证据与边界
 
-测试阶段最后一轮记录（2026-10-15）：`go test -count=1 -race ./internal/...`、`go vet ./...`、前端构建及 58 项单元通过；Chromium/WebKit 开发与生产产物两轮各 236 项通过。此前 Wails darwin/arm64 构建及编辑/CV/详情专项回归通过。详细范围和各轮证据摘要保存在[归档实施记录](changes/archive/2026-10-16-unify-upstream-and-redesign-track-editor/implementation.md)。
+以下为被吸收记录中的历史结果，不是本次重新执行的结果：
 
-用户于 2026-10-16 明确确认人工验收已经完成并要求勾选归档，因此任务 8.3 已完成。此前代理原生操作因 Computer Use 未授权停止的记录仅作历史保留；本次没有新增原生截图、逐项实测结果或代替用户执行验收。
+- **第一轮（`5e5b1865` 起始，提交 `a169712d`）**：Go 测试、race、vet、前端 64 项单元、生产构建和 Wails 构建通过；Chromium/WebKit 全量 242 项通过。歌词文件选择器使用可注入 picker 与浏览器替身，未人工操作原生窗口。
+- **第二轮（`a169712d` 起始，提交 `a656ca3`）**：Go 测试、race、vet、QRC 短时 fuzz、前端 69 项单元及构建、Wails 构建通过；歌词定向 Chromium/WebKit 共 6 项通过。全量 Playwright 为 241/242，失败为 `screenshot-review.spec.ts:107` 的编辑器“用户”徽标旧断言，基线定向复跑也有 2/3 复现。未修改或弱化该测试，基线只做 Vite 构建，不能据此声称旧源码完整类型检查通过。
+- **MusicBrainz 角色调查**：目标「綿雪の夢 / ハトリアヤ / 狼と巫女とお菓子の家」的 release `54953b76-c791-4415-8092-1f5487cb8df9` 与 recording `7f4f192d-efb5-4d52-9005-74a435b1fd00` 实测 HTTP 200，目标关系均为 `relations: []`。现有请求包含录音/作品级角色扩展，没有解析遗漏证据，因此不从署名补造角色，也不改 MusicBrainz 语义；有精简回放回归 `TestSnowCreditSurvivesEnrichmentWithoutInventedParticipants`。
+- **四来源网络核验**：四来源均有成功实测，也观察过 QQ `2001`、酷我 `301`；不承诺所有歌曲/任意时刻均可用。第二轮 QQ 目标取得 15370 字节增强歌词，含原文、翻译、罗马音；「晴天」原文成功而翻译/罗马音未提供，不能将缺失记为解析成功或接口失败。
+- **安全与范围**：酷狗不使用证书主机名不匹配的旧域名，不关闭 TLS；QQ 仅内置有 MIT LICENSE 与来源提交的 DES 块变换，不引入无界解压。网易云 YRC、酷狗 KRC、本地二进制 QRC、播放器/实时高亮、独立歌词导出 UI 未实现。原始网络证据仅本地 `tmp/` 保存，仓库测试使用合成或精简内容，不提交完整第三方歌词。
 
-浏览器使用 Wails 替身，Go 回归使用隔离数据库及离线样本；真实上游最新复测、大曲库性能和旧模型保留数据升级仍不由这些测试或人工确认推定完成。Vite 主包大于 500 kB 的既有提示仍保留。G09 局部错误/出网按钮、G11 专门署名边界确认等剩余问题继续列在 [known-gaps.md](known-gaps.md)。
+此前用户确认的原生人工验收属于 `unify-upstream-and-redesign-track-editor`，不覆盖后续歌词功能。旧核对记录可用 `git show 5e5b1865:openspec/verification.md` 查看。剩余问题见 [known-gaps.md](known-gaps.md)，特别是 G16 元数据网络/封面配额与 G17 歌词来源及验证边界；Vite 大于 500 kB 的既有提示不视为已解决。
 
-## 归档与记录追溯
+## 记录追溯
 
-变更归档至 `changes/archive/2026-10-16-unify-upstream-and-redesign-track-editor/`，主规格为当前行为依据。`change_record` 的最终决定及关键验证边界已吸收，目录删除后原文仍可从 Git 查询，例如：
+本次正式 delta、设计和任务位于 `openspec/changes/sync-lyrics-and-drawer-specs/`，主规格为当前行为依据。`change_record` 删除后，原差异及计划仍可从 Git 查询：
 
 ```sh
-git show 38217fd:change_record/spec-diff.md
-git show 38217fd:change_record/1c752aca-plan.md
+git show a656ca3:change_record/spec-diff.md
+git show a656ca3:change_record/5e5b1865-plan.md
+git show a656ca3:change_record/a169712d-plan.md
 ```
