@@ -41,7 +41,7 @@ openspec/             规格、设计、已知问题和历史归档
 prompt/               初始需求材料
 ```
 
-Go 测试与实现同包，`internal/app/bindings_*.go` 是手写业务代码。前端统一 API 使用 `frontend/wailsjs/go/app/App`、`Models.app`，浏览器测试通过 `window.go.app.App` 提供测试替身。
+Go 测试通常与实现同包；跨上游组合测试放在 `internal/app`，避免消费侧契约与适配器循环依赖。`internal/app/bindings_*.go` 是手写业务代码。前端统一 API 使用 `frontend/wailsjs/go/app/App`、`Models.app`，浏览器测试通过 `window.go.app.App` 提供测试替身。
 
 ## 开发与验证
 
@@ -77,6 +77,23 @@ SONEXA_E2E_PREVIEW=1 npm run test:e2e
 ```
 
 `go test ./...` 和 `go build ./...` 包含根启动包，依赖前端 `dist/`；测试 `./internal/...` 不需要前端产物。浏览器测试不能替代原生窗口、输入法、文件对话框和大曲库验收。
+
+## 歌词来源验证
+
+歌词业务契约、评分和通道合并位于 `internal/lyrics`；四来源协议位于
+`internal/provider/{netease,qqmusic,kugou,kuwo}`，由 App 注入并由会话保留服务快照。
+QQ QRC 转换和 MIT 许可的 DES 实现位于 `internal/provider/qqmusic/{qrc.go,qrcdes/}`，
+许可证及来源提交记录随实现保留。
+
+在线组合测试默认跳过；显式启用时只输出标题、通道状态和字节数，不转储歌词全文：
+
+```sh
+SONEXA_LYRICS_LIVE=1 go test -v ./internal/app -run '^TestLiveSources$' -count=1
+# 可附加 SONEXA_LYRICS_SOURCE=qq 及 TITLE/ARTIST/ALBUM/DURATION_MS 查询变量
+SONEXA_QQ_PROBE=/path/to/local-response.json go test -v ./internal/provider/qqmusic -run '^TestLocalQQProbe$' -count=1
+```
+
+迁移后的离线回归不代表当前真实来源已验通；在线与原生验证边界单独记录。
 
 ## 版本控制
 

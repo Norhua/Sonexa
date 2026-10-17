@@ -1,4 +1,4 @@
-package lyrics
+package app
 
 import (
 	"context"
@@ -12,20 +12,47 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/provider/qqmusic"
 )
+
+func sourceService(c *provider.Client) lyrics.Service {
+	s, err := buildLyricsService(c, qqmusic.New(c, qqmusic.Config{}, nil))
+	if err != nil {
+		panic(err)
+	}
+	return *s
+}
+func replayService(body string) lyrics.Service {
+	c := provider.NewClient(nil, nil, "test")
+	c.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+		response := body
+		if r.URL.Host == "u.y.qq.com" && !strings.Contains(body, "\"body\"") {
+			response = `{"code":1}`
+		}
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(response))}, nil
+	})
+	return sourceService(c)
+}
+func channelSummary(c *lyrics.Channel) string {
+	if c == nil {
+		return "unknown"
+	}
+	return fmt.Sprintf("%s bytes=%d %s", c.Status, len(c.Text), c.Message)
+}
 
 func TestTextFormatsAndInvalidInput(t *testing.T) {
 	for _, tt := range []struct{ text, format string }{
 		{"无时间轴\n第二行", "text"}, {"\ufeff[ti:歌曲]\r\n[00:01.20][00:02.300]正文", "lrc"}, {"[01:02.345]<01:02.345>逐<01:02.500>字", "enhanced_lrc"}, {"1 < 2 普通文字", "text"},
 	} {
-		d, err := ParseText(tt.text)
+		d, err := lyrics.ParseText(tt.text)
 		if err != nil || d.Format != tt.format {
 			t.Fatalf("%q: %+v %v", tt.text, d, err)
 		}
 	}
-	for _, text := range []string{"", "[ti:歌名]\n[00:01.00]", "krc1binary", "a\x00b", string([]byte{0xff}), strings.Repeat("a", MaxTextBytes+1)} {
-		if _, err := ParseText(text); err == nil {
+	for _, text := range []string{"", "[ti:歌名]\n[00:01.00]", "krc1binary", "a\x00b", string([]byte{0xff}), strings.Repeat("a", lyrics.MaxTextBytes+1)} {
+		if _, err := lyrics.ParseText(text); err == nil {
 			t.Fatalf("accepted invalid lyrics %q", text[:min(50, len(text))])
 		}
 	}
@@ -39,7 +66,7 @@ func TestDocumentParsers(t *testing.T) {
 		{"kuwo", `{"status":200,"data":{"lrclist":[{"time":"12.50","lineLyric":"后"},{"time":"2.3","lineLyric":"前"}]}}`, "[00:02.300]前\n[00:12.500]后"},
 		{"kuwo", `{"status":200,"data":{"lrclist":[{"time":"bad","lineLyric":"无时间"},{"time":"1","lineLyric":"有时间"}]}}`, "无时间\n有时间"},
 	} {
-		d, err := parseDocument(tt.source, []byte(tt.body))
+		d, err := replayService(tt.body).Fetch(context.Background(), lyrics.Candidate{Source: tt.source, Ref: "native"})
 		if err != nil || d.Text != tt.want {
 			t.Fatalf("%s: %+v %v want %q", tt.source, d, err, tt.want)
 		}
@@ -48,7 +75,7 @@ func TestDocumentParsers(t *testing.T) {
 		{"163", `{"code":200,"lrc":{"lyric":"[00:01.00]作曲 : 人\n[00:05.00]纯音乐，请欣赏"}}`},
 		{"163", `{"code":301}`}, {"163", `{"code":200,"nolyric":true}`}, {"qq", `callback({"code":0,"lyric":""});alert(1)`}, {"qq", `{"code":1000}`}, {"qq", `{}`}, {"kuwo", `{"status":301,"msg":"音乐查询失败","data":null}`},
 	} {
-		if _, err := parseDocument(tt.source, []byte(tt.body)); err == nil {
+		if _, err := replayService(tt.body).Fetch(context.Background(), lyrics.Candidate{Source: tt.source, Ref: "native"}); err == nil {
 			t.Fatalf("accepted %s", tt.body)
 		}
 	}
@@ -63,13 +90,13 @@ func TestSearchParsers(t *testing.T) {
 		{"kugou", `{"status":1,"errcode":0,"data":{"info":[{"hash":"abcd","songname":"歌","singername":"人","album_name":"专辑","duration":123}]}}`, "abcd", 123000},
 		{"kuwo", `{"TOTAL":"1","abslist":[{"MUSICRID":"MUSIC_123","NAME":"歌","ARTIST":"人","ALBUM":"专辑","DURATION":"123"}]}`, "123", 123000},
 	} {
-		got, err := parseSearch(tt.source, []byte(tt.body), Query{Title: "歌"})
+		got, err := replayService(tt.body).Search(context.Background(), tt.source, lyrics.Query{Title: "歌"})
 		if err != nil || len(got) != 1 || got[0].Ref != tt.ref || got[0].DurationMS != tt.ms || got[0].Source != tt.source {
 			t.Fatalf("%s: %+v %v", tt.source, got, err)
 		}
 	}
-	for _, source := range Sources() {
-		if _, err := parseSearch(source.ID, []byte(`{}`), Query{}); err == nil {
+	for _, source := range sourceService(nil).Sources.List() {
+		if _, err := replayService(`{}`).Search(context.Background(), source.ID, lyrics.Query{Title: "song"}); err == nil {
 			t.Fatalf("%s accepted malformed response", source.ID)
 		}
 	}
@@ -103,7 +130,7 @@ func TestKugouUsesHTTPSHashDurationAndLRC(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}}, nil
 	})
-	d, err := (Service{client}).Fetch(context.Background(), Candidate{Source: "kugou", Ref: "hash", DurationMS: 269000})
+	d, err := sourceService(client).Fetch(context.Background(), lyrics.Candidate{Source: "kugou", Ref: "hash", DurationMS: 269000})
 	if err != nil || count != 2 || d.Format != "lrc" {
 		t.Fatalf("%+v %v %d", d, err, count)
 	}
@@ -115,12 +142,12 @@ func TestLyricsRequestGateAndResponseLimit(t *testing.T) {
 		calls++
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(strings.Repeat("x", (4<<20)+1))), Header: http.Header{}}, nil
 	})
-	s := Service{c}
+	s := sourceService(c)
 	ctx := provider.WithRequestGate(context.Background(), func() error { return fmt.Errorf("disabled") })
-	if _, err := s.Search(ctx, "163", Query{Title: "歌"}); err == nil || calls != 0 {
+	if _, err := s.Search(ctx, "163", lyrics.Query{Title: "歌"}); err == nil || calls != 0 {
 		t.Fatal("gate bypassed")
 	}
-	if _, err := s.Search(context.Background(), "163", Query{Title: "歌"}); err == nil || calls != 1 {
+	if _, err := s.Search(context.Background(), "163", lyrics.Query{Title: "歌"}); err == nil || calls != 1 {
 		t.Fatal("unbounded response")
 	}
 }
@@ -132,7 +159,7 @@ func TestLyricsRejectsCrossHostRedirect(t *testing.T) {
 		calls++
 		return &http.Response{StatusCode: 302, Header: http.Header{"Location": {"https://untrusted.example/lyric"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
 	})
-	_, err := (Service{c}).Search(context.Background(), "qq", Query{Title: "歌"})
+	_, err := sourceService(c).Search(context.Background(), "qq", lyrics.Query{Title: "歌"})
 	if err == nil || calls != 1 {
 		t.Fatalf("redirect followed: calls=%d err=%v", calls, err)
 	}
@@ -144,9 +171,9 @@ func TestLiveSources(t *testing.T) {
 		t.Skip("set SONEXA_LYRICS_LIVE=1 for upstream probes")
 	}
 	c := provider.NewClient(provider.NewLimiters(), nil, "Sonexa/lyrics-verification (https://github.com/norhua/sonexa)")
-	s := Service{c}
+	s := sourceService(c)
 	// Only probe a caller-selected source when troubleshooting unstable APIs.
-	for _, source := range Sources() {
+	for _, source := range s.Sources.List() {
 		if only := os.Getenv("SONEXA_LYRICS_SOURCE"); only != "" && source.ID != only {
 			continue
 		}
@@ -162,7 +189,7 @@ func TestLiveSources(t *testing.T) {
 				artist = "周杰伦"
 			}
 			duration, _ := strconv.Atoi(os.Getenv("SONEXA_LYRICS_DURATION_MS"))
-			candidates, err := s.Search(ctx, source.ID, Query{Title: title, Artist: artist, Album: os.Getenv("SONEXA_LYRICS_ALBUM"), DurationMS: duration})
+			candidates, err := s.Search(ctx, source.ID, lyrics.Query{Title: title, Artist: artist, Album: os.Getenv("SONEXA_LYRICS_ALBUM"), DurationMS: duration})
 			if err != nil {
 				t.Fatal(err)
 			}

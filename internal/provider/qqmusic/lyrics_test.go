@@ -1,4 +1,4 @@
-package lyrics
+package qqmusic
 
 import (
 	"bytes"
@@ -12,15 +12,27 @@ import (
 	"strings"
 	"testing"
 
-	des "github.com/norhua/sonexa/internal/lyrics/qrcdes"
+	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
+	des "github.com/norhua/sonexa/internal/provider/qqmusic/qrcdes"
+	"io"
 )
 
 func providerClientForTest(fn func(*http.Request) string) *provider.Client {
 	c := provider.NewClient(nil, nil, "test")
-	c.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) { return responseForTest(fn(r)), nil })
+	c.HTTP.Transport = protocolTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(fn(r)))}, nil
+	})
 	return c
 }
+func lyricServiceForTest(client *provider.Client) lyrics.Service {
+	r, err := lyrics.NewRegistry(lyrics.Entry{Provider: New(client, Config{}, nil)})
+	if err != nil {
+		panic(err)
+	}
+	return lyrics.Service{Sources: r}
+}
+
 func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
 func encodedQRC(t *testing.T, text string) string {
 	t.Helper()
@@ -64,7 +76,7 @@ func TestQRCConversion(t *testing.T) {
 			if err != nil || got != tt.want {
 				t.Fatalf("%q %v", got, err)
 			}
-			doc, err := ParseText(got)
+			doc, err := lyrics.ParseText(got)
 			if err != nil || doc.Format != "enhanced_lrc" {
 				t.Fatalf("%+v %v", doc, err)
 			}
@@ -72,7 +84,7 @@ func TestQRCConversion(t *testing.T) {
 	}
 }
 func TestQRCRejectsMalformedAndOversized(t *testing.T) {
-	for _, encoded := range []string{"", "00", "xx", "0000000000000000", strings.Repeat("a", (4<<20)+1), encodedQRC(t, strings.Repeat("a", MaxTextBytes+1)), encodedQRC(t, string([]byte{0xff})), encodedQRC(t, "bad\x00text")} {
+	for _, encoded := range []string{"", "00", "xx", "0000000000000000", strings.Repeat("a", (4<<20)+1), encodedQRC(t, strings.Repeat("a", lyrics.MaxTextBytes+1)), encodedQRC(t, string([]byte{0xff})), encodedQRC(t, "bad\x00text")} {
 		if _, err := decodeQRC(encoded); err == nil {
 			t.Fatal("accepted bad QRC")
 		}
@@ -106,7 +118,7 @@ func TestQQPlayPreservesChannelsAndUsesExplicitFlags(t *testing.T) {
 		}
 		return playBody(t, qqLyricData{QRC: 1, Lyric: encodedQRC(t, "[1000,1000]原文(1000,1000)"), Trans: b64("[00:01.00]翻译"), Roma: encodedQRC(t, "[1000,1000]roma(1000,1000)")}, qqLyricData{Lyric: b64("[00:01.00]原文")})
 	})
-	doc, err := (Service{client}).Fetch(context.Background(), Candidate{Source: "qq", Ref: "001wMai814HLgJ"})
+	doc, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "001wMai814HLgJ"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +147,7 @@ func TestQQOptionalFailuresAndPlainFallback(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			channels := parseQQPlay([]byte(playBody(t, tt.qrc, tt.plain)))
-			doc, err := channels.document()
+			doc, err := lyrics.DocumentFromPayload(channels)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -164,7 +176,7 @@ func TestQQFallbackKeepsNewTranslationAndReportsFailure(t *testing.T) {
 		}
 		return `{"code":0,"retcode":0,"subcode":0,"lyric":"[00:01]original"}`
 	})
-	doc, err := (Service{client}).Fetch(context.Background(), Candidate{Source: "qq", Ref: "mid"})
+	doc, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
 	if err != nil || calls != 2 || doc.Format != "lrc" || doc.WordTiming != "error" || !strings.Contains(doc.Text, "untimed translation") || len(doc.Warnings) == 0 {
 		t.Fatalf("%+v %v", doc, err)
 	}
@@ -177,7 +189,7 @@ func TestQQServiceFailureIsNotReportedAsMissingTranslation(t *testing.T) {
 		}
 		return `{"code":0,"lyric":"[00:01]original","trans":""}`
 	})
-	doc, err := (Service{client}).Fetch(context.Background(), Candidate{Source: "qq", Ref: "mid"})
+	doc, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,46 +200,20 @@ func TestQQServiceFailureIsNotReportedAsMissingTranslation(t *testing.T) {
 
 func TestQQErrorsAndCancellation(t *testing.T) {
 	for _, body := range []string{`{}`, `{"code":2001}`, `{"code":0,"req":{"code":1},"plain":{"code":2}}`, `{"code":0,"req":{"code":0},"plain":{"code":0}}`, `not json`} {
-		if _, err := parseQQPlay([]byte(body)).document(); err == nil {
+		if _, err := lyrics.DocumentFromPayload(parseQQPlay([]byte(body))); err == nil {
 			t.Fatalf("accepted %s", body)
 		}
 	}
 	for _, field := range []string{"code", "retcode", "subcode"} {
-		if _, err := parseDocument("qq", []byte(fmt.Sprintf(`{"code":0,"%s":1,"lyric":"[00:01]original"}`, field))); err == nil {
+		if _, err := parseLegacyLyrics([]byte(fmt.Sprintf(`{"code":0,"%s":1,"lyric":"[00:01]original"}`, field))); err == nil {
 			t.Fatalf("ignored %s", field)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
 	client := providerClientForTest(func(*http.Request) string { calls++; cancel(); return `{"code":2001}` })
-	if _, err := (Service{client}).Fetch(ctx, Candidate{Source: "qq", Ref: "mid"}); err == nil || calls != 1 {
+	if _, err := lyricServiceForTest(client).Fetch(ctx, lyrics.Candidate{Source: "qq", Ref: "mid"}); err == nil || calls != 1 {
 		t.Fatalf("fallback after cancel: %d %v", calls, err)
-	}
-}
-
-func TestMergeNeverDropsUntimedExtras(t *testing.T) {
-	for _, original := range []string{"plain original", "[00:01]original", "[00:01]<00:01>original<00:02>"} {
-		doc, err := channelDocument(textChannel(original, nil), textChannel("plain translation", nil), textChannel("[00:01]roma\nuntimed tail", nil), "unavailable", nil)
-		if err != nil || !strings.Contains(doc.Text, "plain translation") || !strings.Contains(doc.Text, "untimed tail") || !strings.Contains(doc.Text, "roma") {
-			t.Fatalf("%+v %v", doc, err)
-		}
-	}
-	got, err := mergeTimed("[00:01]original\n[00:02]two", "[00:02]second\n[00:01]first")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "[00:01.000]original\n[00:01.000]first\n[00:02.000]two\n[00:02.000]second" {
-		t.Fatal(got)
-	}
-}
-
-func TestTimestampExpansionIsBounded(t *testing.T) {
-	var timestamps strings.Builder
-	for i := 0; i < 1000; i++ {
-		timestamps.WriteString("[" + clock(i*1000) + "]")
-	}
-	if _, err := mergeTimed(timestamps.String()+strings.Repeat("a", 10000), "translation"); err == nil {
-		t.Fatal("unbounded timestamp expansion")
 	}
 }
 

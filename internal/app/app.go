@@ -13,6 +13,7 @@ import (
 	"github.com/norhua/sonexa/internal/covers"
 	"github.com/norhua/sonexa/internal/importer"
 	"github.com/norhua/sonexa/internal/library"
+	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/provider/itunes"
@@ -34,6 +35,7 @@ type App struct {
 	registry       *provider.Registry
 	limiters       *provider.Limiters
 	client         *provider.Client
+	lyricSvc       *lyrics.Service
 	coverSvc       *covers.Service
 	coverSessions  map[string]*coverSession
 	coverWorkers   sync.WaitGroup
@@ -234,6 +236,11 @@ func (a *App) rebuildProviders(cur config.Settings) {
 	}, store.ParamsHash)
 
 	qq := qqmusic.New(a.client, qqmusic.Config{RatePerMin: cur.QQMusic.RatePerMin}, store.ParamsHash)
+	lyricSvc, err := buildLyricsService(a.client, qq)
+	if err != nil {
+		panic(err) // Built-in IDs are fixed; atomic fallible assembly is task 6.1.
+	}
+	a.lyricSvc = lyricSvc
 
 	a.registry = provider.NewRegistry()
 	a.registry.Register(mb)

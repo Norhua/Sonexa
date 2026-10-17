@@ -1,12 +1,14 @@
-package lyrics
+package qqmusic
 
 import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/norhua/sonexa/internal/lyrics"
 )
 
-func channelSummary(c *Channel) string {
+func channelSummary(c *lyrics.Channel) string {
 	if c == nil {
 		return "unknown"
 	}
@@ -25,11 +27,11 @@ func TestLocalQQProbe(t *testing.T) {
 		t.Fatal(err)
 	}
 	channels := parseQQPlay(body)
-	for _, ch := range []*Channel{channels.original, channels.translation, channels.romanization} {
+	for _, ch := range []*lyrics.Channel{channels.Original, channels.Translation, channels.Romanization} {
 		t.Log(channelSummary(ch))
 	}
-	t.Log(channels.timing, channels.warnings)
-	doc, err := channels.document()
+	t.Log(channels.WordTiming, channels.Warnings)
+	doc, err := lyrics.DocumentFromPayload(channels)
 	if err != nil {
 		t.Fatal(err)
 	}

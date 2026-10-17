@@ -21,13 +21,21 @@ type lyricSession struct {
 	cancel     context.CancelFunc
 	trackID    int64
 	created    time.Time
+	service    *lyrics.Service
 	mu         sync.Mutex
 	searched   bool
 	candidates map[string]lyrics.Candidate
 	documents  map[string]*lyrics.Document
 }
 
-func (a *App) ListLyricsSources() []lyrics.Source { return lyrics.Sources() }
+func (a *App) ListLyricsSources() []lyrics.Source {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.lyricSvc == nil {
+		return []lyrics.Source{}
+	}
+	return a.lyricSvc.Sources.List()
+}
 func (a *App) LyricsRevision(trackID int64) (int64, error) {
 	if err := a.ready(); err != nil {
 		return 0, err
@@ -50,6 +58,11 @@ func (a *App) CreateLyricsSearch(trackID int64) (string, error) {
 	session := &lyricSession{ctx: ctx, cancel: cancel, trackID: trackID, created: time.Now(), candidates: map[string]lyrics.Candidate{}, documents: map[string]*lyrics.Document{}}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.lyricSvc == nil {
+		cancel()
+		return "", fmt.Errorf("歌词服务未就绪")
+	}
+	session.service = a.lyricSvc
 	for id, s := range a.lyricSessions {
 		if time.Since(s.created) > 30*time.Minute {
 			s.cancel()
@@ -77,7 +90,7 @@ func (a *App) CancelLyricsSearch(id string) {
 }
 
 // Registered work is drained before the store closes, just like cover searches.
-func (a *App) lyricWork(id string) (*lyricSession, *provider.Client, error) {
+func (a *App) lyricWork(id string) (*lyricSession, *lyrics.Service, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	s := a.lyricSessions[id]
@@ -85,14 +98,17 @@ func (a *App) lyricWork(id string) (*lyricSession, *provider.Client, error) {
 		return nil, nil, fmt.Errorf("歌词搜索已失效，请重新搜索")
 	}
 	a.lyricWorkers.Add(1)
-	return s, a.client, nil
+	return s, s.service, nil
 }
 func (a *App) SearchLyrics(id, source string, q lyrics.Query) ([]lyrics.Candidate, error) {
-	s, client, err := a.lyricWork(id)
+	s, service, err := a.lyricWork(id)
 	if err != nil {
 		return nil, err
 	}
 	defer a.lyricWorkers.Done()
+	if _, err := service.Sources.Get(provider.ProviderID(source)); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	if s.searched {
 		s.mu.Unlock()
@@ -101,7 +117,7 @@ func (a *App) SearchLyrics(id, source string, q lyrics.Query) ([]lyrics.Candidat
 	s.searched = true
 	s.mu.Unlock()
 	defer a.beginInteractive()()
-	candidates, err := (lyrics.Service{Client: client}).Search(s.ctx, source, q)
+	candidates, err := service.Search(s.ctx, source, q)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +133,7 @@ func (a *App) SearchLyrics(id, source string, q lyrics.Query) ([]lyrics.Candidat
 	return candidates, nil
 }
 func (a *App) FetchLyrics(id, candidateID string) (*lyrics.Document, error) {
-	s, client, err := a.lyricWork(id)
+	s, service, err := a.lyricWork(id)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +148,7 @@ func (a *App) FetchLyrics(id, candidateID string) (*lyrics.Document, error) {
 		return nil, fmt.Errorf("所选歌词不属于当前搜索")
 	}
 	defer a.beginInteractive()()
-	doc, err := (lyrics.Service{Client: client}).Fetch(s.ctx, c)
+	doc, err := service.Fetch(s.ctx, c)
 	if err != nil {
 		return nil, err
 	}

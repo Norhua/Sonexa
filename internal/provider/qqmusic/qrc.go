@@ -1,4 +1,4 @@
-package lyrics
+package qqmusic
 
 import (
 	"bytes"
@@ -12,7 +12,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	des "github.com/norhua/sonexa/internal/lyrics/qrcdes"
+	"github.com/norhua/sonexa/internal/lyrics"
+	des "github.com/norhua/sonexa/internal/provider/qqmusic/qrcdes"
 )
 
 // Online QRC is hex -> QQ's modified triple DES -> zlib. Local QMC-wrapped
@@ -33,16 +34,17 @@ func decodeQRC(encoded string) (string, error) {
 		return "", fmt.Errorf("QRC 解压失败: %w", err)
 	}
 	defer r.Close()
-	plain, err := io.ReadAll(io.LimitReader(r, MaxTextBytes+1))
+	plain, err := io.ReadAll(io.LimitReader(r, lyrics.MaxTextBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("QRC 解压失败: %w", err)
 	}
-	if len(plain) > MaxTextBytes || !utf8.Valid(plain) || bytes.IndexByte(plain, 0) >= 0 {
+	if len(plain) > lyrics.MaxTextBytes || !utf8.Valid(plain) || bytes.IndexByte(plain, 0) >= 0 {
 		return "", fmt.Errorf("QRC 解码结果不是有效的 2 MiB 以内 UTF-8 文本")
 	}
 	return string(plain), nil
 }
 
+var qrcMetadata = regexp.MustCompile(`^\[[a-zA-Z]+:[^\]]*\]$`)
 var qrcLineStart = regexp.MustCompile(`(?m)^\[\d+,\d+\]`)
 var qrcLine = regexp.MustCompile(`^\[(\d+),(\d+)\](.*)$`)
 var qrcWord = regexp.MustCompile(`\((\d+),(\d+)\)`)
@@ -60,7 +62,7 @@ func clock(ms int) string { return fmt.Sprintf("%02d:%02d.%03d", ms/60000, ms/10
 // Preserve real word ends too, including gaps, instead of deriving durations
 // from the next word. Untimed credit lines stay ordinary LRC.
 func qrcToLRC(raw string) (string, error) {
-	if len(raw) > MaxTextBytes {
+	if len(raw) > lyrics.MaxTextBytes {
 		return "", fmt.Errorf("QRC 文本过大")
 	}
 	if !utf8.ValidString(raw) || strings.ContainsRune(raw, 0) {
@@ -90,7 +92,7 @@ func qrcToLRC(raw string) (string, error) {
 		if line == "" {
 			continue
 		}
-		if metadata.MatchString(line) {
+		if qrcMetadata.MatchString(line) {
 			out.WriteString(line + "\n")
 			continue
 		}
@@ -131,7 +133,7 @@ func qrcToLRC(raw string) (string, error) {
 			}
 			out.WriteString(text)
 			out.WriteString("<" + clock(ts+dur) + ">")
-			if out.Len() > MaxTextBytes {
+			if out.Len() > lyrics.MaxTextBytes {
 				return "", fmt.Errorf("转换后的歌词超过 2 MiB")
 			}
 			pos, previousEnd = w[1], ts+dur
@@ -143,7 +145,7 @@ func qrcToLRC(raw string) (string, error) {
 			return "", fmt.Errorf("QRC 存在没有时间的尾部文字")
 		}
 		out.WriteString(m[3][pos:] + "\n")
-		if out.Len() > MaxTextBytes {
+		if out.Len() > lyrics.MaxTextBytes {
 			return "", fmt.Errorf("转换后的歌词超过 2 MiB")
 		}
 	}
