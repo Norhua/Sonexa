@@ -93,4 +93,5 @@ type lyricResponse struct {
 	Code    *int   `json:"code"`
 	Subcode *int   `json:"subcode"`
 	Lyric   string `json:"lyric"`
+	Trans   string `json:"trans"`
 }

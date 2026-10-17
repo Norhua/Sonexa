@@ -97,17 +97,11 @@ func (p *Provider) SearchTracks(ctx context.Context, q provider.Query) ([]provid
 	if limit <= 0 || limit > 50 {
 		limit = 25
 	}
-	body, err := p.musicu(ctx, q.SkipCache, map[string]any{
-		"req": map[string]any{
-			"module": "music.search.SearchCgiService",
-			"method": "DoSearchForQQMusicDesktop",
-			"param":  map[string]any{"query": term, "search_type": 0, "num_per_page": limit, "page_num": 1},
-		},
-	})
+	songs, err := p.searchSongs(ctx, term, limit, provider.CacheModeForRefresh(q.SkipCache))
 	if err != nil {
 		return nil, err
 	}
-	return ParseSearch(body)
+	return metadataCandidates(songs), nil
 }
 
 // FetchDetail 实现 provider.MetadataProvider。ref.ID 为专辑 MID，ref.TrackRef 为歌曲 MID。
@@ -135,7 +129,7 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 			"param": map[string]any{"song_mid": ref.TrackRef},
 		}
 	}
-	body, err := p.musicu(ctx, ref.SkipCache, reqs)
+	body, err := p.musicu(ctx, provider.CacheModeForRefresh(ref.SkipCache), reqs)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +139,7 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 	}
 	// 按已取数量判断是否取完；空页即停，避免 totalNum 异常时无界请求。
 	for n := 1; len(parts.songs) < parts.total && n < maxSongPages; n++ {
-		body, err := p.musicu(ctx, ref.SkipCache, map[string]any{"songs": songsBlock(albumMID, len(parts.songs))})
+		body, err := p.musicu(ctx, provider.CacheModeForRefresh(ref.SkipCache), map[string]any{"songs": songsBlock(albumMID, len(parts.songs))})
 		if err != nil {
 			return nil, err
 		}
@@ -205,21 +199,8 @@ func (p *Provider) SearchCovers(ctx context.Context, q provider.Query) ([]provid
 	return out, nil
 }
 
-func (p *Provider) fetchLyric(ctx context.Context, songMID string, skipCache bool) (*string, error) {
-	params := map[string]string{"songmid": songMID, "g_tk": "5381", "format": "json", "nobase64": "1"}
-	body, err := p.client.Get(ctx, provider.GetRequest{
-		Provider: provider.QQMusic, Endpoint: lyricPath, BaseURL: LyricBase,
-		Params: params, ParamsHash: p.hash(params), CacheMode: provider.CacheModeForRefresh(skipCache),
-		Headers: map[string]string{"Referer": "https://y.qq.com/"},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return ParseLyric(body)
-}
-
 // musicu 发起一次 musicu.fcg POST。请求体参与缓存键。
-func (p *Provider) musicu(ctx context.Context, skipCache bool, reqs map[string]any) ([]byte, error) {
+func (p *Provider) musicu(ctx context.Context, mode provider.CacheMode, reqs map[string]any) ([]byte, error) {
 	payload := map[string]any{"comm": map[string]any{"ct": "19", "cv": "1859", "uin": "0"}}
 	for k, v := range reqs {
 		payload[k] = v
@@ -230,8 +211,10 @@ func (p *Provider) musicu(ctx context.Context, skipCache bool, reqs map[string]a
 	}
 	return p.client.Get(ctx, provider.GetRequest{
 		Provider: provider.QQMusic, Endpoint: musicuPath, BaseURL: MusicuBase,
-		Body: body, ParamsHash: p.hash(map[string]string{"body": string(body)}), CacheMode: provider.CacheModeForRefresh(skipCache),
-		Headers: map[string]string{"Referer": "https://y.qq.com/"},
+		Body: body, ParamsHash: p.hash(map[string]string{"body": string(body)}), CacheMode: mode,
+		MaxResponseBytes: 4 << 20,
+		Redirects:        &provider.RedirectPolicy{Hosts: []string{"u.y.qq.com", "c.y.qq.com"}, MaxRedirects: 4},
+		Headers:          map[string]string{"Referer": "https://y.qq.com/"},
 	})
 }
 

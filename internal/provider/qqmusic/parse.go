@@ -41,6 +41,15 @@ func decodeBlocks(body []byte, names ...string) (map[string]json.RawMessage, err
 
 // ParseSearch 把搜索块解析为候选。导出以便离线重放测试。
 func ParseSearch(body []byte) ([]provider.Candidate, error) {
+	songs, err := parseSongs(body)
+	if err != nil {
+		return nil, err
+	}
+	return metadataCandidates(songs), nil
+}
+
+// parseSongs 只校验协议结构，不按元数据或封面所需身份过滤歌曲。
+func parseSongs(body []byte) ([]song, error) {
 	blocks, err := decodeBlocks(body, "req")
 	if err != nil {
 		return nil, err
@@ -49,17 +58,21 @@ func ParseSearch(body []byte) ([]provider.Candidate, error) {
 	if err := json.Unmarshal(blocks["req"], &data); err != nil {
 		return nil, fmt.Errorf("解析 QQ 音乐搜索响应失败: %w", err)
 	}
-	if data.Body == nil || data.Body.Song == nil {
+	if data.Body == nil || data.Body.Song == nil || data.Body.Song.List == nil {
 		return nil, fmt.Errorf("QQ 音乐搜索响应缺少歌曲列表")
 	}
-	out := make([]provider.Candidate, 0, len(data.Body.Song.List))
-	for _, s := range data.Body.Song.List {
+	return data.Body.Song.List, nil
+}
+
+func metadataCandidates(songs []song) []provider.Candidate {
+	out := make([]provider.Candidate, 0, len(songs))
+	for _, s := range songs {
 		if !ValidMID(s.MID) {
 			continue
 		}
 		out = append(out, candidateFrom(s))
 	}
-	return out, nil
+	return out
 }
 
 func candidateFrom(s song) provider.Candidate {
@@ -360,20 +373,6 @@ func songTitle(s song) string {
 
 func albumName(a albumRef) string {
 	return firstNonEmpty(a.Title, a.Name)
-}
-
-// ParseLyric 解析独立歌词接口（format=json&nobase64=1）的响应。
-func ParseLyric(body []byte) (*string, error) {
-	var r lyricResponse
-	if err := json.Unmarshal(body, &r); err != nil {
-		return nil, fmt.Errorf("解析 QQ 音乐歌词响应失败: %w", err)
-	}
-	for _, c := range []*int{r.Retcode, r.Code, r.Subcode} {
-		if c != nil && *c != 0 {
-			return nil, fmt.Errorf("QQ 音乐歌词接口返回错误码 %d", *c)
-		}
-	}
-	return strPtr(strings.TrimSpace(r.Lyric)), nil
 }
 
 // ValidMID 校验 QQ 音乐的 MID：仅字母数字。
