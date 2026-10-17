@@ -46,7 +46,7 @@
 - [ ] 6.1 统一启动和设置更新的能力装配入口，原子发布元数据、歌词和封面集合，共用长期 Limiters，避免 CAA 在 coverSvc 创建前捕获空依赖。用生产接线测试验证各业务准确来源列表/顺序、默认三元数据来源、iTunes 地区及导入仅 MB，装配失败不发布半套服务。
 - [ ] 6.2 保留旧会话服务快照与动态门禁/配额，新会话使用新集合；封面目录移动继续走 MoveRoot，关闭先取消并等待业务请求再关 Store。扩展设置/会话/shutdown 测试，在请求等待、下载和旧候选获取中切换配置、禁网或退出，验证无错误目标写入、无新出网与无 race。
 - [ ] 6.3 新增生产代码依赖边界测试，检查 lyrics、covers（含 sources）不导入具体上游，provider 父包不导入业务/具体来源，业务和歌词/封面查询绑定无上游协议字符串/解析分支。迁移形成循环的同包测试为外部测试或适配器测试；验证 `go list ./internal/...` 及边界测试通过。
-- [ ] 6.4 更新根 README 和 `openspec/design.md` 的实际模块/流程说明，删除已失效的大接口、WebSource 与 lyrics 内专有协议描述，保留自动图片策略和元数据字段能力边界。通过源码路径和接口对照检查，确保文档只描述此时已经完成的接线，不将未验证配额或在线结果写成完成。
+- [ ] 6.4 更新根 README 和 `openspec/design.md` 的实际模块/流程说明，明确消费侧能力契约、元数据契约的保留边界、单向依赖、各上游能力矩阵与集中装配/设置重建流程；删除已失效的大接口、WebSource 与 lyrics 内专有协议描述，保留自动图片策略和元数据字段能力边界。主架构更新属于实施交付，不由后续 delta 同步或 archive 自动完成；具体包名和依赖图留在架构文档，行为规格保留统一业务调用契约。通过源码路径和接口对照检查，确保文档只描述此时已经完成的接线，不将未验证配额或在线结果写成完成。
 
 ## 7. QQ 合并配额、合理提速与设置验证
 
@@ -61,7 +61,7 @@
 - [ ] 8.1 运行 `go test -count=1 -race ./internal/...`，准备前端 embed/绑定后运行 `go vet ./...`；记录完整结果，重点确认元数据快照、自动导入、封面目录/文件回滚与歌词事务不退化。任何既有失败需有基线复现证据，不将新失败标成历史问题。
 - [ ] 8.2 按 README 生成 Wails 绑定，运行 `npm test`、`npm run build` 以及 `SONEXA_E2E_PREVIEW=1 npm run test:e2e -- tests/e2e/lyrics.spec.ts tests/e2e/cover-search.spec.ts tests/e2e/provider-capabilities.spec.ts tests/e2e/editor.spec.ts tests/e2e/shell.spec.ts`（含新增 QQ 设置用例）。记录 Chromium/WebKit 的 API、列表、会话、采用与设置结果，不提交生成绑定/构建产物，不将已知编辑器旧断言失败默认为新功能通过。
 - [ ] 8.3 显式启用 QQ 元数据单碟/多碟/歌词回退的有界真实来源测试，同时复测已迁移的四歌词和四封面入口；从 30 开始、无风控才继续少量 45/60 速率样本，记录请求间隔、错误/429、Retry-After、通道及取消结果。遇限制停止提速，不做压力或绕过测试；无法完成时保留本项未完成并说明阻塞，不能用 fixture 替代在线证据。
-- [ ] 8.4 在 `openspec/verification.md` 记录本次离线、浏览器、在线及原生未验证边界，逐项对照四份 delta 与 design 的关键不变量；执行 `openspec validate refactor-upstream-capabilities --strict`、`git diff --check` 并完成审阅。不得提前关闭 G14/G16/G17 中无本次证据支持的事项。
+- [ ] 8.4 在 `openspec/verification.md` 记录本次离线、浏览器、在线及原生未验证边界，逐项对照四份 delta、design 的关键不变量及[原始提示词](resource/0-original-prompt.txt)，记录业务解耦、单能力接入、协议去重与旧 Provider 去留的实现证据。结合源码检索、调用关系和边界测试，核查本次范围内的重复协议构造/解析、被替代的生产链路、无用类型及永久兼容壳已经删除；仍在使用的通用工具、测试覆盖与 QRC 许可保留或随实现迁移，不把清理范围扩展到无关模块。执行 `openspec validate refactor-upstream-capabilities --strict`、`git diff --check` 并完成审阅。不得提前关闭 G14/G16/G17 中无本次证据支持的事项。
 
 ## Workflow follow-up
 
