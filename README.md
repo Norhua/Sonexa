@@ -22,12 +22,13 @@ main.go               Wails 启动与前端资源嵌入
 internal/
   app/                应用协调、前端绑定、后台补全与桌面配置
   store/              SQLite、当前值/快照、事务、查询与文件引用
-  provider/           上游接口、限流、重试、MusicBrainz / iTunes / QQ 音乐
+  provider/           元数据契约、共享传输与各上游能力适配器
   domain/             三层身份、统一快照和跨层契约
   library/            归组、准入及编辑保存计划
   matching/           文本处理、评分、入库判定
   importer/           表格解析与持久化导入队列
-  covers/             封面下载、缓存与本地服务
+  covers/             目录、工作池、缓存与本地服务；sources/ 为消费侧契约
+  lyrics/             歌词能力契约、候选评分、通道合并与文本校验
   export/             CSV / JSON 导出
   config/             路径与设置
   acceptance/         跨模块验收测试
@@ -42,6 +43,18 @@ prompt/               初始需求材料
 ```
 
 Go 测试通常与实现同包；跨上游组合测试放在 `internal/app`，避免消费侧契约与适配器循环依赖。`internal/app/bindings_*.go` 是手写业务代码。前端统一 API 使用 `frontend/wailsjs/go/app/App`、`Models.app`，浏览器测试通过 `window.go.app.App` 提供测试替身。
+
+## 上游能力与装配
+
+元数据继续使用 `provider.MetadataProvider` 与 `provider.Registry`，负责身份、字段能力、
+候选快照和精确补全；它不要求封面搜索方法。歌词和封面分别消费 `lyrics.Provider`、
+`covers/sources.Provider`，仅歌词或仅封面来源不进入元数据选项，导入仍只用 MusicBrainz。
+具体协议位于 `provider/<upstream>`；业务包不导入具体上游。
+
+`internal/app/upstreams.go` 是启动和设置更新的集中装配入口，验证能力与图片安全策略后
+原子发布。新会话使用新集合，旧会话保留能力及图片策略快照；出网门禁始终读取当前设置，
+API 配额和封面工作池长期共用。封面目录通过 `MoveRoot` 迁移，不重建池或丢弃已有会话。
+完整能力矩阵、依赖方向和自动图片规则见[架构设计](openspec/design.md#上游能力与装配)。
 
 ## 开发与验证
 

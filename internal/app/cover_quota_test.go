@@ -56,7 +56,7 @@ func TestCoverSearchSharesMetadataQuotaButCAADirectoryDoesNot(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, err := a.coverSvc.CAACatalog(ctx, "release", uuid.NewString(), true); err != nil || calls.Load() != 1 {
+	if _, err := a.coverSvc.Catalog(ctx, store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: uuid.NewString()}, true); err != nil || calls.Load() != 1 {
 		t.Fatalf("CAA 目录错误消费 MB 元数据配额: %v calls=%d", err, calls.Load())
 	}
 }

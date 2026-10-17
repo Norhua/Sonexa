@@ -81,7 +81,7 @@ func TestResolverCatalogReopensAndRefreshFailurePreservesSnapshot(t *testing.T) 
 	svc, st := resolverService(t)
 	calls, mu := map[string]int{}, &sync.Mutex{}
 	setResolverResponse(svc, twoSizeIndex, 200, calls, mu)
-	if _, err := svc.CAACatalog(context.Background(), "release", testReleaseMBID, false); err != nil {
+	if _, err := svc.Catalog(context.Background(), store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: testReleaseMBID}, false); err != nil {
 		t.Fatal(err)
 	}
 	cache, err := NewDiskCache(svc.pool.cache.Dir(), 0, 0)
@@ -94,14 +94,15 @@ func TestResolverCatalogReopensAndRefreshFailurePreservesSnapshot(t *testing.T) 
 	}
 	defer second.Close()
 	setResolverResponse(second, `failed`, 503, calls, mu)
-	catalog, err := second.CAACatalog(context.Background(), "release", testReleaseMBID, false)
+	key := store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: testReleaseMBID}
+	catalog, err := second.Catalog(context.Background(), key, false)
 	if err != nil || catalog.State != "found" || calls["/release/"+testReleaseMBID] != 1 {
 		t.Fatal("新服务未复用目录")
 	}
-	if _, err := second.CAACatalog(context.Background(), "release", testReleaseMBID, true); err == nil {
+	if _, err := second.Catalog(context.Background(), key, true); err == nil {
 		t.Fatal("刷新故障应上报")
 	}
-	catalog, err = second.CAACatalog(context.Background(), "release", testReleaseMBID, false)
+	catalog, err = second.Catalog(context.Background(), key, false)
 	if err != nil || len(catalog.Images) != 1 {
 		t.Fatal("故障抹掉目录")
 	}
@@ -119,7 +120,7 @@ func TestResolverAdopted800WinsOverAutomatic1200AndMissingFails(t *testing.T) {
 	}
 	calls, mu := map[string]int{}, &sync.Mutex{}
 	setResolverResponse(svc, twoSizeIndex, 200, calls, mu)
-	catalog, err := svc.CAACatalog(context.Background(), "release", testReleaseMBID, false)
+	catalog, err := svc.Catalog(context.Background(), store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: testReleaseMBID}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

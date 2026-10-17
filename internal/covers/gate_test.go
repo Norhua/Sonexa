@@ -34,7 +34,7 @@ func TestCoverRedirectRechecksOutboundGate(t *testing.T) {
 			})
 			var err error
 			if kind == "catalog" {
-				_, err = svc.CAACatalog(context.Background(), "release", testReleaseMBID, false)
+				_, err = svc.Catalog(context.Background(), store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: testReleaseMBID}, false)
 			} else {
 				key := store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: testReleaseMBID}
 				if _, err := st.SaveCoverCatalog(key, []store.CoverImage{{SourceImageID: "1", PrimaryType: "Front", Variants: []store.CoverVariant{{Spec: "250", URL: "https://archive.org/image"}}}}); err != nil {

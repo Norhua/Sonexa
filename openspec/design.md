@@ -12,14 +12,72 @@ Wails v2 + Go；Vue 3 + TypeScript + Tailwind CSS v4 + Volt + Lucide Icons + Pin
 | `internal/app/` | 前端绑定、业务协调、导入与详情补全调度 |
 | `internal/domain/`、`internal/library/` | 三层快照与字段状态；归组、准入、编辑预览及保存计划 |
 | `internal/store/` | SQLite、模型代际、当前值/快照、事务引用、查询和全文索引 |
-| `internal/provider/` | 上游注册、HTTP 缓存、限流、重试和出网检查（支持 GET 与 POST JSON）；MusicBrainz、iTunes、QQ 音乐实现 |
+| `internal/provider/` | 元数据契约与注册表、通用 HTTP 缓存、限流、重试、图片策略和出网检查；各具体上游子包实现所支持的能力 |
 | `internal/matching/` | 文本处理、候选评分、本地重复检查与自动入库判定 |
 | `internal/importer/`、`internal/export/` | 表格解析、持久化队列、CSV / JSON 导出 |
-| `internal/covers/`、`internal/config/` | 封面用途解析、CAA 目录、下载工作池、专辑图片文件与本地图片服务，`covers/sources/` 为四个封面搜索来源；数据路径与设置 |
-| `internal/lyrics/` | 独立四来源歌词搜索、默认评分复用、通道状态、合并文本与有界 QQ QRC 转换；不提供元数据注册或自动导入 |
+| `internal/covers/`、`internal/config/` | 通用封面目录、用途解析、下载工作池、专辑图片文件与本地图片服务；数据路径与设置 |
+| `internal/covers/sources/` | 封面搜索消费侧契约、来源集合、相关性规则；不含具体来源协议 |
+| `internal/lyrics/` | 歌词消费侧契约、来源集合、候选评分、通道状态与合并文本；不含具体来源协议或元数据注册 |
 | `frontend/src/` | 页面、共享组件、状态管理与统一 API 入口 |
 
 Volt 组件源码位于 `frontend/src/volt/`，基于 `primevue@4.5.5` 的无样式模式，使用本地 Tailwind 样式与 Lucide 图标。颜色统一定义在 `frontend/src/style.css` 的 `--p-*` 变量中。来源与许可见 [组件说明](../frontend/src/volt/README.md)，依赖版本以锁文件为准。
+
+## 上游能力与装配
+
+`provider.Upstream` 只提供稳定 ID 与显示名。`provider.MetadataProvider` 保留元数据字段能力、
+速率声明、配置检查、搜索、Refs、候选快照、补全与发行摘要/详情；`Registry` 仍只登记元数据。
+`VersionLister`、`ArtworkStrategist` 是可选契约，字段能力位不等于封面/歌词服务能力。
+已删除旧大接口及其强制 `SearchCovers`，不保留永久兼容层。
+
+| 上游子包 | 元数据 | 封面搜索 | 独立歌词 | 自动图片 |
+| --- | --- | --- | --- | --- |
+| `musicbrainz` | 是 | 为 CAA 提供窄发行召回 | 否 | 薄委托 CAA |
+| `caa` | 否 | 是，共享目录服务读取 | 否 | CAA 目录、图片及 archive.org 降级 |
+| `itunes` | 是 | 是，保留地区 | 否 | 原发行图片策略 |
+| `qqmusic` | 是 | 是 | 是 | 按专辑 MID 构造 |
+| `netease` | 否 | 是 | 是 | 不增加自动取图 |
+| `kugou`、`kuwo` | 否 | 否 | 是 | 否 |
+
+```text
+app/upstreams.go → 各 provider/<upstream> 实现
+       ├─ provider.Registry（MetadataProvider）
+       ├─ lyrics.Service / Registry（lyrics.Provider）
+       └─ covers/sources.Registry（sources.Provider）
+provider/<upstream> → 消费侧契约、provider 父包、domain
+lyrics、covers/sources → provider 父包、domain / matching
+covers → provider 图片策略、domain / store
+provider 父包 → domain（不反向依赖业务或具体上游）
+```
+
+歌词与封面集合类型明确，构造时拒绝重复 ID，列表、来源校验及执行读取同一份登记；
+元数据 Registry 保留原覆盖语义。默认顺序分别为 163/QQ/酷狗/酷我、CAA/iTunes/QQ/163，
+元数据按设置排序，导入仅 MB。公共 Wails 绑定及 DTO JSON 结构不变。
+封面结果只能是新 `CoverCatalogInput` 或已登记的 `CoverCatalogKey`，后者只读取，
+不会二次保存覆盖 CAA 实际发行、目录版本或文件关联。
+
+QQ 三用途复用私有歌曲搜索原语，网易云两用途复用 WEAPI 及搜索响应解析；
+各能力独立投影关键词、召回数量和结果身份，不强迫封面/歌词经过元数据过滤。
+QQ 旧歌词端点也只有一份传输与解析：元数据优先详情原文、缺失才回退，手动歌词另有通道与逐字策略。
+QRC/DES/zlib/XML 位于 `provider/qqmusic/{qrc.go,qrcdes/}`，MIT 许可证及来源提交随代码保留。
+通用文本校验、评分、通道合并留在 lyrics；获取总超时覆盖配额等待、重试和所有子请求。
+
+`assembleUpstreams` 不写盘、不出网、不重配桶，先验证三个业务集合及图片策略；
+`publishUpstreamsLocked` 在 App 锁下发布并原位配置长期 Limiters，启动先建封面服务，
+CAA 不捕获空目录依赖。设置更新先构建，失败不发布半套能力；目录移动继续走
+`MoveRoot`，服务和工作池不替换。新会话使用新集合，旧会话保留服务/策略快照；
+动态门禁仍读取当前设置，共享桶的排队权不会因新实例重置。关闭先阻止新工作、取消会话与自动图片，
+等待封面/歌词绑定及封面池退出，再关闭文件服务和 Store。
+
+图片许可由可信后端适配器声明、按实际图片来源注入，不能从前端或响应扩充；
+首次请求、自动降级、每次重定向都使用所属来源策略，不合并其他来源许可。
+公共传输保留 HTTPS、TLS 验证、主机点边界、默认/443 端口、无用户信息、有限跳转与动态门禁。
+本地保存图片命中不要求出网许可。自动选图、共享池并发、缓存和采用文件保护保持不变。
+
+API 使用 `provider.Client`，缓存模式明确区分 `UseCache`、`RefreshCache` 与 `NoStore`。
+元数据刷新跳过读但写回，独立歌词及 QQ/163 手动封面查询不读写原始响应缓存；
+CAA/iTunes 手动召回沿用元数据刷新，目录单独持久化。生产请求使用平台配额键
+`qq`、`163`、`kugou`、`kuwo`，MB/iTunes 封面召回复用其 API 桶；CAA 索引和全部图片只走封面池。
+合计速率与新设置边界的专项验收仍在本变更第 7 组跟踪，不以已接线或离线解析通过推定真实网络可用。
 
 ## 数据模型
 
@@ -35,7 +93,7 @@ SQLite 开启 WAL 与外键，先检查 `upstream-snapshot-v1` 模型代际，�
 
 ## 主要流程
 
-1. 上游经注册表提供候选转换、精确补全、摘要、身份解析及可选版本/封面能力。三来源输出同一快照语义；导入只使用 MusicBrainz，交互入口使用设置排序的注册表来源。
+1. 元数据注册表提供候选转换、精确补全、摘要、身份解析及可选版本/自动图片能力；歌词和手动封面搜索由各自集合分发。三元数据来源输出同一快照语义；导入只使用 MusicBrainz，交互入口使用设置排序的注册表来源。
 2. 自动选版先限定同组和可靠的同曲目候选，优先库内已有发行，再比较发行总数、非世界国家和稳定身份；展示载体/国家偏好不参与选版。未知总数或对应歧义进入复核。
 3. 所有创建发行和成员变化经 library 准入计划；已有组新增成员需要独立批准。服务端计划有 15 分钟有效期、内容签名和幂等结果；提交在 SQLite 写事务内重查身份、证据和成员。
 4. 精确补全按请求前修订和身份同步，只更新跟随字段，unknown 不降级事实，用户角色按角色保护；不拥有迁组或换绑权限。
@@ -43,7 +101,7 @@ SQLite 开启 WAL 与外键，先检查 `upstream-snapshot-v1` 模型代际，�
 6. 保存固定字段、绑定、保存方式、迁入集合、对应位置及文件动作，事务内重验相关修订与准入；原地修改封存全部关联歌曲修订，结构变化检查全部收藏位置，仅当前编辑歌曲接收歌曲字段草稿。新发行提前选择 JavaScript 安全整数 ID 而不创建实体，用于提交前准备最终封面目录；事务检验碰撞。失败保留旧正式数据与草稿，成功发布统一刷新事件。
 7. 封面来源策略保留缓存、配额、共享工作池和取消语义；编辑采用先暂存，不调用立即采用接口。明确使用上游封面时读取上游预览，不把目标的用户采用误当上游值；既有详情页独立采用入口仍可使用。
 8. 独立歌词搜索按来源建立有界内存会话，关闭取消、30 分钟失效，不读写原始响应缓存。候选复用默认评分，局部准入与高置信规则不影响元数据；汇总当前来源后才自动预览高置信最优项，人工选择优先，采用仍须明确点击。`StageLyrics / SaveLyrics` 复用文件哈希、事务引用及曲目修订，只改当前歌词，保留既有 user/follow 比较规则。
-9. 歌词请求复用 provider 传输、门禁、交互优先级与重试；QQ 使用元数据共享桶，网易云使用 `cover-163`，酷狗/酷我独立限流。WEAPI 加密由 `provider/netease` 供封面和歌词共用。手动 QQ 歌词批量请求逐字与普通块，`lyrics/qrcdes` 只内置 MIT 许可的变体 DES 块变换（LICENSE 和来源提交随目录保留），解压与时间转换由有界解析器完成，不新增模块依赖；QQ 元数据详情/补全仍用原链路。协议及内容边界见[歌词搜索](specs/upstream/lyrics-search/spec.md)和[QQ 音乐](specs/upstream/qqmusic/spec.md)。
+9. 歌词能力执行复用 provider 传输、当前门禁、交互优先级、共享平台桶与有限重试；上游专有编码、错误与回退由适配器处理，业务仅接收候选或 Payload 并组装 Document。手动 QQ 批量请求逐字与普通块，保留可用通道，必要时回退；元数据不改用手动逐字链路。协议及内容边界见[歌词搜索](specs/upstream/lyrics-search/spec.md)和[QQ 音乐](specs/upstream/qqmusic/spec.md)。
 
 ## 前端约定
 
@@ -61,4 +119,4 @@ SQLite 开启 WAL 与外键，先检查 `upstream-snapshot-v1` 模型代际，�
 
 Wails 绑定、`dist/`、测试报告为生成产物，不提交。首次检出或修改 Go API 后先生成绑定，命令见[开发说明](../README.md#开发与验证)。
 
-Go 测试与实现同包，离线测试数据位于 `testdata/`。业务回归应经过实际绑定、解析和隔离数据库；仅测试存储函数不足以证明页面功能完成。前端使用 Vitest 及带 Wails 测试替身的 Chromium/WebKit 回归。2026-10-16 用户确认的原生人工验收属于此前上游/编辑器变更，不扩展为后续独立歌词功能验收；最近文档同步、既有浏览器失败及历史测试边界见[核对记录](verification.md)，后续原生回归及大曲库性能仍须使用独立证据。
+Go 测试通常与实现同包，跨上游组合测试放在 `internal/app`，避免反向导入造成循环；生产依赖由 `internal/acceptance/upstream_boundaries_test.go` 检查。离线测试数据位于 `testdata/`。业务回归应经过实际绑定、解析和隔离数据库；仅测试存储函数不足以证明页面功能完成。前端使用 Vitest 及带 Wails 测试替身的 Chromium/WebKit 回归。2026-10-16 用户确认的原生人工验收属于此前上游/编辑器变更，不扩展为后续独立歌词功能验收；最近文档同步、既有浏览器失败及历史测试边界见[核对记录](verification.md)，后续原生回归及大曲库性能仍须使用独立证据。

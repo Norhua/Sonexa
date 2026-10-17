@@ -32,12 +32,6 @@ func (s *Service) SetDetailLoader(load func(context.Context, provider.Ref) (*pro
 	defer s.mu.Unlock()
 	s.detailLoader = load
 }
-func (s *Service) artworkForSource(source string) (provider.ArtworkStrategy, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	p, ok := s.artwork[source]
-	return p, ok
-}
 func (s *Service) artworkForProvider(id string) (provider.ArtworkStrategy, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -123,15 +117,4 @@ func (s *Service) Catalog(ctx context.Context, key store.CoverCatalogKey, force 
 		return nil, err
 	}
 	return value.(*store.CoverCatalog), nil
-}
-
-// 旧目录调用仅委托统一服务，不再保存来源规则。
-func (s *Service) CAACatalog(ctx context.Context, kind, ref string, force bool) (*store.CoverCatalog, error) {
-	return s.Catalog(ctx, store.CoverCatalogKey{Source: "caa", ObjectType: kind, SourceRef: ref}, force)
-}
-func (s *Service) ITunesCatalog(ctx context.Context, ref string) (*store.CoverCatalog, error) {
-	return s.Catalog(ctx, store.CoverCatalogKey{Source: "itunes", ObjectType: "album", SourceRef: ref}, false)
-}
-func (s *Service) QQCatalog(ctx context.Context, ref string) (*store.CoverCatalog, error) {
-	return s.Catalog(ctx, store.CoverCatalogKey{Source: "qq", ObjectType: "album", SourceRef: ref}, false)
 }
