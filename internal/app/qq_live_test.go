@@ -88,8 +88,32 @@ func TestLiveQQMetadata(t *testing.T) {
 // Discovery is a separately authorized, one-shot investigation, not a fallback
 // inside the regression test. At most two searches, three details per search,
 // and sixteen actual API sends including pagination, fallback and redirects.
+// Titles may be selected before the run; they never increase its budget.
+func qqDiscoveryTitles(value string) ([]string, error) {
+	if strings.TrimSpace(value) == "" {
+		return []string{"綿雪の夢", "世界中の雨"}, nil
+	}
+	var titles []string
+	seen := map[string]bool{}
+	for _, title := range strings.Split(value, "\n") {
+		title = strings.TrimSpace(title)
+		if title != "" && !seen[title] {
+			titles = append(titles, title)
+			seen[title] = true
+		}
+	}
+	if len(titles) > 2 {
+		return nil, fmt.Errorf("样例查找最多指定两个歌曲标题，不扩大单轮查询上限")
+	}
+	return titles, nil
+}
+
 func TestLiveQQFallbackDiscovery(t *testing.T) {
 	requireLive(t, "SONEXA_QQ_FALLBACK_DISCOVERY", os.Getenv("SONEXA_QQ_FALLBACK_DISCOVERY"))
+	titles, err := qqDiscoveryTitles(os.Getenv("SONEXA_QQ_DISCOVERY_TITLES"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	a, audit := newLiveApp(t, 16)
 	ctx, cancel := liveContext(a, audit, 90*time.Second)
 	defer cancel()
@@ -99,7 +123,7 @@ func TestLiveQQFallbackDiscovery(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	checked := 0
-	for _, title := range []string{"綿雪の夢", "世界中の雨"} {
+	for _, title := range titles {
 		rows, err := p.SearchTracks(ctx, provider.Query{Title: title, Limit: 3, SkipCache: true})
 		if err != nil {
 			t.Fatal(err)
@@ -212,6 +236,28 @@ func TestLiveQQRateSamples(t *testing.T) {
 		t.Fatal("cancelled request sent HTTP", err)
 	}
 	t.Logf("samples=%d cancellation=ok; bounded observations are not an official or long-term safe quota", before)
+}
+
+func TestQQDiscoveryTitlesRemainBounded(t *testing.T) {
+	for _, tc := range []struct {
+		name, value string
+		want        []string
+		wantErr     bool
+	}{
+		{"default", "", []string{"綿雪の夢", "世界中の雨"}, false},
+		{"blank", " \n\t ", []string{"綿雪の夢", "世界中の雨"}, false},
+		{"single", " 夜に駆ける ", []string{"夜に駆ける"}, false},
+		{"two", "夜に駆ける\n爱你 (青春离别版)", []string{"夜に駆ける", "爱你 (青春离别版)"}, false},
+		{"deduplicate", "夜に駆ける\n\n夜に駆ける", []string{"夜に駆ける"}, false},
+		{"too-many", "one\ntwo\nthree", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := qqDiscoveryTitles(tc.value)
+			if (err != nil) != tc.wantErr || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("titles=%v err=%v", got, err)
+			}
+		})
+	}
 }
 
 func TestQQRateSamplesStopBeforeIncreasing(t *testing.T) {
