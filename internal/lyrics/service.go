@@ -1,5 +1,7 @@
 // Package lyrics provides explicit, track-scoped lyric search. Song matches are
 // not lyric matches: text and format are only known after Fetch succeeds.
+// Provider and Registry are consumer-owned contracts. Adapters own native
+// protocols; Service owns validation, scoring and document assembly.
 package lyrics
 
 import (

@@ -31,18 +31,21 @@ func TestCAASourceBoundsReleasesAndPreservesImages(t *testing.T) {
 	})
 	mb := musicbrainz.New(client, musicbrainz.Config{Contact: "test@example.com"}, nil)
 	refs := []string{}
+	catalogs := map[string]*store.CoverCatalog{}
 	var mu sync.Mutex
 	source := &CAASource{Provider: mb, ReleaseRef: "release-0", Catalog: func(_ context.Context, kind, ref string, force bool) (*store.CoverCatalog, error) {
 		if kind != "release" || !force {
 			t.Error("目录类型或强制刷新丢失")
 		}
 		mu.Lock()
+		defer mu.Unlock()
 		refs = append(refs, ref)
-		mu.Unlock()
-		return &store.CoverCatalog{CoverCatalogKey: store.CoverCatalogKey{Source: "caa", ObjectType: kind, SourceRef: ref}, Images: []store.CoverImage{
+		catalog := &store.CoverCatalog{CoverCatalogKey: store.CoverCatalogKey{Source: "caa", ObjectType: kind, SourceRef: ref}, Images: []store.CoverImage{
 			{SourceImageID: "front", PrimaryType: "Front", Variants: []store.CoverVariant{{Spec: "250"}, {Spec: "1200"}}},
 			{SourceImageID: "back", PrimaryType: "Back", Variants: []store.CoverVariant{{Spec: "original"}}},
-		}}, nil
+		}, ActualReleaseURL: "https://musicbrainz.org/release/actual", Version: 7}
+		catalogs[ref] = catalog
+		return catalog, nil
 	}}
 	rows, err := source.Search(context.Background(), provider.Query{Title: "song", SkipCache: true})
 	if err != nil || len(refs) != 10 || len(rows) != 10 || !slices.Contains(refs, "release-0") {
@@ -55,8 +58,14 @@ func TestCAASourceBoundsReleasesAndPreservesImages(t *testing.T) {
 		}
 		unique[ref] = true
 	}
-	if len(rows[0].Images) != 2 || len(rows[0].Images[0].Variants) != 2 || rows[0].Images[1].PrimaryType != "Back" {
-		t.Fatal("同发行不同图片被合并")
+	for _, row := range rows {
+		if row.Validate() != nil || row.Input != nil || row.Existing == nil {
+			t.Fatal("CAA 必须返回只读目录引用", row)
+		}
+		catalog := catalogs[row.Key().SourceRef]
+		if catalog.Version != 7 || catalog.ActualReleaseURL != "https://musicbrainz.org/release/actual" || len(catalog.Images) != 2 || len(catalog.Images[0].Variants) != 2 || catalog.Images[1].PrimaryType != "Back" {
+			t.Fatal("已登记的图片或目录信息改变", catalog)
+		}
 	}
 }
 
@@ -82,10 +91,10 @@ func TestITunesSourceCountryVariantsAndImageIdentity(t *testing.T) {
 			})
 			source := &ITunesSource{Provider: itunes.New(client, itunes.Config{DefaultCountry: "jp"}, nil)}
 			rows, err := source.Search(context.Background(), provider.Query{Title: "song", Album: "album", Country: country, SkipCache: true})
-			if err != nil || len(rows) != 1 || len(rows[0].Images) != 2 {
+			if err != nil || len(rows) != 1 || len(rows[0].Input.Images) != 2 {
 				t.Fatalf("同图未去重或异图被合并: %+v %v", rows, err)
 			}
-			for _, image := range rows[0].Images {
+			for _, image := range rows[0].Input.Images {
 				specs := []string{}
 				for _, v := range image.Variants {
 					specs = append(specs, v.Spec)

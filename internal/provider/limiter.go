@@ -97,7 +97,7 @@ func (l *Limiters) gateFor(id ProviderID) *priorityGate {
 }
 
 // SetFromProvider 按上游自己声明的速率配置其令牌桶。
-func (l *Limiters) SetFromProvider(p Provider) {
+func (l *Limiters) SetFromProvider(p MetadataProvider) {
 	n, per := p.RateLimit()
 	l.Configure(p.ID(), n, per)
 }

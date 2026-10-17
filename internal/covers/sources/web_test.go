@@ -38,10 +38,10 @@ func TestWebSourceFixturesAndErrors(t *testing.T) {
 			}
 			// 同专辑按专辑去重；艺人不符的翻唱被相关性过滤。
 			results, err := parse(body, provider.Query{Title: "晴天", Artist: "周杰伦"})
-			if err != nil || len(results) != 1 || len(results[0].Images[0].Variants) != want {
+			if err != nil || len(results) != 1 || len(results[0].Input.Images[0].Variants) != want {
 				t.Fatalf("%+v %v", results, err)
 			}
-			for _, variant := range results[0].Images[0].Variants {
+			for _, variant := range results[0].Input.Images[0].Variants {
 				if variant.Width != nil {
 					t.Fatal("构造规格伪装真实像素")
 				}

@@ -53,7 +53,7 @@ func TestValidateMatchRef(t *testing.T) {
 
 func TestRefLinksAndExactTargets(t *testing.T) {
 	for _, tc := range []struct {
-		p                            provider.Provider
+		p                            provider.MetadataProvider
 		input, region, want, release string
 	}{
 		{&musicbrainz.Provider{}, "https://musicbrainz.org/track/C8B0A1F2-3D4E-5F60-9A8B-7C6D5E4F3A2B", "", "c8b0a1f2-3d4e-5f60-9a8b-7c6d5e4f3a2b", "8c4d9698-bcac-456a-a5ac-1bd90d64c4ff"},

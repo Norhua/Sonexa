@@ -19,7 +19,7 @@ import (
 
 // recordingSearcher 记录每次查询，并按曲名返回预设候选。
 type recordingSearcher struct {
-	provider.Provider
+	provider.MetadataProvider
 	mu      sync.Mutex
 	byTitle map[string][]provider.Candidate
 	queries []provider.Query

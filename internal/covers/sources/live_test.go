@@ -32,7 +32,7 @@ func TestLiveCoverSources(t *testing.T) {
 			}
 			// QQ 1200 并非每张专辑都有，取 800；网易云取原图。
 			var variant store.CoverVariant
-			for _, v := range results[0].Images[0].Variants {
+			for _, v := range results[0].Input.Images[0].Variants {
 				if v.Spec == "800" || v.Spec == "original" {
 					variant = v
 				}
@@ -57,7 +57,7 @@ func TestLiveCoverSources(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Logf("source=%s album=%s requested=%s actual=%dx%d format=%s bytes=%d", id, results[0].Key.SourceRef, variant.Spec, info.Width, info.Height, info.Format, info.Bytes)
+			t.Logf("source=%s album=%s requested=%s actual=%dx%d format=%s bytes=%d", id, results[0].Key().SourceRef, variant.Spec, info.Width, info.Height, info.Format, info.Bytes)
 		})
 	}
 }

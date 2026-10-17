@@ -27,7 +27,7 @@ type Config struct {
 	RatePerMin     float64
 }
 
-// Provider 是 iTunes 的 Provider 实现。
+// Provider 是 iTunes 的元数据实现。
 type Provider struct {
 	client     *provider.Client
 	cfg        Config
@@ -42,10 +42,10 @@ func New(client *provider.Client, cfg Config, hashParams func(map[string]string)
 	return &Provider{client: client, cfg: cfg, hashParams: hashParams}
 }
 
-// ID 实现 provider.Provider。
+// ID 实现 provider.MetadataProvider。
 func (p *Provider) ID() provider.ProviderID { return provider.ITunes }
 
-// DisplayName 实现 provider.Provider。
+// DisplayName 实现 provider.MetadataProvider。
 func (p *Provider) DisplayName() string { return "iTunes" }
 
 // Capabilities 如实反映 iTunes 不提供的字段。
@@ -61,7 +61,7 @@ func (p *Provider) Capabilities() provider.Capabilities {
 	return provider.CapCoverArt | provider.CapMultiSizeCover
 }
 
-// RateLimit 实现 provider.Provider：默认 20 req/min，可配置。
+// RateLimit 实现 provider.MetadataProvider：默认 20 req/min，可配置。
 //
 // 搜索端点与清单查询端点共用同一个令牌桶——它们打的是同一个受限 API。
 func (p *Provider) RateLimit() (int, time.Duration) {
@@ -69,7 +69,7 @@ func (p *Provider) RateLimit() (int, time.Duration) {
 	return 1, per
 }
 
-// IsConfigured 实现 provider.Provider。
+// IsConfigured 实现 provider.MetadataProvider。
 //
 // iTunes 本身无需任何密钥或账号。但出网前置条件是全局的：
 // 未填写 MusicBrainz 联系方式时 iTunes 入口同样禁用，
@@ -207,4 +207,4 @@ func SplitRef(ref string) (id, country string) {
 	return parts[1], parts[0]
 }
 
-var _ provider.Provider = (*Provider)(nil)
+var _ provider.MetadataProvider = (*Provider)(nil)

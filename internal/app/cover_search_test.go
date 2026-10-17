@@ -32,9 +32,8 @@ func (p *coverSearchProvider) SearchTracks(ctx context.Context, q provider.Query
 func (p *coverSearchProvider) FetchDetail(context.Context, provider.Ref) (*provider.Detail, error) {
 	return nil, nil
 }
-func (p *coverSearchProvider) SearchCovers(context.Context, provider.Query) ([]provider.CoverGroup, error) {
-	return nil, nil
-}
+
+var _ provider.MetadataProvider = (*coverSearchProvider)(nil)
 
 type appCoverTransport func(*http.Request) (*http.Response, error)
 

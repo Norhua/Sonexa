@@ -44,7 +44,7 @@ type Config struct {
 	RatePerMin float64
 }
 
-// Provider 是 QQ 音乐的 Provider 实现。
+// Provider 是 QQ 音乐的元数据实现。
 type Provider struct {
 	client     *provider.Client
 	cfg        Config
@@ -59,13 +59,13 @@ func New(client *provider.Client, cfg Config, hashParams func(map[string]string)
 	return &Provider{client: client, cfg: cfg, hashParams: hashParams}
 }
 
-// ID 实现 provider.Provider。
+// ID 实现 provider.MetadataProvider。
 func (p *Provider) ID() provider.ProviderID { return provider.QQMusic }
 
-// DisplayName 实现 provider.Provider。
+// DisplayName 实现 provider.MetadataProvider。
 func (p *Provider) DisplayName() string { return "QQ 音乐" }
 
-// Capabilities 实现 provider.Provider。
+// Capabilities 实现 provider.MetadataProvider。
 //
 // 歌曲详情给出作词、作曲、演唱、编曲、制作与乐器演奏等角色，专辑详情给出
 // 厂牌与专辑类型。不声明目录号（recordNum 与实体目录号的对应未核实）、
@@ -76,15 +76,15 @@ func (p *Provider) Capabilities() provider.Capabilities {
 		provider.CapMultiSizeCover | provider.CapLyrics
 }
 
-// RateLimit 实现 provider.Provider。搜索、详情与歌词共用同一个令牌桶。
+// RateLimit 实现 provider.MetadataProvider。搜索、详情与歌词共用同一个令牌桶。
 func (p *Provider) RateLimit() (int, time.Duration) {
 	return 1, time.Duration(float64(time.Minute) / p.cfg.RatePerMin)
 }
 
-// IsConfigured 实现 provider.Provider：无需密钥。全局出网条件由调用方施加。
+// IsConfigured 实现 provider.MetadataProvider：无需密钥。全局出网条件由调用方施加。
 func (p *Provider) IsConfigured() error { return nil }
 
-// SearchTracks 实现 provider.Provider。
+// SearchTracks 实现 provider.MetadataProvider。
 func (p *Provider) SearchTracks(ctx context.Context, q provider.Query) ([]provider.Candidate, error) {
 	term := strings.TrimSpace(strings.Join([]string{q.Title, q.Artist, q.Album}, " "))
 	if q.TitleOnly {
@@ -110,7 +110,7 @@ func (p *Provider) SearchTracks(ctx context.Context, q provider.Query) ([]provid
 	return ParseSearch(body)
 }
 
-// FetchDetail 实现 provider.Provider。ref.ID 为专辑 MID，ref.TrackRef 为歌曲 MID。
+// FetchDetail 实现 provider.MetadataProvider。ref.ID 为专辑 MID，ref.TrackRef 为歌曲 MID。
 //
 // 专辑详情、首页清单与歌曲详情合并为一次请求；歌曲详情未带歌词时
 // 再请求独立歌词接口。
@@ -177,7 +177,7 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 	return d, nil
 }
 
-// SearchCovers 实现 provider.Provider：按专辑 MID 去重，构造各尺寸档位。
+// SearchCovers 是旧封面搜索入口：按专辑 MID 去重，构造各尺寸档位。
 func (p *Provider) SearchCovers(ctx context.Context, q provider.Query) ([]provider.CoverGroup, error) {
 	candidates, err := p.SearchTracks(ctx, q)
 	if err != nil {
@@ -302,4 +302,4 @@ func (p *Provider) hash(params map[string]string) string {
 	return p.hashParams(params)
 }
 
-var _ provider.Provider = (*Provider)(nil)
+var _ provider.MetadataProvider = (*Provider)(nil)

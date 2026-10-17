@@ -76,7 +76,7 @@ func NewRunner(st *store.Store, engine *matching.Engine, searcher matching.Searc
 	}
 	if len(services) > 0 {
 		r.library = services[0]
-	} else if source, ok := searcher.(provider.Provider); ok {
+	} else if source, ok := searcher.(provider.MetadataProvider); ok {
 		registry := provider.NewRegistry()
 		registry.Register(source)
 		r.library, r.initErr = library.New(registry, st, nil, nil)

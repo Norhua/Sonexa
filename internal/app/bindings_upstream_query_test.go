@@ -12,7 +12,7 @@ import (
 
 // recordingSearcher 记下每次收到的查询，返回一条固定候选。
 type recordingSearcher struct {
-	provider.Provider
+	provider.MetadataProvider
 	queries []provider.Query
 	hit     []provider.Candidate
 }

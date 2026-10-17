@@ -32,9 +32,8 @@ func (s *stubProvider) SearchTracks(context.Context, Query) ([]Candidate, error)
 	return nil, nil
 }
 func (s *stubProvider) FetchDetail(context.Context, Ref) (*Detail, error) { return nil, nil }
-func (s *stubProvider) SearchCovers(context.Context, Query) ([]CoverGroup, error) {
-	return nil, nil
-}
+
+var _ MetadataProvider = (*stubProvider)(nil)
 
 // TestRegistryListsRegistered 覆盖 5.3：
 // 注册一个 stub provider 后它出现在 List() 中。
@@ -66,6 +65,18 @@ func TestRegistryListsRegistered(t *testing.T) {
 	}
 	if _, err := r.Get("nonexistent"); err == nil {
 		t.Error("取用未登记的上游应返回错误")
+	}
+}
+
+func TestMetadataRegistryStillReplacesDuplicateID(t *testing.T) {
+	r := NewRegistry()
+	first := &stubProvider{id: "same", name: "first"}
+	second := &stubProvider{id: "same", name: "second"}
+	r.Register(first)
+	r.Register(second)
+	got, err := r.Get("same")
+	if err != nil || got != second || r.Len() != 1 {
+		t.Fatalf("元数据覆盖语义改变: got=%v len=%d err=%v", got, r.Len(), err)
 	}
 }
 
@@ -158,7 +169,7 @@ func TestCapabilityNames(t *testing.T) {
 	}
 }
 
-func ids(ps []Provider) []ProviderID {
+func ids(ps []MetadataProvider) []ProviderID {
 	out := make([]ProviderID, len(ps))
 	for i, p := range ps {
 		out[i] = p.ID()

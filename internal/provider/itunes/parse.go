@@ -205,7 +205,7 @@ func ParseLookup(resp *lookupResponse, country, trackRef string) *provider.Detai
 	return d
 }
 
-// SearchCovers 实现 provider.Provider。
+// SearchCovers 是旧封面搜索入口。
 //
 // iTunes 只返回一个 artworkUrl100，大图尺寸靠构造地址得到（未文档化行为），
 // 因此 Constructed 为真——选中某档时需先验证其可用性，不可用时自动退档。

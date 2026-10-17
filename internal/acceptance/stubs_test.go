@@ -31,13 +31,12 @@ func (s *stubProvider) SearchTracks(context.Context, provider.Query) ([]provider
 func (s *stubProvider) FetchDetail(context.Context, provider.Ref) (*provider.Detail, error) {
 	return nil, nil
 }
-func (s *stubProvider) SearchCovers(context.Context, provider.Query) ([]provider.CoverGroup, error) {
-	return nil, nil
-}
+
+var _ provider.MetadataProvider = (*stubProvider)(nil)
 
 // httpSearcher 把查询直接发往 stub server，用于端到端验证出错退避与统计。
 type httpSearcher struct {
-	provider.Provider
+	provider.MetadataProvider
 	baseURL string
 }
 

@@ -155,7 +155,7 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 	in := matching.Input{Title: title, Artist: artist, Album: album, Country: country}
 
 	type task struct {
-		p    provider.Provider
+		p    provider.MetadataProvider
 		rows []CandidateRow
 		err  error
 	}
@@ -233,7 +233,7 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 // 用户留空的字段不参与闸门，因此「只填曲名」时它退化为曲名闸。
 //
 // 返回按置信度降序的候选池与已尝试的变体。
-func (a *App) matchUpstream(ctx context.Context, p provider.Provider, in matching.Input,
+func (a *App) matchUpstream(ctx context.Context, p provider.MetadataProvider, in matching.Input,
 ) ([]matching.ScoredCandidate, []string, error) {
 	if err := p.IsConfigured(); err != nil {
 		return nil, nil, err

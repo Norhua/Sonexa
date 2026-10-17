@@ -203,7 +203,7 @@ func DetailSnapshot(d *Detail) *domain.Snapshot {
 	return s
 }
 
-func CompleteUsing(ctx context.Context, p Provider, target domain.DetailTarget) (*domain.Snapshot, error) {
+func CompleteUsing(ctx context.Context, p MetadataProvider, target domain.DetailTarget) (*domain.Snapshot, error) {
 	if err := target.Validate(); err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func CompleteUsing(ctx context.Context, p Provider, target domain.DetailTarget) 
 	}
 	return DetailSnapshot(d), nil
 }
-func SummaryUsing(ctx context.Context, p Provider, release domain.ReleaseIdentity) (*domain.ReleaseSummary, error) {
+func SummaryUsing(ctx context.Context, p MetadataProvider, release domain.ReleaseIdentity) (*domain.ReleaseSummary, error) {
 	s, err := p.Complete(ctx, domain.DetailTarget{Release: release})
 	if err != nil {
 		return nil, err

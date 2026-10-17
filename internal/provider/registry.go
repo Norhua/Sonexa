@@ -6,31 +6,30 @@ import (
 	"sync"
 )
 
-// Registry 登记全部可用上游。
+// Registry 仅登记音乐元数据上游。
 //
-// 界面中所有「选择上游」的位置都从 List() 动态渲染，
-// 禁止硬编码 provider 名称或数量——新增一个上游应当零页面代码改动。
+// 元数据来源选择从 List() 动态渲染，歌词与封面搜索使用各自的能力集合。
 type Registry struct {
 	mu        sync.RWMutex
-	providers map[ProviderID]Provider
+	providers map[ProviderID]MetadataProvider
 	// priority 是上游的展示优先级顺序，来自设置。
 	priority []ProviderID
 }
 
 // NewRegistry 建立一个空注册表。
 func NewRegistry() *Registry {
-	return &Registry{providers: map[ProviderID]Provider{}}
+	return &Registry{providers: map[ProviderID]MetadataProvider{}}
 }
 
 // Register 登记一个上游。同一标识重复登记时后者覆盖前者。
-func (r *Registry) Register(p Provider) {
+func (r *Registry) Register(p MetadataProvider) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.providers[p.ID()] = p
 }
 
 // Get 按标识取用上游；未登记时返回错误。
-func (r *Registry) Get(id ProviderID) (Provider, error) {
+func (r *Registry) Get(id ProviderID) (MetadataProvider, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	p, ok := r.providers[id]
@@ -42,7 +41,7 @@ func (r *Registry) Get(id ProviderID) (Provider, error) {
 
 // List 返回全部已登记的上游，按设置的优先级顺序排列；
 // 未在优先级列表中的按标识字典序排在其后（保证顺序稳定）。
-func (r *Registry) List() []Provider {
+func (r *Registry) List() []MetadataProvider {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -51,7 +50,7 @@ func (r *Registry) List() []Provider {
 		rank[id] = i
 	}
 
-	out := make([]Provider, 0, len(r.providers))
+	out := make([]MetadataProvider, 0, len(r.providers))
 	for _, p := range r.providers {
 		out = append(out, p)
 	}

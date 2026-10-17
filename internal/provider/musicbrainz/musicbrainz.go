@@ -45,7 +45,7 @@ type Config struct {
 	CacheTTL time.Duration
 }
 
-// Provider 是 MusicBrainz 的 Provider 实现。
+// Provider 是 MusicBrainz 的元数据实现。
 type Provider struct {
 	client *provider.Client
 	cfg    Config
@@ -64,10 +64,10 @@ func New(client *provider.Client, cfg Config, hashParams func(map[string]string)
 	return &Provider{client: client, cfg: cfg, hashParams: hashParams}
 }
 
-// ID 实现 provider.Provider。
+// ID 实现 provider.MetadataProvider。
 func (p *Provider) ID() provider.ProviderID { return provider.MusicBrainz }
 
-// DisplayName 实现 provider.Provider。
+// DisplayName 实现 provider.MetadataProvider。
 func (p *Provider) DisplayName() string { return "MusicBrainz" }
 
 // Capabilities 声明 MusicBrainz 能提供的字段与能力。
@@ -90,7 +90,7 @@ func (p *Provider) Capabilities() provider.Capabilities {
 		provider.CapPrimaryType
 }
 
-// RateLimit 实现 provider.Provider：默认 1 req/s，可在设置中调整。
+// RateLimit 实现 provider.MetadataProvider：默认 1 req/s，可在设置中调整。
 func (p *Provider) RateLimit() (int, time.Duration) {
 	// 以毫秒为分母表达小数速率：0.5 req/s → 1 次 / 2000ms
 	per := time.Duration(float64(time.Second) / p.cfg.RatePerSec)
@@ -100,7 +100,7 @@ func (p *Provider) RateLimit() (int, time.Duration) {
 // ErrContactMissing 表示联系方式未配置。
 var ErrContactMissing = errors.New("请先在设置中填写 MusicBrainz 联系方式后再使用出网功能")
 
-// IsConfigured 实现 provider.Provider。
+// IsConfigured 实现 provider.MetadataProvider。
 //
 // 联系方式未配置时不发出任何请求——这既是 MB 的硬性要求，也是产品的全局前置条件。
 func (p *Provider) IsConfigured() error {
@@ -461,5 +461,5 @@ func parseYear(date string) *int {
 	return &y
 }
 
-// 编译期断言：必须满足 Provider 接口。
-var _ provider.Provider = (*Provider)(nil)
+// 编译期断言：必须满足 MetadataProvider 接口。
+var _ provider.MetadataProvider = (*Provider)(nil)

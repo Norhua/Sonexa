@@ -17,7 +17,7 @@ const (
 
 // priorityContextKey 是把优先级放进 context 的键。
 //
-// 走 context 而不是给每个方法加参数：优先级要从绑定层一路穿过 Provider
+// 走 context 而不是给每个方法加参数：优先级要从绑定层一路穿过 MetadataProvider
 // 与 Client 传到令牌桶，而中间这些签名都不该为它改一遍。
 type priorityContextKey struct{}
 

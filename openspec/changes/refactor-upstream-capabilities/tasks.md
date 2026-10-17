@@ -4,10 +4,10 @@
 
 ## 1. 元数据正名与消费侧能力契约
 
-- [ ] 1.1 将 `provider.Provider` 正名为 `MetadataProvider`，从接口移除 `SearchCovers`，保留快照/详情/Refs 与可选版本、图片契约；更新 Registry、library、importer、app 及测试替身和接口注释。验证 `go test ./internal/provider/... ./internal/matching/... ./internal/importer/... ./internal/library/... ./internal/app/...`，元数据来源排序、字段能力和导入仅 MB 不变。
-- [ ] 1.2 在 provider 父包定义只含稳定 ID/显示名的 `Upstream`，在 `lyrics` 定义窄 Provider 与内部 Payload；保留公共 Query/Candidate/Document DTO 名称和 JSON 结构。以编译期断言及只实现歌词能力的假来源测试验证不需要元数据/封面方法。
-- [ ] 1.3 在 `covers/sources` 定义封面 Query、窄 Provider、来源条目及互斥的 Result 形式（新目录输入/已登记目录引用），复用 domain 图片模型而非 store 写入接口。测试非法双重/空结果被拒绝、可选绑定发行与地区完整传递。
-- [ ] 1.4 实现两个业务的类型化能力集合及统一列表/查找校验，保留默认顺序与显示文案，拒绝重复 ID、未知能力且不出网。通过来源集合单测证明仅歌词/仅封面假来源可登记，元数据 Registry 原有覆盖语义不变；补契约归属与依赖方向的包说明。
+- [x] 1.1 将 `provider.Provider` 正名为 `MetadataProvider`，从接口移除 `SearchCovers`，保留快照/详情/Refs 与可选版本、图片契约；更新 Registry、library、importer、app 及测试替身和接口注释。验证 `go test ./internal/provider/... ./internal/matching/... ./internal/importer/... ./internal/library/... ./internal/app/...`，元数据来源排序、字段能力和导入仅 MB 不变。
+- [x] 1.2 在 provider 父包定义只含稳定 ID/显示名的 `Upstream`，在 `lyrics` 定义窄 Provider 与内部 Payload；保留公共 Query/Candidate/Document DTO 名称和 JSON 结构。以编译期断言及只实现歌词能力的假来源测试验证不需要元数据/封面方法。
+- [x] 1.3 在 `covers/sources` 定义封面 Query、窄 Provider、来源条目及互斥的 Result 形式（新目录输入/已登记目录引用），复用 domain 图片模型而非 store 写入接口。测试非法双重/空结果被拒绝、可选绑定发行与地区完整传递。
+- [x] 1.4 实现两个业务的类型化能力集合及统一列表/查找校验，保留默认顺序与显示文案，拒绝重复 ID、未知能力且不出网。通过来源集合单测证明仅歌词/仅封面假来源可登记，元数据 Registry 原有覆盖语义不变；补契约归属与依赖方向的包说明。
 
 ## 2. 共享传输与显式缓存策略
 

@@ -11,7 +11,7 @@ import (
 )
 
 type summaryProvider struct {
-	provider.Provider
+	provider.MetadataProvider
 	calls  int
 	totals map[string]int
 }

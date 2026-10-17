@@ -15,14 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
 )
-
-type Result struct {
-	Key    store.CoverCatalogKey
-	Images []store.CoverImage
-}
 
 type Searcher interface {
 	Search(context.Context, provider.Query) ([]Result, error)
@@ -228,7 +224,7 @@ func ParseQQ(body []byte, q provider.Query) ([]Result, error) {
 		if images == nil {
 			continue
 		}
-		out = append(out, Result{Key: store.CoverCatalogKey{Source: "qq", ObjectType: "album", SourceRef: mid}, Images: images})
+		out = append(out, Result{Input: &domain.CoverCatalogInput{Key: store.CoverCatalogKey{Source: "qq", ObjectType: "album", SourceRef: mid}, Images: images}})
 	}
 	return out, nil
 }
@@ -294,7 +290,7 @@ func Parse163(body []byte, q provider.Query) ([]Result, error) {
 			resized.RawQuery = url.Values{"param": {fmt.Sprintf("%dy%d", size, size)}}.Encode()
 			image.Variants = append(image.Variants, store.CoverVariant{Spec: strconv.Itoa(size), URL: resized.String(), Constructed: true})
 		}
-		out = append(out, Result{Key: store.CoverCatalogKey{Source: "163", ObjectType: "album", SourceRef: ref}, Images: []store.CoverImage{image}})
+		out = append(out, Result{Input: &domain.CoverCatalogInput{Key: store.CoverCatalogKey{Source: "163", ObjectType: "album", SourceRef: ref}, Images: []store.CoverImage{image}}})
 	}
 	return out, nil
 }

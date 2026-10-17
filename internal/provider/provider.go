@@ -1,9 +1,8 @@
-// Package provider 定义上游接口、注册表与限流。
+// Package provider 定义元数据契约、注册表与共享传输。
 //
-// 所有需要上游信息的地方都面对这里的同一套接口，使具体上游可增删替换。
-// 本包（父包）不依赖任何具体 provider 实现，也不依赖 internal/matching——
-// 子包 musicbrainz / itunes 可以依赖 matching（如文字系统探测），
-// 但反向依赖会成环，必须避免。
+// 元数据业务消费 MetadataProvider；歌词与封面搜索的能力契约由各自消费侧定义。
+// 本包不依赖业务服务、internal/matching 或具体上游；具体上游可以依赖
+// 这些消费侧契约与纯函数，依赖方向不能反转。
 package provider
 
 import (
@@ -23,16 +22,19 @@ const (
 	QQMusic     ProviderID = "qq"
 )
 
-// Provider 是所有上游必须实现的统一接口。
+// Upstream 仅声明稳定身份，可被各消费侧的单一能力接口嵌入。
+type Upstream interface {
+	ID() ProviderID
+	DisplayName() string
+}
+
+// MetadataProvider 是音乐元数据上游的统一契约，不要求歌词或封面搜索能力。
 //
 // 接口不做「最小公倍数」式的统一：MB 与 iTunes 的字段交集很小，
 // 若只暴露交集，MB 的演唱者、作曲、厂牌、ISRC、载体、国家全部无处安放。
 // 因此所有字段用可空类型，由 Capabilities() 声明各自能提供什么。
-type Provider interface {
-	// ID 返回稳定标识。
-	ID() ProviderID
-	// DisplayName 返回界面上显示的名称。
-	DisplayName() string
+type MetadataProvider interface {
+	Upstream
 	// Capabilities 声明本上游能提供哪些字段与能力。
 	Capabilities() Capabilities
 	// RateLimit 声明速率限制：每 per 时间内至多 n 次请求。
@@ -47,6 +49,4 @@ type Provider interface {
 	LoadReleaseSummary(context.Context, domain.ReleaseIdentity) (*domain.ReleaseSummary, error)
 	// FetchDetail 拉取一条候选的完整详情（含该发行的完整曲目清单）。
 	FetchDetail(ctx context.Context, ref Ref) (*Detail, error)
-	// SearchCovers 按条件搜索封面，供详情抽屉的手动重新获取使用。
-	SearchCovers(ctx context.Context, q Query) ([]CoverGroup, error)
 }

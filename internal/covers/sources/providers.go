@@ -6,6 +6,7 @@ import (
 	"github.com/norhua/sonexa/internal/provider/itunes"
 	"sync"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
 )
@@ -28,7 +29,7 @@ func List() []Info {
 type CatalogLoader func(context.Context, string, string, bool) (*store.CoverCatalog, error)
 
 type CAASource struct {
-	Provider   provider.Provider
+	Provider   provider.MetadataProvider
 	ReleaseRef string
 	Catalog    CatalogLoader
 }
@@ -75,12 +76,12 @@ func (s *CAASource) Search(ctx context.Context, q provider.Query) ([]Result, err
 			failure = errs[i]
 			continue
 		}
-		results = append(results, Result{Key: catalog.CoverCatalogKey, Images: catalog.Images})
+		results = append(results, Result{Existing: &catalog.CoverCatalogKey})
 	}
 	return results, failure
 }
 
-type ITunesSource struct{ Provider provider.Provider }
+type ITunesSource struct{ Provider provider.MetadataProvider }
 
 func (s *ITunesSource) Search(ctx context.Context, q provider.Query) ([]Result, error) {
 	q.Limit = boundedLimit(q.Limit)
@@ -110,9 +111,9 @@ func (s *ITunesSource) Search(ctx context.Context, q provider.Query) ([]Result, 
 		if !exists {
 			index = len(results)
 			albums[*c.ReleaseRef] = index
-			results = append(results, Result{Key: store.CoverCatalogKey{Source: "itunes", ObjectType: "album", SourceRef: *c.ReleaseRef}})
+			results = append(results, Result{Input: &domain.CoverCatalogInput{Key: store.CoverCatalogKey{Source: "itunes", ObjectType: "album", SourceRef: *c.ReleaseRef}}})
 		}
-		results[index].Images = append(results[index].Images, image)
+		results[index].Input.Images = append(results[index].Input.Images, image)
 		count++
 		if count >= q.Limit {
 			break

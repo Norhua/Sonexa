@@ -56,7 +56,7 @@ func (s *Service) SetRegistry(registry *provider.Registry) {
 	defer s.mu.Unlock()
 	s.registry = registry
 }
-func (s *Service) provider(id domain.ProviderID) (provider.Provider, error) {
+func (s *Service) provider(id domain.ProviderID) (provider.MetadataProvider, error) {
 	s.mu.Lock()
 	registry := s.registry
 	s.mu.Unlock()

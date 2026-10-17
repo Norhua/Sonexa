@@ -240,13 +240,20 @@ func (a *App) searchCoverSource(ctx context.Context, registry *provider.Registry
 	results, searchErr := adapter.Search(ctx, q)
 	cards := []CoverSearchCard{}
 	for _, result := range results {
-		// CAA 目录已经由共享服务持久化；其余来源在此生成服务端图片/规格 ID。
-		if source != "caa" {
-			if _, err := a.store.SaveCoverCatalog(result.Key, result.Images); err != nil {
+		if err := result.Validate(); err != nil {
+			return cards, err
+		}
+		key := result.Key()
+		if input := result.Input; input != nil {
+			id, err := a.store.SaveCoverCatalog(key, input.Images)
+			if err != nil {
+				return cards, err
+			}
+			if err := a.store.SetCoverCatalogRelease(id, input.ActualReleaseURL); err != nil {
 				return cards, err
 			}
 		}
-		catalog, err := a.store.GetCoverCatalog(result.Key)
+		catalog, err := a.store.GetCoverCatalog(key)
 		if err != nil {
 			return cards, err
 		}
@@ -254,7 +261,7 @@ func (a *App) searchCoverSource(ctx context.Context, registry *provider.Registry
 			continue
 		}
 		for _, image := range catalog.Images {
-			cards = append(cards, CoverSearchCard{Source: source, SourceRef: result.Key.SourceRef, Image: image})
+			cards = append(cards, CoverSearchCard{Source: source, SourceRef: key.SourceRef, Image: image})
 			if len(cards) >= sources.MaxResults {
 				return cards, searchErr
 			}
