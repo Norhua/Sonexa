@@ -47,7 +47,7 @@
 ## G14 — 封面来源真实网络复测
 
 - **现状**：QQ 搜索已改用 `u.y.qq.com/cgi-bin/musicu.fcg`（`DoSearchForQQMusicDesktop`），163 改用 WEAPI 歌曲搜索并按专辑聚合，2026-09-24 均已真实验通；CAA、iTunes 已完成真实搜索、预览和采用。原生窗口、输入法、文件选择及编辑相关人工验收已由用户于 2026-10-16 确认完成；此次确认不扩展为四来源的最新在线复测或真实断网专项证据。图片传输不使用环境代理，需要代理才能访问 archive.org 的网络无法获得直连加速。
-- **最新复测**：2026-10-17 本轮网易云搜索、预览及采用通过（请求档位 250，实际 240×240、16545 字节）；CAA 的 MB 召回 TLS 握手超时；iTunes 搜索 HTTP 200 但未满足非空可选图片断言，现有日志无法区分空结果与处理错误；QQ 因同轮旧歌词接口 -1901 已停止，未再请求封面。不能把单来源成功记成四来源通过，详见 [verification.md](verification.md)。
+- **最新复测**：2026-10-17 网易云搜索、预览及采用通过（请求档位 250，实际 240×240、16545 字节）。iTunes 进一步诊断确认原「世界中の雨」查询召回 20 条无关结果，被相关性规则过滤为 `empty`，不是来源错误；另以「ツバサ / 4円 / side-C / jp」完成搜索、预览和采用（250×250、13904 字节）。CAA 的 MB 召回仍受 TLS 握手超时阻塞；QQ 因同轮旧歌词接口 -1901 已停止，未再请求封面。不能把两个来源成功记成四来源通过，详见 [verification.md](verification.md)。
 - **依据**：`internal/provider/{caa,itunes,qqmusic,netease}/` 的封面能力实现、`internal/app/cover_live_test.go`；历史验收见归档变更 `revise-album-cover-workflow/acceptance.md`。
 - **目标与验收**：用 `SONEXA_LIVE_COVERS=1 go test ./internal/app -run '^TestLiveCoverSources$' -count=1 -v` 定期复测四来源，可用 `SONEXA_COVER_SOURCE` 限定来源；不以离线 fixture 代替真实来源，原生人工确认与真实网络复测分别记录。
 
@@ -65,7 +65,7 @@
 ## G17 — 独立歌词来源与回归边界
 
 - **现状**：网易云、QQ、酷狗、酷我歌词均使用非公开接口。2026-10-16 实现计划记录四来源均有成功实测，也观察到 QQ `2001` 与酷我 `301` 波动；QQ 新端点已实测原文、翻译、罗马音与增强型 LRC，但不承诺每首歌或任意时刻可用。手动 QQ 歌词、元数据和封面查询现已共用平台配额；该离线验证不代表非公开接口的最新在线复测完成。
-- **最新复测**：2026-10-17 本轮默认「青花瓷 / 周杰伦」在酷狗完成搜索、歌词候选及下载，取得 1961 字节 LRC；日志通道状态为 unknown，不能宣称翻译/罗马音已通过。网易云当前返回候选没有可用歌词；酷我正文 HTTP 200/status=301 后停止；QQ 因同轮回退查找的 -1901 未再运行手动歌词入口。缺失、业务错误及未执行分别保留，不把四来源记为已通过。
+- **最新复测**：2026-10-17「青花瓷 / 周杰伦」在酷狗完成搜索、歌词候选及下载，取得 1961 字节 LRC；日志通道状态为 unknown，不能宣称翻译/罗马音已通过。网易云该查询过滤后的 95 秒候选返回 `ErrNoLyrics`，不是解析异常；另以「君の知らない物語 / supercell」精确专辑/时长样例取得 4967 字节 LRC，原文/翻译 available，罗马音 unavailable。酷我正文 HTTP 200/status=301 后停止；QQ 因同轮回退查找的 -1901 未再运行手动歌词入口。缺失、业务错误及未执行分别保留，不把四来源记为已通过。
 - **依据**：`internal/app/lyrics_sources_test.go` 的 `TestLiveSources`、`internal/provider/qqmusic/lyrics_probe_test.go`、`internal/app/lyrics_test.go`；最新同步与历史验证区分见 [verification.md](verification.md)。
 - **格式范围**：本地只导入 UTF-8 TXT/LRC，不转码 GBK/UTF-16；在线只支持已实现的 QQ QRC 转换，不接入网易云 YRC、酷狗 KRC 或本地二进制 QRC/KRC。没有播放器/播放同步高亮与独立歌词导出 UI，这些不作为当前已交付能力。
 - **回归限制**：第二次实现计划的全量 Playwright 为 241/242，编辑器“用户”徽标旧断言在基线也可复现；歌词定向回归通过不代表该失败已修复。歌词文件选择器只经过可注入 picker 与浏览器替身测试，没有新增原生人工验收。

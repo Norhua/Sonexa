@@ -122,6 +122,10 @@ SONEXA_LIVE_COVERS=1 go test -v ./internal/app -run '^TestLiveCoverSources$' -co
 
 封面入口覆盖四来源的真实搜索、池内预览与显式采用，全部来源合计最多 12 次 API 请求、
 24 次图片/目录门禁许可（含重定向及既有有限重试）；`SONEXA_COVER_SOURCE` 可限定单来源。
+可用 `SONEXA_COVER_TITLE/ARTIST/ALBUM/COUNTRY` 指定非空样例字段，未设置沿用默认；不改相关性规则。
+仅诊断 iTunes 时，`SONEXA_COVER_DIAGNOSTICS=1` 会额外执行一次同条件的元数据召回，
+记录前五个候选及相关性计数；这次请求仍计入原有 12 次 API 硬预算，错误后不继续请求。
+所有封面 live 结果输出 state、卡片数和是否有错误，不输出上游错误消息原文。
 临时数据库与图片目录随测试清理，不接触真实收藏。图片仍用生产直连、安全策略和无环境代理传输。
 
 ## QQ 元数据与有界速率验证

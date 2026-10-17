@@ -129,7 +129,7 @@ SONEXA_QQ_FALLBACK_DISCOVERY=1 \
 `openspec validate refactor-upstream-capabilities --strict` 与 `git diff --check` 均通过。
 本轮未改生产代码、DTO 或前端，也未重跑全量后端/浏览器验收。
 
-### 扩大有界查找及独立来源复测（最新结果）
+### 扩大有界查找及独立来源复测
 
 用户明确授权一次最多 10 个标题、40 次实际请求的查找，并允许不等待回退样例，独立推进
 其他在线验收。测试新增显式 `SONEXA_QQ_DISCOVERY_EXPANDED=1`，默认仍为两标题/16 次；
@@ -206,6 +206,80 @@ SONEXA_LIVE_COVERS=1 go test -count=1 -v ./internal/app -run '^TestLiveCoverSour
 `go vet ./internal/app/...`、`openspec validate refactor-upstream-capabilities --strict` 及
 `git diff --check` 通过。本轮只改测试辅助与证据文档，未改生产代码/公开绑定/前端，
 未重跑全量后端、浏览器或原生验收。
+
+### iTunes 封面与网易云歌词的定向调查（最新结果）
+
+用户授权继续调查这两个未通过项；本轮未访问 QQ、酷我或 CAA，未修改任何生产协议、
+匹配规则或错误语义。先查源码与旧资料，随后预先限定 iTunes 最多 3 次 API 搜索、
+网易云最多两组查询及每组前三个候选获取；最终分别发送 3 次和 4 次 API 请求。
+
+测试辅助变更：封面 live 支持非空 `SONEXA_COVER_TITLE/ARTIST/ALBUM/COUNTRY` 覆盖，
+默认样例不变；总是记录 state、卡片数与 has_error，避免仅以 HTTP 状态推测失败。
+显式 `SONEXA_COVER_DIAGNOSTICS=1` 仅对 iTunes 额外执行一次同条件元数据召回，
+调用生产 `SearchTracks` 投影和 `sources.Relevant`，摘要限前五候选及总计，仍计入
+现有共享桶/12 次硬预算，不转储响应。歌词 live 增加候选元信息/评分与 `no_lyrics`
+布尔摘要，错误消息原文和歌词正文仍不输出。
+
+#### iTunes：原查询合法空结果，另一历史样例完整通过
+
+```sh
+SONEXA_LIVE_COVERS=1 SONEXA_COVER_SOURCE=itunes SONEXA_COVER_DIAGNOSTICS=1 \
+  SONEXA_COVER_TITLE= SONEXA_COVER_ARTIST= SONEXA_COVER_ALBUM= SONEXA_COVER_COUNTRY= \
+  go test -count=1 -v ./internal/app -run '^TestLiveCoverSources$/itunes$'
+SONEXA_LIVE_COVERS=1 SONEXA_COVER_SOURCE=itunes SONEXA_COVER_DIAGNOSTICS= \
+  SONEXA_COVER_TITLE=ツバサ SONEXA_COVER_ARTIST=4円 SONEXA_COVER_ALBUM=side-C SONEXA_COVER_COUNTRY=jp \
+  go test -count=1 -v ./internal/app -run '^TestLiveCoverSources$/itunes$'
+```
+
+- 原查询「世界中の雨 / チームドラゴン from AKB48 / 心の羽根 / jp」的诊断召回和真实
+  封面查询均 HTTP 200、33587 字节，发送间隔 3.001056666 秒。召回 20 条、20 条都有
+  发行及图片身份、相关性为 0；前五条为 AKB48 的其他歌曲/专辑。绑定返回
+  `state=empty cards=0 has_error=false`。测试因要求可用图片而失败，但现在明确是
+  **此次查询没有匹配结果**，不是目录、下载或来源处理错误；不意味着该歌曲在所有地区不可用。
+- 「ツバサ / 4円 / side-C / jp」来自已有 iTunes 真实资料和旧 live 样例，而非放宽过滤。
+  1 次 API 搜索 HTTP 200、4616 字节，`state=ok cards=1 has_error=false`；图片门禁
+  许可 1 次，真实本地 handler 预览及显式采用成功。请求档位 250，实际 **250×250、13904
+  字节、adopted_revision=1**。此项通过不抹去原查询合法空结果。
+
+三次 API 响应均无 Retry-After 或 HTTP 429，未运行其他来源。原日志保存在本地
+`tmp/upstream-capabilities-live/itunes-recall-diagnostic.log`、`itunes-side-c-live.log`。
+
+#### 网易云：默认候选暂无歌词，supercell 样例原文/翻译通过
+
+```sh
+SONEXA_LYRICS_LIVE=1 SONEXA_LYRICS_SOURCE=163 SONEXA_LYRICS_TITLE=青花瓷 \
+  SONEXA_LYRICS_ARTIST=周杰伦 SONEXA_LYRICS_ALBUM= SONEXA_LYRICS_DURATION_MS= \
+  go test -count=1 -v ./internal/app -run '^TestLiveSources$/163$'
+SONEXA_LYRICS_LIVE=1 SONEXA_LYRICS_SOURCE=163 SONEXA_LYRICS_TITLE=君の知らない物語 \
+  SONEXA_LYRICS_ARTIST=supercell SONEXA_LYRICS_ALBUM=君の知らない物語 SONEXA_LYRICS_DURATION_MS=342169 \
+  go test -count=1 -v ./internal/app -run '^TestLiveSources$/163$'
+```
+
+- 默认查询搜索/正文均 HTTP 200、code=200，间隔 1.000290250 秒。过滤后只留下
+  `3381543730`「青花瓷（正式版）」、艺术家 `周杰伦. / 街道办GDC/欧阳耀莹.`、专辑
+  「人间再无我们」、95037 ms，score=67、high_confidence=false。正文返回 `ErrNoLyrics`
+  （`no_lyrics=true`），不是解析异常。旧日志也曾观察到同候选无歌词，不能把旧流程后来
+  从其他候选取得歌词的记录当成这一候选曾经可用；本轮未放宽评分或保留被过滤的候选。
+- 既有本地上游资料中的「君の知らない物語 / supercell」使用精确专辑和 342169 ms
+  时长查询，过滤后 6 候选，首个 `825646` 精确匹配、score=100、high_confidence=true。
+  搜索/正文均 HTTP 200、code=200，间隔 1.000939250 秒；首个候选即成功，不再下载其余候选。
+  最终 LRC **4967 字节**，原文 available/2530 字节、翻译 available/2702 字节、
+  罗马音 unavailable/0 字节、wordTiming=unsupported、warnings=0。缺失通道不伪报通过。
+
+四次 API 响应均无 Retry-After 或 HTTP 429；无歌词正文转储。原日志保存在本地
+`tmp/upstream-capabilities-live/netease-qinghuaci-diagnostic.log`、`netease-supercell-live.log`。
+所有日志不提交，使用临时库/目录；没有触碰真实收藏。
+
+最新合并证据：iTunes/网易云封面、网易云/酷狗歌词有成功样例。QQ 成功回退、手动歌词/
+封面及 45/60、酷我歌词、CAA 封面和速率入口取消断言仍受阻或未验证。**8.3 保持未完成**，
+不重试受限来源、不调整已确认的生产速率、不关闭 G14/G16/G17。
+
+离线回归：关闭所有 live/probe 开关，执行
+`go test -count=1 -race ./internal/app/... ./internal/lyrics/... ./internal/covers/sources/... ./internal/provider/itunes/... ./internal/provider/netease/...`
+五个包全部通过（App 49.105 秒）；其中包含新样例字段默认/覆盖测试、注入假传输的
+iTunes 诊断请求与预算测试，以及既有评分、相关性、协议、目录和事务回归。
+`go vet ./internal/app/...`、`openspec validate refactor-upstream-capabilities --strict`、
+`git diff --check` 均通过。此次只改测试/文档，未重跑全量后端、前端或原生验收。
 
 ### 8.4 证据核对与清理审阅（已完成；8.3 仍未完成）
 
@@ -300,8 +374,9 @@ git diff --check
 #### 尚未验证与保留阻塞
 
 任务 **8.3 保持未完成**。最新扩大查找已在 `An Ending (Ascent)` 真实触发缺少内联歌词的
-回退，但正文不可用，后续候选返回 -1901 后停止；“成功补取”仍无样例。独立复测仅酷狗歌词
-和网易云封面通过，其他失败/未执行项见上面的最新结果。前一轮 45 档出现 2001 后停止，
+回退，但正文不可用，后续候选返回 -1901 后停止；“成功补取”仍无样例。独立复测已有酷狗/
+网易云歌词和网易云/iTunes 封面成功样例；默认网易云歌词候选暂无歌词、原 iTunes 查询
+合法空结果均单独记录，其他失败/未执行项见上面的最新结果。前一轮 45 档出现 2001 后停止，
 60 档未发送，速率入口的取消断言未到达；本轮不再重跑 QQ 或提高速率。
 共享解析清理的离线证据与各阶段在线记录分开，不把历史通过算作本轮全体来源通过。
 
