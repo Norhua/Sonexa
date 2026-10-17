@@ -2,9 +2,12 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/norhua/sonexa/internal/provider"
 )
 
 // VariantStrategy 是查询变体的执行策略。
@@ -118,7 +121,7 @@ func Defaults() Settings {
 			DefaultCountry: "",
 			RatePerMin:     20,
 		},
-		QQMusic:          QQMusicSettings{RatePerMin: 30},
+		QQMusic:          QQMusicSettings{RatePerMin: provider.QQRatePerMinute().Default},
 		ProviderPriority: []string{"musicbrainz", "itunes", "qq"},
 		Matching: MatchingSettings{
 			TitleWeight:        55,
@@ -155,6 +158,21 @@ func Defaults() Settings {
 	}
 }
 
+// NormalizeStartup returns the effective startup settings without rewriting disk.
+func NormalizeStartup(loaded Settings) Settings {
+	loaded.QQMusic.RatePerMin = provider.QQRatePerMinute().Normalize(loaded.QQMusic.RatePerMin)
+	return loaded
+}
+
+// Validate rejects the entire save before directory, persistence or quota changes.
+func Validate(next Settings) error {
+	rule := provider.QQRatePerMinute()
+	if !rule.Valid(next.QQMusic.RatePerMin) {
+		return fmt.Errorf("QQ 音乐合计速率必须是 %g–%g 请求/分钟内的有限数值", rule.Min, rule.Max)
+	}
+	return nil
+}
+
 // Store 以 JSON 文件持久化设置，并对并发读写加锁。
 type Store struct {
 	mu   sync.RWMutex
@@ -177,7 +195,7 @@ func NewStore(appDir string) (*Store, error) {
 	if err := json.Unmarshal(data, &loaded); err != nil {
 		return nil, err
 	}
-	s.cur = loaded
+	s.cur = NormalizeStartup(loaded)
 	return s, nil
 }
 
@@ -190,6 +208,9 @@ func (s *Store) Get() Settings {
 
 // Save 覆盖写入设置并落盘。
 func (s *Store) Save(next Settings) error {
+	if err := Validate(next); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	path := s.path

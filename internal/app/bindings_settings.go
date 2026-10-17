@@ -93,6 +93,9 @@ func (a *App) GetSettings() (config.Settings, error) {
 //
 // 填写联系方式后出网入口立即可用，无需重启应用。
 func (a *App) SaveSettings(next config.Settings) error {
+	if err := config.Validate(next); err != nil {
+		return err
+	}
 	if err := a.ready(); err != nil {
 		return err
 	}

@@ -29,10 +29,6 @@ const (
 	lyricPath  = "/lyric/fcgi-bin/fcg_query_lyric_new.fcg"
 )
 
-// DefaultRatePerMin 是默认速率：调研时以不小于 1.2 秒的间隔串行请求，
-// 这里再保守一些。官方额度未公开。
-const DefaultRatePerMin = 30.0
-
 // songPageSize 是专辑清单每页条数。
 const songPageSize = 100
 
@@ -53,9 +49,7 @@ type Provider struct {
 
 // New 建立一个 QQ 音乐 provider。
 func New(client *provider.Client, cfg Config, hashParams func(map[string]string) string) *Provider {
-	if cfg.RatePerMin <= 0 {
-		cfg.RatePerMin = DefaultRatePerMin
-	}
+	cfg.RatePerMin = provider.QQRatePerMinute().Normalize(cfg.RatePerMin)
 	return &Provider{client: client, cfg: cfg, hashParams: hashParams}
 }
 
@@ -76,7 +70,7 @@ func (p *Provider) Capabilities() provider.Capabilities {
 		provider.CapMultiSizeCover | provider.CapLyrics
 }
 
-// RateLimit 实现 provider.MetadataProvider。搜索、详情与歌词共用同一个令牌桶。
+// RateLimit 声明 QQ 元数据、封面查询、歌词及回退共用的平台配额。
 func (p *Provider) RateLimit() (int, time.Duration) {
 	return 1, time.Duration(float64(time.Minute) / p.cfg.RatePerMin)
 }
@@ -182,7 +176,7 @@ func (p *Provider) musicu(ctx context.Context, mode provider.CacheMode, reqs map
 		return nil, err
 	}
 	return p.client.Get(ctx, provider.GetRequest{
-		Provider: provider.QQMusic, Endpoint: musicuPath, BaseURL: MusicuBase,
+		Provider: provider.QQQuota, Endpoint: musicuPath, BaseURL: MusicuBase,
 		Body: body, ParamsHash: p.hash(map[string]string{"body": string(body)}), CacheMode: mode,
 		MaxResponseBytes: 4 << 20,
 		Redirects:        &provider.RedirectPolicy{Hosts: []string{"u.y.qq.com", "c.y.qq.com"}, MaxRedirects: 4},

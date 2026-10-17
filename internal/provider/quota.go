@@ -1,6 +1,28 @@
 package provider
 
-import "time"
+import (
+	"math"
+	"time"
+)
+
+// RateRange is an application-side API budget, not an upstream quota promise.
+// Returning values keeps the shared description immutable to callers.
+type RateRange struct{ Default, Min, Max float64 }
+
+func QQRatePerMinute() RateRange { return RateRange{Default: 45, Min: 1, Max: 60} }
+
+func (r RateRange) Valid(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= r.Min && value <= r.Max
+}
+
+// Normalize is for startup and standalone adapters only. Saving user input must
+// validate instead, so the displayed value cannot silently differ from the save.
+func (r RateRange) Normalize(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 {
+		return r.Default
+	}
+	return min(r.Max, max(r.Min, value))
+}
 
 // QuotaID 标识平台 API 预算，不是业务能力或图片来源的注册键。
 // 使用同一底层身份类型便于元数据迁移；各业务不得自行添加用途前缀。
