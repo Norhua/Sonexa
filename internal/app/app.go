@@ -426,8 +426,7 @@ func (a *App) attachLadderBuilder(svc *covers.Service) *covers.Service {
 		if releaseGroupRef != "" {
 			rg = &releaseGroupRef
 		}
-		// MusicBrainz 用 ref 作 release MBID，iTunes 用它作基准图地址，
-		// 两边各取所需——coverLadder 本就按来源分支。
+		// 旧候选引用仍由各上游策略解释；coverLadder 仅通过能力契约分发。
 		return a.coverLadder(providerID, ref, ref, rg)
 	})
 	return svc

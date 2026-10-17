@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -124,6 +125,50 @@ func TestUpstreamCapabilityDependencyBoundaries(t *testing.T) {
 	for _, area := range []string{"lyrics", "covers", "provider", "app"} {
 		if counts[area] == 0 {
 			t.Errorf("未扫描 %s 生产源码", area)
+		}
+	}
+}
+
+// Removed transport paths must not reappear as unused compatibility helpers.
+func TestRetiredUpstreamPathsStayRemoved(t *testing.T) {
+	for _, path := range []string{"lyrics/qq.go", "lyrics/qrc.go", "lyrics/qrcdes", "covers/sources/web.go", "provider/musicbrainz/covers.go", "provider/musicbrainz/cover_catalog.go"} {
+		if _, err := os.Stat(filepath.Join("..", path)); !os.IsNotExist(err) {
+			t.Errorf("旧协议路径仍存在或无法检查: %s (%v)", path, err)
+		}
+	}
+	for path, names := range map[string][]string{
+		"provider":             {"Provider", "CoverGroup", "Head"},
+		"provider/itunes":      {"ResolveArtwork", "VerifyArtwork"},
+		"provider/musicbrainz": {"SearchCovers", "CoverArtProviderKey"},
+		"covers/sources":       {"WebSource"},
+	} {
+		files, err := filepath.Glob(filepath.Join("..", path, "*.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range files {
+			if strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ast.Inspect(file, func(node ast.Node) bool {
+				var declared string
+				switch node := node.(type) {
+				case *ast.TypeSpec:
+					declared = node.Name.Name
+				case *ast.FuncDecl:
+					declared = node.Name.Name
+				}
+				for _, retired := range names {
+					if declared == retired {
+						t.Errorf("%s: 已移除声明 %s 不应恢复", name, retired)
+					}
+				}
+				return true
+			})
 		}
 	}
 }

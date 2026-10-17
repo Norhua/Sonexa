@@ -1,9 +1,6 @@
 package caa
 
-import (
-	"encoding/json"
-	"fmt"
-)
+import "fmt"
 
 // CoverIndex 保留图片身份和目录档位，不把所有图片展开为同一降级链。
 type CoverIndex struct {
@@ -27,12 +24,9 @@ type IndexedVariant struct {
 }
 
 func ParseCoverCatalog(body []byte) (*CoverIndex, error) {
-	var raw caaIndex
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("解析 CAA 目录失败: %w", err)
-	}
-	if raw.Images == nil {
-		return nil, fmt.Errorf("CAA 目录缺少 images 数组")
+	raw, err := parseIndex(body)
+	if err != nil {
+		return nil, err
 	}
 	out := &CoverIndex{Release: raw.Release, Images: []IndexedCover{}}
 	seenIDs := map[string]bool{}

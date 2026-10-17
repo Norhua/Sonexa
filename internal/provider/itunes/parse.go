@@ -1,7 +1,6 @@
 package itunes
 
 import (
-	"context"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -243,24 +242,6 @@ func ArtworkURL(artworkURL string, size int) string {
 		return artworkURL
 	}
 	return u.String()
-}
-
-// VerifyArtwork 验证构造出的地址确实可用，不可用时应退到下一档。
-//
-// 图片请求不占用 iTunes 的令牌桶——它不是被限流的那个端点。
-func (p *Provider) VerifyArtwork(ctx context.Context, url string) error {
-	return p.client.Head(ctx, url)
-}
-
-// ResolveArtwork 依次验证各档，返回第一个可用的地址。
-// 全部不可得时返回空串，由调用方退到占位图。
-func (p *Provider) ResolveArtwork(ctx context.Context, artworkURL string) string {
-	for _, img := range ArtworkLadder(artworkURL) {
-		if err := p.VerifyArtwork(ctx, img.URL); err == nil {
-			return img.URL
-		}
-	}
-	return ""
 }
 
 func strPtr(s string) *string {

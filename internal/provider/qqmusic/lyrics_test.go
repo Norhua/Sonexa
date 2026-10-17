@@ -53,8 +53,7 @@ func encodedQRC(t *testing.T, text string) string {
 }
 func playBody(t *testing.T, qrc, plain qqLyricData) string {
 	t.Helper()
-	code := 0
-	b, err := json.Marshal(map[string]any{"code": 0, "req": qqLyricBlock{&code, &qrc}, "plain": qqLyricBlock{&code, &plain}})
+	b, err := json.Marshal(map[string]any{"code": 0, "req": map[string]any{"code": 0, "data": qrc}, "plain": map[string]any{"code": 0, "data": plain}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,6 +160,37 @@ func TestQQOptionalFailuresAndPlainFallback(t *testing.T) {
 				t.Fatal("lost untimed translation")
 			}
 		})
+	}
+}
+
+func TestQQPlayBlockErrorsPreserveOtherChannels(t *testing.T) {
+	for _, failedName := range []string{"req", "plain"} {
+		for _, bad := range []string{`null`, `{}`, `{"code":2001}`, `{"code":0}`, `{"code":0,"data":null}`, `{"code":0,"data":[]}`, `{"code":"bad","data":{}}`} {
+			t.Run(failedName+"/"+bad, func(t *testing.T) {
+				good := map[string]any{"code": 0, "data": qqLyricData{Lyric: b64("[00:01]original"), Trans: b64("[00:01]translation")}}
+				response := map[string]any{"code": 0, "req": good, "plain": good}
+				response[failedName] = json.RawMessage(bad)
+				body, err := json.Marshal(response)
+				if err != nil {
+					t.Fatal(err)
+				}
+				calls := 0
+				client := providerClientForTest(func(r *http.Request) string {
+					calls++
+					if r.URL.Host != "u.y.qq.com" {
+						t.Fatal("可用普通块不应触发旧接口回退")
+					}
+					return string(body)
+				})
+				doc, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
+				if err != nil || calls != 1 {
+					t.Fatalf("calls=%d err=%v", calls, err)
+				}
+				if doc.Original.Status != "available" || doc.Translation.Status != "available" || !strings.Contains(doc.Text, "translation") || len(doc.Warnings) == 0 {
+					t.Fatalf("部分失败丢失可用通道: %+v", doc)
+				}
+			})
+		}
 	}
 }
 

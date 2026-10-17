@@ -50,10 +50,6 @@ type qqLyricData struct {
 	Trans string `json:"trans"`
 	Roma  string `json:"roma"`
 }
-type qqLyricBlock struct {
-	Code *int         `json:"code"`
-	Data *qqLyricData `json:"data"`
-}
 
 func newQQChannels() *lyrics.Payload {
 	return &lyrics.Payload{Original: lyrics.AbsentChannel(), Translation: lyrics.AbsentChannel(), Romanization: lyrics.AbsentChannel(), WordTiming: "unavailable"}
@@ -61,17 +57,19 @@ func newQQChannels() *lyrics.Payload {
 func failedQQChannels(err error) *lyrics.Payload {
 	return &lyrics.Payload{Original: lyrics.FailedChannel(err), Translation: lyrics.FailedChannel(err), Romanization: lyrics.FailedChannel(err), WordTiming: "error"}
 }
-func qqBlockData(block *qqLyricBlock) (*qqLyricData, error) {
-	if block == nil || block.Code == nil {
-		return nil, fmt.Errorf("QQ 歌词响应缺少状态码")
+func qqBlockData(raw map[string]json.RawMessage, name string) (*qqLyricData, error) {
+	body, err := decodeBlock(raw, name)
+	if err != nil {
+		return nil, err
 	}
-	if *block.Code != 0 {
-		return nil, fmt.Errorf("QQ 歌词接口错误（code=%d）", *block.Code)
+	var data *qqLyricData
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil, fmt.Errorf("QQ 歌词数据解析失败: %w", err)
 	}
-	if block.Data == nil {
+	if data == nil {
 		return nil, fmt.Errorf("QQ 歌词响应缺少 data")
 	}
-	return block.Data, nil
+	return data, nil
 }
 func qqText(text string, encrypted bool) (string, error) {
 	if text == "" {
@@ -97,18 +95,12 @@ func qqRomanization(text string) *lyrics.Channel {
 }
 func parseQQPlay(body []byte) *lyrics.Payload {
 	out := newQQChannels()
-	var response struct {
-		Code       *int
-		Req, Plain *qqLyricBlock
+	response, err := decodeEnvelope(body)
+	if err != nil {
+		return failedQQChannels(err)
 	}
-	if err := json.Unmarshal(body, &response); err != nil {
-		return failedQQChannels(fmt.Errorf("QQ 歌词 JSON 解析失败: %w", err))
-	}
-	if response.Code == nil || *response.Code != 0 {
-		return failedQQChannels(fmt.Errorf("QQ 歌词接口不可用或需要认证"))
-	}
-	for i, block := range []*qqLyricBlock{response.Req, response.Plain} {
-		data, err := qqBlockData(block)
+	for i, name := range []string{"req", "plain"} {
+		data, err := qqBlockData(response, name)
 		if err != nil {
 			out.Warnings = append(out.Warnings, err.Error())
 			if i == 0 {

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestRequestGateKeepsCacheAndChecksHeadAndQueuedRequests(t *testing.T) {
+func TestRequestGateKeepsCacheAndChecksQueuedRequests(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -31,9 +31,6 @@ func TestRequestGateKeepsCacheAndChecksHeadAndQueuedRequests(t *testing.T) {
 	}
 	req.CacheMode = RefreshCache
 	if _, err := client.Get(ctx, req); !errors.Is(err, disabled) {
-		t.Fatal(err)
-	}
-	if err := client.Head(ctx, srv.URL); !errors.Is(err, disabled) {
 		t.Fatal(err)
 	}
 	if calls.Load() != 0 {

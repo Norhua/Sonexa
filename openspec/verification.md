@@ -6,7 +6,7 @@
 
 ### 后端全量回归
 
-- `go test -count=1 -race ./internal/...`：全部通过，未使用结果缓存，未开启 live 环境变量。元数据快照、导入、library 准入、封面目录/文件回滚及歌词事务相关包均通过。22 个包中 19 个有测试并通过；`provider/kugou`、`provider/kuwo`、`provider/qqmusic/qrcdes` 没有独立测试文件，相关协议/解码在组合或 QQ 包测试中覆盖，不将其写成独立测试通过。
+- `go test -count=1 -race ./internal/...`：全部通过，未使用结果缓存，未开启 live 环境变量。元数据快照、导入、library 准入、封面目录/文件回滚及歌词事务相关包均通过。按 8.4 再次执行 `go list ./internal/...` 校正计数：共 21 个包、18 个有测试并通过；`provider/kugou`、`provider/kuwo`、`provider/qqmusic/qrcdes` 没有独立测试文件，相关协议/解码在组合或 QQ 包测试中覆盖，不将其写成独立测试通过。
 - `/Users/amadeus/.go/bin/wails generate module`：成功。当前 PATH 未包含该现有安装，使用绝对路径，未安装或替换 Wails。绑定是生成产物，不提交。
 - 生成绑定且已有前端 `dist/` 后执行 `go vet ./...`：通过，无输出。
 - 生命周期、共享 HTTP 到达配额、非法保存、队列变速、生产依赖边界及在线入口的默认跳过/限额/停止条件定向 race 测试均通过。
@@ -84,10 +84,105 @@ QQ 有界速率样本的实际结果如下；回退要求本身未豁免。
 四封面搜索/预览/采用的独立 live 入口本轮仍未执行。速率入口末尾的取消检查也未到达，
 不能记为在线通过。G16 的业务错误和缺少真实回退样例分别保留。
 
-### 尚未验证
+### 8.4 证据核对与清理审阅（已完成；8.3 仍未完成）
 
-任务 8.4 的最终逐项证据核对与清理审阅尚未完成。原生窗口、文件选择器、真实断网及大曲库
-未新增人工验收。G14/G16/G17 保持未关闭。
+用户明确选择先完成本项，保留 8.3。审阅基于重构前提交 `6814557`、此前实现至
+`70d245d` 以及本次清理；范围为该 change 的四份 delta、design 和
+[原始提示词](changes/refactor-upstream-capabilities/resource/0-original-prompt.txt)。本项完成表示
+实现/离线证据和未验证边界已核对，**不表示整个变更验收完成或可以略过在线阻塞归档**。
+
+#### 原始三个问题与实现结论
+
+| 原始问题 | 结论与源码证据 |
+| --- | --- |
+| 是否采用业务声明接口、上游按能力实现并注入？ | 是。`lyrics/provider.go` 的 `Provider` 仅搜索/获取歌词，`covers/sources/provider.go` 的 `Provider` 仅搜索封面；均嵌入只含 ID/显示名的 `provider.Upstream`。`app/upstreams.go` 显式装配具体实现，业务服务与歌词/封面搜索绑定不解释平台协议。 |
+| 原 Provider 的作用是什么？ | 元数据身份/字段能力、查询候选、快照、精确补全、发行摘要/详情及配置/速率契约；实际消费者仍为 `provider.Registry`、`library/service.go`、`importer/runner.go` 与 `app/bindings_upstream.go`，不能把这些成熟流程删掉或改成歌词/封面 DTO。 |
+| 原 Provider 保留还是取消？ | 保留上述元数据职责并正名为 `MetadataProvider`，删除强制 `SearchCovers` 和旧接口名称，不留类型别名兼容壳。`VersionLister`、`ArtworkStrategist` 仍为可选契约；各上游具体结构体仍可叫 `Provider`，这不是旧父包大接口。 |
+
+单能力不只是接口声明：`TestSingleLyricsProviderThroughRealBindings` 验证仅歌词假来源的列表、
+搜索、候选归属、预览、采用、修订冲突及过期；`TestCoverOnlyProviderExistingCatalogNotSavedAgain`
+验证仅封面假来源用自己的图片主机完成搜索、真实本地 HTTP handler 预览和采用，且不进入元数据注册表。
+两者都是离线适配器/临时库集成测试，不是新增真实来源的网络可用性证明。
+
+#### 四份 delta 逐项核对
+
+以下路径在 `internal/` 下（前端路径除外）；“通过”均指源码及离线/既有浏览器证据，不替代 8.3。
+
+| Delta / Requirement | 场景、实现与测试证据 | 结论与边界 |
+| --- | --- | --- |
+| `platform/settings` / 上游设置 | `app/bindings_settings.go:ListProviders/SaveSettings/CheckOutbound`；`app/upstreams.go` 登记三个元数据来源并按设置排序；`SettingsView.vue` 保留 QQ 设置字段，说明合计三类 API、不含图片。`TestProductionAssemblyListsAndFailedBuildDoesNotPublish`、`TestCoverOutboundGateAcrossBindingsAndAssets` 与 `provider-capabilities.spec.ts` 覆盖列表、地区和设置生效。 | 单歌词/封面来源不进入元数据选项；联系方式门禁统一。QQ 非公开接口风险仍在 G16。 |
+| `platform/settings` / QQ 合计请求速率设置 | `provider/quota.go:QQRatePerMinute` 是后端唯一速率描述，config 和 QQ 构造共用；`config/settings.go:Validate/NormalizeStartup`、`SaveSettings` 在保存/移动/装配发布前校验。`config/qq_rate_test.go` 覆盖缺失、30、边界、小数、越界、零/负数、非有限值与损坏 JSON；`app/qq_settings_test.go` 覆盖磁盘/目录/配额无副作用、有效值到生产桶及排队保存。前端 `qqRate.ts`、单测与浏览器断言使用相同边界。 | 默认 45、范围 1–60、burst=1；合法旧值不提高、保存不重置预约。它是工程保护范围，45/60 不是在线验通额度。 |
+| `upstream/cover-search` / 四来源结果与失败隔离 | `sources.Registry` 与 `StartCoverSearch/searchCoverSource` 统一列表、校验、按来源并行执行和 Result 登记。`cover_search_test.go` 覆盖部分成功、全部错误与合法空结果区分、单源重试授权和迟到取消；`cover_sources_test.go`、`provider/caa/search_test.go` 覆盖绑定发行优先、最多 10 个、部分目录失败与主动刷新。`cover_quota_test.go` 证明 QQ 与元数据/歌词共享、其他平台不被占用。 | 四适配器及离线失败隔离通过；四封面当前网络搜索/预览/采用仍未复测，不据此关闭 G14。 |
+| `upstream/cover-search` / 来源声明的图片 URL 安全范围 | 四个适配包 `image_policy.go` 声明，`app/upstreams.go` 校验并注入；`provider/image_policy.go` 与 `covers/image_policy.go/pool.go/transport.go` 检查首次、自动降级及逐跳请求。`TestPoolSourcePolicyChecksFirstRequestAndEveryRedirect`、`TestPoolPolicyRedirectGateCancelAndLimit` 覆盖跨来源、伪装子域、HTTP、用户信息、非允许端口、未登记策略、动态门禁/取消/跳数；`cover_capability_test.go` 与 `upstream_lifecycle_test.go` 覆盖新主机和旧会话快照。 | 不使用全部来源许可并集；本地命中不新增门禁；正常 TLS 和 DNS 后私网拒绝保持，图片无环境代理。 |
+| `upstream/provider-registry` / 接口与注册表 | `provider/provider.go/registry.go`、`lyrics/registry.go`、`covers/sources/registry.go`、`app/upstreams.go`；集合单测拒绝重复/未知能力，元数据同 ID 覆盖仍有 `TestMetadataRegistryStillReplacesDuplicateID`。生产装配列表测试固定三元数据、四歌词、四封面的顺序及名称；`app/app.go:rebuildRunner` 明确只把 MB 交给导入。 | 保留元数据字段能力和导入仅 MB；两个真实绑定单能力测试证明无需伪造其他业务方法。 |
+| `upstream/provider-registry` / 后端请求与共享限流 | `provider/client.go/limiter.go/quota.go`；`TestQQThreeCapabilitiesShareHTTPQuotaIncludingRetryAndFallback` 记账三搜索、正文、回退及重试到达时间；`TestPlatformQuotasIndependentAndNetEaseCapabilitiesShared`、`TestCoverSearchSharesMetadataQuotaButCAADirectoryDoesNot`、`TestCoverPreviewAdoptionAndAutomaticImagesSharePool` 覆盖平台独立、163 共桶和图片/CAA 例外。`cache_mode_test.go`、`app/lyrics_cache_test.go` 覆盖 NoStore 零读写与刷新写回；门禁、重试、取消和关闭由对应 provider/covers/App 回归覆盖。 | 生产无 `cover-qq`、`cover-163`、`lyrics-*` 配额键；构造不配置桶，新实例无额外令牌。所有统计为本地 HTTP 替身，不推定在线额度。 |
+| `upstream/provider-registry` / 统一封面行为 | `provider/artwork.go`、各适配器 `ArtworkStrategy` 和 `covers/resolver.go` 保留真实图片来源；MB 薄委托 CAA。`TestLibraryImagesReuseAfterCandidateAdmission`、`cover_production_test.go`、`cover_adoption_edges_test.go` 覆盖预览入库复用、采用隔离与失败保护。CAA 既有 Result 只读，`TestCoverOnlyProviderExistingCatalogNotSavedAgain` 断言目录版本和 ActualReleaseURL 不被覆盖。 | 不创建虚假发行，不因接线增加 API 图片探测；目录、文件与工作池保持原语义。 |
+| `upstream/provider-registry` / 业务能力调用契约 | 搜索绑定仅传 Query、消费 Candidate/Payload/Result；QQ/163 原语分别投影业务结果，酷狗 hash/accesskey、酷我时间、QQ QRC 在适配包。`TestUpstreamCapabilityDependencyBoundaries` 扫描生产 AST（包括当前平台未编译文件），检查反向依赖、平台 URL/加密解析及来源分支；检查器本身有拒绝回归用例。 | 消费侧无需新增平台参数或解析；错误不伪装空结果。AST 检查与下述调用检索结合，不把单一正则当作整体设计证明。 |
+| `upstream/qqmusic` / 请求与限流 | `qqmusic/search.go` 唯一搜索构造调用 `musicu`，`parse.go:decodeEnvelope/decodeBlock` 共享状态解析；旧歌词只经 `legacy_lyrics.go`。`search_test.go`、`covers_test.go`、`lyrics_test.go` 捕获 POST/Referer/关键词/数量；`legacy_lyrics_test.go` 验证 JSON/JSONP、编码、原文和详情优先/缺失回退。新增 `TestQQPlayBlockErrorsPreserveOtherChannels` 覆盖 req/plain 的状态错误、缺失/null/非法 data，只要另一块有效就保留原文/翻译，不额外回退。 | HTTP 200 中的业务错误仍报错；元数据正常/刷新缓存与手动 NoStore 不混淆；元数据真实缺失歌词回退仍无在线样例。 |
+
+#### Design 关键不变量
+
+| 设计决策 | 本次对照结果 |
+| --- | --- |
+| 1. 消费侧小接口、保留元数据边界 | `Upstream`、两种 `Provider`、`MetadataProvider` 及可选契约分工吻合；`Result.Validate` 的双重/空形式、缺少身份拒绝由 `TestResultExclusiveForms` 覆盖；公共歌词与封面 DTO 未加入内部 Payload。 |
+| 2. 单向依赖和集中登记 | 具体适配器可导入消费侧契约，lyrics/covers 不反向导入适配器，provider 父包仅依赖 domain 与通用库；`assembleUpstreams` 同时构建三集合及图片策略，失败不发布半套。没有反射/万能能力注册框架。 |
+| 3. 协议唯一、业务投影独立 | QQ 元数据默认 25/合法上限 50，TitleOnly 独立；QQ/163 封面召回 30、最多 20，歌词 20；对应请求捕获及投影单测通过，无歌曲 MID 的专辑封面、163 `pic-...` 与未知真实尺寸均保留。歌词评分/去重、2 MiB 文本、通道合并在 lyrics，40 秒总 Fetch 上下文包含所有子请求。 |
+| 4. CAA 和既有封面机制 | CAA 的窄 recall 与 CatalogLoader 不直接写 store；固定发行优先、10 个去重、并发仍进入同一池。目录与缩略图共享基本结构解析但不互相套用身份校验；actual release/group 回退、archive.org 直连/规范地址降级及文件保护回归保持。 |
+| 5. 缓存/传输/平台桶 | 三种 CacheMode，QQ/163 共用协议不共享手动响应缓存；请求级 HTTP client 浅副本不改共享 CheckRedirect。API 桶与图片池分离，重试/旧歌词回退重新取令牌。清除旧无调用 HEAD 路径后，没有第二套上游图片探测链。 |
+| 6. 设置与会话生命周期 | `upstream_lifecycle_test.go` 覆盖未获取旧候选、搜索/下载期间保存、MoveRoot、禁网后的本地采用与排队拒绝、关闭等待下载/搜索/采用后再关 Store；`qq_settings_test.go` 验证原位变速与新会话无突发续杯。 |
+| 7. 测试迁移、接口和验证边界 | 生产边界测试、外部组合测试及原 fixture 保留；对比 `6814557` 的歌词/封面公开绑定和 12 个 DTO 的带 JSON 标签字段，名称/类型/标签/顺序一致（忽略纯注释变化）。离线/浏览器/在线/原生证据按阶段分别记录。 |
+
+#### 重复协议、旧链路及测试/许可清理
+
+审阅不是仅按目录名判断。执行 `git diff --name-status --find-renames=40% 6814557..HEAD`、
+生产源码 `rg` 检索、函数调用追踪和 AST 边界测试，并逐项处理如下：
+
+| 对象 | 删除、收敛或保留的依据 |
+| --- | --- |
+| QQ 三份歌曲搜索 | 唯一 `DoSearchForQQMusicDesktop` 请求构造在 `qqmusic/search.go`；`SearchTracks/SearchCovers/SearchLyrics` 都调用 `searchSongs → musicu → parseSongs`，不再从歌词/封面走元数据候选裁剪。 |
+| QQ musicu 状态解析 | 审阅发现手动歌词仍单独解码顶层与块状态。本次抽出 `decodeEnvelope/decodeBlock`，元数据 `decodeBlocks` 和手动 `qqBlockData` 共用，删除冗余 `qqLyricBlock` 类型；业务分别保留整次失败与通道部分成功。旧端点 JSON/JSONP/原文解析原已集中，继续复用。 |
+| 网易云重复 WEAPI/搜索 | 表单和加密只有 `netease/weapi.go:Form`，请求/歌曲结构只有 `netease.go`；`lyrics.go/covers.go` 只按各业务映射。酷狗/酷我协议只在各自适配包。 |
+| CAA 索引重复解码 | 审阅发现目录与缩略图各自 Unmarshal/检查 images。本次共用 `urls.go:parseIndex`，`ParseCoverCatalog` 保留持久化身份/档位校验，缩略图只投影 URL；`index_test.go` 覆盖相同结构错误、合法空数组与不同身份要求，未把目录限制扩大到缩略图。 |
+| 旧直连 iTunes 图片探测 | `ResolveArtwork → VerifyArtwork → Client.Head` 除自身和 Head 门禁测试外无生产调用，本次全部删除；移除只服务已删 Head 的断言，保留 API 缓存/排队门禁测试。图片首次/重定向门禁、下载校验与自动降级继续由 covers/App 既有测试覆盖。 |
+| 旧大接口与生产路径 | `provider.Provider`、`CoverGroup`、`WebSource`、旧静态来源校验、旧配额用途前缀、MusicBrainz 旧 SearchCovers/直连目录实现、lyrics 内 QQ/QRC/四来源请求解析已删除；旧同名测试如 `TestWebSourceFixturesAndErrors` 现在调用实际 QQ/163 能力，不是旧生产壳。新增 `TestRetiredUpstreamPathsStayRemoved` 防止旧文件/接口/探测入口恢复。 |
+| 仍使用的通用/图片工具 | `provider.CoverImage` 仍被 iTunes `ArtworkLadder` 和 CAA `CAAFrontLadder` 使用；`LegacyLadder` 经 `app.coverLadder` 服务 `BuildCoverRefs` 与自动降级，不能当死代码删掉。`ParseCAAThumbnailIndex` 由 App 注入共享池；`ArtworkURL/CoverImages/ImageURLs` 仍服务搜索、目录及自动图片。`store.CoverImage` 是复用 domain 并维持既有 DTO 命名的类型别名，不是旧 Provider 兼容壳。 |
+| 原测试迁移 | 以 `6814557` 的 lyrics、sources、MB、QQ、iTunes 测试函数清单核对。四来源排序/时长测试改名为 App 的 `TestAllLyricSourcesRankAndDeduplicate/TestLyricSearchUsesTargetDuration`；旧 CAA SearchCovers 测试改为适配器 ArtworkStrategy 测试，配额键常量比较升级为 MB 薄委托及真实 HTTP 记账测试。QQ/QRC 和 CAA 目录 fixture、池合并/取消、文件回滚、歌词事务覆盖均保留。 |
+| QRC 许可和依赖 | `provider/qqmusic/qrcdes/{LICENSE,README.md,data.go,des_impl.go,int_helper.go}` 与原 `lyrics/qrcdes/` 逐文件字节一致，保留 MIT 许可及来源提交 `866e996416b0cec7bef648400633f6483c4200d5`；QRC 调用层的有界解压/转换测试仍在 QQ 包。`go.mod/go.sum` 未变，不新增依赖、不提交第三方歌词全文或本机数据。 |
+
+本次只修正上述范围内的死链、重复解析与失效注释，未扩展到无关模块、数据库兼容、播放器、
+新歌词格式或其他 known gaps。主架构同步说明共享解析和旧探测清理，不等后续 archive 自动补写。
+
+#### 本次 8.4 实际执行
+
+所有 live/probe 开关均显式置空；使用本地 fixture、HTTP 替身/回环服务与临时存储，未发送真实来源探测：
+
+```sh
+env SONEXA_LYRICS_LIVE= SONEXA_LIVE_COVERS= SONEXA_LIVE_ITUNES= \
+  SONEXA_QQ_METADATA_LIVE= SONEXA_QQ_FALLBACK_DISCOVERY= SONEXA_QQ_RATE_LIVE= \
+  SONEXA_QQ_PROBE= go test -count=1 -race ./internal/...
+go vet ./...
+go list ./internal/...
+npm --prefix frontend test
+npm --prefix frontend run typecheck
+openspec validate refactor-upstream-capabilities --strict
+git diff --check
+```
+
+- 清理后全量 race：18 个有测试包全部通过、3 个无独立测试文件；App 52.557 秒、covers 23.054 秒、provider/qqmusic 1.400 秒、acceptance 9.362 秒。`go vet`、`go list` 通过，未使用 Go 结果缓存替代本次回归。
+- 定向 provider/acceptance race 通过；另以 `-v -count=1` 执行依赖边界、检查器拒绝回归和旧路径删除共 3 个顶层测试，全部通过。
+- 显式关闭开关后执行 `TestLive.*` 与 `TestLocalQQProbe`：四来源歌词/封面、QQ 元数据/查找/速率、iTunes live 与本地 probe 均跳过。随该正则执行的 `TestLiveAuditStopsBeforeAnotherRequest` 是注入传输的离线观察器测试，其 2001/429/301 等日志是合成响应，**不是新在线证据**。
+- 前端：15 个文件、71/71 单测通过，`vue-tsc --noEmit` 通过。本次未重新生成绑定、运行 build 或 Playwright；任务 8.2 的构建和 Chromium/WebKit 76/76 结果保留为先前阶段证据，不冒充本次执行。此轮仅改内部 Go 解析/死链、测试与文档，公开 DTO/绑定未改；生成绑定、dist、报告不提交。
+- `openspec validate refactor-upstream-capabilities --strict`、最终 `git diff --check` 通过。四份 delta 未同步至主规格、未归档；主架构仍链接本变更的唯一 QQ 规范性速率规则，主规格的旧值/配额描述不能当作新实现的现状。
+
+#### 尚未验证与保留阻塞
+
+任务 **8.3 保持未完成**：没有实际缺失内联歌词的回退样例；上一轮 45 档出现 2001 后停止，
+60 档未发送，速率入口的取消断言未到达；四歌词正文/通道和四封面搜索/预览/采用尚未完成最新在线复测。
+本次共享解析清理只补了离线验证，不把旧在线样本算作清理后真实来源复测。
+
+原生窗口、输入法、文件选择器、真实断网及大曲库未新增人工验收；既有截图测试断言和大 chunk
+提示未解决。**G14/G16/G17 保持未关闭**，不根据本次源码/fixture/浏览器证据推定上游可用、
+长期安全额度或原生体验通过。后续由用户决定补在线证据及进入 verify/archive 的时机。
 
 ---
 

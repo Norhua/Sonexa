@@ -12,11 +12,9 @@ import (
 	"github.com/norhua/sonexa/internal/provider"
 )
 
-// decodeBlocks 取出指定请求块的 data。
-//
-// HTTP 200 不代表成功：顶层 code 与每个块的 code 都必须为 0，
-// 否则可能是风控或参数失效，不能把空 data 当作「无结果」。
-func decodeBlocks(body []byte, names ...string) (map[string]json.RawMessage, error) {
+// decodeEnvelope and decodeBlock own musicu status validation. Callers choose
+// whether a failed block aborts metadata or leaves other lyric channels usable.
+func decodeEnvelope(body []byte) (map[string]json.RawMessage, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("解析 QQ 音乐响应失败: %w", err)
@@ -25,16 +23,33 @@ func decodeBlocks(body []byte, names ...string) (map[string]json.RawMessage, err
 	if err := json.Unmarshal(raw["code"], &code); err != nil || code == nil || *code != 0 {
 		return nil, fmt.Errorf("QQ 音乐响应异常或来源不可用")
 	}
+	return raw, nil
+}
+
+func decodeBlock(raw map[string]json.RawMessage, name string) (json.RawMessage, error) {
+	var b block
+	if err := json.Unmarshal(raw[name], &b); err != nil || b.Code == nil {
+		return nil, fmt.Errorf("QQ 音乐响应缺少 %s", name)
+	}
+	if *b.Code != 0 {
+		return nil, fmt.Errorf("QQ 音乐 %s 返回错误码 %d", name, *b.Code)
+	}
+	return b.Data, nil
+}
+
+// decodeBlocks is the all-or-error metadata projection of the shared envelope.
+func decodeBlocks(body []byte, names ...string) (map[string]json.RawMessage, error) {
+	raw, err := decodeEnvelope(body)
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]json.RawMessage{}
 	for _, name := range names {
-		var b block
-		if err := json.Unmarshal(raw[name], &b); err != nil || b.Code == nil {
-			return nil, fmt.Errorf("QQ 音乐响应缺少 %s", name)
+		data, err := decodeBlock(raw, name)
+		if err != nil {
+			return nil, err
 		}
-		if *b.Code != 0 {
-			return nil, fmt.Errorf("QQ 音乐 %s 返回错误码 %d", name, *b.Code)
-		}
-		out[name] = b.Data
+		out[name] = data
 	}
 	return out, nil
 }

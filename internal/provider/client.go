@@ -252,31 +252,6 @@ func (c *Client) do(ctx context.Context, req GetRequest) ([]byte, error) {
 	return body, nil
 }
 
-// Head 发起一次 HEAD 请求，用于验证构造出的图片地址是否可用。
-// 图片服务不占用上游令牌桶，因此这里不取令牌。
-func (c *Client) Head(ctx context.Context, rawURL string) error {
-	if err := checkRequestGate(ctx); err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
-	if err != nil {
-		return err
-	}
-	if c.UserAgent != "" {
-		req.Header.Set("User-Agent", c.UserAgent)
-	}
-	resp, err := c.httpForRequest(nil).Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return &HTTPError{StatusCode: resp.StatusCode, Status: resp.Status}
-	}
-	return nil
-}
-
 // httpForRequest 只复制 Client，复用 Transport；从不修改共享重定向回调。
 // 即使调用方替换了 HTTP Client，每次重定向仍需检查公共门禁。
 func (c *Client) httpForRequest(policy *RedirectPolicy) *http.Client {

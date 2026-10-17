@@ -26,6 +26,20 @@ type caaImage struct {
 	Thumbnails map[string]string `json:"thumbnails"`
 }
 
+// parseIndex owns the shared wire format and structural validation. Catalog
+// identity/variant checks remain in its projection; thumbnail fallback needs
+// only URLs and must not inherit the catalog's stricter persistence contract.
+func parseIndex(body []byte) (*caaIndex, error) {
+	var index caaIndex
+	if err := json.Unmarshal(body, &index); err != nil {
+		return nil, fmt.Errorf("解析 CAA 索引失败: %w", err)
+	}
+	if index.Images == nil {
+		return nil, fmt.Errorf("CAA 索引缺少 images 数组")
+	}
+	return &index, nil
+}
+
 func CAAFrontLadder(release, group string) []provider.CoverImage {
 	var out []provider.CoverImage
 	if release != "" {
@@ -59,12 +73,9 @@ func ParseCAAThumbnailIndex(rawURL string, body []byte) ([]string, bool, error) 
 	if len(parts) != 2 || (parts[0] != "release" && parts[0] != "release-group") {
 		return nil, false, nil
 	}
-	var index caaIndex
-	if err := json.Unmarshal(body, &index); err != nil {
-		return nil, true, fmt.Errorf("解析封面索引失败: %w", err)
-	}
-	if index.Images == nil {
-		return nil, true, fmt.Errorf("封面索引缺少 images 数组")
+	index, err := parseIndex(body)
+	if err != nil {
+		return nil, true, err
 	}
 	var urls []string
 	seen := map[string]bool{}
