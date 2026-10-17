@@ -1,5 +1,52 @@
 # 文档与实现核对
 
+## 2026-10-17 上游能力重构验收（进行中）
+
+变更：`refactor-upstream-capabilities`。本节为此次实际执行结果；后面的 2026-10-16 记录是历史证据，不混算为本轮验证。
+
+### 后端全量回归
+
+- `go test -count=1 -race ./internal/...`：全部通过，未使用结果缓存，未开启 live 环境变量。元数据快照、导入、library 准入、封面目录/文件回滚及歌词事务相关包均通过。22 个包中 19 个有测试并通过；`provider/kugou`、`provider/kuwo`、`provider/qqmusic/qrcdes` 没有独立测试文件，相关协议/解码在组合或 QQ 包测试中覆盖，不将其写成独立测试通过。
+- `/Users/amadeus/.go/bin/wails generate module`：成功。当前 PATH 未包含该现有安装，使用绝对路径，未安装或替换 Wails。绑定是生成产物，不提交。
+- 生成绑定且已有前端 `dist/` 后执行 `go vet ./...`：通过，无输出。
+- 生命周期、共享 HTTP 到达配额、非法保存、队列变速、生产依赖边界及在线入口的默认跳过/限额/停止条件定向 race 测试均通过。
+
+### 前端阶段验证
+
+- `npm run typecheck`、QQ 速率 2 项单元测试、`npm run build`：通过。构建仍报告大于 500 kB 的 chunk 提示，未作为本次重构附带解决。
+- `SONEXA_E2E_PREVIEW=1 npm run test:e2e -- tests/e2e/provider-capabilities.spec.ts`：Chromium/WebKit 共 4/4 通过，包含空值、负值、越界拒绝及小数、边界、合法旧值和默认值保存。
+- 生成绑定后完整执行 `npm test`：15 文件、71/71 通过；`npm run build`：通过，保留大 chunk 提示。
+- `SONEXA_E2E_PREVIEW=1 npm run test:e2e -- tests/e2e/lyrics.spec.ts tests/e2e/cover-search.spec.ts tests/e2e/provider-capabilities.spec.ts tests/e2e/editor.spec.ts tests/e2e/shell.spec.ts`：76/76 通过（Chromium 38、WebKit 38）。覆盖封面 14、编辑器 38、歌词 6、来源能力/QQ 设置 4、应用壳 14 项；列表、失败隔离、会话取消、预览采用、地区和编辑保存均按现有断言通过。
+- 此命令不含 `screenshot-review.spec.ts`，不能据此关闭历史“用户”徽标断言失败；未修改该测试，也未声称全量 Playwright 通过。生成绑定、构建产物及报告均未提交。
+
+### 在线部分证据与阻塞
+
+命令：`SONEXA_QQ_METADATA_LIVE=1 go test -v ./internal/app -run '^TestLiveQQMetadata$' -count=1`。
+使用生产装配、临时存储及 30 请求/分钟的共享桶，最多 12 次请求；本次实际仅发送 3 次。
+
+| 请求 | 发送间隔 | HTTP / 业务状态 | 结果摘要 |
+| --- | --- | --- | --- |
+| QQ 元数据搜索「晴天 / 周杰伦」 | 首次 | 200；顶层及搜索块 code=0；无 Retry-After | 25 候选 |
+| 单碟专辑 `000MkMni19ClKG` / 曲目 `0039MnYb0qxYhV` | 2.001006458 秒 | 200；顶层及 album/songs/song 块均 code=0；无 Retry-After | 1 碟、11 首、9 个角色条目、歌词 2548 字节 |
+| 多碟专辑 `0032ezFm3F53yO` / 曲目 `000zwjWq0T51ys` | 1.999332750 秒 | 200；顶层及 album/songs/song 块均 code=0；无 Retry-After | 2 碟、25 首、5 个角色条目、歌词 1795 字节 |
+
+单碟/多碟身份和逐碟连续曲序断言通过，未发现本轮 HTTP 429 或业务限制。上述三次成功
+不能推定任何持续安全额度。日志只有状态、数量和字节数，未转储歌词全文。
+
+测试总体明确失败在缺少 `SONEXA_QQ_FALLBACK_ALBUM/TRACK`：两个固定样例均带内联歌词，
+没有真实回退证据。需要用户提供已知样例，或确认开展另一次有界样例查找；未改写响应、
+未以 fixture 代替。任务 8.3 保持未完成，四歌词、四封面的本轮在线复测与 45/60 速率样本
+尚未运行；未将未执行的取消验证写成在线通过。
+
+### 尚未验证
+
+任务 8.4 的最终逐项证据核对与清理审阅尚未完成。原生窗口、文件选择器、真实断网及大曲库
+未新增人工验收。G14/G16/G17 保持未关闭。
+
+---
+
+## 2026-10-16 文档同步记录
+
 日期：2026-10-16。范围：提交 `a169712d`、`a656ca3` 的详情抽屉与歌词管理，以及 `change_record/spec-diff.md` 的 D01–D08、`5e5b1865-plan.md`、`a169712d-plan.md` 两份计划的最终执行结果。以 `a656ca3` 的现有代码为依据，不把早期方案或尚未实现格式写成当前规则。
 
 ## 核对结果

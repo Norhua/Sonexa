@@ -60,8 +60,8 @@
 
 ## 8. 跨模块验收与证据
 
-- [ ] 8.1 运行 `go test -count=1 -race ./internal/...`，准备前端 embed/绑定后运行 `go vet ./...`；记录完整结果，重点确认元数据快照、自动导入、封面目录/文件回滚与歌词事务不退化。任何既有失败需有基线复现证据，不将新失败标成历史问题。
-- [ ] 8.2 按 README 生成 Wails 绑定，运行 `npm test`、`npm run build` 以及 `SONEXA_E2E_PREVIEW=1 npm run test:e2e -- tests/e2e/lyrics.spec.ts tests/e2e/cover-search.spec.ts tests/e2e/provider-capabilities.spec.ts tests/e2e/editor.spec.ts tests/e2e/shell.spec.ts`（含新增 QQ 设置用例）。记录 Chromium/WebKit 的 API、列表、会话、采用与设置结果，不提交生成绑定/构建产物，不将已知编辑器旧断言失败默认为新功能通过。
+- [x] 8.1 运行 `go test -count=1 -race ./internal/...`，准备前端 embed/绑定后运行 `go vet ./...`；记录完整结果，重点确认元数据快照、自动导入、封面目录/文件回滚与歌词事务不退化。任何既有失败需有基线复现证据，不将新失败标成历史问题。
+- [x] 8.2 按 README 生成 Wails 绑定，运行 `npm test`、`npm run build` 以及 `SONEXA_E2E_PREVIEW=1 npm run test:e2e -- tests/e2e/lyrics.spec.ts tests/e2e/cover-search.spec.ts tests/e2e/provider-capabilities.spec.ts tests/e2e/editor.spec.ts tests/e2e/shell.spec.ts`（含新增 QQ 设置用例）。记录 Chromium/WebKit 的 API、列表、会话、采用与设置结果，不提交生成绑定/构建产物，不将已知编辑器旧断言失败默认为新功能通过。
 - [ ] 8.3 显式启用 QQ 元数据单碟/多碟/歌词回退的有界真实来源测试，同时复测已迁移的四歌词和四封面入口；从 30 开始、无风控才继续少量 45/60 速率样本，记录请求间隔、错误/429、Retry-After、通道及取消结果。遇限制停止提速，不做压力或绕过测试；无法完成时保留本项未完成并说明阻塞，不能用 fixture 替代在线证据。
 - [ ] 8.4 在 `openspec/verification.md` 记录本次离线、浏览器、在线及原生未验证边界，逐项对照四份 delta、design 的关键不变量及[原始提示词](resource/0-original-prompt.txt)，记录业务解耦、单能力接入、协议去重与旧 Provider 去留的实现证据。结合源码检索、调用关系和边界测试，核查本次范围内的重复协议构造/解析、被替代的生产链路、无用类型及永久兼容壳已经删除；仍在使用的通用工具、测试覆盖与 QRC 许可保留或随实现迁移，不把清理范围扩展到无关模块。执行 `openspec validate refactor-upstream-capabilities --strict`、`git diff --check` 并完成审阅。不得提前关闭 G14/G16/G17 中无本次证据支持的事项。
 
