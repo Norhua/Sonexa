@@ -129,6 +129,84 @@ SONEXA_QQ_FALLBACK_DISCOVERY=1 \
 `openspec validate refactor-upstream-capabilities --strict` 与 `git diff --check` 均通过。
 本轮未改生产代码、DTO 或前端，也未重跑全量后端/浏览器验收。
 
+### 扩大有界查找及独立来源复测（最新结果）
+
+用户明确授权一次最多 10 个标题、40 次实际请求的查找，并允许不等待回退样例，独立推进
+其他在线验收。测试新增显式 `SONEXA_QQ_DISCOVERY_EXPANDED=1`，默认仍为两标题/16 次；
+扩大模式限 3 分钟、每标题最多三个详情，全部 QQ 请求仍走生产装配与 30 请求/分钟桶。
+`TestLiveQQMetadata` 的成功判定补齐与查找入口相同的通用歌词可用性校验，防止把非空
+占位内容当作成功回退；不修改生产协议、响应或元数据存储行为。
+
+#### QQ：真实触发回退，但没有取得可用歌词，随后 -1901 停止
+
+实际命令（Bash）：
+
+```sh
+SONEXA_QQ_FALLBACK_DISCOVERY=1 SONEXA_QQ_DISCOVERY_EXPANDED=1 \
+  SONEXA_QQ_DISCOVERY_TITLES=$'An Ending (Ascent)\nAvril 14th\nOn the Nature of Daylight\nEverybody’s Free (To Wear Sunscreen)\nBohemian Rhapsody (Live)\nBaba Yetu\nSogno di Volare\n小さな手のひら\n初音ミクの消失\n夜空中最亮的星 (Live)' \
+  go test -count=1 -v ./internal/app -run '^TestLiveQQFallbackDiscovery$'
+```
+
+只执行了第一个标题 `An Ending (Ascent)`，其搜索返回 3 个候选，随后在第二个候选的
+旧歌词请求遇到业务错误停止，没有执行其余九个标题、重试或另开 QQ 入口：
+
+| 请求 | 路径/用途 | 间隔 | HTTP / 业务状态 | 结果 |
+| --- | --- | --- | --- | --- |
+| 1 | musicu 搜索 | 首次 | 200；顶层/搜索块 0 | 3 候选 |
+| 2 | musicu 第一候选详情 | 2.000400417 秒 | 200；顶层及三块 0 | 详情缺少内联歌词，自动进入回退 |
+| 3 | 旧歌词接口 | 2.000662750 秒 | 200；code/retcode/subcode 均 0 | 61 字节，但通用歌词可用性校验失败 |
+| 4 | musicu 第二候选详情 | 1.999952333 秒 | 200；顶层及三块 0 | 随后继续清单分页 |
+| 5 | musicu 清单分页 | 2.000449375 秒 | 200；顶层/请求块 0 | 随后自动进入回退 |
+| 6 | 旧歌词接口 | 1.999561542 秒 | 200；code/retcode/subcode 均 -1901 | 观察器触发停止 |
+
+第一候选的专辑 MID 为 `001Frvoh4E456m`，歌曲 MID 为 `000W46Kt3BWQ0i`。
+它是**真实触发回退但未取得可用歌词**的样例，不能用于宣告“成功补取歌词”通过。
+第二候选由于观察器提前停止，没有输出身份摘要，不猜测其 MID。
+六次响应均无 Retry-After、无 HTTP 429；`-1901` 的具体原因未验证，不将它直接等同于
+速率风控或据此绕过限制。其后本轮未运行 QQ 单碟/多碟固定入口、手动歌词、封面或速率入口。
+
+#### 不访问 QQ 的独立验收
+
+沿用现有 live 入口及其硬预算，用 Go 子测试过滤只选择尚未运行的其他平台；每个来源
+只尝试一次。组合测试某来源失败后返回，因此后续命令仅执行之前未到达的来源，不重试
+失败来源。歌词使用默认「青花瓷 / 周杰伦」，封面使用现有固定样例和地区。
+
+```sh
+SONEXA_LYRICS_LIVE=1 go test -count=1 -v ./internal/app -run '^TestLiveSources$/(163|kugou|kuwo)$'
+SONEXA_LYRICS_LIVE=1 go test -count=1 -v ./internal/app -run '^TestLiveSources$/(kugou|kuwo)$'
+SONEXA_LIVE_COVERS=1 go test -count=1 -v ./internal/app -run '^TestLiveCoverSources$/(caa|itunes|163)$'
+SONEXA_LIVE_COVERS=1 go test -count=1 -v ./internal/app -run '^TestLiveCoverSources$/(itunes|163)$'
+SONEXA_LIVE_COVERS=1 go test -count=1 -v ./internal/app -run '^TestLiveCoverSources$/163$'
+```
+
+实际执行时显式清空了歌词 SOURCE/TITLE/ARTIST/ALBUM/DURATION_MS 和封面 SOURCE 的覆盖变量。
+上面分别为 5 次命令，不是 5 次全量复测；子测试选择没有访问 QQ。
+
+| 来源/业务 | 请求与结果 | 验收结论 |
+| --- | --- | --- |
+| 网易云歌词 | 搜索/正文 2 次 HTTP 200、code=200，间隔 1.000600250 秒；仅留下候选 `3381543730`，时长 95037 ms，正文不可用 | 失败，未改查其他歌或把“HTTP 成功”写成取得歌词 |
+| 酷狗歌词 | 搜索/歌词候选/下载共 3 次 HTTP 200；状态分别为 status=1/errcode=0、status=200/errcode=200、status=200/error_code=0；间隔 1.000562208、1.000444667 秒 | 通过，候选 `37a8f50a9ec3b267c3cc6bec633d9c4a`，239000 ms，1961 字节 LRC；无警告；原文/翻译/罗马音摘要均为 unknown，不能记作三个独立通道已验通 |
+| 酷我歌词 | 搜索 HTTP 200，留下 2 候选，首个 `482253701`；正文在 1.000644500 秒后返回 HTTP 200/status=301 | 失败，观察器停止；没有尝试第二候选或再次请求酷我 |
+| CAA 封面 | MB 召回首次请求发生 `http.tlsHandshakeTimeoutError`，未取得 HTTP 响应 | 失败，未进入目录/图片，不关闭 TLS、不改代理或重试 |
+| iTunes 封面 | 搜索 1 次 HTTP 200，返回 33587 字节；没有满足成功且非空卡片断言 | 失败；旧测试只记录结果条数，无法从日志区分空结果/来源处理错误，根因未确定，不据此修改适配器或相关性规则 |
+| 网易云封面 | 搜索 1 次 HTTP 200/code=200，图片/目录门禁许可 1 次，真实 handler 预览后显式采用 | 通过，请求档位 250、实际 240×240、16545 字节、adopted_revision=1；不把构造尺寸当实测尺寸 |
+
+酷狗到酷我首请求相隔 106.442167 ms，是不同平台桶，不与同平台约 1 秒的间隔混算。
+取得 HTTP 响应的 API 请求均未返回 Retry-After 或 HTTP 429；没有原始响应/歌词正文转储。
+全部在线测试使用临时库/目录，不触碰真实收藏；原始摘要日志在本地
+`tmp/upstream-capabilities-live/` 的 `qq-fallback-expanded.log`、`lyrics-non-qq.log`、
+`lyrics-kugou-kuwo.log`、`covers-non-qq.log`、`covers-itunes-163.log`、`covers-163.log`，不提交。
+
+**8.3 仍未完成**：已有真实回退触发证据但无成功正文；QQ -1901、酷我 301、MB TLS 超时、
+网易云当前歌词样例和 iTunes 图片结果未通过。QQ 45/60、速率入口取消断言及四来源全体
+最新验收均未完成；本轮不再发在线请求，不下调验收条件、不关闭 G14/G16/G17。
+
+离线验证：默认/扩大模式的显式开关、标题上限、请求预算和现有停止规则定向 race 通过；
+关闭所有 live/probe 开关后，`go test -count=1 -race ./internal/app/...` 通过（49.092 秒），
+`go vet ./internal/app/...`、`openspec validate refactor-upstream-capabilities --strict` 及
+`git diff --check` 通过。本轮只改测试辅助与证据文档，未改生产代码/公开绑定/前端，
+未重跑全量后端、浏览器或原生验收。
+
 ### 8.4 证据核对与清理审阅（已完成；8.3 仍未完成）
 
 用户明确选择先完成本项，保留 8.3。审阅基于重构前提交 `6814557`、此前实现至
@@ -221,9 +299,11 @@ git diff --check
 
 #### 尚未验证与保留阻塞
 
-任务 **8.3 保持未完成**：没有实际缺失内联歌词的回退样例；上一轮 45 档出现 2001 后停止，
-60 档未发送，速率入口的取消断言未到达；四歌词正文/通道和四封面搜索/预览/采用尚未完成最新在线复测。
-本次共享解析清理只补了离线验证，不把旧在线样本算作清理后真实来源复测。
+任务 **8.3 保持未完成**。最新扩大查找已在 `An Ending (Ascent)` 真实触发缺少内联歌词的
+回退，但正文不可用，后续候选返回 -1901 后停止；“成功补取”仍无样例。独立复测仅酷狗歌词
+和网易云封面通过，其他失败/未执行项见上面的最新结果。前一轮 45 档出现 2001 后停止，
+60 档未发送，速率入口的取消断言未到达；本轮不再重跑 QQ 或提高速率。
+共享解析清理的离线证据与各阶段在线记录分开，不把历史通过算作本轮全体来源通过。
 
 原生窗口、输入法、文件选择器、真实断网及大曲库未新增人工验收；既有截图测试断言和大 chunk
 提示未解决。**G14/G16/G17 保持未关闭**，不根据本次源码/fixture/浏览器证据推定上游可用、

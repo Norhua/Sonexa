@@ -82,14 +82,24 @@ func TestLiveQQMetadata(t *testing.T) {
 	if !fallback || d.Lyrics == nil || *d.Lyrics == "" {
 		t.Fatal("真实样例未触发并成功取得歌词回退；保持未验证")
 	}
+	if _, err := lyrics.DocumentFromPayload(&lyrics.Payload{Text: *d.Lyrics}); err != nil {
+		t.Fatal("真实回退内容不是可用歌词；非空响应不能作为成功补取证据")
+	}
 	t.Logf("metadata fallback requests=%d lyric_bytes=%d", len(audit.snapshot())-before, len(*d.Lyrics))
 }
 
 // Discovery is a separately authorized, one-shot investigation, not a fallback
-// inside the regression test. At most two searches, three details per search,
-// and sixteen actual API sends including pagination, fallback and redirects.
-// Titles may be selected before the run; they never increase its budget.
-func qqDiscoveryTitles(value string) ([]string, error) {
+// inside the regression test. Defaults to two searches and sixteen actual sends.
+// An explicitly authorized expanded run allows ten searches and forty sends,
+// including pagination, fallback and redirects; each search has at most 3 details.
+func qqDiscoveryLimits(expanded string) (titles, requests int, timeout time.Duration) {
+	if expanded == "1" {
+		return 10, 40, 3 * time.Minute
+	}
+	return 2, 16, 90 * time.Second
+}
+
+func qqDiscoveryTitles(value string, maxTitles int) ([]string, error) {
 	if strings.TrimSpace(value) == "" {
 		return []string{"綿雪の夢", "世界中の雨"}, nil
 	}
@@ -102,20 +112,22 @@ func qqDiscoveryTitles(value string) ([]string, error) {
 			seen[title] = true
 		}
 	}
-	if len(titles) > 2 {
-		return nil, fmt.Errorf("样例查找最多指定两个歌曲标题，不扩大单轮查询上限")
+	if len(titles) > maxTitles {
+		return nil, fmt.Errorf("样例查找最多指定 %d 个歌曲标题，不扩大单轮查询上限", maxTitles)
 	}
 	return titles, nil
 }
 
 func TestLiveQQFallbackDiscovery(t *testing.T) {
 	requireLive(t, "SONEXA_QQ_FALLBACK_DISCOVERY", os.Getenv("SONEXA_QQ_FALLBACK_DISCOVERY"))
-	titles, err := qqDiscoveryTitles(os.Getenv("SONEXA_QQ_DISCOVERY_TITLES"))
+	maxTitles, budget, timeout := qqDiscoveryLimits(os.Getenv("SONEXA_QQ_DISCOVERY_EXPANDED"))
+	titles, err := qqDiscoveryTitles(os.Getenv("SONEXA_QQ_DISCOVERY_TITLES"), maxTitles)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, audit := newLiveApp(t, 16)
-	ctx, cancel := liveContext(a, audit, 90*time.Second)
+	t.Logf("discovery limits titles=%d requests=%d timeout=%s rate_per_minute=30", len(titles), budget, timeout)
+	a, audit := newLiveApp(t, budget)
+	ctx, cancel := liveContext(a, audit, timeout)
 	defer cancel()
 	p, err := a.registry.Get(provider.QQMusic)
 	if err != nil {
@@ -252,9 +264,45 @@ func TestQQDiscoveryTitlesRemainBounded(t *testing.T) {
 		{"too-many", "one\ntwo\nthree", nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := qqDiscoveryTitles(tc.value)
+			got, err := qqDiscoveryTitles(tc.value, 2)
 			if (err != nil) != tc.wantErr || !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("titles=%v err=%v", got, err)
+			}
+		})
+	}
+}
+
+func TestQQDiscoveryExpandedLimitsRequireExplicitOptIn(t *testing.T) {
+	for _, value := range []string{"", "0", "true", "1"} {
+		t.Run("expanded="+value, func(t *testing.T) {
+			maxTitles, requests, timeout := qqDiscoveryLimits(value)
+			if value == "1" {
+				if maxTitles != 10 || requests != 40 || timeout != 3*time.Minute {
+					t.Fatal(maxTitles, requests, timeout)
+				}
+			} else if maxTitles != 2 || requests != 16 || timeout != 90*time.Second {
+				t.Fatal("expanded without explicit opt-in", maxTitles, requests, timeout)
+			}
+			var titles []string
+			for i := range maxTitles {
+				titles = append(titles, fmt.Sprintf("song-%d", i))
+			}
+			if got, err := qqDiscoveryTitles(strings.Join(titles, "\n"), maxTitles); err != nil || !reflect.DeepEqual(got, titles) {
+				t.Fatal(got, err)
+			}
+			if _, err := qqDiscoveryTitles(strings.Join(titles, "\n")+"\none-more", maxTitles); err == nil {
+				t.Fatal("title limit bypass")
+			}
+			// The wire budget includes all subrequests and cannot be renewed.
+			audit := &liveAudit{max: requests}
+			for range requests {
+				if err := audit.gate(); err != nil {
+					t.Fatal(err)
+				}
+				audit.arrivals = append(audit.arrivals, liveArrival{})
+			}
+			if !errors.Is(audit.gate(), errLiveStopped) {
+				t.Fatal("request budget bypass")
 			}
 		})
 	}

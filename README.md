@@ -143,6 +143,10 @@ SONEXA_QQ_METADATA_LIVE=1 \
 # 可预先设置 SONEXA_QQ_DISCOVERY_TITLES，以换行分隔最多两个标题；不增加单轮预算。
 SONEXA_QQ_FALLBACK_DISCOVERY=1 go test -v ./internal/app -run '^TestLiveQQFallbackDiscovery$' -count=1
 
+# 仅在另行明确授权扩大查找后附加 SONEXA_QQ_DISCOVERY_EXPANDED=1：
+# 最多 10 个标题、各最多 3 个候选详情、40 次实际发送、3 分钟；速率仍为 30 请求/分钟。
+# 找到即结束；无样例/预算耗尽则保留未验证，不自动重开。HTTP/业务限制或传输失败立即停止。
+
 # 按 30 → 45 → 60 顺序，每档元数据/封面/歌词各查询一次（9 次，含跳转硬上限 12）。
 # 必须先确认上一轮没有风控；一旦遇限制，不另开进程继续更高档。
 SONEXA_QQ_RATE_LIVE=1 go test -v ./internal/app -run '^TestLiveQQRateSamples$' -count=1
