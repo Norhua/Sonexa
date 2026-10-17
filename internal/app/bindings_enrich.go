@@ -100,7 +100,7 @@ func (a *App) fetchAndApplyDetail(ctx context.Context, target store.EnrichTarget
 		return err
 	}
 
-	p, err := a.registry.Get(provider.ProviderID(target.Provider))
+	p, err := a.metadataRegistry().Get(provider.ProviderID(target.Provider))
 	if err != nil {
 		return err
 	}

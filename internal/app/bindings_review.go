@@ -155,7 +155,7 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 		return nil, fmt.Errorf("%s", gate.Reason)
 	}
 
-	p, err := a.registry.Get(provider.ProviderID(providerID))
+	p, err := a.metadataRegistry().Get(provider.ProviderID(providerID))
 	if err != nil {
 		return nil, err
 	}

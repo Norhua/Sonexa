@@ -192,7 +192,9 @@ func (a *App) initialize() error {
 		return err
 	}
 	a.coverSvc = a.attachLadderBuilder(svc)
-	a.rebuildProviders(cur)
+	if err := a.rebuildProviders(cur); err != nil {
+		return err
+	}
 	if _, err := a.libraryService(); err != nil {
 		return err
 	}
@@ -216,68 +218,6 @@ func (a *App) attachEnrichWorker() {
 	// 整表重载只在一轮结束时做一次：逐条刷新会让 200 条的补全
 	// 触发 200 次全表查询与 200 次重渲染。
 	a.enricher.onLibraryChanged = a.notifyLibraryChanged
-}
-
-// rebuildProviders 按当前设置重建上游注册表与令牌桶。
-//
-// 改动联系方式或速率后即时生效，无需重启应用。
-func (a *App) rebuildProviders(cur config.Settings) {
-	a.client = provider.NewClient(a.limiters, a.store.AsProviderCache(), a.userAgent(cur))
-
-	mb := musicbrainz.New(a.client, musicbrainz.Config{
-		Contact:    cur.MusicBrainz.Contact,
-		ServerURL:  cur.MusicBrainz.ServerURL,
-		RatePerSec: cur.MusicBrainz.RatePerSec,
-		// 上游响应缓存的有效期也是设置项。
-		// MB 数据为 CC0 不受 TTL 约束，但用户可以在缓存分组里为自己
-		// 保留的响应设置一个上限；为 0 时按不过期处理。
-		CacheTTL: time.Duration(cur.Cache.ProviderCacheTTLh) * time.Hour,
-	}, store.ParamsHash)
-
-	it := itunes.New(a.client, itunes.Config{
-		DefaultCountry: cur.ITunes.DefaultCountry,
-		RatePerMin:     cur.ITunes.RatePerMin,
-	}, store.ParamsHash)
-
-	qq := qqmusic.New(a.client, qqmusic.Config{RatePerMin: cur.QQMusic.RatePerMin}, store.ParamsHash)
-	lyricSvc, err := buildLyricsService(a.client, qq)
-	if err != nil {
-		panic(err) // Built-in IDs are fixed; atomic fallible assembly is task 6.1.
-	}
-	a.lyricSvc = lyricSvc
-	coverSources, err := buildCoverSources(a.client, mb, it, qq, a.coverSvc)
-	if err != nil {
-		panic(err)
-	}
-	a.coverSources = coverSources
-
-	a.registry = provider.NewRegistry()
-	a.registry.Register(mb)
-	a.registry.Register(it)
-	a.registry.Register(qq)
-
-	priority := make([]provider.ProviderID, 0, len(cur.ProviderPriority))
-	for _, id := range cur.ProviderPriority {
-		priority = append(priority, provider.ProviderID(id))
-	}
-	a.registry.SetPriority(priority)
-	if a.coverSvc != nil {
-		policies, err := defaultImagePolicies()
-		if err != nil {
-			panic(err)
-		}
-		a.coverSvc.SetImagePolicies(policies)
-		for _, p := range a.registry.List() {
-			if strategy, ok := p.(provider.ArtworkStrategist); ok {
-				a.coverSvc.RegisterArtwork(strategy.ArtworkStrategy())
-			}
-		}
-	}
-
-	a.limiters.ConfigureFixedQuotas()
-	for _, p := range a.registry.List() {
-		a.limiters.SetFromProvider(p)
-	}
 }
 
 // rebuildRunner 按当前设置重建队列驱动器。
@@ -365,6 +305,8 @@ const (
 
 // shutdown 在应用退出时释放资源。
 func (a *App) shutdown(ctx context.Context) {
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
 	a.mu.Lock()
 	a.coverClosing = true
 	for _, session := range a.coverSessions {
@@ -466,16 +408,14 @@ func (a *App) attachLadderBuilder(svc *covers.Service) *covers.Service {
 		return nil
 	}
 	svc.SetDetailLoader(func(ctx context.Context, ref provider.Ref) (*provider.Detail, error) {
-		a.mu.RLock()
-		p, err := a.registry.Get(ref.Provider)
-		a.mu.RUnlock()
+		p, err := a.metadataRegistry().Get(ref.Provider)
 		if err != nil {
 			return nil, err
 		}
 		return p.FetchDetail(ctx, ref)
 	})
 
-	for _, p := range a.registry.List() {
+	for _, p := range a.metadataRegistry().List() {
 		if source, ok := p.(provider.ArtworkStrategist); ok {
 			svc.RegisterArtwork(source.ArtworkStrategy())
 		}

@@ -362,7 +362,7 @@ func (a *App) FetchTracklist(providerID, releaseRef string, force bool) error {
 		return fmt.Errorf("%s", gate.Reason)
 	}
 
-	p, err := a.registry.Get(provider.ProviderID(providerID))
+	p, err := a.metadataRegistry().Get(provider.ProviderID(providerID))
 	if err != nil {
 		return err
 	}

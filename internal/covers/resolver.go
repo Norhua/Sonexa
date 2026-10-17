@@ -218,7 +218,7 @@ func (s *Service) downloadCatalog(ctx context.Context, target Target, catalog *s
 	images := append([]store.CoverImage(nil), catalog.Images...)
 	sort.SliceStable(images, func(i, j int) bool { return images[i].Front && !images[j].Front })
 	specs := []string{"original"}
-	if policy, ok := s.artworkForSource(catalog.Source); ok && policy.Specs != nil {
+	if policy, ok := artworkIn(ctx, catalog.Source); ok && policy.Specs != nil {
 		specs = policy.Specs(usage == Detail)
 	}
 
@@ -285,7 +285,7 @@ func (s *Service) DownloadVariant(ctx context.Context, variant store.CoverVarian
 		if err := imagePolicy(ctx).CheckURL(variant.URL); err != nil {
 			return nil, err
 		}
-		data, err := s.pool.fetchURLs(ctx, s.imageURLs(source, variant.URL), nil)
+		data, err := s.pool.fetchURLs(ctx, s.imageURLs(ctx, source, variant.URL), nil)
 		if err == nil {
 			_, err = InspectImage(data)
 		}

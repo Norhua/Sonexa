@@ -34,7 +34,7 @@ func (a *App) ListProviders() ([]ProviderInfo, error) {
 		return nil, err
 	}
 	out := []ProviderInfo{}
-	for _, p := range a.registry.List() {
+	for _, p := range a.metadataRegistry().List() {
 		info := ProviderInfo{
 			ID:           string(p.ID()),
 			DisplayName:  p.DisplayName(),
@@ -99,8 +99,15 @@ func (a *App) SaveSettings(next config.Settings) error {
 	a.settingsMu.Lock()
 	defer a.settingsMu.Unlock()
 	a.mu.RLock()
-	svc, paths := a.coverSvc, a.paths
+	svc, paths, closing := a.coverSvc, a.paths, a.coverClosing
 	a.mu.RUnlock()
+	if closing {
+		return fmt.Errorf("应用正在关闭")
+	}
+	assembled, err := assembleUpstreams(next, a.limiters, a.store, svc, a.userAgent(next))
+	if err != nil {
+		return err
+	}
 	newPaths := paths.WithCoverDir(next.Cache.CoverDir)
 	if newPaths.CoverDir != paths.CoverDir && svc != nil && svc.Library() != nil {
 		if err := svc.MoveRoot(newPaths.CoverDir, func() error { return a.settings.Save(next) }); err != nil {
@@ -118,7 +125,7 @@ func (a *App) SaveSettings(next config.Settings) error {
 	}
 	a.mu.Lock()
 	a.paths = newPaths
-	a.rebuildProviders(next)
+	a.publishUpstreamsLocked(assembled)
 	a.rebuildRunner(next)
 	a.store.SetLadderConfig(a.ladderConfig())
 	a.mu.Unlock()

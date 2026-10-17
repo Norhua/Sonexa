@@ -20,7 +20,7 @@ func (a *App) checkCoverOutbound() error {
 //	来自 iTunes      → iTunes 图片地址（尺寸靠构造）
 //	来自 QQ 音乐     → QQ 图片地址（由专辑 MID 构造）
 func (a *App) coverLadder(providerID, releaseRef, artworkURL string, releaseGroupRef *string) []string {
-	p, err := a.registry.Get(provider.ProviderID(providerID))
+	p, err := a.metadataRegistry().Get(provider.ProviderID(providerID))
 	if err != nil {
 		return nil
 	}

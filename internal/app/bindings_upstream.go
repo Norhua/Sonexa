@@ -159,9 +159,10 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 		rows []CandidateRow
 		err  error
 	}
+	registry := a.metadataRegistry()
 	tasks := make([]*task, 0, len(providerIDs))
 	for _, id := range providerIDs {
-		p, err := a.registry.Get(provider.ProviderID(id))
+		p, err := registry.Get(provider.ProviderID(id))
 		if err != nil {
 			continue
 		}

@@ -197,7 +197,9 @@ func TestITunesSearchAdmissionAndCoverRecovery(t *testing.T) {
 	}
 	a.store = reopened
 	defer reopened.Close()
-	a.rebuildProviders(a.settings.Get())
+	if err := a.rebuildProviders(a.settings.Get()); err != nil {
+		t.Fatal(err)
+	}
 	a.client.HTTP.Transport = replay
 	startService()
 	request(libraryTarget, "detail", 1200)

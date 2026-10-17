@@ -70,7 +70,9 @@ func newTestApp(t *testing.T) (*App, func()) {
 	// 测试里另建一份不带构造器的服务，正是「封面全都加载不出来」这类 bug
 	// 能在测试全绿的情况下发布的原因。
 	app.coverSvc = app.attachLadderBuilder(newTestCoverService(t, paths.CoverDir, settings.Get()))
-	app.rebuildProviders(settings.Get())
+	if err := app.rebuildProviders(settings.Get()); err != nil {
+		t.Fatalf("装配上游失败: %v", err)
+	}
 	app.rebuildRunner(settings.Get())
 	// 同上：补全任务的四条依赖也走生产那一条接线
 	app.attachEnrichWorker()

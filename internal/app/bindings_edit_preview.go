@@ -25,7 +25,8 @@ func (a *App) SearchEditCandidates(trackID int64, source, title, artist, album, 
 	if gate := a.CheckOutbound(); !gate.Allowed {
 		return nil, fmt.Errorf("%s", gate.Reason)
 	}
-	p, err := a.registry.Get(provider.ProviderID(source))
+	registry := a.metadataRegistry()
+	p, err := registry.Get(provider.ProviderID(source))
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +121,8 @@ func (a *App) ListEditVersions(source, groupRef string, offset int) (*EditVersio
 	if gate := a.CheckOutbound(); !gate.Allowed {
 		return nil, fmt.Errorf("%s", gate.Reason)
 	}
-	p, err := a.registry.Get(provider.ProviderID(source))
+	registry := a.metadataRegistry()
+	p, err := registry.Get(provider.ProviderID(source))
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +134,7 @@ func (a *App) ListEditVersions(source, groupRef string, offset int) (*EditVersio
 	}
 	done := a.beginInteractive()
 	defer done()
-	page, err := a.registry.ListVersions(provider.WithPriority(a.ctx, provider.PriorityInteractive), domain.Identity{Provider: domain.ProviderID(source), Ref: groupRef}, provider.Page{Offset: offset, Limit: 25})
+	page, err := registry.ListVersions(provider.WithPriority(a.ctx, provider.PriorityInteractive), domain.Identity{Provider: domain.ProviderID(source), Ref: groupRef}, provider.Page{Offset: offset, Limit: 25})
 	if err != nil {
 		return nil, err
 	}

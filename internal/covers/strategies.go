@@ -10,6 +10,18 @@ import (
 	"time"
 )
 
+// ConfigureSources publishes automatic artwork, image safety and detail lookup
+// under one lock. Operations pin this snapshot in beginOperation.
+func (s *Service) ConfigureSources(artwork []provider.ArtworkStrategy, images *provider.ImagePolicies, detail func(context.Context, provider.Ref) (*provider.Detail, error)) {
+	entries := make(map[string]provider.ArtworkStrategy, len(artwork))
+	for _, strategy := range artwork {
+		entries[strategy.Source] = strategy
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.artwork, s.imagePolicies, s.detailLoader = entries, images, detail
+}
+
 func (s *Service) RegisterArtwork(policy provider.ArtworkStrategy) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -36,8 +48,8 @@ func (s *Service) artworkForProvider(id string) (provider.ArtworkStrategy, bool)
 	}
 	return provider.ArtworkStrategy{}, false
 }
-func (s *Service) imageURLs(source, raw string) []string {
-	if p, ok := s.artworkForSource(source); ok && p.ImageURLs != nil {
+func (s *Service) imageURLs(ctx context.Context, source, raw string) []string {
+	if p, ok := artworkIn(ctx, source); ok && p.ImageURLs != nil {
 		return p.ImageURLs(raw)
 	}
 	return []string{raw}
@@ -50,7 +62,7 @@ func (s *Service) Catalog(ctx context.Context, key store.CoverCatalogKey, force 
 		return nil, err
 	}
 	defer done()
-	policy, ok := s.artworkForSource(key.Source)
+	policy, ok := artworkIn(ctx, key.Source)
 	if !ok {
 		return nil, fmt.Errorf("图片来源 %s 未装配", key.Source)
 	}
@@ -71,9 +83,8 @@ func (s *Service) Catalog(ctx context.Context, key store.CoverCatalogKey, force 
 				return nil, fmt.Errorf("图片来源暂时不可用: %s", cached.LastError)
 			}
 		}
-		s.mu.Lock()
-		load := s.detailLoader
-		s.mu.Unlock()
+		snapshot, _ := ctx.Value(imagePoliciesKey{}).(*sourceSnapshot)
+		load := snapshot.detail
 		io := provider.ArtworkIO{Fetch: s.pool.fetchOne, Detail: func(ctx context.Context, ref provider.Ref) (*provider.Detail, error) {
 			if load == nil {
 				return nil, fmt.Errorf("来源详情查询未装配")

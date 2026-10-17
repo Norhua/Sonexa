@@ -119,6 +119,7 @@ func (a *App) StartCoverSearch(request CoverSearchRequest) error {
 	}
 	a.mu.RLock()
 	registry := a.coverSources
+	policyContext := a.coverSvc.SnapshotContext(context.Background())
 	a.mu.RUnlock()
 	selected := map[string]sources.Provider{}
 	seen := map[string]bool{}
@@ -139,6 +140,7 @@ func (a *App) StartCoverSearch(request CoverSearchRequest) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	ctx = provider.WithRequestGate(ctx, a.checkCoverOutbound)
+	ctx = covers.WithPolicySnapshot(ctx, policyContext)
 	session := &coverSession{ctx: ctx, cancel: cancel, releaseID: request.ReleaseID, variants: map[int64]bool{}, results: map[string]CoverSearchEvent{}}
 	a.mu.Lock()
 	if a.coverClosing {
@@ -160,8 +162,6 @@ func (a *App) StartCoverSearch(request CoverSearchRequest) error {
 		return fmt.Errorf("搜索会话标识已使用，请新建会话")
 	}
 	a.coverSessions[request.SearchID] = session
-	session.ctx = a.coverSvc.SnapshotContext(session.ctx)
-	ctx = session.ctx
 	a.coverWorkers.Add(len(request.Sources))
 	a.mu.Unlock()
 	for _, source := range request.Sources {

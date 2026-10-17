@@ -35,7 +35,7 @@ func TestPoolSourcePolicyChecksFirstRequestAndEveryRedirect(t *testing.T) {
 			one, _ := provider.NewImagePolicy([]provider.ImageHost{{Host: "one.test", Subdomains: true}}, 2)
 			two, _ := provider.NewImagePolicy([]provider.ImageHost{{Host: "two.test"}}, 2)
 			policies, _ := provider.NewImagePolicies(map[string]*provider.ImagePolicy{"one": one, "two": two})
-			ctx := imageContext(context.WithValue(context.Background(), imagePoliciesKey{}, policies), "one")
+			ctx := imageContext(context.WithValue(context.Background(), imagePoliciesKey{}, &sourceSnapshot{images: policies}), "one")
 			calls := 0
 			p.client.Transport = policyTransport(func(r *http.Request) (*http.Response, error) {
 				calls++
