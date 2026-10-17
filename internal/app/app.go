@@ -31,24 +31,26 @@ type App struct {
 	ctx     context.Context
 	version string
 
-	paths          config.Paths
-	settings       *config.Store
-	store          *store.Store
-	library        *library.Service
-	registry       *provider.Registry
-	limiters       *provider.Limiters
-	client         *provider.Client
-	lyricSvc       *lyrics.Service
-	coverSources   *sources.Registry
-	coverSvc       *covers.Service
-	coverSessions  map[string]*coverSession
-	coverWorkers   sync.WaitGroup
-	coverClosing   bool
-	pickCoverFile  func(context.Context, runtime.OpenDialogOptions) (string, error)
-	pickLyricsFile func(context.Context, runtime.OpenDialogOptions) (string, error)
-	lyricSessions  map[string]*lyricSession
-	lyricWorkers   sync.WaitGroup
-	runner         *importer.Runner
+	paths           config.Paths
+	settings        *config.Store
+	store           *store.Store
+	library         *library.Service
+	registry        *provider.Registry
+	limiters        *provider.Limiters
+	client          *provider.Client
+	lyricSvc        *lyrics.Service
+	coverSources    *sources.Registry
+	coverSvc        *covers.Service
+	coverSessions   map[string]*coverSession
+	coverWorkers    sync.WaitGroup
+	coverClosing    bool
+	coverLife       context.Context
+	cancelCoverWork context.CancelFunc
+	pickCoverFile   func(context.Context, runtime.OpenDialogOptions) (string, error)
+	pickLyricsFile  func(context.Context, runtime.OpenDialogOptions) (string, error)
+	lyricSessions   map[string]*lyricSession
+	lyricWorkers    sync.WaitGroup
+	runner          *importer.Runner
 	// enricher 是后台的「补全信息匹配」任务：入库不再同步补详情，
 	// 详情由它在空闲时按条补上（见 enrichWorker）。
 	enricher *enrichWorker
@@ -104,7 +106,10 @@ func (a *App) startup(ctx context.Context) {
 // 调用点是「刚出现新的待补条目」或「刚空闲下来」：启动、导入跑完、
 // 接受一条候选、加入曲库。用户主动按过暂停时它不生效。
 func (a *App) autoStartEnrich() {
-	if a.enricher == nil {
+	a.mu.RLock()
+	closing := a.coverClosing
+	a.mu.RUnlock()
+	if closing || a.enricher == nil {
 		return
 	}
 	// 出网未启用（联系方式没填）时一条也补不了。此时不该起任务：
@@ -134,7 +139,10 @@ func (a *App) outboundBusy() (bool, string) {
 	if a.interactive.Load() > 0 {
 		return true, "用户检索进行中"
 	}
-	if a.runner != nil && a.runner.AnyRunning() {
+	a.mu.RLock()
+	runner := a.runner
+	a.mu.RUnlock()
+	if runner != nil && runner.AnyRunning() {
 		return true, "导入匹配进行中"
 	}
 	return false, ""
@@ -309,6 +317,9 @@ func (a *App) shutdown(ctx context.Context) {
 	defer a.settingsMu.Unlock()
 	a.mu.Lock()
 	a.coverClosing = true
+	if a.cancelCoverWork != nil {
+		a.cancelCoverWork()
+	}
 	for _, session := range a.coverSessions {
 		session.cancel()
 	}
@@ -336,21 +347,13 @@ func (a *App) shutdown(ctx context.Context) {
 // 不导出：它返回 http.Handler，不是给前端调用的绑定方法。
 func (a *App) coverAssetHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		a.mu.RLock()
-		svc := a.coverSvc
-		a.mu.RUnlock()
-		if svc == nil {
+		svc, session, ctx, done, err := a.coverWork(r.URL.Query().Get("searchId"))
+		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
-		if searchID := r.URL.Query().Get("searchId"); searchID != "" {
-			a.mu.RLock()
-			session := a.coverSessions[searchID]
-			a.mu.RUnlock()
-			if session == nil || session.ctx.Err() != nil {
-				http.NotFound(w, r)
-				return
-			}
+		defer done()
+		if session != nil {
 			variantID, err := strconv.ParseInt(r.URL.Query().Get("variantId"), 10, 64)
 			session.mu.Lock()
 			allowed := session.variants[variantID]
@@ -359,12 +362,11 @@ func (a *App) coverAssetHandler() http.Handler {
 				http.Error(w, "图片不属于当前搜索", http.StatusForbidden)
 				return
 			}
-			ctx, cancel := context.WithCancel(session.ctx)
-			stop := context.AfterFunc(r.Context(), cancel)
-			defer func() { stop(); cancel() }()
-			r = r.WithContext(ctx)
 		}
-		svc.Handler().ServeHTTP(w, r)
+		ctx, cancel := context.WithCancel(ctx)
+		stop := context.AfterFunc(r.Context(), cancel)
+		defer func() { stop(); cancel() }()
+		svc.Handler().ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -375,8 +377,7 @@ func (a *App) userAgent(cur config.Settings) string {
 
 // newCoverService 按给定路径与设置建立封面缓存与工作池。
 //
-// 抽成函数是有意的：改动封面缓存目录时要重建一套新的，
-// 与启动时用的是同一条构造路径，避免两处参数不一致。
+// 服务在设置更新时继续复用；目录变更通过 MoveRoot 串行迁移，不重建工作池。
 func newCoverService(st *store.Store, paths config.Paths, cur config.Settings, version string) (*covers.Service, error) {
 	cache, err := covers.NewDiskCache(paths.CoverDir, cur.Cache.CoverMaxBytes, coverTTL(cur))
 	if err != nil {
@@ -401,8 +402,7 @@ func newCoverService(st *store.Store, paths config.Paths, cur config.Settings, v
 // attachLadderBuilder 把降级链构造器接到封面服务上。
 //
 // 封面包不认识任何具体上游，降级链是 provider 特有逻辑，由这一层注入。
-// 建服务的地方有两处（启动、改缓存目录后重建），因此接线必须走同一个函数，
-// 否则重建出来的那份会少一条腿——封面在改过设置之后突然全都加载不出来。
+// 启动时接好通用解析器；能力与图片策略由集中装配入口原子更新。
 func (a *App) attachLadderBuilder(svc *covers.Service) *covers.Service {
 	if svc == nil {
 		return nil

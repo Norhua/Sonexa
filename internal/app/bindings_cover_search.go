@@ -276,14 +276,15 @@ type CoverAdoptionResult struct {
 }
 
 func (a *App) AdoptCoverCandidate(searchID string, variantID, revision int64) (*CoverAdoptionResult, error) {
-	a.mu.RLock()
-	session := a.coverSessions[searchID]
-	svc := a.coverSvc
-	a.mu.RUnlock()
-	if session == nil || session.ctx.Err() != nil {
+	svc, session, ctx, done, err := a.coverWork(searchID)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	if session == nil {
 		return nil, fmt.Errorf("封面搜索会话已结束")
 	}
-	if svc == nil || svc.Library() == nil {
+	if svc.Library() == nil {
 		return nil, fmt.Errorf("封面服务未就绪")
 	}
 	release, err := a.store.GetRelease(session.releaseID)
@@ -344,7 +345,7 @@ func (a *App) AdoptCoverCandidate(searchID string, variantID, revision int64) (*
 		if !v.Active {
 			continue
 		}
-		data, err := svc.DownloadVariant(session.ctx, v)
+		data, err := svc.DownloadVariant(ctx, v)
 		if err != nil {
 			failure = err
 			if session.ctx.Err() != nil || !errors.Is(err, covers.ErrNotFound) {

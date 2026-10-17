@@ -81,7 +81,7 @@ func (s *Service) resolveTarget(target Target) (Target, error) {
 	return target, nil
 }
 
-func (s *Service) localFiles(target Target) ([]store.CoverFile, error) {
+func (s *Service) localFiles(ctx context.Context, target Target) ([]store.CoverFile, error) {
 	if target.ReleaseID > 0 {
 		if err := s.library.ReuseReleasePreviews(target.ReleaseID); err != nil {
 			return nil, err
@@ -91,7 +91,7 @@ func (s *Service) localFiles(target Target) ([]store.CoverFile, error) {
 	if target.Ref == "" {
 		return nil, nil
 	}
-	policy, ok := s.artworkForProvider(target.Provider)
+	policy, ok := artworkForProviderIn(ctx, target.Provider)
 	if !ok {
 		return nil, nil
 	}
@@ -154,7 +154,7 @@ func (s *Service) Resolve(ctx context.Context, requested Target, usage Usage) (*
 			return &Resolved{Outcome: OutcomeEmpty}, nil
 		}
 	}
-	files, err := s.localFiles(target)
+	files, err := s.localFiles(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func (s *Service) Resolve(ctx context.Context, requested Target, usage Usage) (*
 	}
 	fallback := s.chooseFile(files, usage, false)
 	var catalog *store.CoverCatalog
-	policy, ok := s.artworkForProvider(target.Provider)
+	policy, ok := artworkForProviderIn(ctx, target.Provider)
 	if !ok || policy.Validate(policy.ObjectType, target.Ref) != nil {
 		if fallback != nil {
 			return fallback, nil
@@ -237,6 +237,9 @@ func (s *Service) downloadCatalog(ctx context.Context, target Target, catalog *s
 						failure = err
 					}
 					continue
+				}
+				if err := ctx.Err(); err != nil {
+					return nil, err
 				}
 				file, _, err := s.library.SaveVariant(target.ReleaseID, variant.ID, data, false, 0)
 				if err != nil {
@@ -294,6 +297,9 @@ func (s *Service) DownloadVariant(ctx context.Context, variant store.CoverVarian
 			if ctx.Err() == nil && !errors.As(err, &disabled) {
 				_ = s.library.store.RecordCoverVariantError(variant.ID, errors.Is(err, ErrNotFound), err.Error())
 			}
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		if _, _, err := s.library.SaveVariant(0, variant.ID, data, false, 0); err != nil {

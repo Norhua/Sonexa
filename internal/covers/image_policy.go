@@ -62,6 +62,18 @@ func artworkIn(ctx context.Context, source string) (provider.ArtworkStrategy, bo
 	return strategy, ok
 }
 
+func artworkForProviderIn(ctx context.Context, id string) (provider.ArtworkStrategy, bool) {
+	snapshot, _ := ctx.Value(imagePoliciesKey{}).(*sourceSnapshot)
+	if snapshot != nil {
+		for _, strategy := range snapshot.artwork {
+			if string(strategy.Provider) == id {
+				return strategy, true
+			}
+		}
+	}
+	return provider.ArtworkStrategy{}, false
+}
+
 func imagePolicy(ctx context.Context) *provider.ImagePolicy {
 	policy, _ := ctx.Value(imagePolicyKey{}).(*provider.ImagePolicy)
 	return policy

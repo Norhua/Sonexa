@@ -104,6 +104,9 @@ func (s *Service) Catalog(ctx context.Context, key store.CoverCatalogKey, force 
 			}
 			return nil, err
 		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if input == nil || input.Key != key {
 			return nil, fmt.Errorf("封面目录身份不匹配")
 		}
