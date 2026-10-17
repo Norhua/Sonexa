@@ -18,6 +18,7 @@ import Select from '@/volt/Select.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useThemeStore } from '@/stores/theme'
+import { QQ_RATE_MIN, QQ_RATE_MAX, QQ_RATE_ERROR, validQQRate } from '@/lib/qqRate'
 
 const settings = useSettingsStore()
 const theme = useThemeStore()
@@ -25,6 +26,10 @@ const theme = useThemeStore()
 const props = defineProps<{ anchor?: string }>()
 
 const draft = ref<Models.config.Settings | null>(null)
+// Keep raw input until save: numeric widgets must not clamp invalid input or
+// replace an empty value before the QQ-specific validation can reject it.
+const qqRateInput = ref<string | null>('')
+const qqRateValue = computed(() => qqRateInput.value?.trim() ? Number(qqRateInput.value) : null)
 const about = ref<Models.app.AboutInfo | null>(null)
 const countries = ref<Models.app.CountryOption[]>([])
 const saving = ref(false)
@@ -70,6 +75,7 @@ const groups: { key: GroupKey; label: string }[] = [
 
 onMounted(async () => {
   draft.value = JSON.parse(JSON.stringify(settings.settings ?? (await App.GetSettings())))
+  qqRateInput.value = String(draft.value!.qqmusic.ratePerMin)
   about.value = await App.About()
   countries.value = (await App.ListCountries()) ?? []
 })
@@ -79,12 +85,17 @@ const contactMissing = computed(() => !draft.value?.musicbrainz.contact?.trim())
 
 async function save() {
   if (!draft.value) return
+  error.value = ''
+  message.value = ''
+  if (!validQQRate(qqRateValue.value)) {
+    error.value = QQ_RATE_ERROR
+    return
+  }
+  draft.value.qqmusic.ratePerMin = qqRateValue.value
   // 主题由 theme store 持有（需同步读取以避免首帧闪白），
   // 保存时写回草稿，免得 settings.json 里留着一个与界面不符的值
   draft.value.general.theme = theme.theme
   saving.value = true
-  error.value = ''
-  message.value = ''
   try {
     await settings.save(draft.value)
     message.value = '已保存，改动立即生效'
@@ -97,6 +108,7 @@ async function save() {
 
 async function restoreDefaults() {
   draft.value = await App.DefaultSettings()
+  qqRateInput.value = String(draft.value.qqmusic.ratePerMin)
 }
 
 async function clearCache() {
@@ -223,14 +235,21 @@ defineExpose({ active })
 
           <template v-else-if="p.id === 'qq'">
             <label class="block text-sm">速率限制（请求/分钟）
-              <InputNumber
-                v-model="draft.qqmusic.ratePerMin"
-                :min="1"
+              <InputText
+                v-model="qqRateInput"
+                id="qq-rate"
+                type="number"
+                step="any"
+                aria-label="QQ 音乐合计速率（请求/分钟）"
+                :min="QQ_RATE_MIN"
+                :max="QQ_RATE_MAX"
+                :aria-invalid="!validQQRate(qqRateValue)"
                 size="small"
                 class="mt-1 block w-24"
               />
             </label>
-            <p class="text-xs text-muted-color">使用非公开接口，遇到风控或鉴权提示时该上游报告不可用。</p>
+            <p class="text-xs text-muted-color">默认 45 请求/分钟；1–60 内可主动降低。元数据、封面查询与歌词请求合计共用此配额，不含图片下载。</p>
+            <p class="text-xs text-muted-color">使用非公开接口，应用侧限制不保证上游可用；遇到风控或鉴权提示时报告不可用。</p>
           </template>
 
           <p v-else class="text-xs text-muted-color">该上游无需额外配置。</p>

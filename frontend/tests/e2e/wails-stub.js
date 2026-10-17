@@ -65,7 +65,7 @@
       App: {
         RefreshSearchCandidates: async rows => JSON.parse(JSON.stringify(rows)),
         GetSettings: async () => settings,
-        DefaultSettings: async () => settings,
+        DefaultSettings: async () => ({ ...JSON.parse(JSON.stringify(settings)), qqmusic: { ratePerMin: 45 } }),
         SaveSettings: async next => {
           Object.assign(settings, JSON.parse(JSON.stringify(next)))
           emit('settings:saved', settings)
