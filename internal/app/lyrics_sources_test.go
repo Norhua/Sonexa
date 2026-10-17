@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
@@ -39,7 +39,7 @@ func channelSummary(c *lyrics.Channel) string {
 	if c == nil {
 		return "unknown"
 	}
-	return fmt.Sprintf("%s bytes=%d %s", c.Status, len(c.Text), c.Message)
+	return fmt.Sprintf("%s bytes=%d", c.Status, len(c.Text))
 }
 
 func TestTextFormatsAndInvalidInput(t *testing.T) {
@@ -167,18 +167,16 @@ func TestLyricsRejectsCrossHostRedirect(t *testing.T) {
 
 // Opt-in manual verification; only logs titles, type and byte counts, not lyrics.
 func TestLiveSources(t *testing.T) {
-	if os.Getenv("SONEXA_LYRICS_LIVE") != "1" {
-		t.Skip("set SONEXA_LYRICS_LIVE=1 for upstream probes")
-	}
-	c := provider.NewClient(provider.NewLimiters(), nil, "Sonexa/lyrics-verification (https://github.com/norhua/sonexa)")
-	s := sourceService(c)
-	// Only probe a caller-selected source when troubleshooting unstable APIs.
-	for _, source := range s.Sources.List() {
+	requireLive(t, "SONEXA_LYRICS_LIVE", os.Getenv("SONEXA_LYRICS_LIVE"))
+	a, audit := newLiveApp(t, 40)
+	matched := false
+	for _, source := range a.ListLyricsSources() {
 		if only := os.Getenv("SONEXA_LYRICS_SOURCE"); only != "" && source.ID != only {
 			continue
 		}
-		t.Run(source.ID, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*60*1e9)
+		matched = true
+		if !t.Run(source.ID, func(t *testing.T) {
+			ctx, cancel := liveContext(a, audit, 2*time.Minute)
 			defer cancel()
 			title := os.Getenv("SONEXA_LYRICS_TITLE")
 			if title == "" {
@@ -189,25 +187,35 @@ func TestLiveSources(t *testing.T) {
 				artist = "周杰伦"
 			}
 			duration, _ := strconv.Atoi(os.Getenv("SONEXA_LYRICS_DURATION_MS"))
-			candidates, err := s.Search(ctx, source.ID, lyrics.Query{Title: title, Artist: artist, Album: os.Getenv("SONEXA_LYRICS_ALBUM"), DurationMS: duration})
+			candidates, err := a.lyricSvc.Search(ctx, source.ID, lyrics.Query{Title: title, Artist: artist, Album: os.Getenv("SONEXA_LYRICS_ALBUM"), DurationMS: duration})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if len(candidates) == 0 {
 				t.Fatal("no songs")
 			}
-			t.Logf("songs=%d first=%s ref=%s duration=%d", len(candidates), candidates[0].Title, candidates[0].Ref, candidates[0].DurationMS)
+			t.Logf("songs=%d first_ref=%s duration=%d", len(candidates), candidates[0].Ref, candidates[0].DurationMS)
 			for _, candidate := range candidates[:min(3, len(candidates))] {
-				d, err := s.Fetch(ctx, candidate)
+				d, err := a.lyricSvc.Fetch(ctx, candidate)
 				if err != nil {
-					t.Log(err)
+					if audit.gate() != nil {
+						t.Fatal(errLiveStopped)
+					}
+					t.Logf("candidate=%s unavailable error_type=%T", candidate.Ref, err)
 					continue
 				}
-				t.Logf("lyrics candidate=%s ref=%s format=%s bytes=%d translation=%+v romanization=%s wordTiming=%s warnings=%v", candidate.Title, candidate.Ref, d.Format, len(d.Text), channelSummary(d.Translation), channelSummary(d.Romanization), d.WordTiming, d.Warnings)
+				if audit.gate() != nil {
+					t.Fatal(errLiveStopped)
+				}
+				t.Logf("ref=%s format=%s bytes=%d original=%s translation=%s romanization=%s wordTiming=%s warnings=%d", candidate.Ref, d.Format, len(d.Text), channelSummary(d.Original), channelSummary(d.Translation), channelSummary(d.Romanization), d.WordTiming, len(d.Warnings))
 				return
 			}
-			b, _ := json.Marshal(candidates[:min(3, len(candidates))])
-			t.Fatalf("no lyrics in first three: %s", b)
-		})
+			t.Fatal("no lyrics in first three candidates")
+		}) {
+			return
+		}
+	}
+	if !matched {
+		t.Fatal("unknown SONEXA_LYRICS_SOURCE")
 	}
 }

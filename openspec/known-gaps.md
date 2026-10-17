@@ -47,8 +47,8 @@
 ## G14 — 封面来源真实网络复测
 
 - **现状**：QQ 搜索已改用 `u.y.qq.com/cgi-bin/musicu.fcg`（`DoSearchForQQMusicDesktop`），163 改用 WEAPI 歌曲搜索并按专辑聚合，2026-09-24 均已真实验通；CAA、iTunes 已完成真实搜索、预览和采用。原生窗口、输入法、文件选择及编辑相关人工验收已由用户于 2026-10-16 确认完成；此次确认不扩展为四来源的最新在线复测或真实断网专项证据。图片传输不使用环境代理，需要代理才能访问 archive.org 的网络无法获得直连加速。
-- **依据**：`internal/covers/sources/web.go`、`internal/covers/sources/live_test.go`；验收记录见归档变更 `revise-album-cover-workflow/acceptance.md`。
-- **目标与验收**：用 `SONEXA_LIVE_COVERS=1 go test ./internal/covers/sources -run TestLiveCoverSources` 定期复测四来源，不以离线 fixture 代替真实来源；原生人工确认与真实网络复测分别记录。
+- **依据**：`internal/provider/{caa,itunes,qqmusic,netease}/` 的封面能力实现、`internal/app/cover_live_test.go`；历史验收见归档变更 `revise-album-cover-workflow/acceptance.md`。
+- **目标与验收**：用 `SONEXA_LIVE_COVERS=1 go test ./internal/app -run '^TestLiveCoverSources$' -count=1 -v` 定期复测四来源，可用 `SONEXA_COVER_SOURCE` 限定来源；不以离线 fixture 代替真实来源，原生人工确认与真实网络复测分别记录。
 
 ## G15 — 旧模型的用户迁移边界
 
@@ -57,17 +57,17 @@
 
 ## G16 — QQ 音乐上游
 
-- **现状**：QQ 音乐元数据上游使用非公开的 `musicu.fcg` 与歌词接口，契约可能不经通知改变。碟序规律（`index_cd` 从 0 开始、`index_album` 为全专辑序号）与字段语义来自少量样本，`recordNum` 语义未核实，因此不映射目录号。`internal/provider/qqmusic/` 只有基于实测响应的离线测试，没有元数据链路的真实来源回归；新增 `internal/lyrics` 的手动歌词网络回归不覆盖歌曲/专辑详情及清单，不等于解决本项。封面搜索页的 QQ 查询使用独立配额（`cover-qq`，每秒 1 次），不消费 QQ 音乐元数据令牌桶（默认每分钟 30 次），两者同时使用时对同一接口的总请求率可超过设置值；是否合并配额尚未决定。
-- **依据**：`internal/provider/qqmusic/`、`internal/covers/sources/web.go`、`internal/app/bindings_cover_search.go`。
-- **目标与验收**：仿照 `TestLiveCoverSources` 增加以环境变量开启的真实来源测试，覆盖搜索、单碟与多碟详情及歌词回退，接口变化时更新 `testdata/` 样本；确定 QQ 封面查询与元数据请求的合计速率上限，并验证封面搜索与后台补全同时进行时的实际请求率。
+- **现状**：QQ 音乐使用非公开的 `musicu.fcg` 与歌词接口，契约可能不经通知改变。碟序规律（`index_cd` 从 0 开始、`index_album` 为全专辑序号）与字段语义来自少量样本，`recordNum` 未核实，因此不映射目录号。元数据、封面查询、手动歌词及回退已共用 `qq` 平台桶；合计 HTTP 记账、重试/回退与设置生效的离线测试已通过。元数据单碟、多碟、真实缺失歌词回退和有界速率网络入口已加入，但尚未有本轮完整在线证据，不能由架构重构关闭接口可用性风险。
+- **依据**：`internal/provider/qqmusic/`、`internal/app/{cover_quota_test,qq_settings_test,qq_live_test}.go`；速率选择依据及非官方边界见[架构设计](design.md#上游能力与装配)。
+- **目标与验收**：按 [README](../README.md#qq-元数据与有界速率验证) 显式开启有界样本，覆盖搜索、单碟、多碟详情及真实歌词回退，记录发送间隔、HTTP/业务错误与 Retry-After。回退需要实际缺少内联歌词的样例，不能篡改响应制造成功；遇限制停止，不继续提速。
 
 ## G17 — 独立歌词来源与回归边界
 
-- **现状**：网易云、QQ、酷狗、酷我歌词均使用非公开接口。2026-10-16 实现计划记录四来源均有成功实测，也观察到 QQ `2001` 与酷我 `301` 波动；QQ 新端点已实测原文、翻译、罗马音与增强型 LRC，但不承诺每首歌或任意时刻可用。手动 QQ 歌词共用元数据配额，未解决 G16 中独立 QQ 封面配额的问题。
-- **依据**：`internal/lyrics/lyrics_test.go` 的 `TestLiveSources`、`qq_probe_test.go`、`internal/app/lyrics_test.go`；最新同步与历史验证区分见 [verification.md](verification.md)。
+- **现状**：网易云、QQ、酷狗、酷我歌词均使用非公开接口。2026-10-16 实现计划记录四来源均有成功实测，也观察到 QQ `2001` 与酷我 `301` 波动；QQ 新端点已实测原文、翻译、罗马音与增强型 LRC，但不承诺每首歌或任意时刻可用。手动 QQ 歌词、元数据和封面查询现已共用平台配额；该离线验证不代表非公开接口的最新在线复测完成。
+- **依据**：`internal/app/lyrics_sources_test.go` 的 `TestLiveSources`、`internal/provider/qqmusic/lyrics_probe_test.go`、`internal/app/lyrics_test.go`；最新同步与历史验证区分见 [verification.md](verification.md)。
 - **格式范围**：本地只导入 UTF-8 TXT/LRC，不转码 GBK/UTF-16；在线只支持已实现的 QQ QRC 转换，不接入网易云 YRC、酷狗 KRC 或本地二进制 QRC/KRC。没有播放器/播放同步高亮与独立歌词导出 UI，这些不作为当前已交付能力。
 - **回归限制**：第二次实现计划的全量 Playwright 为 241/242，编辑器“用户”徽标旧断言在基线也可复现；歌词定向回归通过不代表该失败已修复。歌词文件选择器只经过可注入 picker 与浏览器替身测试，没有新增原生人工验收。
-- **目标与验收**：按 `SONEXA_LYRICS_LIVE=1 go test ./internal/lyrics -run TestLiveSources -v` 定期复测，使用 `SONEXA_LYRICS_SOURCE/TITLE/ARTIST/ALBUM/DURATION_MS` 限定样例并记录缺失、错误与部分成功；真实网络、原生选择器和既有浏览器断言分别取证，不以离线或桩测试代替。新增逐字格式或播放器需另行定范围。
+- **目标与验收**：按 `SONEXA_LYRICS_LIVE=1 go test ./internal/app -run '^TestLiveSources$' -count=1 -v` 定期复测，使用 `SONEXA_LYRICS_SOURCE/TITLE/ARTIST/ALBUM/DURATION_MS` 限定样例并记录缺失、错误与部分成功；真实网络、原生选择器和既有浏览器断言分别取证，不以离线或桩测试代替。新增逐字格式或播放器需另行定范围。
 
 ## 验证范围
 

@@ -108,6 +108,10 @@ SONEXA_QQ_PROBE=/path/to/local-response.json go test -v ./internal/provider/qqmu
 
 迁移后的离线回归不代表当前真实来源已验通；在线与原生验证边界单独记录。
 
+上述歌词入口复用生产能力装配与共享平台桶，从 QQ 30 请求/分钟开始，全部来源合计最多
+40 次 API 实际发送，每来源最多试前三个候选。可选通道缺失照实记录；HTTP/业务限制或
+传输失败立即停止该轮，不因部分歌词成功而继续探测。日志不输出通道正文或上游错误消息原文。
+
 封面搜索消费 `internal/covers/sources` 的窄接口，由 CAA/iTunes/QQ/网易云实现。
 CAA 协议位于 `internal/provider/caa`；MusicBrainz 仅委托图片策略。
 原有 QQ/网易云封面 live 入口已迁到 App 组合测试，仍默认跳过：
@@ -115,6 +119,32 @@ CAA 协议位于 `internal/provider/caa`；MusicBrainz 仅委托图片策略。
 ```sh
 SONEXA_LIVE_COVERS=1 go test -v ./internal/app -run '^TestLiveCoverSources$' -count=1
 ```
+
+封面入口覆盖四来源的真实搜索、池内预览与显式采用，全部来源合计最多 12 次 API 请求、
+24 次图片/目录门禁许可（含重定向及既有有限重试）；`SONEXA_COVER_SOURCE` 可限定单来源。
+临时数据库与图片目录随测试清理，不接触真实收藏。图片仍用生产直连、安全策略和无环境代理传输。
+
+## QQ 元数据与有界速率验证
+
+以下入口默认跳过，只在显式环境变量为 `1` 时运行。少量样本不是压力测试，也不证明官方额度。
+所有入口从 30 开始；速率样本只有前一档三次业务查询都成功才进入下一档，遇到 HTTP/业务错误、
+429、鉴权或传输失败立即停止，不重试探测或绕过限制；日志记录主机/路径、发送间隔、HTTP 状态、
+业务错误码、Retry-After 和字节/数量摘要，不转储请求体、响应体或歌词。
+
+```sh
+# 搜索、固定单碟/多碟详情与真实缺失歌词回退；总计最多 12 次 API 请求。
+# 回退需提供一首“详情没有内联歌词”的真实样例，不会篡改响应或用 fixture 制造在线证据。
+SONEXA_QQ_METADATA_LIVE=1 \
+  SONEXA_QQ_FALLBACK_ALBUM=<album-mid> SONEXA_QQ_FALLBACK_TRACK=<song-mid> \
+  go test -v ./internal/app -run '^TestLiveQQMetadata$' -count=1
+
+# 按 30 → 45 → 60 顺序，每档元数据/封面/歌词各查询一次（9 次，含跳转硬上限 12）。
+# 必须先确认上一轮没有风控；一旦遇限制，不另开进程继续更高档。
+SONEXA_QQ_RATE_LIVE=1 go test -v ./internal/app -run '^TestLiveQQRateSamples$' -count=1
+```
+
+元数据入口未提供回退样例或样例实际未触发回退时明确失败，不标成已验通；可保留已完成的
+搜索/单碟/多碟摘要，待有真实样例再补证据。取消校验不发送额外请求。完整线上验收仍单独跟踪。
 
 ## 版本控制
 

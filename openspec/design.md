@@ -77,7 +77,16 @@ API 使用 `provider.Client`，缓存模式明确区分 `UseCache`、`RefreshCac
 元数据刷新跳过读但写回，独立歌词及 QQ/163 手动封面查询不读写原始响应缓存；
 CAA/iTunes 手动召回沿用元数据刷新，目录单独持久化。生产请求使用平台配额键
 `qq`、`163`、`kugou`、`kuwo`，MB/iTunes 封面召回复用其 API 桶；CAA 索引和全部图片只走封面池。
-合计速率与新设置边界的专项验收仍在本变更第 7 组跟踪，不以已接线或离线解析通过推定真实网络可用。
+合计 HTTP 到达记账、重试/回退、新实例、其他平台隔离和图片例外已由
+`internal/app/cover_quota_test.go` 验证；启动规范化、非法保存无副作用与排队变速见
+`internal/config/qq_rate_test.go`、`internal/app/qq_settings_test.go` 和 `internal/provider/quota_test.go`。
+QQ 的规范性速率设置规则集中在[本变更的上游设置规格](changes/refactor-upstream-capabilities/specs/platform/settings/spec.md#requirement-qq-合计请求速率设置)，主规格在同步前仍是旧行为记录。
+
+默认选择的工程依据：旧实现的元数据/歌词桶为每分钟 30 次，另有每秒一次的封面桶，
+同时繁忙时理论合计约每分钟 90 次；新的合计默认是 45，既提高原元数据/歌词桶速率，
+也收紧了旧双桶总量。历史约 1.2 秒的串行请求说明及封面每秒一次仅是保守工程参考，
+不是本轮测得的安全额度或官方承诺。真实来源入口、少量速率样本和请求上限见
+[开发说明](../README.md#qq-元数据与有界速率验证)；离线通过不证明在线可用或长期安全。
 
 ## 数据模型
 
