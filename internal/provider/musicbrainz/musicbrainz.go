@@ -135,7 +135,7 @@ func (p *Provider) SearchTracks(ctx context.Context, q provider.Query) ([]provid
 		ParamsHash: p.hash(params),
 		// MB 数据为 CC0，默认可长期留存；用户在设置中给了上限时按上限
 		TTL:       p.cfg.CacheTTL,
-		SkipCache: q.SkipCache,
+		CacheMode: provider.CacheModeForRefresh(q.SkipCache),
 	})
 	if err != nil {
 		return nil, err

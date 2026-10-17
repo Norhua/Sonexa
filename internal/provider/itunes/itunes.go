@@ -107,7 +107,7 @@ func (p *Provider) SearchTracks(ctx context.Context, q provider.Query) ([]provid
 		Params:     params,
 		ParamsHash: p.hash(params),
 		TTL:        0,
-		SkipCache:  q.SkipCache,
+		CacheMode:  provider.CacheModeForRefresh(q.SkipCache),
 	})
 	if err != nil {
 		return nil, err
@@ -149,7 +149,7 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 		Params:     params,
 		ParamsHash: p.hash(params),
 		TTL:        0,
-		SkipCache:  ref.SkipCache,
+		CacheMode:  provider.CacheModeForRefresh(ref.SkipCache),
 	})
 	if err != nil {
 		return nil, err

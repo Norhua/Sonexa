@@ -104,10 +104,15 @@ func TestWaitRespectsContext(t *testing.T) {
 	}
 }
 
-// TestSetFromProvider 确保按上游自己声明的速率配置桶。
+type rateOnly struct{}
+
+func (rateOnly) ID() ProviderID                  { return "mb" }
+func (rateOnly) RateLimit() (int, time.Duration) { return 1, time.Second }
+
+// TestSetFromProvider 确保仅速率声明即可配置桶，不要求元数据或显示信息。
 func TestSetFromProvider(t *testing.T) {
 	l := NewLimiters()
-	l.SetFromProvider(&stubProvider{id: "mb", rateN: 1, ratePer: time.Second})
+	l.SetFromProvider(rateOnly{})
 
 	if _, ok := l.buckets["mb"]; !ok {
 		t.Fatal("应按上游声明建立令牌桶")

@@ -29,7 +29,7 @@ func TestRequestGateKeepsCacheAndChecksHeadAndQueuedRequests(t *testing.T) {
 	if body, err := client.Get(ctx, req); err != nil || string(body) != `{"cached":true}` {
 		t.Fatalf("gate 拒绝了缓存: %s %v", body, err)
 	}
-	req.SkipCache = true
+	req.CacheMode = RefreshCache
 	if _, err := client.Get(ctx, req); !errors.Is(err, disabled) {
 		t.Fatal(err)
 	}

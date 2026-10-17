@@ -8,10 +8,10 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// Limiters 为每个上游维护一个进程级共享令牌桶。
+// Limiters 为每个平台 API 维护一个进程级共享令牌桶。
 //
-// 同一上游的搜索、导入匹配、详情拉取共用同一个桶——它们打的是同一个受限 API，
-// 各自一个桶会让各功能互相把对方打到限流。
+// 同一平台的元数据、歌词与封面查询共用配额；只有应用装配/设置入口配置桶，
+// 能力构造不能配置或替换桶。图片和 CAA 索引继续由封面工作池控制。
 //
 // 桶前面还有一道**优先级闸门**：交互式请求整体排在后台请求之前。
 // 没有它的话，用户在后台补全任务跑着的时候点一次搜索，要排在几百个
@@ -21,15 +21,15 @@ import (
 // 改由封面工作池的并发上限约束。因此「MB 1 req/s」与「封面 8 并发」并不矛盾。
 type Limiters struct {
 	mu      sync.Mutex
-	buckets map[ProviderID]*rate.Limiter
-	gates   map[ProviderID]*priorityGate
+	buckets map[QuotaID]*rate.Limiter
+	gates   map[QuotaID]*priorityGate
 }
 
 // NewLimiters 建立一个空的令牌桶集合。
 func NewLimiters() *Limiters {
 	return &Limiters{
-		buckets: map[ProviderID]*rate.Limiter{},
-		gates:   map[ProviderID]*priorityGate{},
+		buckets: map[QuotaID]*rate.Limiter{},
+		gates:   map[QuotaID]*priorityGate{},
 	}
 }
 
@@ -37,7 +37,7 @@ func NewLimiters() *Limiters {
 //
 // 重复调用会就地调整既有桶的速率，而不是换一个新桶——
 // 换桶会让此时正在排队等待的请求逃出限制。
-func (l *Limiters) Configure(id ProviderID, n int, per time.Duration) {
+func (l *Limiters) Configure(id QuotaID, n int, per time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -57,7 +57,7 @@ func (l *Limiters) Configure(id ProviderID, n int, per time.Duration) {
 // 而不是握到请求返回——握到返回等于把每次请求的网络耗时叠加到限流间隔上，
 // 实际速率会莫名其妙地低于配置值。次序仍有保证：闸门一次只放行一个，
 // 被放行者立刻去桶里预约下一个令牌，因此「谁先被放行」就等于「谁先发出」。
-func (l *Limiters) Wait(ctx context.Context, id ProviderID) error {
+func (l *Limiters) Wait(ctx context.Context, id QuotaID) error {
 	gate := l.gateFor(id)
 	priority := PriorityOf(ctx)
 	if err := gate.acquire(ctx, priority); err != nil {
@@ -69,7 +69,7 @@ func (l *Limiters) Wait(ctx context.Context, id ProviderID) error {
 }
 
 // bucketFor 取（或建）某上游的令牌桶。
-func (l *Limiters) bucketFor(id ProviderID) *rate.Limiter {
+func (l *Limiters) bucketFor(id QuotaID) *rate.Limiter {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	bucket, ok := l.buckets[id]
@@ -82,11 +82,11 @@ func (l *Limiters) bucketFor(id ProviderID) *rate.Limiter {
 }
 
 // gateFor 取（或建）某上游的优先级闸门。
-func (l *Limiters) gateFor(id ProviderID) *priorityGate {
+func (l *Limiters) gateFor(id QuotaID) *priorityGate {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.gates == nil {
-		l.gates = map[ProviderID]*priorityGate{}
+		l.gates = map[QuotaID]*priorityGate{}
 	}
 	gate, ok := l.gates[id]
 	if !ok {
@@ -96,8 +96,8 @@ func (l *Limiters) gateFor(id ProviderID) *priorityGate {
 	return gate
 }
 
-// SetFromProvider 按上游自己声明的速率配置其令牌桶。
-func (l *Limiters) SetFromProvider(p MetadataProvider) {
+// SetFromProvider 仅由装配入口按速率声明配置桶，不要求元数据能力。
+func (l *Limiters) SetFromProvider(p RateSource) {
 	n, per := p.RateLimit()
 	l.Configure(p.ID(), n, per)
 }

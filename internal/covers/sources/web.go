@@ -34,7 +34,6 @@ type WebSource struct {
 }
 
 func NewWebSource(id, userAgent string, limiters *provider.Limiters, gate func() error) *WebSource {
-	limiters.Configure(provider.ProviderID("cover-"+id), 1, time.Second)
 	return &WebSource{ID: id, HTTP: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 || req.URL.Scheme != "https" || req.URL.User != nil {
 			return fmt.Errorf("不安全的来源重定向")

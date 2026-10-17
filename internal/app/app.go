@@ -246,6 +246,7 @@ func (a *App) rebuildProviders(cur config.Settings) {
 	}
 	a.registry.SetPriority(priority)
 
+	a.limiters.ConfigureFixedQuotas()
 	for _, p := range a.registry.List() {
 		a.limiters.SetFromProvider(p)
 	}

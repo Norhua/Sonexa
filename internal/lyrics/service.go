@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -84,7 +83,7 @@ func (s Service) request(ctx context.Context, source, base, path string, params 
 	if source == "163" {
 		id = provider.ProviderID("cover-163")
 	}
-	r := provider.GetRequest{Provider: id, BaseURL: base, Endpoint: path, Params: params, SkipCache: true, MaxResponseBytes: 4 << 20, Headers: map[string]string{}}
+	r := provider.GetRequest{Provider: id, BaseURL: base, Endpoint: path, Params: params, CacheMode: provider.NoStore, MaxResponseBytes: 4 << 20, Headers: map[string]string{}}
 	switch source {
 	case "163":
 		r.Headers["Referer"] = "https://music.163.com/"
@@ -110,33 +109,13 @@ func (s Service) request(ctx context.Context, source, base, path string, params 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
-	// Preserve shared transport/limiters without weakening TLS or allowing a
-	// changed endpoint to redirect requests to arbitrary hosts.
-	client := *s.Client
-	httpClient := *s.Client.HTTP
-	previousRedirect := httpClient.CheckRedirect
-	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		allowed := map[string][]string{
-			"163": {"music.163.com"}, "qq": {"u.y.qq.com", "c.y.qq.com"},
-			"kugou": {"mobileservice.kugou.com", "lyrics.kugou.com"},
-			"kuwo":  {"search.kuwo.cn", "m.kuwo.cn"},
-		}
-		validHost := false
-		for _, host := range allowed[source] {
-			if req.URL.Host == host {
-				validHost = true
-			}
-		}
-		if len(via) >= 5 || req.URL.Scheme != "https" || req.URL.User != nil || !validHost {
-			return fmt.Errorf("歌词来源重定向超出允许范围")
-		}
-		if previousRedirect != nil {
-			return previousRedirect(req, via)
-		}
-		return nil
+	allowed := map[string][]string{
+		"163": {"music.163.com"}, "qq": {"u.y.qq.com", "c.y.qq.com"},
+		"kugou": {"mobileservice.kugou.com", "lyrics.kugou.com"},
+		"kuwo":  {"search.kuwo.cn", "m.kuwo.cn"},
 	}
-	client.HTTP = &httpClient
-	return client.Get(ctx, r)
+	r.Redirects = &provider.RedirectPolicy{Hosts: allowed[source], MaxRedirects: 4}
+	return s.Client.Get(ctx, r)
 }
 func (s Service) Search(ctx context.Context, source string, q Query) ([]Candidate, error) {
 	if !ValidSource(source) {

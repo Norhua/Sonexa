@@ -17,6 +17,7 @@ type memCache struct {
 	mu      sync.Mutex
 	entries map[string]*CacheEntry
 	puts    int
+	gets    int
 }
 
 func newMemCache() *memCache {
@@ -28,6 +29,7 @@ func (m *memCache) key(p, e, h string) string { return p + "|" + e + "|" + h }
 func (m *memCache) GetCache(p, e, h string) (*CacheEntry, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.gets++
 	entry, ok := m.entries[m.key(p, e, h)]
 	if !ok {
 		return nil, ErrCacheMiss
@@ -147,8 +149,8 @@ func TestCacheStoresBeforeParse(t *testing.T) {
 	}
 }
 
-// TestSkipCacheForcesRequest 覆盖用户手动「重新获取」。
-func TestSkipCacheForcesRequest(t *testing.T) {
+// TestRefreshCacheForcesRequest 覆盖用户手动「重新获取」。
+func TestRefreshCacheForcesRequest(t *testing.T) {
 	var requests int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
@@ -161,11 +163,11 @@ func TestSkipCacheForcesRequest(t *testing.T) {
 	req := GetRequest{Provider: "p", Endpoint: "/x", BaseURL: srv.URL, ParamsHash: "h", TTL: time.Hour}
 
 	c.Get(context.Background(), req)
-	req.SkipCache = true
+	req.CacheMode = RefreshCache
 	c.Get(context.Background(), req)
 
 	if requests != 2 {
-		t.Errorf("出网 %d 次, 期望 2 次（SkipCache 应强制重取）", requests)
+		t.Errorf("出网 %d 次, 期望 2 次（RefreshCache 应强制重取）", requests)
 	}
 }
 

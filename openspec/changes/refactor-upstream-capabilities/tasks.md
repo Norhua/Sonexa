@@ -11,9 +11,9 @@
 
 ## 2. 共享传输与显式缓存策略
 
-- [ ] 2.1 为 `provider.Client` 引入常规读取、刷新写入、完全不缓存三种明确模式，更新所有 GetRequest 调用点，不改变公开 Query/Ref.SkipCache 的刷新含义。以记账 Cache 测试证明 NoStore 零读零写、Refresh 跳过读但写回、普通命中不取令牌，运行 provider 缓存及 iTunes 缓存策略测试。
-- [ ] 2.2 增加请求级 HTTPS 重定向域名/次数策略，保留公共门禁、TLS、4 MiB 可选响应上限和有限重试，禁止并发修改共享 HTTP Client。测试允许与拒绝的重定向、重定向时门禁变化、超限、取消和 Retry-After，运行 `go test -race ./internal/provider/...`。
-- [ ] 2.3 将限流配置与完整元数据接口解耦，建立平台级配额标识及集中配置规则；能力实例构造不新建或重配桶。以 limiter 测试验证实例复用、其他平台独立、原位变速保持排队权、重试重新取令牌，并更新 Client/Limiters 文档明确 API 与图片池边界。
+- [x] 2.1 为 `provider.Client` 引入常规读取、刷新写入、完全不缓存三种明确模式，更新所有 GetRequest 调用点，不改变公开 Query/Ref.SkipCache 的刷新含义。以记账 Cache 测试证明 NoStore 零读零写、Refresh 跳过读但写回、普通命中不取令牌，运行 provider 缓存及 iTunes 缓存策略测试。
+- [x] 2.2 增加请求级 HTTPS 重定向域名/次数策略，保留公共门禁、TLS、4 MiB 可选响应上限和有限重试，禁止并发修改共享 HTTP Client。测试允许与拒绝的重定向、重定向时门禁变化、超限、取消和 Retry-After，运行 `go test -race ./internal/provider/...`。
+- [x] 2.3 将限流配置与完整元数据接口解耦，建立平台级配额标识及集中配置规则；能力实例构造不新建或重配桶。以 limiter 测试验证实例复用、其他平台独立、原位变速保持排队权、重试重新取令牌，并更新 Client/Limiters 文档明确 API 与图片池边界。
 
 ## 3. QQ 与网易云共享协议原语
 

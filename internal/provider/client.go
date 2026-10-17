@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -30,9 +31,10 @@ type CacheEntry struct {
 // ErrCacheMiss 由 Cache 实现在未命中时返回。
 var ErrCacheMiss = errors.New("缓存未命中")
 
-// Client 是所有上游共用的 HTTP 客户端。
+// Client 为上游 API 提供共享传输设施。
 //
-// 出网路径单一且可管控：User-Agent、限流、缓存、TTL 全部只有这一处实现。
+// API 共用门禁、请求级重定向、缓存模式、有限重试及平台配额。
+// CAA 索引和图片使用封面工作池及专用传输，不消费这些 API 桶。
 type Client struct {
 	HTTP      *http.Client
 	Limiters  *Limiters
@@ -57,7 +59,32 @@ func NewClient(limiters *Limiters, cache Cache, userAgent string) *Client {
 	}
 }
 
-// GetRequest 描述一次 GET 请求。
+// CacheMode 明确区分正常缓存、刷新写回与完全不缓存。
+type CacheMode uint8
+
+const (
+	UseCache     CacheMode = iota // 可读可写；命中不取令牌。
+	RefreshCache                  // 跳过读取，成功响应仍写回。
+	NoStore                       // 零缓存读取、零缓存写入，与哈希是否存在无关。
+)
+
+// CacheModeForRefresh 保留公开 Query/Ref.SkipCache 的刷新含义。
+func CacheModeForRefresh(refresh bool) CacheMode {
+	if refresh {
+		return RefreshCache
+	}
+	return UseCache
+}
+
+// RedirectPolicy 将一次 API 请求的重定向限制在指定 HTTPS 主机内。
+// Hosts 使用完整 URL Host（默认端口省略）；不接受用户信息或隐式子域名。
+// MaxRedirects 为零时最多跟随 5 次；负值禁止跟随。
+type RedirectPolicy struct {
+	Hosts        []string
+	MaxRedirects int
+}
+
+// GetRequest 描述一次 GET 或带请求体的 POST 请求。
 type GetRequest struct {
 	Provider ProviderID
 	// Endpoint 是缓存键的一部分，也是日志中的可读标识。
@@ -66,9 +93,8 @@ type GetRequest struct {
 	BaseURL string
 	Params  map[string]string
 	// TTL 是缓存有效期；0 表示不过期（MB 数据为 CC0 可长期留存）。
-	TTL time.Duration
-	// SkipCache 为真时绕过缓存直接请求（如用户手动「重新获取」）。
-	SkipCache bool
+	TTL       time.Duration
+	CacheMode CacheMode
 	// ParamsHash 由调用方提供，通常为 store.ParamsHash(Params)。
 	// 带 Body 的请求须把请求体也纳入哈希，否则不同请求会命中同一缓存。
 	ParamsHash string
@@ -78,19 +104,22 @@ type GetRequest struct {
 	Headers map[string]string
 	// MaxResponseBytes bounds opt-in text endpoints; zero preserves existing callers.
 	MaxResponseBytes int64
+	Redirects        *RedirectPolicy
 }
 
-// Get 发起一次 GET 请求，先查缓存、再取令牌、最后出网。
+// Get 按缓存模式处理响应，再经共享配额发起 GET/POST 请求。
 //
-// 响应先落盘再交给解析器：解析器是本项目最容易出错的部分，
-// 而复现一次 bug 在 1 req/s 下代价高昂，落盘后可离线反复重放。
+// 允许缓存的响应先落盘再交给解析器，方便离线重放；NoStore 完全不触碰缓存。
 //
 // 瞬时错误在这里就地重试，不上抛给调用方——MusicBrainz 即便在完全遵守
 // 1 req/s 的前提下也会频繁返回 `503 … currently busy`，把这种抖动一路
 // 传上去会让整批导入变成整批失败。
 func (c *Client) Get(ctx context.Context, req GetRequest) ([]byte, error) {
+	if req.CacheMode > NoStore {
+		return nil, fmt.Errorf("未知响应缓存模式")
+	}
 	// 缓存命中时不消耗令牌
-	if !req.SkipCache && c.Cache != nil && req.ParamsHash != "" {
+	if req.CacheMode == UseCache && c.Cache != nil && req.ParamsHash != "" {
 		entry, err := c.Cache.GetCache(string(req.Provider), req.Endpoint, req.ParamsHash)
 		if err == nil && entry != nil {
 			return entry.Body, nil
@@ -105,7 +134,7 @@ func (c *Client) Get(ctx context.Context, req GetRequest) ([]byte, error) {
 		return nil, err
 	}
 
-	if c.Cache != nil && req.ParamsHash != "" {
+	if req.CacheMode != NoStore && c.Cache != nil && req.ParamsHash != "" {
 		if err := c.Cache.PutCache(string(req.Provider), req.Endpoint, req.ParamsHash, body, req.TTL); err != nil {
 			// 缓存写入失败不影响本次结果，但要让调用方知道
 			return body, nil
@@ -191,7 +220,7 @@ func (c *Client) do(ctx context.Context, req GetRequest) ([]byte, error) {
 	}
 	httpReq.Header.Set("Accept", "application/json")
 
-	resp, err := c.HTTP.Do(httpReq)
+	resp, err := c.httpForRequest(req.Redirects).Do(httpReq)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +265,7 @@ func (c *Client) Head(ctx context.Context, rawURL string) error {
 	if c.UserAgent != "" {
 		req.Header.Set("User-Agent", c.UserAgent)
 	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.httpForRequest(nil).Do(req)
 	if err != nil {
 		return err
 	}
@@ -246,6 +275,45 @@ func (c *Client) Head(ctx context.Context, rawURL string) error {
 		return &HTTPError{StatusCode: resp.StatusCode, Status: resp.Status}
 	}
 	return nil
+}
+
+// httpForRequest 只复制 Client，复用 Transport；从不修改共享重定向回调。
+// 即使调用方替换了 HTTP Client，每次重定向仍需检查公共门禁。
+func (c *Client) httpForRequest(policy *RedirectPolicy) *http.Client {
+	client := *c.HTTP
+	previous := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := req.Context().Err(); err != nil {
+			return err
+		}
+		if err := checkRequestGate(req.Context()); err != nil {
+			return err
+		}
+		if policy != nil {
+			limit := policy.MaxRedirects
+			if limit == 0 {
+				limit = 5
+			}
+			allowed := false
+			for _, host := range policy.Hosts {
+				if strings.EqualFold(req.URL.Host, host) {
+					allowed = true
+					break
+				}
+			}
+			if len(via) > limit || req.URL.Scheme != "https" || req.URL.User != nil || !allowed {
+				return fmt.Errorf("上游重定向超出允许范围")
+			}
+		}
+		if previous != nil {
+			return previous(req, via)
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("上游重定向次数过多")
+		}
+		return nil
+	}
+	return &client
 }
 
 // UserAgentFor 构造 MusicBrainz 要求的规范 User-Agent：

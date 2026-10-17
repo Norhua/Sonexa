@@ -209,7 +209,7 @@ func (p *Provider) fetchLyric(ctx context.Context, songMID string, skipCache boo
 	params := map[string]string{"songmid": songMID, "g_tk": "5381", "format": "json", "nobase64": "1"}
 	body, err := p.client.Get(ctx, provider.GetRequest{
 		Provider: provider.QQMusic, Endpoint: lyricPath, BaseURL: LyricBase,
-		Params: params, ParamsHash: p.hash(params), SkipCache: skipCache,
+		Params: params, ParamsHash: p.hash(params), CacheMode: provider.CacheModeForRefresh(skipCache),
 		Headers: map[string]string{"Referer": "https://y.qq.com/"},
 	})
 	if err != nil {
@@ -230,7 +230,7 @@ func (p *Provider) musicu(ctx context.Context, skipCache bool, reqs map[string]a
 	}
 	return p.client.Get(ctx, provider.GetRequest{
 		Provider: provider.QQMusic, Endpoint: musicuPath, BaseURL: MusicuBase,
-		Body: body, ParamsHash: p.hash(map[string]string{"body": string(body)}), SkipCache: skipCache,
+		Body: body, ParamsHash: p.hash(map[string]string{"body": string(body)}), CacheMode: provider.CacheModeForRefresh(skipCache),
 		Headers: map[string]string{"Referer": "https://y.qq.com/"},
 	})
 }
