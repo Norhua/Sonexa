@@ -138,6 +138,10 @@ SONEXA_QQ_METADATA_LIVE=1 \
   SONEXA_QQ_FALLBACK_ALBUM=<album-mid> SONEXA_QQ_FALLBACK_TRACK=<song-mid> \
   go test -v ./internal/app -run '^TestLiveQQMetadata$' -count=1
 
+# 仅在明确授权另一次样例查找时运行；两次固定搜索、每次最多三个候选详情。
+# QQ 30 请求/分钟，全部实际发送（含分页/回退/重定向）硬上限 16，未找到即停止。
+SONEXA_QQ_FALLBACK_DISCOVERY=1 go test -v ./internal/app -run '^TestLiveQQFallbackDiscovery$' -count=1
+
 # 按 30 → 45 → 60 顺序，每档元数据/封面/歌词各查询一次（9 次，含跳转硬上限 12）。
 # 必须先确认上一轮没有风控；一旦遇限制，不另开进程继续更高档。
 SONEXA_QQ_RATE_LIVE=1 go test -v ./internal/app -run '^TestLiveQQRateSamples$' -count=1

@@ -85,6 +85,66 @@ func TestLiveQQMetadata(t *testing.T) {
 	t.Logf("metadata fallback requests=%d lyric_bytes=%d", len(audit.snapshot())-before, len(*d.Lyrics))
 }
 
+// Discovery is a separately authorized, one-shot investigation, not a fallback
+// inside the regression test. At most two searches, three details per search,
+// and sixteen actual API sends including pagination, fallback and redirects.
+func TestLiveQQFallbackDiscovery(t *testing.T) {
+	requireLive(t, "SONEXA_QQ_FALLBACK_DISCOVERY", os.Getenv("SONEXA_QQ_FALLBACK_DISCOVERY"))
+	a, audit := newLiveApp(t, 16)
+	ctx, cancel := liveContext(a, audit, 90*time.Second)
+	defer cancel()
+	p, err := a.registry.Get(provider.QQMusic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	checked := 0
+	for _, title := range []string{"綿雪の夢", "世界中の雨"} {
+		rows, err := p.SearchTracks(ctx, provider.Query{Title: title, Limit: 3, SkipCache: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("discovery query=%q candidates=%d", title, len(rows))
+		for _, c := range rows[:min(3, len(rows))] {
+			if c.ReleaseRef == nil || c.MatchRef == "" || seen[c.MatchRef] {
+				continue
+			}
+			seen[c.MatchRef] = true
+			before := len(audit.snapshot())
+			d, err := p.FetchDetail(ctx, provider.Ref{Provider: provider.QQMusic, ID: *c.ReleaseRef, TrackRef: c.MatchRef, SkipCache: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Metadata deliberately tolerates lyric failure; discovery must not
+			// hide a restriction and move on to another candidate.
+			audit.mu.Lock()
+			stopped := audit.stopped
+			audit.mu.Unlock()
+			if stopped {
+				t.Fatal(errLiveStopped)
+			}
+			checked++
+			fallback := false
+			for _, r := range audit.snapshot()[before:] {
+				fallback = fallback || strings.Contains(r.path, "fcg_query_lyric_new.fcg") && r.status == 200
+			}
+			lyricBytes := 0
+			usable := false
+			if d.Lyrics != nil {
+				lyricBytes = len(*d.Lyrics)
+				_, parseErr := lyrics.DocumentFromPayload(&lyrics.Payload{Text: *d.Lyrics})
+				usable = parseErr == nil
+			}
+			t.Logf("discovery candidate=%d album=%s track=%s fallback=%t usable_lyrics=%t lyric_bytes=%d", checked, *c.ReleaseRef, c.MatchRef, fallback, usable, lyricBytes)
+			if fallback && usable {
+				t.Logf("FOUND SONEXA_QQ_FALLBACK_ALBUM=%s SONEXA_QQ_FALLBACK_TRACK=%s requests=%d", *c.ReleaseRef, c.MatchRef, len(audit.snapshot()))
+				return
+			}
+		}
+	}
+	t.Fatalf("本次有界查找未找到成功回退样例：details=%d requests=%d；停止，不扩大查询或改写响应", checked, len(audit.snapshot()))
+}
+
 // Deliberately sequential and bounded: no concurrency, retry-on-failure or
 // automatic continuation at a higher rate after any failed stage.
 func sampleQQRates(configure func(int) error, request func(int) error) error {
