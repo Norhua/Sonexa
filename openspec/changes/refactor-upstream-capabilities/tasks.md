@@ -35,13 +35,13 @@
 
 本组同样以完整编译闭环提交：迁移具体实现时同步清除 sources 对具体上游的旧导入，避免 `sources ↔ provider/itunes` 或 `musicbrainz → caa → sources → musicbrainz` 循环。
 
-- [ ] 5.1 新建 `provider/caa`，迁移 CAA 目录/缩略图解析、URL 策略和所需模型，MusicBrainz 只保留图片关联的薄委托。迁移相应 fixture/测试及 App 解析器引用，验证 Front/其他图、release-group 回退、archive.org 直连/降级、目录错误与实际来源身份不变。
-- [ ] 5.2 实现 CAA 封面搜索能力，注入窄发行召回与共享 Catalog 读取，返回已登记目录引用。迁移 `sources/providers_test.go` 的 CAA 覆盖并增加部分失败测试，验证固定发行优先、去重最多 10 个、目录并发受原池限制、ActualReleaseURL 与既有目录不被二次保存覆盖。
-- [ ] 5.3 在 iTunes、QQ、网易云实现封面能力，QQ/网易云调用各自共享歌曲原语，通用相关性规则留在 sources；删除与新方法冲突的旧具体 `SearchCovers` 实现。迁移封面 fixture/请求测试，验证 30 首召回、最多 20 张、业务关键词、iTunes 地区/异图、QQ MID 与档位、163 `pic-...` 身份和构造尺寸不伪装实测。
-- [ ] 5.4 改造 App 封面搜索为集合分发与通用 Result 登记，不再按 source 选择构造器、判断 CAA 持久化或硬编码校验来源。扩展真实绑定测试覆盖单封面假来源、独立错误、已有结果、迟到取消、预览授权与采用，保持现有 CoverSearch DTO/事件不变。
-- [ ] 5.5 删除 `WebSource`、静态来源名单、剩余旧大接口封面方法、仅由旧链路使用的 CoverGroup/直连请求；保留仍被自动降级链使用的图片工具，必要时随协议迁移。运行 `go test -race ./internal/covers/... ./internal/provider/... ./internal/app/...`，确认无旧生产调用；更新封面来源包和 live 测试入口说明，不删除原工作池/目录回归。
+- [x] 5.1 新建 `provider/caa`，迁移 CAA 目录/缩略图解析、URL 策略和所需模型，MusicBrainz 只保留图片关联的薄委托。迁移相应 fixture/测试及 App 解析器引用，验证 Front/其他图、release-group 回退、archive.org 直连/降级、目录错误与实际来源身份不变。
+- [x] 5.2 实现 CAA 封面搜索能力，注入窄发行召回与共享 Catalog 读取，返回已登记目录引用。迁移 `sources/providers_test.go` 的 CAA 覆盖并增加部分失败测试，验证固定发行优先、去重最多 10 个、目录并发受原池限制、ActualReleaseURL 与既有目录不被二次保存覆盖。
+- [x] 5.3 在 iTunes、QQ、网易云实现封面能力，QQ/网易云调用各自共享歌曲原语，通用相关性规则留在 sources；删除与新方法冲突的旧具体 `SearchCovers` 实现。迁移封面 fixture/请求测试，验证 30 首召回、最多 20 张、业务关键词、iTunes 地区/异图、QQ MID 与档位、163 `pic-...` 身份和构造尺寸不伪装实测。
+- [x] 5.4 改造 App 封面搜索为集合分发与通用 Result 登记，不再按 source 选择构造器、判断 CAA 持久化或硬编码校验来源。扩展真实绑定测试覆盖单封面假来源、独立错误、已有结果、迟到取消、预览授权与采用，保持现有 CoverSearch DTO/事件不变。
+- [x] 5.5 删除 `WebSource`、静态来源名单、剩余旧大接口封面方法、仅由旧链路使用的 CoverGroup/直连请求；保留仍被自动降级链使用的图片工具，必要时随协议迁移。运行 `go test -race ./internal/covers/... ./internal/provider/... ./internal/app/...`，确认无旧生产调用；更新封面来源包和 live 测试入口说明，不删除原工作池/目录回归。
 
-- [ ] 5.6 将封面图片 URL 安全范围改为可信后端上游声明、App 按实际图片来源注入的独立策略；首次远程请求、自动降级和重定向使用所属来源策略，移除业务包固定域名名单，不允许前端/响应扩充许可或借用其他来源范围。保留 HTTPS、TLS、端口、用户信息、有限跳转、门禁与取消限制，本地命中不新增出网要求。补单能力新主机的搜索/预览/采用、未登记策略、伪装主机、跨来源/不安全跳转与动态禁网测试，运行封面/provider/app race 回归。
+- [x] 5.6 将封面图片 URL 安全范围改为可信后端上游声明、App 按实际图片来源注入的独立策略；首次远程请求、自动降级和重定向使用所属来源策略，移除业务包固定域名名单，不允许前端/响应扩充许可或借用其他来源范围。保留 HTTPS、TLS、端口、用户信息、有限跳转、门禁与取消限制，本地命中不新增出网要求。补单能力新主机的搜索/预览/采用、未登记策略、伪装主机、跨来源/不安全跳转与动态禁网测试，运行封面/provider/app race 回归。
 
 ## 6. 集中装配与生命周期闭环
 

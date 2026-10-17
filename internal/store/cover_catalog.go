@@ -235,6 +235,15 @@ func (s *Store) GetCoverVariant(id int64) (*CoverVariant, error) {
 	return v, err
 }
 
+// CoverSourceForVariant resolves the actual source from persisted ownership,
+// never from a caller-supplied URL or metadata provider.
+func (s *Store) CoverSourceForVariant(id int64) (string, error) {
+	var source string
+	err := s.db.QueryRow(`SELECT c.source FROM cover_variant v JOIN cover_image i ON i.id=v.image_id
+		JOIN cover_catalog c ON c.id=i.catalog_id WHERE v.id=?`, id).Scan(&source)
+	return source, err
+}
+
 func (s *Store) RecordCoverVariantError(id int64, unavailable bool, message string) error {
 	state := "error"
 	if unavailable {

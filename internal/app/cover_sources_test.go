@@ -1,4 +1,4 @@
-package sources
+package app
 
 import (
 	"context"
@@ -11,7 +11,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/covers/sources"
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/provider/caa"
 	"github.com/norhua/sonexa/internal/provider/itunes"
 	"github.com/norhua/sonexa/internal/provider/musicbrainz"
 	"github.com/norhua/sonexa/internal/store"
@@ -19,7 +22,7 @@ import (
 
 func TestCAASourceBoundsReleasesAndPreservesImages(t *testing.T) {
 	client := provider.NewClient(nil, nil, "test")
-	client.HTTP.Transport = transport(func(r *http.Request) (*http.Response, error) {
+	client.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Query().Get("limit") != "20" {
 			t.Error("搜索缺少有界限制")
 		}
@@ -33,7 +36,8 @@ func TestCAASourceBoundsReleasesAndPreservesImages(t *testing.T) {
 	refs := []string{}
 	catalogs := map[string]*store.CoverCatalog{}
 	var mu sync.Mutex
-	source := &CAASource{Provider: mb, ReleaseRef: "release-0", Catalog: func(_ context.Context, kind, ref string, force bool) (*store.CoverCatalog, error) {
+	source := caa.New(mb, func(_ context.Context, key domain.CoverCatalogKey, force bool) (domain.CoverCatalogKey, error) {
+		kind, ref := key.ObjectType, key.SourceRef
 		if kind != "release" || !force {
 			t.Error("目录类型或强制刷新丢失")
 		}
@@ -45,9 +49,9 @@ func TestCAASourceBoundsReleasesAndPreservesImages(t *testing.T) {
 			{SourceImageID: "back", PrimaryType: "Back", Variants: []store.CoverVariant{{Spec: "original"}}},
 		}, ActualReleaseURL: "https://musicbrainz.org/release/actual", Version: 7}
 		catalogs[ref] = catalog
-		return catalog, nil
-	}}
-	rows, err := source.Search(context.Background(), provider.Query{Title: "song", SkipCache: true})
+		return catalog.CoverCatalogKey, nil
+	})
+	rows, err := source.SearchCovers(context.Background(), sources.Query{Title: "song", Force: true, Release: &domain.ReleaseIdentity{Provider: provider.MusicBrainz, Ref: "release-0"}})
 	if err != nil || len(refs) != 10 || len(rows) != 10 || !slices.Contains(refs, "release-0") {
 		t.Fatalf("发行查询应去重并含固定目标: %v %v", refs, err)
 	}
@@ -73,7 +77,7 @@ func TestITunesSourceCountryVariantsAndImageIdentity(t *testing.T) {
 	for _, country := range []string{"", "us"} {
 		t.Run(country, func(t *testing.T) {
 			client := provider.NewClient(nil, nil, "test")
-			client.HTTP.Transport = transport(func(r *http.Request) (*http.Response, error) {
+			client.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
 				want := country
 				if want == "" {
 					want = "jp"
@@ -89,8 +93,8 @@ func TestITunesSourceCountryVariantsAndImageIdentity(t *testing.T) {
 				]}`
 				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 			})
-			source := &ITunesSource{Provider: itunes.New(client, itunes.Config{DefaultCountry: "jp"}, nil)}
-			rows, err := source.Search(context.Background(), provider.Query{Title: "song", Album: "album", Country: country, SkipCache: true})
+			source := itunes.New(client, itunes.Config{DefaultCountry: "jp"}, nil)
+			rows, err := source.SearchCovers(context.Background(), sources.Query{Title: "song", Album: "album", Country: country, Force: true})
 			if err != nil || len(rows) != 1 || len(rows[0].Input.Images) != 2 {
 				t.Fatalf("同图未去重或异图被合并: %+v %v", rows, err)
 			}

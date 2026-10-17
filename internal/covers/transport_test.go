@@ -1,7 +1,7 @@
 package covers
 
 import (
-	"github.com/norhua/sonexa/internal/provider/musicbrainz"
+	"github.com/norhua/sonexa/internal/provider/caa"
 	"testing"
 )
 
@@ -26,13 +26,13 @@ func TestCAAImageLadder(t *testing.T) {
 		"https://coverartarchive.org/release/" + m + "/829521842.png":      "https://archive.org/download/mbid-" + m + "/mbid-" + m + "-829521842.png",
 	}
 	for in, want := range cases {
-		got := musicbrainz.ImageURLs(in)
+		got := caa.ImageURLs(in)
 		if len(got) != 2 || got[0] != want || got[1] != in {
 			t.Fatalf("%s => %v", in, got)
 		}
 	}
 	for _, other := range []string{"https://is1.mzstatic.com/a/100x100bb.jpg", "https://coverartarchive.org/release/" + m + "/front-250"} {
-		if got := musicbrainz.ImageURLs(other); len(got) != 1 || got[0] != other {
+		if got := caa.ImageURLs(other); len(got) != 1 || got[0] != other {
 			t.Fatal(other, got)
 		}
 	}

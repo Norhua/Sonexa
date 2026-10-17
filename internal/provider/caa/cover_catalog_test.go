@@ -1,4 +1,4 @@
-package musicbrainz
+package caa
 
 import (
 	"os"

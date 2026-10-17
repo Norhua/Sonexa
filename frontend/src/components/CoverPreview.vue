@@ -3,9 +3,9 @@ import { computed, ref, watch } from 'vue'
 import { ImageOff, LoaderCircle } from 'lucide-vue-next'
 import type { Models } from '@/api'
 
-const props = defineProps<{ variant: Models.domain.CoverVariant; large?: boolean }>()
+const props = defineProps<{ variant: Models.domain.CoverVariant; large?: boolean; searchId?: string }>()
 const emit = defineEmits<{ verified: [id: number, width: number, height: number] }>()
-const src = computed(() => `/cover?variantId=${props.variant.id}`)
+const src = computed(() => `/cover?variantId=${props.variant.id}${props.searchId ? `&searchId=${encodeURIComponent(props.searchId)}` : ''}`)
 const state = ref<'loading' | 'ok' | 'error'>('loading')
 watch(src, () => { state.value = 'loading' })
 function loaded(event: Event) {

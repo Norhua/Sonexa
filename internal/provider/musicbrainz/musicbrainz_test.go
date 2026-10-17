@@ -416,34 +416,11 @@ func TestEscapeLucene(t *testing.T) {
 	}
 }
 
-// TestCAALadder 覆盖 9.4：CAA 降级链的构成。
-func TestCAALadder(t *testing.T) {
-	got := CAAFrontLadder("rel-1", "rg-1")
-	if len(got) != 3 {
-		t.Fatalf("降级链长度 = %d, 期望 3", len(got))
-	}
-	want := []string{
-		"https://coverartarchive.org/release/rel-1/front-1200",
-		"https://coverartarchive.org/release/rel-1/front-500",
-		"https://coverartarchive.org/release-group/rg-1/front-1200",
-	}
-	for i, w := range want {
-		if got[i].URL != w {
-			t.Errorf("降级链第 %d 档 = %q, 期望 %q", i, got[i].URL, w)
-		}
-	}
-
-	// 列表缩略图用 front-250
-	if thumb := CAAThumbnailURL("rel-1"); thumb != "https://coverartarchive.org/release/rel-1/front-250" {
-		t.Errorf("缩略图地址 = %q", thumb)
-	}
-}
-
-// TestCoverArtDoesNotUseMusicBrainzBucket 覆盖 6.9 与 provider-registry spec：
-// CAA 是独立服务，其请求不占用 MB 的令牌桶。
-func TestCoverArtDoesNotUseMusicBrainzBucket(t *testing.T) {
-	if CoverArtProviderKey() == provider.MusicBrainz {
-		t.Error("CAA 不应与 MusicBrainz 共用令牌桶键——它不是被限流的那个端点")
+// TestArtworkDelegatesToCAA keeps the metadata association without a CAA API bucket.
+func TestArtworkDelegatesToCAA(t *testing.T) {
+	strategy := (&Provider{}).ArtworkStrategy()
+	if strategy.Provider != provider.MusicBrainz || strategy.Source != "caa" || !strategy.GroupFallback {
+		t.Fatal(strategy)
 	}
 }
 

@@ -5,17 +5,20 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/norhua/sonexa/internal/config"
 	"github.com/norhua/sonexa/internal/covers"
+	"github.com/norhua/sonexa/internal/covers/sources"
 	"github.com/norhua/sonexa/internal/importer"
 	"github.com/norhua/sonexa/internal/library"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/provider/caa"
 	"github.com/norhua/sonexa/internal/provider/itunes"
 	"github.com/norhua/sonexa/internal/provider/musicbrainz"
 	"github.com/norhua/sonexa/internal/provider/qqmusic"
@@ -36,6 +39,7 @@ type App struct {
 	limiters       *provider.Limiters
 	client         *provider.Client
 	lyricSvc       *lyrics.Service
+	coverSources   *sources.Registry
 	coverSvc       *covers.Service
 	coverSessions  map[string]*coverSession
 	coverWorkers   sync.WaitGroup
@@ -182,13 +186,13 @@ func (a *App) initialize() error {
 	a.store.SetLadderConfig(a.ladderConfig())
 
 	a.limiters = provider.NewLimiters()
-	a.rebuildProviders(cur)
 
 	svc, err := newCoverService(a.store, a.paths, cur, a.version)
 	if err != nil {
 		return err
 	}
 	a.coverSvc = a.attachLadderBuilder(svc)
+	a.rebuildProviders(cur)
 	if _, err := a.libraryService(); err != nil {
 		return err
 	}
@@ -241,6 +245,11 @@ func (a *App) rebuildProviders(cur config.Settings) {
 		panic(err) // Built-in IDs are fixed; atomic fallible assembly is task 6.1.
 	}
 	a.lyricSvc = lyricSvc
+	coverSources, err := buildCoverSources(a.client, mb, it, qq, a.coverSvc)
+	if err != nil {
+		panic(err)
+	}
+	a.coverSources = coverSources
 
 	a.registry = provider.NewRegistry()
 	a.registry.Register(mb)
@@ -252,6 +261,18 @@ func (a *App) rebuildProviders(cur config.Settings) {
 		priority = append(priority, provider.ProviderID(id))
 	}
 	a.registry.SetPriority(priority)
+	if a.coverSvc != nil {
+		policies, err := defaultImagePolicies()
+		if err != nil {
+			panic(err)
+		}
+		a.coverSvc.SetImagePolicies(policies)
+		for _, p := range a.registry.List() {
+			if strategy, ok := p.(provider.ArtworkStrategist); ok {
+				a.coverSvc.RegisterArtwork(strategy.ArtworkStrategy())
+			}
+		}
+	}
 
 	a.limiters.ConfigureFixedQuotas()
 	for _, p := range a.registry.List() {
@@ -380,6 +401,27 @@ func (a *App) coverAssetHandler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		if searchID := r.URL.Query().Get("searchId"); searchID != "" {
+			a.mu.RLock()
+			session := a.coverSessions[searchID]
+			a.mu.RUnlock()
+			if session == nil || session.ctx.Err() != nil {
+				http.NotFound(w, r)
+				return
+			}
+			variantID, err := strconv.ParseInt(r.URL.Query().Get("variantId"), 10, 64)
+			session.mu.Lock()
+			allowed := session.variants[variantID]
+			session.mu.Unlock()
+			if err != nil || !allowed {
+				http.Error(w, "图片不属于当前搜索", http.StatusForbidden)
+				return
+			}
+			ctx, cancel := context.WithCancel(session.ctx)
+			stop := context.AfterFunc(r.Context(), cancel)
+			defer func() { stop(); cancel() }()
+			r = r.WithContext(ctx)
+		}
 		svc.Handler().ServeHTTP(w, r)
 	})
 }
@@ -402,6 +444,11 @@ func newCoverService(st *store.Store, paths config.Paths, cur config.Settings, v
 	svc.RegisterArtwork((&musicbrainz.Provider{}).ArtworkStrategy())
 	svc.RegisterArtwork((&itunes.Provider{}).ArtworkStrategy())
 	svc.RegisterArtwork((&qqmusic.Provider{}).ArtworkStrategy())
+	policies, err := defaultImagePolicies()
+	if err != nil {
+		return nil, err
+	}
+	svc.SetImagePolicies(policies)
 	if err := svc.AttachLibrary(st); err != nil {
 		return nil, err
 	}
@@ -433,7 +480,7 @@ func (a *App) attachLadderBuilder(svc *covers.Service) *covers.Service {
 			svc.RegisterArtwork(source.ArtworkStrategy())
 		}
 	}
-	svc.Pool().SetIndexParser(musicbrainz.ParseCAAThumbnailIndex)
+	svc.Pool().SetIndexParser(caa.ParseCAAThumbnailIndex)
 	svc.SetLadderBuilder(func(providerID, ref, releaseGroupRef string) []string {
 		var rg *string
 		if releaseGroupRef != "" {

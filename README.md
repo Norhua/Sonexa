@@ -95,6 +95,14 @@ SONEXA_QQ_PROBE=/path/to/local-response.json go test -v ./internal/provider/qqmu
 
 迁移后的离线回归不代表当前真实来源已验通；在线与原生验证边界单独记录。
 
+封面搜索消费 `internal/covers/sources` 的窄接口，由 CAA/iTunes/QQ/网易云实现。
+CAA 协议位于 `internal/provider/caa`；MusicBrainz 仅委托图片策略。
+原有 QQ/网易云封面 live 入口已迁到 App 组合测试，仍默认跳过：
+
+```sh
+SONEXA_LIVE_COVERS=1 go test -v ./internal/app -run '^TestLiveCoverSources$' -count=1
+```
+
 ## 版本控制
 
 提交手写源码、测试、测试数据、依赖锁文件、平台资源及项目工具配置。不提交依赖目录、构建产物、Wails 生成绑定、`package.json.md5`、测试报告、数据库、本机配置和 `.env`；规则见 `.gitignore`。

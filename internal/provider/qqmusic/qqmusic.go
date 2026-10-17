@@ -171,34 +171,6 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 	return d, nil
 }
 
-// SearchCovers 是旧封面搜索入口：按专辑 MID 去重，构造各尺寸档位。
-func (p *Provider) SearchCovers(ctx context.Context, q provider.Query) ([]provider.CoverGroup, error) {
-	candidates, err := p.SearchTracks(ctx, q)
-	if err != nil {
-		return nil, err
-	}
-	seen := map[string]bool{}
-	var out []provider.CoverGroup
-	for _, c := range candidates {
-		if c.ReleaseRef == nil || seen[*c.ReleaseRef] {
-			continue
-		}
-		seen[*c.ReleaseRef] = true
-		group := provider.CoverGroup{
-			Provider: provider.QQMusic, SourceRef: *c.ReleaseRef,
-			Title: c.AlbumTitle, Artist: c.ArtistName, Constructed: true,
-		}
-		for i := len(CoverSizes) - 1; i >= 0; i-- {
-			group.Images = append(group.Images, provider.CoverImage{Type: "Front", URL: CoverURL(*c.ReleaseRef, CoverSizes[i])})
-		}
-		out = append(out, group)
-		if len(out) >= 10 {
-			break
-		}
-	}
-	return out, nil
-}
-
 // musicu 发起一次 musicu.fcg POST。请求体参与缓存键。
 func (p *Provider) musicu(ctx context.Context, mode provider.CacheMode, reqs map[string]any) ([]byte, error) {
 	payload := map[string]any{"comm": map[string]any{"ct": "19", "cv": "1859", "uin": "0"}}

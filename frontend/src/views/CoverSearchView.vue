@@ -110,7 +110,7 @@ async function adopt() {
       <div class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4">
         <article v-for="card in cards" :key="`${card.source}-${card.image.id}`" class="overflow-hidden rounded-lg border" :class="selected === variant(card).id ? 'ring-2 ring-primary' : ''">
           <button class="relative block aspect-square w-full bg-surface-100 dark:bg-surface-800" :aria-label="`选择 ${names[card.source]} ${card.image.title}`" @click="selected = variant(card).id" @dblclick="preview = card">
-            <CoverPreview :variant="variant(card)" @verified="loaded" />
+            <CoverPreview :variant="variant(card)" :search-id="store.results[card.source]?.searchId" @verified="loaded" />
             <div class="absolute bottom-2 left-2 flex flex-wrap gap-1 text-xs font-medium text-white">
               <span class="rounded bg-pink-600 px-2 py-1">{{ names[card.source] }}</span><span class="rounded bg-pink-600 px-2 py-1">{{ label(variant(card)) }}</span>
             </div>
@@ -132,7 +132,7 @@ async function adopt() {
       <SecondaryButton @click="store.close()">取消</SecondaryButton><Button :disabled="!selection || busy" @click="adopt">{{ busy ? '应用中…' : '应用到专辑' }}</Button>
     </footer>
     <Dialog :visible="!!preview" modal header="封面预览" class="w-[min(85vw,900px)]" @update:visible="preview = null">
-      <CoverPreview v-if="preview" :variant="variant(preview)" large @verified="loaded" />
+      <CoverPreview v-if="preview" :variant="variant(preview)" :search-id="store.results[preview.source]?.searchId" large @verified="loaded" />
     </Dialog>
   </section>
   </Dialog>

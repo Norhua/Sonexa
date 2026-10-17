@@ -36,20 +36,9 @@ func (s *Service) artworkForProvider(id string) (provider.ArtworkStrategy, bool)
 	}
 	return provider.ArtworkStrategy{}, false
 }
-func (s *Service) imageURLs(raw string) []string {
-	s.mu.Lock()
-	var policies []provider.ArtworkStrategy
-	for _, p := range s.artwork {
-		policies = append(policies, p)
-	}
-	s.mu.Unlock()
-	for _, p := range policies {
-		if p.ImageURLs != nil {
-			urls := p.ImageURLs(raw)
-			if len(urls) > 1 {
-				return urls
-			}
-		}
+func (s *Service) imageURLs(source, raw string) []string {
+	if p, ok := s.artworkForSource(source); ok && p.ImageURLs != nil {
+		return p.ImageURLs(raw)
 	}
 	return []string{raw}
 }
@@ -68,7 +57,8 @@ func (s *Service) Catalog(ctx context.Context, key store.CoverCatalogKey, force 
 	if err := policy.Validate(key.ObjectType, key.SourceRef); err != nil {
 		return nil, err
 	}
-	value, err := s.pool.Shared(ctx, "catalog:"+key.Source+":"+key.ObjectType+":"+key.SourceRef, func(ctx context.Context) (any, error) {
+	ctx = imageContext(ctx, key.Source)
+	value, err := s.pool.Shared(ctx, "catalog:"+key.Source+":"+key.ObjectType+":"+key.SourceRef+":"+imagePolicy(ctx).Key(), func(ctx context.Context) (any, error) {
 		cached, err := s.library.store.GetCoverCatalog(key)
 		if err != nil {
 			return nil, err

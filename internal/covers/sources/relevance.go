@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/norhua/sonexa/internal/matching"
-	"github.com/norhua/sonexa/internal/provider"
 )
 
 // 上游搜索对词项做宽松召回（如 iTunes 仅凭「AKB48」召回同团体全部单曲），
@@ -46,7 +45,7 @@ func artistMatches(query string, candidates ...string) bool {
 //
 // 有专辑名时，专辑名匹配即可；否则要求歌曲名匹配，且艺术家（若给出）也匹配。
 // 专辑名不匹配但歌曲与艺术家都匹配的结果同样保留：同一首歌可能收录在改名的版本里。
-func Relevant(q provider.Query, title, artist, album string) bool {
+func Relevant(q Query, title, artist, album string) bool {
 	q.Title, q.Artist, q.Album = strings.TrimSpace(q.Title), strings.TrimSpace(q.Artist), strings.TrimSpace(q.Album)
 	if q.Title == "" && q.Album == "" {
 		return q.Artist == "" || artistMatches(q.Artist, artist)

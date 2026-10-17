@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
-	"net/http"
 	"time"
 )
 
@@ -21,16 +20,10 @@ func (s *Service) AttachLibrary(st *store.Store) error {
 		library.Close()
 		return err
 	}
+	s.pool.mu.Lock()
+	s.pool.requireImagePolicy = true
+	s.pool.mu.Unlock()
 	s.pool.client.Transport = &imageTransport{}
-	s.pool.client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return fmt.Errorf("封面重定向次数过多")
-		}
-		if err := validImageURL(req.URL.String()); err != nil {
-			return err
-		}
-		return s.pool.checkGate()
-	}
 	return nil
 }
 
@@ -87,7 +80,7 @@ func (s *Service) beginOperation(ctx context.Context) (context.Context, func(), 
 	}
 	s.operations.Add(1)
 	s.prefetchMu.Unlock()
-	child, cancel := context.WithCancel(ctx)
+	child, cancel := context.WithCancel(s.SnapshotContext(ctx))
 	stop := context.AfterFunc(s.life, cancel)
 	return child, func() { stop(); cancel(); s.operations.Done() }, nil
 }

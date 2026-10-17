@@ -39,17 +39,18 @@ type Pool struct {
 	cache  *DiskCache
 	client *http.Client
 
-	mu          sync.Mutex
-	limit       int
-	active      int
-	changed     chan struct{}
-	jobs        map[string]*sharedFetch
-	workers     sync.WaitGroup
-	closed      bool
-	userAgent   string
-	indexParser IndexParser
-	gate        func() error
-	retry       provider.RetryPolicy
+	mu                 sync.Mutex
+	limit              int
+	active             int
+	changed            chan struct{}
+	jobs               map[string]*sharedFetch
+	workers            sync.WaitGroup
+	closed             bool
+	userAgent          string
+	indexParser        IndexParser
+	gate               func() error
+	retry              provider.RetryPolicy
+	requireImagePolicy bool
 }
 
 func boundedConcurrency(n int) int {
@@ -274,7 +275,31 @@ func (p *Pool) fetchOnce(ctx context.Context, url string) ([]byte, error) {
 	}
 	p.mu.Lock()
 	ua := p.userAgent
+	required := p.requireImagePolicy
 	p.mu.Unlock()
+	client := *p.client
+	if required || imagePolicy(ctx) != nil {
+		policy := imagePolicy(ctx)
+		if err := policy.CheckURL(url); err != nil {
+			return nil, err
+		}
+		previous := client.CheckRedirect
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if err := req.Context().Err(); err != nil {
+				return err
+			}
+			if err := p.checkGate(); err != nil {
+				return err
+			}
+			if err := policy.CheckRedirect(req.URL.String(), len(via)); err != nil {
+				return err
+			}
+			if previous != nil {
+				return previous(req, via)
+			}
+			return nil
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -282,7 +307,7 @@ func (p *Pool) fetchOnce(ctx context.Context, url string) ([]byte, error) {
 	if ua != "" {
 		req.Header.Set("User-Agent", ua)
 	}
-	resp, err := p.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

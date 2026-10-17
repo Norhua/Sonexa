@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/norhua/sonexa/internal/provider"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -144,8 +145,12 @@ func TestResolverNoMBAndSelectedOverride(t *testing.T) {
 }
 
 func TestImageURLAllowlist(t *testing.T) {
+	policy, err := provider.NewImagePolicy([]provider.ImageHost{{Host: "archive.org", Subdomains: true}}, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, raw := range []string{"http://archive.org/image.jpg", "https://127.0.0.1/image", "https://archive.org.evil.test/image", "file:///secret", "https://user:pass@archive.org/image", "https://archive.org:8080/image"} {
-		if err := validImageURL(raw); err == nil {
+		if err := policy.CheckURL(raw); err == nil {
 			t.Errorf("接受了不可信图片地址: %s", raw)
 		}
 	}

@@ -1,4 +1,4 @@
-package sources_test
+package app
 
 import (
 	"context"
@@ -22,8 +22,9 @@ func TestLiveCoverSources(t *testing.T) {
 		t.Run(id, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
-			adapter := sources.NewWebSource(id, "Sonexa/test (public cover compatibility check)", provider.NewLimiters(), nil)
-			results, err := adapter.Search(ctx, provider.Query{Title: "世界中の雨", Artist: "チームドラゴン from AKB48", Album: "心の羽根", Limit: 3})
+			client := provider.NewClient(provider.NewLimiters(), nil, "Sonexa/test (public cover compatibility check)")
+			adapter := webCoverSource(id, client)
+			results, err := adapter.SearchCovers(ctx, sources.Query{Title: "世界中の雨", Artist: "チームドラゴン from AKB48", Album: "心の羽根", Limit: 3})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -41,7 +42,7 @@ func TestLiveCoverSources(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			response, err := adapter.HTTP.Do(request)
+			response, err := client.HTTP.Do(request)
 			if err != nil {
 				t.Fatal(err)
 			}

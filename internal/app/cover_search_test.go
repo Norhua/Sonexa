@@ -3,7 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/norhua/sonexa/internal/covers/sources"
 	"github.com/norhua/sonexa/internal/domain"
+	"github.com/norhua/sonexa/internal/provider/itunes"
 	"io"
 	"net/http"
 	"strings"
@@ -18,22 +20,32 @@ import (
 
 type coverSearchProvider struct {
 	id     provider.ProviderID
-	search func(context.Context, provider.Query) ([]provider.Candidate, error)
+	search func(context.Context, sources.Query) ([]sources.Result, error)
 }
 
-func (p *coverSearchProvider) ID() provider.ProviderID             { return p.id }
-func (p *coverSearchProvider) DisplayName() string                 { return string(p.id) }
-func (p *coverSearchProvider) Capabilities() provider.Capabilities { return provider.CapCoverArt }
-func (p *coverSearchProvider) RateLimit() (int, time.Duration)     { return 1, time.Second }
-func (p *coverSearchProvider) IsConfigured() error                 { return nil }
-func (p *coverSearchProvider) SearchTracks(ctx context.Context, q provider.Query) ([]provider.Candidate, error) {
+func (p *coverSearchProvider) ID() provider.ProviderID { return p.id }
+func (p *coverSearchProvider) DisplayName() string     { return string(p.id) }
+func (p *coverSearchProvider) SearchCovers(ctx context.Context, q sources.Query) ([]sources.Result, error) {
 	return p.search(ctx, q)
 }
-func (p *coverSearchProvider) FetchDetail(context.Context, provider.Ref) (*provider.Detail, error) {
-	return nil, nil
-}
 
-var _ provider.MetadataProvider = (*coverSearchProvider)(nil)
+var _ sources.Provider = (*coverSearchProvider)(nil)
+
+func setCoverSources(t *testing.T, a *App, providers ...sources.Provider) {
+	t.Helper()
+	entries := []sources.Entry{}
+	for _, p := range providers {
+		entries = append(entries, sources.Entry{Provider: p})
+	}
+	r, err := sources.NewRegistry(entries...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.coverSources = r
+}
+func coverResult(ref, url, album, title string) sources.Result {
+	return sources.Result{Input: &domain.CoverCatalogInput{Key: domain.CoverCatalogKey{Source: "itunes", ObjectType: "album", SourceRef: ref}, Images: itunes.CoverImages(url, album, title)}}
+}
 
 type appCoverTransport func(*http.Request) (*http.Response, error)
 
@@ -84,21 +96,19 @@ func TestCoverSearchProgressAndAuthorization(t *testing.T) {
 			events <- data[0].(CoverSearchEvent)
 		}
 	}
-	a.registry = provider.NewRegistry()
-	a.registry.Register(&coverSearchProvider{id: provider.MusicBrainz, search: func(ctx context.Context, q provider.Query) ([]provider.Candidate, error) {
+	setCoverSources(t, a, &coverSearchProvider{id: "caa", search: func(ctx context.Context, q sources.Query) ([]sources.Result, error) {
 		select {
 		case <-slow:
 			return nil, fmt.Errorf("CAA search failed")
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
-	}})
-	a.registry.Register(&coverSearchProvider{id: provider.ITunes, search: func(ctx context.Context, q provider.Query) ([]provider.Candidate, error) {
-		if !q.SkipCache {
+	}}, &coverSearchProvider{id: provider.ITunes, search: func(ctx context.Context, q sources.Query) ([]sources.Result, error) {
+		if !q.Force {
 			t.Error("显式搜索未绕过缓存")
 		}
 		ref, url, album, title := "jp:12", "https://is1.mzstatic.com/image/100x100bb.jpg", "album", "song"
-		return []provider.Candidate{{ReleaseRef: &ref, ThumbURL: &url, AlbumTitle: &album, Title: &title}}, nil
+		return []sources.Result{coverResult(ref, url, album, title)}, nil
 	}})
 	request := CoverSearchRequest{SearchID: uuid.NewString(), Generation: 7, ReleaseID: id, Title: "song", Sources: []string{"caa", "itunes"}}
 	if err := a.StartCoverSearch(request); err != nil {
@@ -203,9 +213,9 @@ func TestCoverSearchEmptyAndErrorsStayDistinct(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			a.registry = provider.NewRegistry()
-			for _, id := range []provider.ProviderID{provider.MusicBrainz, provider.ITunes} {
-				a.registry.Register(&coverSearchProvider{id: id, search: func(context.Context, provider.Query) ([]provider.Candidate, error) {
+			providers := []sources.Provider{}
+			for _, id := range []provider.ProviderID{"caa", provider.ITunes} {
+				providers = append(providers, &coverSearchProvider{id: id, search: func(context.Context, sources.Query) ([]sources.Result, error) {
 					if state == "error" {
 						return nil, fmt.Errorf("source failed")
 					}
@@ -224,6 +234,7 @@ func TestCoverSearchEmptyAndErrorsStayDistinct(t *testing.T) {
 				}
 				return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 			})
+			setCoverSources(t, a, append(providers, webCoverSource("qq", a.client), webCoverSource("163", a.client))...)
 			request := CoverSearchRequest{SearchID: uuid.NewString(), Generation: 3, ReleaseID: id, Title: "song", Sources: []string{"caa", "itunes", "qq", "163"}}
 			if err := a.StartCoverSearch(request); err != nil {
 				t.Fatal(err)
@@ -254,16 +265,14 @@ func TestCoverSearchCapsCardsAndRetryKeepsOtherAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.registry = provider.NewRegistry()
-	a.registry.Register(&coverSearchProvider{id: provider.ITunes, search: func(context.Context, provider.Query) ([]provider.Candidate, error) {
-		rows := []provider.Candidate{}
+	setCoverSources(t, a, &coverSearchProvider{id: provider.ITunes, search: func(context.Context, sources.Query) ([]sources.Result, error) {
+		rows := []sources.Result{}
 		for i := range 30 {
 			ref, url, title := fmt.Sprintf("jp:%d", i), fmt.Sprintf("https://is1.mzstatic.com/%d/100x100bb.jpg", i), "song"
-			rows = append(rows, provider.Candidate{ReleaseRef: &ref, ThumbURL: &url, Title: &title})
+			rows = append(rows, coverResult(ref, url, "", title))
 		}
 		return rows, nil
-	}})
-	a.registry.Register(&coverSearchProvider{id: provider.MusicBrainz, search: func(context.Context, provider.Query) ([]provider.Candidate, error) { return nil, nil }})
+	}}, &coverSearchProvider{id: "caa", search: func(context.Context, sources.Query) ([]sources.Result, error) { return nil, nil }})
 	first := CoverSearchRequest{SearchID: uuid.NewString(), Generation: 1, ReleaseID: id, Title: "song", Sources: []string{"itunes"}}
 	if err := a.StartCoverSearch(first); err != nil {
 		t.Fatal(err)
@@ -300,8 +309,7 @@ func TestCoverSearchCancelledDoesNotEmitOrReopen(t *testing.T) {
 	defer a.coverSvc.Close()
 	id, _ := a.store.FindOrCreateLocalRelease("album", nil)
 	started := make(chan struct{})
-	a.registry = provider.NewRegistry()
-	a.registry.Register(&coverSearchProvider{id: provider.ITunes, search: func(ctx context.Context, q provider.Query) ([]provider.Candidate, error) {
+	setCoverSources(t, a, &coverSearchProvider{id: provider.ITunes, search: func(ctx context.Context, q sources.Query) ([]sources.Result, error) {
 		close(started)
 		<-ctx.Done()
 		return nil, ctx.Err()
@@ -321,15 +329,4 @@ func TestCoverSearchCancelledDoesNotEmitOrReopen(t *testing.T) {
 	if len(a.CoverSearchResults(request.SearchID)) != 0 {
 		t.Fatal("取消后仍保留搜索快照")
 	}
-}
-
-func (s *coverSearchProvider) Refs() provider.RefCodec { return nil }
-func (s *coverSearchProvider) SnapshotFromCandidate(c provider.Candidate) (*domain.Snapshot, error) {
-	return provider.CandidateSnapshot(s.ID(), c)
-}
-func (s *coverSearchProvider) Complete(context.Context, domain.DetailTarget) (*domain.Snapshot, error) {
-	return nil, provider.ErrUnsupported
-}
-func (s *coverSearchProvider) LoadReleaseSummary(context.Context, domain.ReleaseIdentity) (*domain.ReleaseSummary, error) {
-	return nil, provider.ErrUnsupported
 }

@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/norhua/sonexa/internal/store"
 )
@@ -265,10 +264,12 @@ func (s *Service) DownloadVariant(ctx context.Context, variant store.CoverVarian
 		return nil, err
 	}
 	defer done()
-	if err := validImageURL(variant.URL); err != nil {
+	source, err := s.library.store.CoverSourceForVariant(variant.ID)
+	if err != nil {
 		return nil, err
 	}
-	value, err := s.pool.Shared(ctx, fmt.Sprintf("image:%d", variant.ID), func(ctx context.Context) (any, error) {
+	ctx = imageContext(ctx, source)
+	value, err := s.pool.Shared(ctx, fmt.Sprintf("image:%d:%s", variant.ID, imagePolicy(ctx).Key()), func(ctx context.Context) (any, error) {
 		// 先读同规格的临时预览，避免页面预览后采用再下一遍。
 		files, err := s.library.store.PreviewFilesForVariant(variant.ID)
 		if err != nil {
@@ -281,7 +282,10 @@ func (s *Service) DownloadVariant(ctx context.Context, variant store.CoverVarian
 				}
 			}
 		}
-		data, err := s.pool.fetchURLs(ctx, s.imageURLs(variant.URL), nil)
+		if err := imagePolicy(ctx).CheckURL(variant.URL); err != nil {
+			return nil, err
+		}
+		data, err := s.pool.fetchURLs(ctx, s.imageURLs(source, variant.URL), nil)
 		if err == nil {
 			_, err = InspectImage(data)
 		}
@@ -301,20 +305,6 @@ func (s *Service) DownloadVariant(ctx context.Context, variant store.CoverVarian
 		return nil, err
 	}
 	return value.([]byte), nil
-}
-
-func validImageURL(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.User != nil || (u.Port() != "" && u.Port() != "443") {
-		return fmt.Errorf("封面地址必须使用可信 HTTPS 来源")
-	}
-	host := strings.ToLower(u.Hostname())
-	for _, domain := range []string{"coverartarchive.org", "archive.org", "mzstatic.com", "y.qq.com", "music.126.net"} {
-		if host == domain || strings.HasSuffix(host, "."+domain) {
-			return nil
-		}
-	}
-	return fmt.Errorf("封面地址不是已支持来源")
 }
 
 func revisionFromQuery(q url.Values) int64 {

@@ -205,38 +205,6 @@ func ParseLookup(resp *lookupResponse, country, trackRef string) *provider.Detai
 	return d
 }
 
-// SearchCovers 是旧封面搜索入口。
-//
-// iTunes 只返回一个 artworkUrl100，大图尺寸靠构造地址得到（未文档化行为），
-// 因此 Constructed 为真——选中某档时需先验证其可用性，不可用时自动退档。
-func (p *Provider) SearchCovers(ctx context.Context, q provider.Query) ([]provider.CoverGroup, error) {
-	candidates, err := p.SearchTracks(ctx, q)
-	if err != nil {
-		return nil, err
-	}
-
-	seen := map[string]bool{}
-	var out []provider.CoverGroup
-	for _, c := range candidates {
-		if c.ThumbURL == nil || c.ReleaseRef == nil || seen[*c.ReleaseRef] {
-			continue
-		}
-		seen[*c.ReleaseRef] = true
-		out = append(out, provider.CoverGroup{
-			Provider:    provider.ITunes,
-			SourceRef:   *c.ReleaseRef,
-			Title:       c.AlbumTitle,
-			Artist:      c.ArtistName,
-			Constructed: true,
-			Images:      ArtworkLadder(*c.ThumbURL),
-		})
-		if len(out) >= 10 {
-			break
-		}
-	}
-	return out, nil
-}
-
 // ArtworkSizes 是供封面目录使用的有限构造档位，250 用于自动缩略图。
 // 构造地址是未文档化行为，实际可用性与尺寸必须经下载解码确认。
 var ArtworkSizes = []int{3000, 1200, 600, 250, 100}

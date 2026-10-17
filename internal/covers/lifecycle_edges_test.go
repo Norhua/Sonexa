@@ -117,7 +117,7 @@ func TestPrefetchCancellationDoesNotCancelHandlerConsumer(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	for {
 		svc.pool.mu.Lock()
-		job := svc.pool.jobs["catalog:caa:release:"+testReleaseMBID]
+		job := svc.pool.jobs["catalog:caa:release:"+testReleaseMBID+":"+svc.imagePolicies.For("caa").Key()]
 		n := 0
 		if job != nil {
 			n = job.waiters

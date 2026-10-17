@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/norhua/sonexa/internal/covers"
+	"github.com/norhua/sonexa/internal/covers/sources"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
 )
@@ -43,7 +44,11 @@ func TestCoverSearchSharesMetadataQuotaButCAADirectoryDoesNot(t *testing.T) {
 			t.Fatal(err)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-		_, err := a.searchCoverSource(ctx, a.registry, a.coverSvc, source.cover, &store.Release{}, provider.Query{Title: "song", SkipCache: true})
+		adapter, err := a.coverSources.Get(provider.ProviderID(source.cover))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = a.searchCoverSource(ctx, adapter, sources.Query{Title: "song", Force: true})
 		cancel()
 		if err == nil || calls.Load() != 0 {
 			t.Fatalf("%s 搜索绕过了元数据配额: %v calls=%d", source.cover, err, calls.Load())

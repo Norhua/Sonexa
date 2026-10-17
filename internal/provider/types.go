@@ -108,19 +108,6 @@ type CoverImage struct {
 	Height *int
 }
 
-// CoverGroup 是一条候选返回的一组封面（可能含多个尺寸档）。
-type CoverGroup struct {
-	Provider ProviderID
-	// SourceRef 是这组封面所属的上游对象标识（release MBID / collectionId）。
-	SourceRef string
-	Title     *string
-	Artist    *string
-	Images    []CoverImage
-	// Constructed 为真表示尺寸靠构造地址得到（iTunes），选中时需先验证再采用。
-	Constructed bool
-	Confidence  float64
-}
-
 // Detail 是一次详情拉取的完整结果。字段远多于 Candidate，全部可空。
 type Detail struct {
 	GroupTitle            *string

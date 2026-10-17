@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/norhua/sonexa/internal/covers"
-	"github.com/norhua/sonexa/internal/provider/musicbrainz"
+	"github.com/norhua/sonexa/internal/provider/caa"
 	"github.com/norhua/sonexa/internal/store"
 )
 
@@ -61,7 +61,7 @@ func TestTetraCoverHandlerReplaysMediumOnlyIndex(t *testing.T) {
 	}
 	// 预取也使用同一条包含索引的链，不再要求先渲染一次。
 	refs := app.BuildCoverRefs([]CandidateRow{{Provider: "musicbrainz", ReleaseRef: &ref}})
-	if len(refs) != 1 || refs[0].URLs[len(refs[0].URLs)-1] != musicbrainz.CoverArtArchiveBaseURL+"/release/"+ref {
+	if len(refs) != 1 || refs[0].URLs[len(refs[0].URLs)-1] != caa.CoverArtArchiveBaseURL+"/release/"+ref {
 		t.Fatal(refs)
 	}
 }

@@ -1,14 +1,13 @@
-package musicbrainz
+package caa
 
 import (
 	"context"
-	"io"
-	"net/http"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
 )
 
@@ -50,25 +49,29 @@ func TestCAAThumbnailIndexPrefersFrontAndRecognizesOnlyIndexes(t *testing.T) {
 	}
 }
 
-type coverTransport func(*http.Request) (*http.Response, error)
-
-func (f coverTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
-
-func TestSearchCoversReadsRealIndexWithoutArtworkFlag(t *testing.T) {
-	client := provider.NewClient(nil, nil, "test")
-	client.HTTP.Transport = coverTransport(func(r *http.Request) (*http.Response, error) {
-		body := `{"recordings":[{"id":"rec","title":"Tetra.","releases":[{"id":"rel","title":"LINES","media":[{"position":1,"tracks":[{"id":"track","number":"1","title":"Tetra."}]}]}]}]}`
-		if r.URL.Host == "coverartarchive.org" {
-			body = `{"images":[{"front":false,"types":["Medium"],"image":"http://coverartarchive.org/release/rel/disc.png","thumbnails":{"250":"http://coverartarchive.org/release/rel/disc-250.jpg"}}]}`
-		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-	})
-	p := New(client, Config{Contact: "test@example.com"}, nil)
-	groups, err := p.SearchCovers(context.Background(), provider.Query{Title: "Tetra."})
-	if err != nil || len(groups) != 1 {
-		t.Fatalf("%+v %v", groups, err)
+func TestArtworkReadsRealIndexWithoutArtworkFlag(t *testing.T) {
+	strategy := ArtworkStrategy()
+	key := domain.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: "rel"}
+	input, err := strategy.Load(context.Background(), key, provider.ArtworkIO{Fetch: func(context.Context, string) ([]byte, error) {
+		return []byte(`{"images":[{"id":1,"front":false,"types":["Medium"],"image":"http://coverartarchive.org/release/rel/disc.png","thumbnails":{"250":"http://coverartarchive.org/release/rel/disc-250.jpg"}}]}`), nil
+	}})
+	if err != nil || len(input.Images) != 1 || input.Images[0].PrimaryType != "Medium" || len(input.Images[0].Variants) != 2 || strings.Contains(input.Images[0].OriginalURL, "front-") {
+		t.Fatal(input, err)
 	}
-	if groups[0].Constructed || len(groups[0].Images) != 2 || groups[0].Images[0].Type != "Medium" || strings.Contains(groups[0].Images[0].URL, "front-") {
-		t.Fatalf("not actual index: %+v", groups)
+}
+
+func TestCAALadder(t *testing.T) {
+	got := CAAFrontLadder("rel-1", "rg-1")
+	want := []string{"https://coverartarchive.org/release/rel-1/front-1200", "https://coverartarchive.org/release/rel-1/front-500", "https://coverartarchive.org/release-group/rg-1/front-1200"}
+	if len(got) != len(want) {
+		t.Fatal(got)
+	}
+	for i, w := range want {
+		if got[i].URL != w {
+			t.Fatal(got)
+		}
+	}
+	if CAAThumbnailURL("rel-1") != "https://coverartarchive.org/release/rel-1/front-250" {
+		t.Fatal("thumbnail changed")
 	}
 }

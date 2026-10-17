@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/norhua/sonexa/internal/covers"
 	"github.com/norhua/sonexa/internal/covers/sources"
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -84,8 +85,10 @@ type CoverSourceInfo struct {
 }
 
 func (a *App) ListCoverSources() []CoverSourceInfo {
-	out := make([]CoverSourceInfo, 0, len(sources.List()))
-	for _, source := range sources.List() {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	out := []CoverSourceInfo{}
+	for _, source := range a.coverSources.List() {
 		out = append(out, CoverSourceInfo{source.ID, source.Name, source.NeedsCountry})
 	}
 	return out
@@ -114,11 +117,17 @@ func (a *App) StartCoverSearch(request CoverSearchRequest) error {
 	if len(request.Sources) == 0 {
 		return fmt.Errorf("请选择封面来源")
 	}
+	a.mu.RLock()
+	registry := a.coverSources
+	a.mu.RUnlock()
+	selected := map[string]sources.Provider{}
 	seen := map[string]bool{}
 	for _, source := range request.Sources {
-		if source != "caa" && source != "itunes" && source != "qq" && source != "163" {
-			return fmt.Errorf("未知封面来源")
+		p, err := registry.Get(provider.ProviderID(source))
+		if err != nil {
+			return err
 		}
+		selected[source] = p
 		if seen[source] {
 			return fmt.Errorf("重复封面来源")
 		}
@@ -151,15 +160,19 @@ func (a *App) StartCoverSearch(request CoverSearchRequest) error {
 		return fmt.Errorf("搜索会话标识已使用，请新建会话")
 	}
 	a.coverSessions[request.SearchID] = session
-	registry, svc := a.registry, a.coverSvc
+	session.ctx = a.coverSvc.SnapshotContext(session.ctx)
+	ctx = session.ctx
 	a.coverWorkers.Add(len(request.Sources))
 	a.mu.Unlock()
 	for _, source := range request.Sources {
 		go func(source string) {
 			defer a.coverWorkers.Done()
 			defer a.beginInteractive()()
-			q := provider.Query{Title: request.Title, Artist: request.Artist, Album: request.Album, Country: request.Country, Limit: 20, SkipCache: true}
-			cards, err := a.searchCoverSource(ctx, registry, svc, source, release, q)
+			q := sources.Query{Title: request.Title, Artist: request.Artist, Album: request.Album, Country: request.Country, Limit: 20, Force: true}
+			if release.Provider != nil && release.ProviderRef != nil {
+				q.Release = &domain.ReleaseIdentity{Provider: provider.ProviderID(*release.Provider), Ref: *release.ProviderRef}
+			}
+			cards, err := a.searchCoverSource(ctx, selected[source], q)
 			if ctx.Err() != nil {
 				return
 			}
@@ -215,31 +228,14 @@ func (a *App) CancelCoverSearch(searchID string) {
 	}
 }
 
-func (a *App) searchCoverSource(ctx context.Context, registry *provider.Registry, svc *covers.Service, source string, release *store.Release, q provider.Query) ([]CoverSearchCard, error) {
-	var adapter sources.Searcher
-	switch source {
-	case "caa":
-		p, err := registry.Get(provider.MusicBrainz)
-		if err != nil {
-			return nil, err
-		}
-		ref := ""
-		if release.Provider != nil && *release.Provider == "musicbrainz" && release.ProviderRef != nil {
-			ref = *release.ProviderRef
-		}
-		adapter = &sources.CAASource{Provider: p, ReleaseRef: ref, Catalog: svc.CAACatalog}
-	case "itunes":
-		p, err := registry.Get(provider.ITunes)
-		if err != nil {
-			return nil, err
-		}
-		adapter = &sources.ITunesSource{Provider: p}
-	default:
-		adapter = sources.NewWebSource(source, a.userAgent(a.settings.Get()), a.limiters, a.checkCoverOutbound)
-	}
-	results, searchErr := adapter.Search(ctx, q)
+func (a *App) searchCoverSource(ctx context.Context, adapter sources.Provider, q sources.Query) ([]CoverSearchCard, error) {
+	source := string(adapter.ID())
+	results, searchErr := adapter.SearchCovers(ctx, q)
 	cards := []CoverSearchCard{}
 	for _, result := range results {
+		if err := ctx.Err(); err != nil {
+			return cards, err
+		}
 		if err := result.Validate(); err != nil {
 			return cards, err
 		}
