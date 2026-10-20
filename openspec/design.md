@@ -62,6 +62,9 @@ CAA 目录与缩略图共享索引解码及结构校验，目录身份/档位校
 QQ 旧歌词端点也只有一份传输与解析：元数据优先详情原文、缺失才回退，手动歌词另有通道与逐字策略。
 QRC/DES/zlib/XML 位于 `provider/qqmusic/{qrc.go,qrcdes/}`，MIT 许可证及来源提交随代码保留。
 通用文本校验、评分、通道合并留在 lyrics；获取总超时覆盖配额等待、重试和所有子请求。
+网易云占位文案在 `provider/netease/lyrics.go` 归一化为无歌词或通道 unavailable；
+lyrics 不使用跨来源正文黑名单，只处理 UTF-8、大小、文本格式与通道合并。
+来源占位不得掩盖超限或损坏，其他来源的同文案真实正文不因此被拒绝。
 
 `assembleUpstreams` 不写盘、不出网、不重配桶，先验证三个业务集合及图片策略；
 `publishUpstreamsLocked` 在 App 锁下发布并原位配置长期 Limiters，启动先建封面服务，
@@ -73,7 +76,12 @@ CAA 不捕获空目录依赖。设置更新先构建，失败不发布半套能�
 图片许可由可信后端适配器声明、按实际图片来源注入，不能从前端或响应扩充；
 首次请求、自动降级、每次重定向都使用所属来源策略，不合并其他来源许可。
 公共传输保留 HTTPS、TLS 验证、主机点边界、默认/443 端口、无用户信息、有限跳转与动态门禁。
-本地保存图片命中不要求出网许可。自动选图、共享池并发、缓存和采用文件保护保持不变。
+本地保存图片命中不要求出网许可。`ArtworkStrategy.CatalogKeys` 统一提供有效、有序的主目录及后备目录身份，
+自动解析、未入库候选的本地预览读取和入库复用都使用同一声明，不再使用 `GroupFallback`。
+`covers.Resolve` 只有当前目录为 empty 才推进；错误或取消停止远程目录回退，found 目录的规格尝试不跨目录身份，
+仍保留本地可用图片兜底。CAA 声明有效 release → 已绑定有效 release-group，iTunes/QQ 只声明自身有效专辑目录；
+后备目录已存预览可直接离线读取，不为复用再走网络。仅有手动封面能力不自动启用取图，
+共享池并发、图片安全策略、动态门禁、会话快照和采用文件保护保持不变。
 已删除无调用的 iTunes `ResolveArtwork` / `VerifyArtwork` 和 `Client.Head` 直连探测链；
 仍在候选预取与自动降级中使用的 `ArtworkLadder`、CAA URL 工具和 `LegacyLadder` 策略保留，
 图片可用性由封面池下载、解码及降级确认，不另走 API 客户端探测。
@@ -85,7 +93,7 @@ CAA/iTunes 手动召回沿用元数据刷新，目录单独持久化。生产请
 合计 HTTP 到达记账、重试/回退、新实例、其他平台隔离和图片例外已由
 `internal/app/cover_quota_test.go` 验证；启动规范化、非法保存无副作用与排队变速见
 `internal/config/qq_rate_test.go`、`internal/app/qq_settings_test.go` 和 `internal/provider/quota_test.go`。
-QQ 的规范性速率设置规则集中在[本变更的上游设置规格](changes/refactor-upstream-capabilities/specs/platform/settings/spec.md#requirement-qq-合计请求速率设置)，主规格在同步前仍是旧行为记录。
+QQ 的规范性速率设置规则集中在[主上游设置规格](specs/platform/settings/spec.md#requirement-qq-合计请求速率设置)，在线可用性及有界速率的未完成验收仍见 G16 与核对记录。
 
 默认选择的工程依据：旧实现的元数据/歌词桶为每分钟 30 次，另有每秒一次的封面桶，
 同时繁忙时理论合计约每分钟 90 次；新的合计默认是 45，既提高原元数据/歌词桶速率，
@@ -128,6 +136,7 @@ SQLite 开启 WAL 与外键，先检查 `upstream-snapshot-v1` 模型代际，�
 - 当前批次进度与全批次待选+失败汇总分开，侧栏不以单批 review 冒充总数；复核页响应状态与候选变化，不依赖计数改变。补全工作器只累计当前 pending 集合，暂停/重试保留进度，下一批或重启重新计数，仅全部曲目页且仍有 pending 时显示入口。
 - 封面采用后发送带发行与 revision 的封面变更事件，列表、详情、专辑和候选按目标与版本刷新；全局禁网、离线和普通错误统一放在侧栏设置上方，局部错误的剩余限制另列 known gaps。
 - 封面与歌词搜索大弹窗由 `App.vue` 挂载，会话状态分别在 `stores/coverSearch.ts`、`stores/lyricsSearch.ts`；打开时背景设为 inert，关闭、目标或浏览视图变化即取消会话。详情抽屉通过 `useDrawerWidth` 保存调宽偏好，详情与歌词双页切换；详情歌词隐藏标签，搜索预览保留最终合并文本和时间标签。
+- 两个搜索 store 每次打开共同等待登记列表和目标修订，确认当前打开代次后才 ready；页面直接使用 store 列表。`lib/sourceSelection.ts` 负责首次全选、重开保留选择交集及去重、单来源重试校验；空列表、加载失败或迟到响应不恢复固定名单或旧状态。封面地区控件读取已选来源的 `needsCountry`，不判断 iTunes ID，统一传递显式地区并由适配器处理空值默认规则。行为契约集中在[搜索来源选择生命周期](specs/upstream/provider-registry/spec.md#requirement-搜索来源选择生命周期)。
 
 ## 构建与测试
 

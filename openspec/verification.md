@@ -1,5 +1,42 @@
 # 文档与实现核对
 
+## 2026-10-20 上游能力规格同步与归档
+
+变更 `refactor-upstream-capabilities` 已按用户确认归档至
+[`changes/archive/2026-10-20-refactor-upstream-capabilities/`](changes/archive/2026-10-20-refactor-upstream-capabilities/)。
+规划产物全部完成，任务为 **33/34**；用户确认“同步并归档，保留未完成验收项”，
+因此 `tasks.md` 的 **8.3 仍未勾选**，G14/G16/G17 的真实来源、速率及原生验证边界不变。
+以下 2026-10-17 章节保留为当时的验收记录，其中“未同步”“未归档”描述不代表当前文档状态。
+
+### 同步范围
+
+- 原始四份 delta 的 9 个需求完整同步到 `platform/settings`、`upstream/cover-search`、
+  `upstream/provider-registry`、`upstream/qqmusic`，包含单能力来源、图片 URL 安全策略、
+  QQ 三业务共享配额及默认 45/范围 1–60 的设置契约。
+- 合并归档内 [`change_record/spec-diff.md`](changes/archive/2026-10-20-refactor-upstream-capabilities/change_record/spec-diff.md)
+  的 SD-1～SD-4：歌词占位由来源归一化；自动图片有序目录与本地复用身份统一；
+  地区输入按来源能力展示；来源展示、选择和执行共享登记快照及打开生命周期。
+  对应补齐 `upstream/lyrics-search`、`upstream/cover-art`、`platform/data-store`；
+  数据缓存总则同时明确 QQ/163 手动封面查询例外及刷新可写回，避免与原 delta 冲突。
+- 七份主规格保留既有标题、Purpose、全部原场景及未涉及需求；无新增能力目录或删除需求。
+  `openspec/design.md` 补齐后续实现边界，QQ 速率规范链接改指主规格，历史证据链接改指归档。
+  原 change 的规划、任务、资源与 `change_record` 原样保留，不将规划重写为最新实现。
+
+### 本轮实际验证
+
+- `openspec validate --specs --json`：**27/27 通过**。
+- `openspec validate --specs --strict --json`：**21/27 通过**，其余仅为需求正文超过 500 字的警告。
+  同步前基线为 22/27，已有 `editing/track-editing`、`platform/app-shell`、`upstream/cover-art`、
+  `upstream/lyrics-search`、`upstream/provider-registry` 五份受影响；同步后新增 `upstream/qqmusic`
+  的同类警告，来自完整保留原 delta「请求与限流」。未为消除警告擅自拆改需求。
+- 同步前 `openspec validate refactor-upstream-capabilities --strict --json` 通过。
+  同步后逐项比较确认全部 delta 的描述和场景已覆盖，七份主规格没有 delta 操作标题，
+  既有需求顺序、Purpose、原场景及未涉及内容保持；`git diff --check` 通过。
+- 本轮仅修改文档并归档，没有执行 Go、前端、浏览器、原生或真实来源测试。
+  后续修复曾执行的离线及浏览器证据见归档内
+  [`change_record/2d71757d-tasks.md`](changes/archive/2026-10-20-refactor-upstream-capabilities/change_record/2d71757d-tasks.md)，
+  不冒充本轮执行，不将其用于关闭在线验收项。
+
 ## 2026-10-17 上游能力重构验收（进行中）
 
 变更：`refactor-upstream-capabilities`。本节为此次实际执行结果；后面的 2026-10-16 记录是历史证据，不混算为本轮验证。
@@ -285,7 +322,7 @@ iTunes 诊断请求与预算测试，以及既有评分、相关性、协议、�
 
 用户明确选择先完成本项，保留 8.3。审阅基于重构前提交 `6814557`、此前实现至
 `70d245d` 以及本次清理；范围为该 change 的四份 delta、design 和
-[原始提示词](changes/refactor-upstream-capabilities/resource/0-original-prompt.txt)。本项完成表示
+[原始提示词](changes/archive/2026-10-20-refactor-upstream-capabilities/resource/0-original-prompt.txt)。本项完成表示
 实现/离线证据和未验证边界已核对，**不表示整个变更验收完成或可以略过在线阻塞归档**。
 
 #### 原始三个问题与实现结论
