@@ -1,0 +1,20 @@
+# original prompt
+当前歌词功能依旧不完善，存在以下问题:
+1. 对于增强型LRC当前逐字显示时间戳的方式让歌词对用户来说基本不可读
+2. 当前搜索结果并没有按照一个评分排序而是按照来源聚合。我们要取消按照来源聚合
+
+当前有一个参考项目在 tmp/lrc-change 中, 请你review相关代码，参考它的歌词搜索/获取(特别关注我们支持的这几个上游)，评分，统一化，完善等实现。完善
+sonexa的歌词功能
+
+# agent QA
+question 你所说的参考项目是否是 tmp/lyrimuse 中的 Lyrimuse？
+  Options: 1. 是，参考 tmp/lyrimuse, 2. 不是，我提供其他路径, 3. 只参考现有调查文档, 4. Type something.
+✓ 1. 是，参考 tmp/lyrimuse
+
+question 这次是否将新的逐字歌词格式纳入实现范围？
+  Options: 1. 扩展网易云 YRC / 酷狗 KRC（推荐）, 2. 四来源都完善逐字能力, 3. 暂不扩展格式, 4. Type something.
+✓ 1. 扩展网易云 YRC / 酷狗 KRC（推荐）
+
+question 评分排序采用哪种方式？Lyrimuse 的内容质量评分依赖先获取正文，与 Sonexa 当前“选中才获取”的流程不同。
+  Options: 1. 按匹配分全局排序（推荐）, 2. 预取歌词并按内容质量综合排序, 3. Type something.
+✓ 1. 按匹配分全局排序（推荐）
