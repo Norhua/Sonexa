@@ -92,6 +92,23 @@ test('two-column lyric search previews source, duration and format, handles sour
   await expect(drawer.getByRole('button', { name: /查看歌词/ })).toHaveAttribute('data-has-lyrics', 'true')
 })
 
+test('a lyrics-only registry drives both visible choices and default dispatch', async ({ page }) => {
+  await page.evaluate(() => {
+    const w = window as any, api = w.go.app.App
+    api.ListLyricsSources = async () => [{ id: 'lyrics-only', name: '独立歌词' }]
+    w.__lyricsRequests = []
+    api.SearchLyrics = async (_: string, source: string) => { w.__lyricsRequests.push(source); return [] }
+  })
+  await page.getByRole('button', { name: /查看歌词/ }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '从网络搜索歌词' }).click()
+  const dialog = page.getByRole('dialog', { name: '从网络搜索歌词' })
+  await expect(dialog.getByRole('checkbox')).toHaveCount(1)
+  await expect(dialog.getByRole('checkbox', { name: '独立歌词' })).toBeChecked()
+  await dialog.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__lyricsRequests)).toEqual(['lyrics-only'])
+  await expect(dialog.getByText('无匹配歌曲', { exact: true })).toBeVisible()
+})
+
 test('closing while a lyric search starts discards late results and cancels the backend session', async ({ page }) => {
   await page.evaluate(() => {
     const w = window as any, api = w.go.app.App

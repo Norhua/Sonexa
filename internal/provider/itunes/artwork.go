@@ -23,8 +23,10 @@ func CoverImages(artwork, title, artist string) []domain.CoverImage {
 func (p *Provider) ArtworkStrategy() provider.ArtworkStrategy {
 	return provider.ArtworkStrategy{Provider: provider.ITunes, Source: "itunes", ObjectType: "album",
 		CatalogKeys: func(ref, group string) []domain.CoverCatalogKey {
-			keys := []domain.CoverCatalogKey{{Source: "itunes", ObjectType: "album", SourceRef: ref}}
-			return keys
+			if _, err := (refCodec{}).ParseRelease(ref, ""); err != nil {
+				return nil
+			}
+			return []domain.CoverCatalogKey{{Source: "itunes", ObjectType: "album", SourceRef: ref}}
 		},
 		Validate: func(kind, ref string) error {
 			if kind != "album" {

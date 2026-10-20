@@ -11,7 +11,7 @@ func TextChannel(text string, err error) *Channel {
 	if err != nil {
 		return FailedChannel(err)
 	}
-	doc, err := parseNetworkText(text)
+	doc, err := ParseText(text)
 	if errors.Is(err, ErrNoLyrics) {
 		return AbsentChannel()
 	}
@@ -40,7 +40,7 @@ func channelDocument(original, translation, romanization *Channel, timing string
 	merged, err := mergeTimed(original.Text, translation.Text, romanization.Text)
 	var doc *Document
 	if err == nil {
-		doc, err = parseNetworkText(merged)
+		doc, err = ParseText(merged)
 	}
 	if err != nil {
 		return nil, err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/norhua/sonexa/internal/lyrics"
@@ -46,7 +47,31 @@ func parseLyrics(body []byte) (*lyrics.Payload, error) {
 	if r.Nolyric || r.Uncollected || strings.TrimSpace(r.Lrc.Lyric) == "" {
 		return nil, lyrics.ErrNoLyrics
 	}
-	return &lyrics.Payload{Original: lyrics.TextChannel(r.Lrc.Lyric, nil), Translation: lyrics.TextChannel(r.Tlyric.Lyric, nil), Romanization: lyrics.TextChannel(r.Romalrc.Lyric, nil), WordTiming: "unsupported"}, nil
+	original := lyricChannel(r.Lrc.Lyric)
+	if original.Status == "unavailable" {
+		return nil, lyrics.ErrNoLyrics
+	}
+	return &lyrics.Payload{Original: original, Translation: lyricChannel(r.Tlyric.Lyric), Romanization: lyricChannel(r.Romalrc.Lyric), WordTiming: "unsupported"}, nil
+}
+
+// 网易云会把无歌词状态放进 LRC 正文，而非只使用 nolyric 标志。
+// 这是来源响应语义，不应由公共文本校验器应用到其他来源。
+var lyricTimeTags = regexp.MustCompile(`\[\d{1,3}:[0-5]?\d(?:[.:]\d{1,3})?\]|<\d{1,3}:[0-5]?\d(?:[.:]\d{1,3})?>`)
+var lyricPlaceholderPunctuation = strings.NewReplacer("，", "", ",", "", "。", "", " ", "", "！", "", "!", "")
+
+func lyricChannel(text string) *lyrics.Channel {
+	channel := lyrics.TextChannel(text, nil)
+	if channel.Status != "available" {
+		return channel
+	}
+	for _, line := range strings.Split(channel.Text, "\n") {
+		plain := lyricPlaceholderPunctuation.Replace(strings.TrimSpace(lyricTimeTags.ReplaceAllString(line, "")))
+		switch plain {
+		case "纯音乐请欣赏", "纯音乐请您欣赏", "此歌曲为没有填词的纯音乐请您欣赏", "暂无歌词", "此歌曲暂无歌词":
+			return lyrics.AbsentChannel()
+		}
+	}
+	return channel
 }
 
 var _ lyrics.Provider = (*Provider)(nil)

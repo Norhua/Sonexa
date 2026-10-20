@@ -75,7 +75,7 @@ test('search edits sources and country without changing binding and returns to t
   await view.getByLabel('艺术家', { exact: true }).fill('新的艺术家')
   await view.getByLabel('专辑', { exact: true }).fill('新的查询专辑')
   for (const name of ['CAA', 'QQ', '网易云']) await view.getByRole('checkbox', { name, exact: true }).uncheck()
-  await view.getByRole('combobox', { name: 'iTunes 地区' }).click()
+  await view.getByRole('combobox', { name: '封面来源地区' }).click()
   await page.getByRole('option', { name: '日本', exact: true }).click()
   await view.getByRole('button', { name: '搜索', exact: true }).click()
   await expect(view.getByText('未找到图片', { exact: true })).toBeVisible()
@@ -87,6 +87,33 @@ test('search edits sources and country without changing binding and returns to t
   await expect(query).toHaveValue('綿雪')
   await expect(page.locator('.track-list [data-row-key]')).toHaveCount(1)
   await expect(page.locator('aside h2')).toHaveText('綿雪の夢')
+})
+
+test('a registered non-iTunes source controls country input and is the only default request', async ({ page }) => {
+  await page.evaluate(() => {
+    const api = (window as any).go.app.App
+    api.ListCoverSources = async () => [{ id: 'regional-only', name: '地区封面', needsCountry: true }]
+    ;(window as any).__searchRequests = []
+    api.StartCoverSearch = async (request: any) => { (window as any).__searchRequests.push(request) }
+  })
+  await page.locator('.track-list [data-row-key]').first().locator('td').last().dblclick()
+  await page.getByRole('button', { name: '更新歌曲图片', exact: true }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '更新歌曲图片', exact: true }).hover()
+  await page.getByRole('menuitem', { name: '从网络搜索', exact: true }).click()
+  const view = page.getByRole('region', { name: '从网络搜索封面' })
+  const source = view.getByRole('checkbox', { name: '地区封面', exact: true })
+  await expect(view.getByRole('checkbox')).toHaveCount(1)
+  await expect(source).toBeChecked()
+  await expect(view.getByRole('combobox', { name: '封面来源地区' })).toBeVisible()
+  await source.uncheck()
+  await expect(view.getByRole('combobox', { name: '封面来源地区' })).toHaveCount(0)
+  await source.check()
+  await view.getByRole('combobox', { name: '封面来源地区' }).click()
+  await page.getByRole('option', { name: '日本', exact: true }).click()
+  await view.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__searchRequests)).toEqual([
+    expect.objectContaining({ sources: ['regional-only'], country: 'JP' }),
+  ])
 })
 
 test('cover search is a modal overlay, preserves background layout and scroll, and closes one layer at a time', async ({ page }, info) => {

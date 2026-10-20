@@ -67,8 +67,27 @@ func TestFetchDeadlineIncludesProviderWork(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+func TestBusinessTextDoesNotInterpretUpstreamPlaceholders(t *testing.T) {
+	for _, text := range []string{"[00:01]纯音乐，请欣赏", "[00:01]真实正文\n[00:02]暂无歌词"} {
+		s := businessService(t, &businessSource{fetch: func(context.Context, Candidate) (*Payload, error) {
+			return &Payload{Text: text}, nil
+		}})
+		doc, err := s.Fetch(context.Background(), Candidate{Source: "only"})
+		if err != nil || doc.Text != text {
+			t.Fatalf("单能力来源正文被公共层解释: %+v %v", doc, err)
+		}
+		channel := TextChannel(text, nil)
+		if channel.Status != "available" {
+			t.Fatal(channel)
+		}
+		if _, err := DocumentFromPayload(&Payload{Original: channel}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestPayloadBusinessValidation(t *testing.T) {
-	for _, p := range []*Payload{nil, {}, {Translation: TextChannel("translation", nil)}, {Original: FailedChannel(errors.New("decode"))}, {Text: strings.Repeat("x", MaxTextBytes+1)}, {Text: "[00:01]纯音乐，请欣赏"}} {
+	for _, p := range []*Payload{nil, {}, {Translation: TextChannel("translation", nil)}, {Original: FailedChannel(errors.New("decode"))}, {Text: strings.Repeat("x", MaxTextBytes+1)}} {
 		if _, err := DocumentFromPayload(p); err == nil {
 			t.Fatal("invalid original accepted")
 		}

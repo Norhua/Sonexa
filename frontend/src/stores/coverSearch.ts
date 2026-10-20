@@ -1,13 +1,16 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { App, Events, EventsOn, type Models } from '@/api'
+import { useSourceSelection } from '@/lib/sourceSelection'
 
 type SourceResult = Omit<Models.app.CoverSearchEvent, 'convertValues'>
 
 export const useCoverSearchStore = defineStore('coverSearch', () => {
   const target = ref<Models.app.TrackDetail | null>(null)
   const title = ref(''), artist = ref(''), album = ref(''), country = ref('')
-  const sources = ref(['caa', 'itunes', 'qq', '163'])
+  const sourceSelection = useSourceSelection<Models.app.CoverSourceInfo>()
+  const { selected: sources, options: sourceOptions } = sourceSelection
+  const needsCountry = computed(() => sourceOptions.value.some(source => sources.value.includes(source.id) && source.needsCountry))
   const results = ref<Record<string, SourceResult>>({})
   const error = ref('')
   const revision = ref(0)
@@ -35,8 +38,9 @@ export const useCoverSearchStore = defineStore('coverSearch', () => {
     off = EventsOn(Events.CoverResults, receive)
     try {
       await closing
-      const value = await App.CoverRevision(detail.track.releaseId ?? 0)
+      const [value, list] = await Promise.all([App.CoverRevision(detail.track.releaseId ?? 0), App.ListCoverSources()])
       if (current !== generation) return
+      sourceSelection.update(list)
       revision.value = value
       ready.value = true
     } catch (e) { if (current === generation) error.value = String(e) }
@@ -44,7 +48,9 @@ export const useCoverSearchStore = defineStore('coverSearch', () => {
   async function search(only?: string) {
     if (!ready.value || !target.value?.track.releaseId) return
     const current = generation
-    const chosen = only ? [only] : [...sources.value]
+    let chosen: string[]
+    try { chosen = sourceSelection.choose(only) }
+    catch (e) { error.value = String(e); return }
     if (!chosen.length) { error.value = '请选择封面来源'; return }
     const previous = only ? [sessions.get(only)].filter((id): id is string => !!id) : [...sessions.values()]
     if (only) sessions.delete(only)
@@ -93,9 +99,10 @@ export const useCoverSearchStore = defineStore('coverSearch', () => {
     off?.(); off = null
     target.value = null
     ready.value = false
+    sourceOptions.value = []
     results.value = {}
     error.value = ''
     await cancel(previous)
   }
-  return { target, title, artist, album, country, sources, results, cards, error, ready, open, search, adopt, close }
+  return { target, title, artist, album, country, sources, sourceOptions, needsCountry, results, cards, error, ready, open, search, adopt, close }
 })

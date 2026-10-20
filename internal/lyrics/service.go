@@ -133,7 +133,7 @@ func DocumentFromPayload(p *Payload) (*Document, error) {
 		if p.Translation != nil || p.Romanization != nil {
 			return nil, ErrNoLyrics
 		}
-		return parseNetworkText(p.Text)
+		return ParseText(p.Text)
 	}
 	validate := func(ch *Channel) *Channel {
 		if ch == nil {

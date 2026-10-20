@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { Search } from 'lucide-vue-next'
-import { App, duration, type Models } from '@/api'
+import { duration } from '@/api'
 import { useLyricsSearchStore, lyricFormat } from '@/stores/lyricsSearch'
 import { useSettingsStore } from '@/stores/settings'
 import Button from '@/volt/Button.vue'
@@ -11,14 +10,7 @@ import Checkbox from '@/volt/Checkbox.vue'
 import Dialog from '@/volt/Dialog.vue'
 const store = useLyricsSearchStore()
 const settings = useSettingsStore()
-const sources = ref<Models.lyrics.Source[]>([])
 const channelStatus = (status?: string) => ({ available: '已获取', unavailable: '上游未提供', error: '获取或解析失败', unsupported: '此来源暂未接入' }[status ?? ''] ?? '未检查')
-let mounted = true
-onBeforeUnmount(() => { mounted = false })
-onMounted(async () => {
-  try { const list = await App.ListLyricsSources(); if (mounted) sources.value = list }
-  catch (e) { if (mounted) store.error = String(e) }
-})
 </script>
 
 <template>
@@ -34,7 +26,7 @@ onMounted(async () => {
           <Button type="submit" :disabled="!settings.outboundAllowed || !store.ready || store.busy"><Search class="size-4" />搜索</Button>
         </form>
         <div class="mt-3 flex flex-wrap items-center gap-4">
-          <label v-for="source in sources" :key="source.id" class="flex items-center gap-2 text-sm"><Checkbox v-model="store.sources" :value="source.id" />{{ source.name }}</label>
+          <label v-for="source in store.sourceOptions" :key="source.id" class="flex items-center gap-2 text-sm"><Checkbox v-model="store.sources" :value="source.id" />{{ source.name }}</label>
         </div>
         <p class="mt-2 text-xs text-muted-color">已过滤无关曲名和不符版本；结合艺术家、专辑与目标时长排序。仅高置信候选自动预览，其余请手动确认。</p>
         <p v-if="!settings.outboundAllowed" class="mt-2 text-xs text-muted-color">出网未启用，请先在设置中配置联系方式。</p>
@@ -44,7 +36,7 @@ onMounted(async () => {
       <div class="grid min-h-0 flex-1 grid-cols-[minmax(230px,30%)_minmax(0,1fr)]">
         <nav class="overflow-auto border-r p-3" aria-label="歌词候选">
           <p v-if="!Object.keys(store.results).length" class="p-3 text-sm text-muted-color">选择来源并搜索歌词</p>
-          <section v-for="source in sources.filter(s => store.results[s.id])" :key="source.id" class="mb-4">
+          <section v-for="source in store.sourceOptions.filter(s => store.results[s.id])" :key="source.id" class="mb-4">
             <h3 class="mb-2 text-sm font-medium">{{ source.name }} ({{ store.results[source.id]?.cards.length ?? 0 }})</h3>
             <p v-if="store.results[source.id]?.state === 'loading'" role="status" class="text-xs text-muted-color">正在搜索…</p>
             <template v-else-if="store.results[source.id]?.state === 'error'">

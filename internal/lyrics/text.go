@@ -51,18 +51,6 @@ func ParseText(text string) (*Document, error) {
 	return &Document{Text: text, Format: format}, nil
 }
 
-func parseNetworkText(text string) (*Document, error) {
-	punctuation := strings.NewReplacer("，", "", ",", "", "。", "", " ", "", "！", "", "!", "")
-	for _, line := range strings.Split(text, "\n") {
-		plain := punctuation.Replace(strings.TrimSpace(wordTime.ReplaceAllString(lineTime.ReplaceAllString(line, ""), "")))
-		switch plain {
-		case "纯音乐请欣赏", "纯音乐请您欣赏", "此歌曲为没有填词的纯音乐请您欣赏", "暂无歌词", "此歌曲暂无歌词":
-			return nil, ErrNoLyrics
-		}
-	}
-	return ParseText(text)
-}
-
 // TimedLine is decoded content, not a platform-specific timestamp format.
 type TimedLine struct {
 	MS   int

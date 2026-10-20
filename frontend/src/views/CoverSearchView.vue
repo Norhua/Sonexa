@@ -13,14 +13,13 @@ import Dialog from '@/volt/Dialog.vue'
 import CoverPreview from '@/components/CoverPreview.vue'
 const store = useCoverSearchStore()
 const settings = useSettingsStore()
-const sourceOptions = ref<Models.app.CoverSourceInfo[]>([])
-const names = computed(() => Object.fromEntries(sourceOptions.value.map(source => [source.id, source.name])))
+const names = computed(() => Object.fromEntries(store.sourceOptions.map(source => [source.id, source.name])))
 const filter = ref('all'), selected = ref<number | null>(null), busy = ref(false), notice = ref('')
 const preview = ref<Models.app.CoverSearchCard | null>(null)
 const variants = ref<Record<number, number>>({})
 const dimensions = ref<Record<number, string>>({})
 const countries = ref<Models.app.CountryOption[]>([])
-const countryOptions = computed(() => [{ code: '', name: 'iTunes 默认地区' }, ...countries.value])
+const countryOptions = computed(() => [{ code: '', name: '来源默认地区' }, ...countries.value])
 const cards = computed(() => store.cards.filter(card => filter.value === 'all' || card.source === filter.value))
 const selection = computed(() => store.cards.flatMap(card => card.image.variants.map(v => ({ card, variant: v }))).find(item => item.variant.id === selected.value))
 const emptyMessage = computed(() => {
@@ -34,10 +33,9 @@ let mounted = true
 onBeforeUnmount(() => { mounted = false })
 onMounted(async () => {
   try {
-    const [list, sources] = await Promise.all([App.ListCountries(), App.ListCoverSources()])
+    const list = await App.ListCountries()
     if (!mounted) return
     countries.value = list
-    sourceOptions.value = sources
   } catch (e) { if (mounted) store.error = String(e) }
 })
 function variant(card: Models.app.CoverSearchCard) {
@@ -89,10 +87,10 @@ async function adopt() {
         <Button type="submit" :disabled="!settings.outboundAllowed || !store.ready"><Search class="size-4" />搜索</Button>
       </form>
       <div class="mt-3 flex flex-wrap items-center gap-4">
-        <label v-for="source in sourceOptions" :key="source.id" class="flex items-center gap-2 text-sm">
+        <label v-for="source in store.sourceOptions" :key="source.id" class="flex items-center gap-2 text-sm">
           <Checkbox v-model="store.sources" :value="source.id" />{{ source.name }}
         </label>
-        <Select v-if="store.sources.includes('itunes')" v-model="store.country" aria-label="iTunes 地区" :options="countryOptions" option-label="name" option-value="code" placeholder="iTunes 默认地区" size="small" />
+        <Select v-if="store.needsCountry" v-model="store.country" aria-label="封面来源地区" :options="countryOptions" option-label="name" option-value="code" placeholder="来源默认地区" size="small" />
       </div>
     </header>
     <nav class="flex flex-wrap gap-2 border-b px-4 py-2" aria-label="封面来源筛选">

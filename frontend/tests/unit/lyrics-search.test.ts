@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { App, type Models } from '../../src/api'
 import { useLyricsSearchStore } from '../../src/stores/lyricsSearch'
 vi.mock('../../src/api', () => ({ App: {
-  LyricsRevision: vi.fn(), CreateLyricsSearch: vi.fn(), CancelLyricsSearch: vi.fn(), SearchLyrics: vi.fn(), FetchLyrics: vi.fn(), AdoptLyrics: vi.fn(),
+  ListLyricsSources: vi.fn(), LyricsRevision: vi.fn(), CreateLyricsSearch: vi.fn(), CancelLyricsSearch: vi.fn(), SearchLyrics: vi.fn(), FetchLyrics: vi.fn(), AdoptLyrics: vi.fn(),
 } }))
 const detail = (id: number) => ({ track: { id, title: '歌曲', artist: '歌手' } }) as Models.app.TrackDetail
 const card = (source: string, highConfidence = false, score = 55) => ({ id: source, source, title: source, artist: '', album: '', durationMs: 1000, highConfidence, score, matchNotes: [] }) as Models.lyrics.Candidate
@@ -11,6 +11,7 @@ const deferred = <T>() => { let resolve!: (value: T) => void; const promise = ne
 beforeEach(() => {
   setActivePinia(createPinia()); vi.resetAllMocks()
   let id = 0
+  vi.mocked(App.ListLyricsSources).mockResolvedValue(['163', 'qq', 'kugou', 'kuwo'].map(id => ({ id, name: id })))
   vi.mocked(App.LyricsRevision).mockResolvedValue(4)
   vi.mocked(App.CreateLyricsSearch).mockImplementation(async () => `session-${++id}`)
   vi.mocked(App.CancelLyricsSearch).mockResolvedValue()

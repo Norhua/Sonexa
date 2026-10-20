@@ -92,16 +92,25 @@ func (s *Service) localFiles(ctx context.Context, target Target) ([]store.CoverF
 		return nil, nil
 	}
 	policy, ok := artworkForProviderIn(ctx, target.Provider)
-	if !ok {
+	if !ok || policy.CatalogKeys == nil {
 		return nil, nil
 	}
-	key := store.CoverCatalogKey{Source: policy.Source, ObjectType: policy.ObjectType, SourceRef: target.Ref}
-
-	catalog, err := s.library.store.GetCoverCatalog(key)
-	if err != nil || catalog == nil {
-		return nil, err
+	var files []store.CoverFile
+	for _, key := range policy.CatalogKeys(target.Ref, target.GroupRef) {
+		catalog, err := s.library.store.GetCoverCatalog(key)
+		if err != nil {
+			return nil, err
+		}
+		if catalog == nil {
+			continue
+		}
+		previews, err := s.library.store.AutoPreviewFiles(catalog.ID)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, previews...)
 	}
-	return s.library.store.AutoPreviewFiles(catalog.ID)
+	return files, nil
 }
 
 func (s *Service) chooseFile(files []store.CoverFile, usage Usage, threshold bool) *Resolved {
@@ -182,18 +191,25 @@ func (s *Service) Resolve(ctx context.Context, requested Target, usage Usage) (*
 	fallback := s.chooseFile(files, usage, false)
 	var catalog *store.CoverCatalog
 	policy, ok := artworkForProviderIn(ctx, target.Provider)
-	if !ok || policy.Validate(policy.ObjectType, target.Ref) != nil {
+	if !ok || policy.CatalogKeys == nil {
 		if fallback != nil {
 			return fallback, nil
 		}
 		return &Resolved{Outcome: OutcomeEmpty}, nil
 	}
-	catalog, err = s.Catalog(ctx, store.CoverCatalogKey{Source: policy.Source, ObjectType: policy.ObjectType, SourceRef: target.Ref}, false)
-	if err == nil && catalog.State == "empty" && policy.GroupFallback && policy.Validate("release-group", target.GroupRef) == nil {
-		catalog, err = s.Catalog(ctx, store.CoverCatalogKey{Source: policy.Source, ObjectType: "release-group", SourceRef: target.GroupRef}, false)
+	// Only an empty catalog advances to another adapter-declared target.
+	// Protocol errors and cancellation must not silently become fallback success.
+	for _, key := range policy.CatalogKeys(target.Ref, target.GroupRef) {
+		if err = ctx.Err(); err != nil {
+			break
+		}
+		catalog, err = s.Catalog(ctx, key, false)
+		if err != nil || catalog.State != "empty" {
+			break
+		}
 	}
 
-	if err == nil && catalog.State == "found" {
+	if err == nil && catalog != nil && catalog.State == "found" {
 		var got *Resolved
 		got, err = s.downloadCatalog(ctx, target, catalog, usage)
 		if err == nil {

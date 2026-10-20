@@ -4,12 +4,13 @@ import { App, EventsOn, type Models } from '../../src/api'
 import { useCoverSearchStore } from '../../src/stores/coverSearch'
 
 vi.mock('../../src/api', () => ({
-  App: { CoverRevision: vi.fn(), CancelCoverSearch: vi.fn(), StartCoverSearch: vi.fn(), CoverSearchResults: vi.fn(), AdoptCoverCandidate: vi.fn() },
+  App: { ListCoverSources: vi.fn(), CoverRevision: vi.fn(), CancelCoverSearch: vi.fn(), StartCoverSearch: vi.fn(), CoverSearchResults: vi.fn(), AdoptCoverCandidate: vi.fn() },
   Events: { CoverResults: 'cover:results' }, EventsOn: vi.fn(),
 }))
 const detail = (id: number) => ({ track: { id, releaseId: id, title: '曲目', album: '专辑', artist: '艺术家' } }) as Models.app.TrackDetail
 beforeEach(() => {
   setActivePinia(createPinia()); vi.resetAllMocks()
+  vi.mocked(App.ListCoverSources).mockResolvedValue(['caa', 'itunes', 'qq', '163'].map(id => ({ id, name: id, needsCountry: id === 'itunes' })))
   vi.mocked(App.CoverRevision).mockResolvedValue(0)
   vi.mocked(App.CancelCoverSearch).mockResolvedValue()
   vi.mocked(App.StartCoverSearch).mockResolvedValue()

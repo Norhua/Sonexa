@@ -82,7 +82,7 @@ func TestLibraryImagesReuseAfterCandidateAdmission(t *testing.T) {
 	l.catalogKeys = func(r *store.Release) []store.CoverCatalogKey {
 		return (&musicbrainz.Provider{}).ArtworkStrategy().CatalogKeys(*r.ProviderRef, "")
 	}
-	key := store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: "mb-release"}
+	key := store.CoverCatalogKey{Source: "caa", ObjectType: "release", SourceRef: testReleaseMBID}
 	if _, err := st.SaveCoverCatalog(key, []store.CoverImage{{SourceImageID: "front", PrimaryType: "Front", Variants: []store.CoverVariant{{Spec: "250"}}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestLibraryImagesReuseAfterCandidateAdmission(t *testing.T) {
 			t.Fatalf("预览创建了 %s: %d %v", table, n, err)
 		}
 	}
-	title, album, ref := "歌", "专辑", "mb-release"
+	title, album, ref := "歌", "专辑", testReleaseMBID
 	trackID, err := st.AdmitCandidate(provider.Candidate{Provider: provider.MusicBrainz, Title: &title, AlbumTitle: &album, ReleaseRef: &ref, MatchRef: "track"})
 	if err != nil {
 		t.Fatal(err)

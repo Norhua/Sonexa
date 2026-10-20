@@ -419,8 +419,12 @@ func TestEscapeLucene(t *testing.T) {
 // TestArtworkDelegatesToCAA keeps the metadata association without a CAA API bucket.
 func TestArtworkDelegatesToCAA(t *testing.T) {
 	strategy := (&Provider{}).ArtworkStrategy()
-	if strategy.Provider != provider.MusicBrainz || strategy.Source != "caa" || !strategy.GroupFallback {
+	if strategy.Provider != provider.MusicBrainz || strategy.Source != "caa" || strategy.CatalogKeys == nil {
 		t.Fatal(strategy)
+	}
+	keys := strategy.CatalogKeys("2659e6f6-ce21-4198-92e5-4878f5e7e3c0", "e8ec3011-cd49-4558-9d11-01f7fe9b552f")
+	if len(keys) != 2 || keys[0].ObjectType != "release" || keys[1].ObjectType != "release-group" {
+		t.Fatal(keys)
 	}
 }
 

@@ -46,7 +46,7 @@ func capabilityViolations(path string, file *ast.File) []string {
 		if literal, ok := n.(*ast.BasicLit); ok && literal.Kind == token.STRING {
 			value, _ := strconv.Unquote(literal.Value)
 			lower := strings.ToLower(value)
-			for _, protocol := range []string{"https://", "http://", "musicu.fcg", "fcg_query_lyric", "dosearchforqqmusicdesktop", "getplaylyricinfo", "weapi/", "encseckey", "accesskey", "json:\"songmid", "json:\"qrc"} {
+			for _, protocol := range []string{"https://", "http://", "musicu.fcg", "fcg_query_lyric", "dosearchforqqmusicdesktop", "getplaylyricinfo", "weapi/", "encseckey", "accesskey", "json:\"songmid", "json:\"qrc", "release-group", "纯音乐请欣赏", "纯音乐，请欣赏", "此歌曲暂无歌词"} {
 				if strings.Contains(lower, protocol) {
 					problems = append(problems, "上游协议字符串: "+protocol)
 				}
@@ -186,6 +186,8 @@ func TestCapabilityBoundaryCheckerRejectsRegressions(t *testing.T) {
 		{"app/bindings_lyrics.go", `var url = "https://y.qq.com/"`, true},
 		{"covers/search.go", `func f(source string) { if source == "qq" {} }`, true},
 		{"app/bindings_cover_search.go", `func f(source string) { switch source { case "163": } }`, true},
+		{"covers/resolver.go", `var kind = "release-group"`, true},
+		{"lyrics/text.go", `func f(text string) { if text == "纯音乐，请欣赏" {} }`, true},
 		{"lyrics/service.go", `// https://y.qq.com/ is only a comment
 func f(source string) { if source == "" {} }`, false},
 	} {

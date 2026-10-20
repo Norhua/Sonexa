@@ -12,10 +12,13 @@ import (
 
 // ArtworkStrategy supplies the CAA protocol; metadata association is set by its caller.
 func ArtworkStrategy() provider.ArtworkStrategy {
-	return provider.ArtworkStrategy{Source: "caa", ObjectType: "release", GroupFallback: true,
+	return provider.ArtworkStrategy{Source: "caa", ObjectType: "release",
 		CatalogKeys: func(ref, group string) []domain.CoverCatalogKey {
+			if !uuidRef.MatchString(ref) {
+				return nil
+			}
 			keys := []domain.CoverCatalogKey{{Source: "caa", ObjectType: "release", SourceRef: ref}}
-			if group != "" {
+			if uuidRef.MatchString(group) {
 				keys = append(keys, domain.CoverCatalogKey{Source: "caa", ObjectType: "release-group", SourceRef: group})
 			}
 			return keys

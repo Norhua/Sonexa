@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { App, type Models } from '@/api'
+import { useSourceSelection } from '@/lib/sourceSelection'
 
 type Candidate = Omit<Models.lyrics.Candidate, 'convertValues'>
 type Document = Omit<Models.lyrics.Document, 'convertValues'>
@@ -10,7 +11,8 @@ export const lyricFormat = (format?: string) => ({ text: '文本', lrc: 'LRC 时
 export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
   const target = ref<Models.app.TrackDetail | null>(null)
   const title = ref(''), artist = ref(''), album = ref('')
-  const sources = ref(['163', 'qq', 'kugou', 'kuwo'])
+  const sourceSelection = useSourceSelection<Models.lyrics.Source>()
+  const { selected: sources, options: sourceOptions } = sourceSelection
   const results = ref<Record<string, Result>>({})
   const documents = ref<Record<string, Document>>({})
   const failures = ref<Record<string, string>>({})
@@ -31,7 +33,7 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
   async function close() {
     generation++
     const ids = [...sessions.values()]; sessions.clear(); jobs.clear()
-    target.value = null; ready.value = false; results.value = {}; documents.value = {}; failures.value = {}; loading.value = {}
+    target.value = null; ready.value = false; sourceOptions.value = []; results.value = {}; documents.value = {}; failures.value = {}; loading.value = {}
     selected.value = null; error.value = ''; notice.value = ''; busy.value = false
     await cancel(ids)
   }
@@ -40,14 +42,17 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
     target.value = detail; title.value = detail.track.title; artist.value = detail.track.artist ?? ''; album.value = detail.track.album ?? ''
     try {
       await closing
-      const rev = await App.LyricsRevision(detail.track.id)
+      const [rev, list] = await Promise.all([App.LyricsRevision(detail.track.id), App.ListLyricsSources()])
       if (current !== generation) return
+      sourceSelection.update(list)
       revision = rev; ready.value = true
     } catch (e) { if (current === generation) error.value = String(e) }
   }
   async function search(only?: string) {
     if (!ready.value || !target.value || busy.value) return
-    const chosen = only ? [only] : [...sources.value]
+    let chosen: string[]
+    try { chosen = sourceSelection.choose(only) }
+    catch (e) { error.value = String(e); return }
     if (!chosen.length) { error.value = '请选择歌词来源'; return }
     if (![title.value, artist.value, album.value].some(s => s.trim())) { error.value = '请输入歌词搜索条件'; return }
     const current = generation, trackID = target.value.track.id
@@ -116,5 +121,5 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
     } catch (e) { if (current === generation) error.value = `${String(e)}（可关闭后重新打开歌词搜索再试）` }
     finally { if (current === generation) busy.value = false }
   }
-  return { target, title, artist, album, sources, results, cards, documents, failures, loading, selected, selection, document, error, notice, ready, busy, open, close, search, select, adopt }
+  return { target, title, artist, album, sources, sourceOptions, results, cards, documents, failures, loading, selected, selection, document, error, notice, ready, busy, open, close, search, select, adopt }
 })

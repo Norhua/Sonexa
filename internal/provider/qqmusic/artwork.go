@@ -22,8 +22,10 @@ func CoverImages(albumMID, title, artist string) []domain.CoverImage {
 func (p *Provider) ArtworkStrategy() provider.ArtworkStrategy {
 	return provider.ArtworkStrategy{Provider: provider.QQMusic, Source: "qq", ObjectType: "album",
 		CatalogKeys: func(ref, group string) []domain.CoverCatalogKey {
-			keys := []domain.CoverCatalogKey{{Source: "qq", ObjectType: "album", SourceRef: ref}}
-			return keys
+			if !ValidMID(ref) {
+				return nil
+			}
+			return []domain.CoverCatalogKey{{Source: "qq", ObjectType: "album", SourceRef: ref}}
 		},
 		Validate: func(kind, ref string) error {
 			if kind != "album" || !ValidMID(ref) {
