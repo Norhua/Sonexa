@@ -25,16 +25,21 @@ type Query struct {
 	DurationMS int    `json:"durationMs"`
 }
 type Candidate struct {
-	ID             string   `json:"id"`
-	Source         string   `json:"source"`
-	Ref            string   `json:"-"`
-	Title          string   `json:"title"`
-	Artist         string   `json:"artist"`
-	Album          string   `json:"album"`
-	DurationMS     int      `json:"durationMs"`
-	Score          int      `json:"score"`
-	HighConfidence bool     `json:"highConfidence"`
-	MatchNotes     []string `json:"matchNotes"`
+	ID                  string      `json:"id"`
+	Source              string      `json:"source"`
+	Ref                 string      `json:"-"`
+	Title               string      `json:"title"`
+	Artist              string      `json:"artist"`
+	Album               string      `json:"album"`
+	DurationMS          int         `json:"durationMs"`
+	MatchScore          int         `json:"matchScore"`
+	TotalScore          *int        `json:"totalScore"`
+	ScoreTerms          []ScoreTerm `json:"scoreTerms"`
+	AutoPreviewEligible bool        `json:"autoPreviewEligible"`
+	MatchTerms          []ScoreTerm `json:"matchTerms"`
+	SortKey             string      `json:"sortKey"`
+	HighConfidence      bool        `json:"highConfidence"`
+	MatchNotes          []string    `json:"matchNotes"`
 }
 
 // Channel distinguishes absent optional content from a protocol/decoder error.
@@ -95,6 +100,9 @@ func (s Service) Search(ctx context.Context, source string, q Query) ([]Candidat
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	for i := range rows {
+		rows[i].Source = source
 	}
 	out := []Candidate{}
 	seen := map[string]bool{}

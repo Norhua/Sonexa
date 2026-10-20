@@ -197,7 +197,7 @@ func TestLiveSources(t *testing.T) {
 			}
 			t.Logf("songs=%d first_ref=%s duration=%d", len(candidates), candidates[0].Ref, candidates[0].DurationMS)
 			for _, candidate := range candidates[:min(3, len(candidates))] {
-				t.Logf("candidate=%s title=%q artist=%q album=%q duration=%d score=%d high_confidence=%t", candidate.Ref, candidate.Title, candidate.Artist, candidate.Album, candidate.DurationMS, candidate.Score, candidate.HighConfidence)
+				t.Logf("candidate=%s title=%q artist=%q album=%q duration=%d score=%d high_confidence=%t", candidate.Ref, candidate.Title, candidate.Artist, candidate.Album, candidate.DurationMS, candidate.MatchScore, candidate.HighConfidence)
 				d, err := a.lyricSvc.Fetch(ctx, candidate)
 				if err != nil {
 					if audit.gate() != nil {

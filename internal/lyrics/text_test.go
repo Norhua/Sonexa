@@ -92,7 +92,7 @@ func TestStructuredAndPreviewLimits(t *testing.T) {
 		}
 	}
 	large := strings.Repeat("x", MaxTextBytes/2)
-	if _, err := DocumentFromPayload(&Payload{Text: large, Translation: TextChannel(large, nil)}); !errors.Is(err, ErrTooLarge) {
+	if _, err := DocumentFromPayload(&Payload{Text: large, Translation: TextChannel("y"+large, nil)}); !errors.Is(err, ErrTooLarge) {
 		t.Fatal(err)
 	}
 	if _, err := ParseText(strings.Repeat("\n", MaxTextBytes/96)); !errors.Is(err, ErrTooLarge) {

@@ -1,6 +1,8 @@
 package lyrics
 
 import (
+	"encoding/hex"
+	"fmt"
 	"regexp"
 	"sort"
 
@@ -38,7 +40,9 @@ func rankCandidates(q Query, candidates []Candidate) []Candidate {
 		} else if !score.Plausible && !(score.TitleMatch == matching.MatchExact && comparableDuration && delta <= 10000) {
 			continue
 		}
-		c.Score = int(score.Total)
+		c.MatchScore = int(score.Total)
+		c.MatchTerms = matchTerms(score, w, q, c)
+		c.SortKey = hex.EncodeToString([]byte(c.Ref))
 		c.HighConfidence = score.HighConf && score.TitleMatch == matching.MatchExact
 		c.MatchNotes = []string{}
 		if score.TitleMatch == matching.MatchExact {
@@ -61,18 +65,98 @@ func rankCandidates(q Query, candidates []Candidate) []Candidate {
 				c.MatchNotes = append(c.MatchNotes, "时长相近")
 			} else if delta > 10000 {
 				c.HighConfidence = false
-				c.Score = max(0, c.Score-20)
+				penalty := min(20, c.MatchScore)
+				c.MatchScore -= penalty
+				c.MatchTerms = append(c.MatchTerms, ScoreTerm{"duration_penalty", "时长差异超过 10 秒", -penalty})
 				c.MatchNotes = append(c.MatchNotes, "时长差异超过 10 秒，需确认")
 			}
 		}
 		out = append(out, c)
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].HighConfidence != out[j].HighConfidence {
-			return out[i].HighConfidence
+	sort.Slice(out, func(i, j int) bool { return matchLess(out[i], out[j]) })
+	seen := map[string]bool{}
+	unique := out[:0]
+	for _, c := range out {
+		key := c.Source + "\x00" + c.Ref
+		// Empty refs remain usable for pure matching tests; Service rejects them.
+		if c.Ref != "" && seen[key] {
+			continue
 		}
-		return out[i].Score > out[j].Score
-	})
+		seen[key] = true
+		unique = append(unique, c)
+	}
+	return unique
+}
+
+type ScoreTerm struct {
+	Code  string `json:"code"`
+	Label string `json:"label"`
+	Value int    `json:"value"`
+}
+
+func matchTerms(s matching.Score, w matching.Weights, q Query, c Candidate) []ScoreTerm {
+	title, credit, album, duration := 0, 0, 0, 0
+	if s.TitleMatch != matching.MatchNone {
+		title = int(w.Title)
+	}
+	if s.CreditMatch == matching.MatchExact {
+		credit = int(w.CreditExact)
+	} else if s.CreditMatch == matching.MatchFuzzy {
+		credit = int(w.CreditFuzzy)
+	}
+	if s.AlbumMatch == matching.MatchExact {
+		album = int(w.AlbumExact)
+	} else if s.AlbumMatch == matching.MatchFuzzy {
+		album = int(w.AlbumFuzzy)
+	}
+	if q.DurationMS > 0 && c.DurationMS > 0 {
+		delta := absDuration(q.DurationMS - c.DurationMS)
+		if delta <= 3000 {
+			duration = 5
+		} else if delta <= 10000 {
+			duration = 2
+		}
+	}
+	return []ScoreTerm{{"title", "曲名", title}, {"artist", "艺术家", credit}, {"album", "专辑", album}, {"duration", "时长", duration}}
+}
+
+func matchLess(a, b Candidate) bool {
+	if a.MatchScore != b.MatchScore {
+		return a.MatchScore > b.MatchScore
+	}
+	if a.HighConfidence != b.HighConfidence {
+		return a.HighConfidence
+	}
+	if a.Source != b.Source {
+		return a.Source < b.Source
+	}
+	if a.SortKey != b.SortKey {
+		return a.SortKey < b.SortKey
+	}
+	// Deterministic winner among duplicated source identities.
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%012d", a.Title, a.Artist, a.Album, a.DurationMS) < fmt.Sprintf("%s\x00%s\x00%s\x00%012d", b.Title, b.Artist, b.Album, b.DurationMS)
+}
+
+const PrefetchLimit = 3
+
+// MatchTop returns a copy; the backend session freezes it before content can
+// change final ranking. Missing or failed lyrics never fill from fourth place.
+func MatchTop(candidates []Candidate) []Candidate {
+	rows := append([]Candidate(nil), candidates...)
+	sort.Slice(rows, func(i, j int) bool { return matchLess(rows[i], rows[j]) })
+	out := []Candidate{}
+	seen := map[string]bool{}
+	for _, c := range rows {
+		key := c.Source + "\x00" + c.Ref
+		if c.Ref == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, c)
+		if len(out) == PrefetchLimit {
+			break
+		}
+	}
 	return out
 }
 

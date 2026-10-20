@@ -72,6 +72,12 @@ func normalizeChannel(ch *Channel) *Channel {
 	} else if timed < nonempty {
 		copy.SyncStatus = "partial"
 	}
+	if copy.Status == "available" && copy.Origin == "unknown" {
+		copy.Status = "unknown"
+	}
+	if ch.SyncStatus == "partial" && copy.SyncStatus == "synced" {
+		copy.SyncStatus = "partial"
+	}
 	return &copy
 }
 func PreferredChannel(a, b *Channel) *Channel {
@@ -104,6 +110,12 @@ func buildDocument(original, translation, romanization *Channel, additional []*C
 	}
 	if original.Status != "available" {
 		return nil, ErrNoLyrics
+	}
+	for _, extra := range []*Channel{translation, romanization} {
+		if AvailableContent(extra) && duplicateOriginal(original.Track, extra.Track) {
+			extra.Status, extra.Text, extra.Track = "unavailable", "", nil
+			extra.Diagnostics = append(extra.Diagnostics, Diagnostic{"duplicate_original", "仅为原文副本，不计作附加内容"})
+		}
 	}
 	doc := &Document{Original: original, Translation: translation, Romanization: romanization, Warnings: append([]string(nil), warnings...)}
 	if hasWords(original.Track) {

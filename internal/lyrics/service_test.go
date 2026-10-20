@@ -47,7 +47,7 @@ func TestServiceOwnsValidationRankingAndDeduplication(t *testing.T) {
 		t.Fatal("invalid request dispatched")
 	}
 	rows, err := s.Search(context.Background(), "only", Query{Title: "song", Artist: "artist", DurationMS: 1000})
-	if err != nil || len(rows) != 1 || rows[0].Source != "only" || !rows[0].HighConfidence || rows[0].Score != 80 {
+	if err != nil || len(rows) != 1 || rows[0].Source != "only" || !rows[0].HighConfidence || rows[0].MatchScore != 80 {
 		t.Fatal(rows, err)
 	}
 }

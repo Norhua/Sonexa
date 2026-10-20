@@ -18,7 +18,7 @@ func TestLyricsRelevance(t *testing.T) {
 		{Ref: "exact", Title: q.Title, Artist: q.Artist, Album: q.Album, DurationMS: q.DurationMS},
 	}
 	got := rankCandidates(q, candidates)
-	if len(got) != 3 || got[0].Ref != "exact" || !got[0].HighConfidence || got[0].Score != 100 {
+	if len(got) != 3 || got[0].Ref != "exact" || !got[0].HighConfidence || got[0].MatchScore != 100 {
 		t.Fatalf("%+v", got)
 	}
 	for _, c := range got[1:] {
@@ -35,6 +35,43 @@ func TestLyricsRelevance(t *testing.T) {
 	q.DurationMS = 0
 	if got := rankCandidates(q, []Candidate{candidates[5]}); len(got) != 0 {
 		t.Fatalf("accepted uncorroborated title: %+v", got)
+	}
+}
+
+func TestMatchTopDedupTermsAndStableOrder(t *testing.T) {
+	q := Query{Title: "Song", Artist: "Artist", Album: "Album", DurationMS: 100000}
+	base := Candidate{Source: "qq", Ref: "b", Title: q.Title, Artist: q.Artist, Album: q.Album, DurationMS: q.DurationMS}
+	a, low, c, d := base, base, base, base
+	a.Ref, c.Ref, d.Ref = "a", "c", "d"
+	low.Artist, low.Album = "", ""
+	rows := rankCandidates(q, []Candidate{d, low, c, base, a, base})
+	if len(rows) != 4 {
+		t.Fatal(rows)
+	}
+	top := MatchTop(rows)
+	if len(top) != 3 || top[0].Ref != "a" || top[1].Ref != "b" || top[2].Ref != "c" || top[1].MatchScore != 100 {
+		t.Fatal(top)
+	}
+	if len(MatchTop(rows[:2])) != 2 || len(MatchTop(nil)) != 0 {
+		t.Fatal("invented candidates")
+	}
+	for _, c := range rows {
+		sum := 0
+		for _, term := range c.MatchTerms {
+			sum += term.Value
+		}
+		if sum != c.MatchScore || len(c.MatchTerms) != 4 {
+			t.Fatal(c)
+		}
+	}
+	base.DurationMS = 111000
+	long := rankCandidates(q, []Candidate{base})[0]
+	if long.MatchScore != 75 || long.HighConfidence || long.MatchTerms[4].Value != -20 {
+		t.Fatal(long)
+	}
+	// A manual-confirmation candidate with a better score precedes high confidence.
+	if !matchLess(Candidate{MatchScore: 90}, Candidate{MatchScore: 80, HighConfidence: true}) {
+		t.Fatal("confidence before score")
 	}
 }
 

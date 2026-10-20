@@ -51,7 +51,7 @@ func TestPublicDTOStructure(t *testing.T) {
 		keys  []string
 	}{
 		{Query{}, []string{"title", "artist", "album", "durationMs"}},
-		{Candidate{Ref: "private-native-reference"}, []string{"id", "source", "title", "artist", "album", "durationMs", "score", "highConfidence", "matchNotes"}},
+		{Candidate{Ref: "private-native-reference"}, []string{"id", "source", "title", "artist", "album", "durationMs", "matchScore", "totalScore", "scoreTerms", "autoPreviewEligible", "matchTerms", "sortKey", "highConfidence", "matchNotes"}},
 		{Document{}, []string{"text", "format", "rows", "offsetMs"}},
 		{Source{}, []string{"id", "name"}},
 	} {

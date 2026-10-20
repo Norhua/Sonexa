@@ -41,7 +41,7 @@ func TestLyricSearchUsesTargetDuration(t *testing.T) {
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 	})
 	got, err := sourceService(client).Search(context.Background(), "qq", lyrics.Query{Title: "Song", Artist: "Alice", DurationMS: 321000})
-	if err != nil || len(got) != 1 || got[0].Score != 80 {
+	if err != nil || len(got) != 1 || got[0].MatchScore != 80 {
 		t.Fatalf("%+v %v", got, err)
 	}
 }

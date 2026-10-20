@@ -1,0 +1,15 @@
+{
+  "rows": [
+    {"id":"unscored","source":"163","sortKey":"61","matchScore":100,"totalScore":null,"highConfidence":true},
+    {"id":"low","source":"163","sortKey":"62","title":"Same","matchScore":95,"totalScore":115,"highConfidence":true},
+    {"id":"middle","source":"qq","sortKey":"61","title":"Same","matchScore":90,"totalScore":130,"highConfidence":true},
+    {"id":"high","source":"163","sortKey":"63","matchScore":95,"totalScore":145,"highConfidence":false},
+    {"id":"tie-key-b","source":"qq","sortKey":"62","matchScore":90,"totalScore":130,"highConfidence":true},
+    {"id":"tie-source","source":"kugou","sortKey":"61","matchScore":90,"totalScore":130,"highConfidence":true},
+    {"id":"tie-confirm","source":"163","sortKey":"64","matchScore":90,"totalScore":130,"highConfidence":false},
+    {"id":"tie-match","source":"163","sortKey":"65","matchScore":89,"totalScore":130,"highConfidence":true},
+    {"id":"negative","source":"kuwo","sortKey":"61","matchScore":0,"totalScore":-20,"highConfidence":false},
+    {"id":"unchecked-low","source":"qq","sortKey":"63","matchScore":80,"totalScore":null,"highConfidence":false}
+  ],
+  "expected": ["high","tie-source","middle","tie-key-b","tie-confirm","tie-match","low","negative","unscored","unchecked-low"]
+}
