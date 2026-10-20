@@ -433,7 +433,11 @@ git diff --check
 
 ## 记录追溯
 
-本次正式 delta、设计和任务位于 `openspec/changes/sync-lyrics-and-drawer-specs/`，主规格为当前行为依据。`change_record` 删除后，原差异及计划仍可从 Git 查询：
+本次正式 delta、设计和任务已归档至 `openspec/changes/archive/2026-10-20-sync-lyrics-and-drawer-specs/`，主规格为当前行为依据。
+
+2026-10-20 归档核对：全部规划产物完成，任务 6/6；9 个能力的 22 条需求（新增 9 条、修改 13 条）及 65 个场景与主规格一致，无需再次同步。普通校验中 change 与全部 27 份主规格通过；当前严格校验因需求正文超过 500 字符的 WARNING 未通过（change 1 条，全量主规格 7 条，涉及 5 份），无 ERROR，用户确认保留告警归档。以上为本次结果，不改写 2026-10-16 的历史记录；本次未修改主规格或业务代码，未重跑应用测试。归档任务检查中本变更通过；全量检查发现历史归档 `2026-09-24-revise-album-cover-workflow` 仍有 1 项未完成任务（42/43），本次不改动该历史记录。
+
+`change_record` 删除后，原差异及计划仍可从 Git 查询：
 
 ```sh
 git show a656ca3:change_record/spec-diff.md
