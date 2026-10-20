@@ -20,8 +20,11 @@ func decodeEnvelope(body []byte) (map[string]json.RawMessage, error) {
 		return nil, fmt.Errorf("解析 QQ 音乐响应失败: %w", err)
 	}
 	var code *int
-	if err := json.Unmarshal(raw["code"], &code); err != nil || code == nil || *code != 0 {
+	if err := json.Unmarshal(raw["code"], &code); err != nil || code == nil {
 		return nil, fmt.Errorf("QQ 音乐响应异常或来源不可用")
+	}
+	if *code != 0 {
+		return nil, &provider.BusinessError{Source: "QQ 音乐", Code: *code}
 	}
 	return raw, nil
 }
@@ -32,7 +35,7 @@ func decodeBlock(raw map[string]json.RawMessage, name string) (json.RawMessage, 
 		return nil, fmt.Errorf("QQ 音乐响应缺少 %s", name)
 	}
 	if *b.Code != 0 {
-		return nil, fmt.Errorf("QQ 音乐 %s 返回错误码 %d", name, *b.Code)
+		return nil, &provider.BusinessError{Source: "QQ 音乐", Block: name, Code: *b.Code}
 	}
 	return b.Data, nil
 }

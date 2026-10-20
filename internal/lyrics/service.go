@@ -131,6 +131,7 @@ func (s Service) Fetch(ctx context.Context, c Candidate) (*Document, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	ctx = provider.WithStopRestrictedRetries(ctx)
 	payload, err := p.FetchLyrics(ctx, c)
 	if err != nil {
 		return nil, err
@@ -156,6 +157,9 @@ func DocumentFromPayload(p *Payload) (*Document, error) {
 		if word.Status == "available" && hasWords(word.Track) {
 			original = word
 		} else if word.Status == "error" {
+			if original == nil || normalizeChannel(original).Status != "available" {
+				return nil, fmt.Errorf("逐字原文解析失败：%w", word.Err)
+			}
 			timing = "error"
 			warnings = append(warnings, "逐字原文解析失败："+word.Message)
 		} else if original == nil || normalizeChannel(original).Status != "available" {

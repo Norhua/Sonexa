@@ -20,15 +20,15 @@
 
 ## 3. QQ QRC 容器与通道识别
 
-- [ ] 3.1 在 `internal/provider/qqmusic/qrc.go` 完善动态歌词轨提取和唯一边界下的字面引号容错，沿用已有变体 DES；扩展 synthetic 密文测试覆盖实体、普通括号、多轨、截断容器、恶意边界，验证不截词、不跨轨吞文本。
-- [ ] 3.2 统一 QQ 原文/翻译/罗马音解码后的 QRC/LRC/纯文本分类与逐字状态；在 `lyrics_test.go` 验证 QRC 附加通道、仅逐行/纯文本、空词壳、独立通道损坏及普通块保留，状态/加分不由请求标志推断。
-- [ ] 3.3 将 QQ 回退接入明确错误类别，限流/认证/TLS/取消/超限不追加旧端点请求，合法格式失败仍可回退并保留新通道；用请求计数验证一候选双块只发一次 HTTP、允许回退最多一个协议阶段，运行 `go test ./internal/provider/qqmusic ./internal/app -run 'QQ|Lyrics'`。
+- [x] 3.1 在 `internal/provider/qqmusic/qrc.go` 完善动态歌词轨提取和唯一边界下的字面引号容错，沿用已有变体 DES；扩展 synthetic 密文测试覆盖实体、普通括号、多轨、截断容器、恶意边界，验证不截词、不跨轨吞文本。
+- [x] 3.2 统一 QQ 原文/翻译/罗马音解码后的 QRC/LRC/纯文本分类与逐字状态；在 `lyrics_test.go` 验证 QRC 附加通道、仅逐行/纯文本、空词壳、独立通道损坏及普通块保留，状态/加分不由请求标志推断。
+- [x] 3.3 将 QQ 回退接入明确错误类别，限流/认证/TLS/取消/超限不追加旧端点请求，合法格式失败仍可回退并保留新通道；用请求计数验证一候选双块只发一次 HTTP、允许回退最多一个协议阶段，运行 `go test ./internal/provider/qqmusic ./internal/app -run 'QQ|Lyrics'`。
 - [ ] 3.4 让自动预取与显式获取共用上述协议，不改元数据路径，更新 QQ 解析/回退和本地 probe 说明；用离线 fixture、legacy 共用测试和相同候选输入验证通道/评分一致，无翻译生成调用，不输出歌词全文或凭据。
 
 ## 4. 网易云 YRC
 
-- [ ] 4.1 在 `internal/provider/netease` 增加 YRC bundle 请求及响应模型，经共用 Client/配额/NoStore；mock HTTP 验证 v1 GET 参数、业务码、取消与 HTTPS 许可域，不误用 WEAPI 加密 helper，旧 WEAPI 只在允许条件下单次回退。
-- [ ] 4.2 实现 YRC 绝对毫秒行/词转换和结构化署名处理，独立判断普通原文、逐字、翻译、罗马音及来源占位；新增测试覆盖 YRC-only、缺失、损坏、时间溢出、独立时间轴、署名 JSON 不进入显示和普通歌词回退。
+- [x] 4.1 在 `internal/provider/netease` 增加 YRC bundle 请求及响应模型，经共用 Client/配额/NoStore；mock HTTP 验证 v1 GET 参数、业务码、取消与 HTTPS 许可域，不误用 WEAPI 加密 helper，旧 WEAPI 只在允许条件下单次回退。
+- [x] 4.2 实现 YRC 绝对毫秒行/词转换和结构化署名处理，独立判断普通原文、逐字、翻译、罗马音及来源占位；新增测试覆盖 YRC-only、缺失、损坏、时间溢出、独立时间轴、署名 JSON 不进入显示和普通歌词回退。
 - [ ] 4.3 接入统一文档、卡片通道摘要及内容评分输入，更新 README/缺口文档的格式支持；运行 `go test ./internal/provider/netease ./internal/lyrics`，扩展显式在线入口输出 YRC/翻译/罗马音状态，未实测时保持待验证标注，不增加自动翻译兜底。
 
 ## 5. 酷狗 KRC 与附加语言

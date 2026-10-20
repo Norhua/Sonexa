@@ -8,11 +8,13 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/norhua/sonexa/internal/provider"
 )
 
 var ErrNoLyrics = errors.New("该候选暂无歌词")
 var ErrFormat = errors.New("歌词格式无效")
-var ErrTooLarge = errors.New("歌词超过大小限制")
+var ErrTooLarge = provider.ErrResponseTooLarge
 
 const MaxTimeMS int64 = 24 * 3600 * 1000
 const MaxProjectionBytes = MaxTextBytes

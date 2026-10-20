@@ -96,7 +96,14 @@ SONEXA_E2E_PREVIEW=1 npm run test:e2e
 歌词业务契约、评分和通道合并位于 `internal/lyrics`；四来源协议位于
 `internal/provider/{netease,qqmusic,kugou,kuwo}`，由 App 注入并由会话保留服务快照。
 QQ QRC 转换和 MIT 许可的 DES 实现位于 `internal/provider/qqmusic/{qrc.go,qrcdes/}`，
-许可证及来源提交记录随实现保留。
+许可证及来源提交记录随实现保留。QQ 解码后按实际 QRC/LRC/文本识别三通道，
+容器支持动态轨名及唯一边界的字面引号容错；原文可用时保留同批普通块，
+认证/限流、TLS、取消和超限不再触发旧接口请求。未知业务限制保守停止，
+不根据本地化错误文案推断可回退。
+网易云新增 HTTPS `/api/song/lyric/v1` GET bundle，独立识别 YRC 绝对词时间、
+普通 LRC、翻译、罗马音；已识别署名结构只保留文字，无法同步时不猜时间。
+普通 WEAPI 仅在缺失、格式失败或端点不可用时单次回退。YRC 离线解析已覆盖，
+最新真实来源可用性待显式验证；没有翻译/音译生成兜底。
 
 在线组合测试默认跳过；显式启用时只输出标题、通道状态和字节数，不转储歌词全文：
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"strings"
@@ -55,6 +56,7 @@ func newQQChannels() *lyrics.Payload {
 	return &lyrics.Payload{Original: lyrics.AbsentChannel(), Translation: lyrics.AbsentChannel(), Romanization: lyrics.AbsentChannel(), WordTiming: "unavailable"}
 }
 func failedQQChannels(err error) *lyrics.Payload {
+	err = qqFormatError(err)
 	return &lyrics.Payload{Original: lyrics.FailedChannel(err), Translation: lyrics.FailedChannel(err), Romanization: lyrics.FailedChannel(err), WordTiming: "error"}
 }
 func qqBlockData(raw map[string]json.RawMessage, name string) (*qqLyricData, error) {
@@ -80,18 +82,29 @@ func qqText(text string, encrypted bool) (string, error) {
 	}
 	return decodeQQBase64(text)
 }
+func qqFormatError(err error) error {
+	var business *provider.BusinessError
+	if err == nil || errors.As(err, &business) || errors.Is(err, lyrics.ErrTooLarge) {
+		return err
+	}
+	return fmt.Errorf("%w：%w", lyrics.ErrFormat, err)
+}
+
+func qqDecodedChannel(raw string, err error) *lyrics.Channel {
+	if err != nil {
+		return lyrics.FailedChannel(qqFormatError(err))
+	}
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(trimmed, "<QrcInfos") || strings.HasPrefix(trimmed, "<?xml") || qrcLineStart.MatchString(raw) {
+		raw, err = qrcToLRC(raw)
+	}
+	return lyrics.TextChannel(raw, qqFormatError(err))
+}
 func qqRomanization(text string) *lyrics.Channel {
 	if text == "" {
 		return lyrics.AbsentChannel()
 	}
-	raw, err := decodeQRC(text)
-	if err != nil {
-		return lyrics.FailedChannel(err)
-	}
-	if strings.HasPrefix(strings.TrimSpace(raw), "<") || qrcLineStart.MatchString(raw) {
-		raw, err = qrcToLRC(raw)
-	}
-	return lyrics.TextChannel(raw, err)
+	return qqDecodedChannel(decodeQRC(text))
 }
 func parseQQPlay(body []byte) *lyrics.Payload {
 	out := newQQChannels()
@@ -102,6 +115,7 @@ func parseQQPlay(body []byte) *lyrics.Payload {
 	for i, name := range []string{"req", "plain"} {
 		data, err := qqBlockData(response, name)
 		if err != nil {
+			err = qqFormatError(err)
 			out.Warnings = append(out.Warnings, err.Error())
 			if i == 0 {
 				out.WordTiming = "error"
@@ -111,24 +125,19 @@ func parseQQPlay(body []byte) *lyrics.Payload {
 			out.Romanization = lyrics.PreferredChannel(out.Romanization, lyrics.FailedChannel(err))
 			continue
 		}
-		original := lyrics.AbsentChannel()
-		if data.QRC == 1 && data.Lyric != "" {
-			raw, err := decodeQRC(data.Lyric)
-			if err == nil {
-				raw, err = qrcToLRC(raw)
-			}
-			original = lyrics.TextChannel(raw, err)
-			if original.Status == "available" {
+		original := qqDecodedChannel(qqText(data.Lyric, data.QRC == 1 || data.Crypt == 1))
+		if original.Status == "available" {
+			actual, parseErr := lyrics.ParseText(original.Text)
+			if parseErr == nil && actual.WordTiming == "available" {
 				out.WordTiming = "available"
-			} else {
-				out.WordTiming = "error"
-				out.Warnings = append(out.Warnings, "逐字歌词解析失败："+original.Message)
+				out.WordOriginal = lyrics.PreferredChannel(out.WordOriginal, original)
 			}
-		} else {
-			original = lyrics.TextChannel(qqText(data.Lyric, data.Crypt == 1))
+		} else if original.Status == "error" && i == 0 {
+			out.WordTiming = "error"
+			out.Warnings = append(out.Warnings, "逐字歌词解析失败："+original.Message)
 		}
 		out.Original = lyrics.PreferredChannel(out.Original, original)
-		out.Translation = lyrics.PreferredChannel(out.Translation, lyrics.TextChannel(qqText(data.Trans, data.Crypt == 1)))
+		out.Translation = lyrics.PreferredChannel(out.Translation, qqDecodedChannel(qqText(data.Trans, data.Crypt == 1)))
 		out.Romanization = lyrics.PreferredChannel(out.Romanization, qqRomanization(data.Roma))
 	}
 	return out
@@ -150,6 +159,10 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics
 	if err == nil {
 		channels = parseQQPlay(body)
 	} else {
+		// Transport errors have no permission to start another protocol stage.
+		if !lyrics.CanFallback(err) {
+			return nil, err
+		}
 		channels = failedQQChannels(err)
 	}
 	if err := ctx.Err(); err != nil {
@@ -162,6 +175,14 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if !lyrics.CanFallback(err) {
+		return nil, err
+	}
+	for _, ch := range []*lyrics.Channel{channels.Original, channels.Translation, channels.Romanization} {
+		if ch.Err != nil && !lyrics.CanFallback(ch.Err) {
+			return nil, ch.Err
+		}
 	}
 	parsed, fallbackErr := p.legacyLyrics(ctx, c.Ref, provider.NoStore)
 	var legacy *lyrics.Payload

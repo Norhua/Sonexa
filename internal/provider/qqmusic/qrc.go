@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -20,7 +21,7 @@ import (
 // files are deliberately not accepted. Keep each stage bounded independently.
 func decodeQRC(encoded string) (string, error) {
 	if len(encoded) > 4<<20 {
-		return "", fmt.Errorf("QRC 数据过大")
+		return "", fmt.Errorf("%w：QRC 数据过大", lyrics.ErrTooLarge)
 	}
 	data, err := hex.DecodeString(encoded)
 	if err != nil || len(data) == 0 || len(data)%8 != 0 {
@@ -38,10 +39,129 @@ func decodeQRC(encoded string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("QRC 解压失败: %w", err)
 	}
-	if len(plain) > lyrics.MaxTextBytes || !utf8.Valid(plain) || bytes.IndexByte(plain, 0) >= 0 {
+	if len(plain) > lyrics.MaxTextBytes {
+		return "", lyrics.ErrTooLarge
+	}
+	if !utf8.Valid(plain) || bytes.IndexByte(plain, 0) >= 0 {
 		return "", fmt.Errorf("QRC 解码结果不是有效的 2 MiB 以内 UTF-8 文本")
 	}
 	return string(plain), nil
+}
+
+var qrcTrackName = regexp.MustCompile(`^Lyric_(\d+)$`)
+var qrcTrackElement = regexp.MustCompile(`(?s)<Lyric_\d+\b[^<>]*/>`)
+
+func extractQRCContent(raw string) (string, error) {
+	parse := func(text string) (string, error) {
+		decoder := xml.NewDecoder(strings.NewReader(text))
+		path := []string{}
+		tracks := map[int]string{}
+		rootSeen := false
+		for {
+			token, err := decoder.Token()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return "", err
+			}
+			switch v := token.(type) {
+			case xml.StartElement:
+				if len(path) == 0 {
+					if rootSeen || v.Name.Local != "QrcInfos" {
+						return "", fmt.Errorf("invalid root")
+					}
+					rootSeen = true
+				}
+				path = append(path, v.Name.Local)
+				if len(path) == 3 && path[1] == "LyricInfo" {
+					match := qrcTrackName.FindStringSubmatch(v.Name.Local)
+					if match == nil {
+						return "", fmt.Errorf("unknown lyric track")
+					}
+					index, err := strconv.Atoi(match[1])
+					if err != nil {
+						return "", err
+					}
+					if _, exists := tracks[index]; exists {
+						return "", fmt.Errorf("duplicate lyric track")
+					}
+					found := false
+					for _, a := range v.Attr {
+						if a.Name.Local == "LyricContent" {
+							if found {
+								return "", fmt.Errorf("duplicate content")
+							}
+							tracks[index] = a.Value
+							found = true
+						}
+					}
+					if !found {
+						return "", fmt.Errorf("missing content")
+					}
+				}
+			case xml.EndElement:
+				path = path[:len(path)-1]
+			case xml.CharData:
+				if strings.TrimSpace(string(v)) != "" {
+					return "", fmt.Errorf("unexpected container text")
+				}
+			}
+		}
+		if len(path) != 0 || len(tracks) == 0 {
+			return "", fmt.Errorf("incomplete lyric container")
+		}
+		keys := []int{}
+		for key := range tracks {
+			keys = append(keys, key)
+		}
+		sort.Ints(keys)
+		for _, key := range keys {
+			if strings.TrimSpace(tracks[key]) != "" {
+				return tracks[key], nil
+			}
+		}
+		return "", lyrics.ErrNoLyrics
+	}
+	if content, err := parse(raw); err == nil {
+		return content, nil
+	}
+	// Only a self-closing known track with LyricContent as its last attribute
+	// has a unique repair boundary. Never search across '<' or '>' into a
+	// neighbouring track; full XML validation still runs after quote repair.
+	changed := false
+	repaired := qrcTrackElement.ReplaceAllStringFunc(raw, func(element string) string {
+		const marker = `LyricContent="`
+		start := strings.Index(element, marker)
+		if start < 0 || strings.Count(element, marker) != 1 {
+			return element
+		}
+		start += len(marker)
+		end := len(element) - 2
+		for end > start && (element[end-1] == ' ' || element[end-1] == '\n' || element[end-1] == '\r' || element[end-1] == '\t') {
+			end--
+		}
+		if end <= start || element[end-1] != '"' {
+			return element
+		}
+		end--
+		content := element[start:end]
+		if !strings.Contains(content, `"`) {
+			return element
+		}
+		// Attribute-looking suffixes are ambiguous, not literal quote repairs.
+		if regexp.MustCompile(`"\s+[A-Za-z_:][\w:.-]*\s*=`).MatchString(content) {
+			return element
+		}
+		changed = true
+		return element[:start] + strings.ReplaceAll(content, `"`, "&quot;") + element[end:]
+	})
+	if changed {
+		if content, err := parse(repaired); err == nil {
+			return content, nil
+		}
+	}
+	return "", fmt.Errorf("%w：QRC XML 边界无效或不唯一", lyrics.ErrFormat)
 }
 
 var qrcMetadata = regexp.MustCompile(`^\[[a-zA-Z]+:[^\]]*\]$`)
@@ -63,27 +183,18 @@ func clock(ms int) string { return fmt.Sprintf("%02d:%02d.%03d", ms/60000, ms/10
 // from the next word. Untimed credit lines stay ordinary LRC.
 func qrcToLRC(raw string) (string, error) {
 	if len(raw) > lyrics.MaxTextBytes {
-		return "", fmt.Errorf("QRC 文本过大")
+		return "", fmt.Errorf("%w：QRC 文本过大", lyrics.ErrTooLarge)
 	}
 	if !utf8.ValidString(raw) || strings.ContainsRune(raw, 0) {
 		return "", fmt.Errorf("QRC 不是有效 UTF-8 文本")
 	}
 	raw = strings.TrimSpace(raw)
 	if strings.HasPrefix(raw, "<") {
-		var doc struct {
-			Info struct {
-				Lyrics []struct {
-					Content string `xml:"LyricContent,attr"`
-				} `xml:"Lyric_1"`
-			} `xml:"LyricInfo"`
+		var err error
+		raw, err = extractQRCContent(raw)
+		if err != nil {
+			return "", err
 		}
-		if err := xml.Unmarshal([]byte(raw), &doc); err != nil {
-			return "", fmt.Errorf("QRC XML 解析失败: %w", err)
-		}
-		if len(doc.Info.Lyrics) != 1 {
-			return "", fmt.Errorf("QRC XML 缺少 LyricContent")
-		}
-		raw = doc.Info.Lyrics[0].Content
 	}
 	var out strings.Builder
 	wordCount := 0
@@ -134,7 +245,7 @@ func qrcToLRC(raw string) (string, error) {
 			out.WriteString(text)
 			out.WriteString("<" + clock(ts+dur) + ">")
 			if out.Len() > lyrics.MaxTextBytes {
-				return "", fmt.Errorf("转换后的歌词超过 2 MiB")
+				return "", lyrics.ErrTooLarge
 			}
 			pos, previousEnd = w[1], ts+dur
 			if strings.TrimSpace(text) != "" {
@@ -146,7 +257,7 @@ func qrcToLRC(raw string) (string, error) {
 		}
 		out.WriteString(m[3][pos:] + "\n")
 		if out.Len() > lyrics.MaxTextBytes {
-			return "", fmt.Errorf("转换后的歌词超过 2 MiB")
+			return "", lyrics.ErrTooLarge
 		}
 	}
 	if wordCount == 0 {

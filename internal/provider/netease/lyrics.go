@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/norhua/sonexa/internal/lyrics"
+	"github.com/norhua/sonexa/internal/provider"
 )
 
 func (p *Provider) SearchLyrics(ctx context.Context, q lyrics.Query) ([]lyrics.Candidate, error) {
@@ -25,33 +26,83 @@ func (p *Provider) SearchLyrics(ctx context.Context, q lyrics.Query) ([]lyrics.C
 	}
 	return out, nil
 }
+
+const lyricV1Path = "/api/song/lyric/v1"
+
 func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics.Payload, error) {
-	body, err := p.request(ctx, "/weapi/song/lyric", map[string]any{"id": c.Ref, "lv": -1, "kv": -1, "tv": -1, "csrf_token": ""})
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return parseLyrics(body)
+	ctx = provider.WithStopRestrictedRetries(ctx)
+	body, err := p.client.Get(ctx, provider.GetRequest{
+		Provider: provider.NetEaseQuota, BaseURL: baseURL, Endpoint: lyricV1Path,
+		Params:    map[string]string{"id": c.Ref, "lv": "-1", "tv": "-1", "rv": "-1", "yv": "-1"},
+		CacheMode: provider.NoStore, MaxResponseBytes: 4 << 20,
+		Headers:   map[string]string{"Referer": baseURL + "/"},
+		Redirects: &provider.RedirectPolicy{Hosts: []string{"music.163.com"}, MaxRedirects: 4},
+	})
+	var bundle *lyrics.Payload
+	if err == nil {
+		bundle, err = parseLyrics(body)
+	}
+	if err == nil {
+		_, err = lyrics.DocumentFromPayload(bundle)
+		if err == nil {
+			return bundle, nil
+		}
+	}
+	if !lyrics.CanFallback(err) {
+		return nil, err
+	}
+	body, fallbackErr := p.request(ctx, "/weapi/song/lyric", map[string]any{"id": c.Ref, "lv": -1, "kv": -1, "tv": -1, "csrf_token": ""})
+	if fallbackErr != nil {
+		return nil, fallbackErr
+	}
+	fallback, fallbackErr := parseLyrics(body)
+	if fallbackErr != nil {
+		return nil, fallbackErr
+	}
+	if bundle != nil {
+		fallback.Translation = lyrics.PreferredChannel(bundle.Translation, fallback.Translation)
+		fallback.Romanization = lyrics.PreferredChannel(bundle.Romanization, fallback.Romanization)
+		fallback.WordTiming = bundle.WordTiming
+		fallback.Warnings = append(fallback.Warnings, bundle.Warnings...)
+	}
+	fallback.Warnings = append(fallback.Warnings, "YRC 接口未取得可用原文，已回退普通歌词")
+	return fallback, nil
 }
+
+type lyricBundle struct {
+	Code                                         int
+	Nolyric, Uncollected                         bool
+	Lrc, Tlyric, Romalrc, Yrc, Ytlyric, Yromalrc struct{ Lyric string }
+}
+
 func parseLyrics(body []byte) (*lyrics.Payload, error) {
-	var r struct {
-		Code                 int
-		Nolyric, Uncollected bool
-		Lrc, Tlyric, Romalrc struct{ Lyric string }
-	}
+	var r lyricBundle
 	if err := json.Unmarshal(body, &r); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w：网易云歌词响应无法解析", lyrics.ErrFormat)
 	}
 	if r.Code != 200 {
-		return nil, fmt.Errorf("网易云歌词响应异常（code=%d）", r.Code)
+		return nil, &provider.BusinessError{Source: "网易云", Block: "lyrics", Code: r.Code}
 	}
-	if r.Nolyric || r.Uncollected || strings.TrimSpace(r.Lrc.Lyric) == "" {
+	if r.Nolyric || r.Uncollected {
 		return nil, lyrics.ErrNoLyrics
 	}
-	original := lyricChannel(r.Lrc.Lyric)
-	if original.Status == "unavailable" {
+	original, word := lyricChannel(r.Lrc.Lyric), yrcChannel(r.Yrc.Lyric)
+	if original.Status == "unavailable" && word.Status == "unavailable" {
 		return nil, lyrics.ErrNoLyrics
 	}
-	return &lyrics.Payload{Original: original, Translation: lyricChannel(r.Tlyric.Lyric), Romanization: lyricChannel(r.Romalrc.Lyric), WordTiming: "unsupported"}, nil
+	out := &lyrics.Payload{Original: original, WordOriginal: word,
+		Translation:  lyrics.PreferredChannel(lyricChannel(r.Ytlyric.Lyric), lyricChannel(r.Tlyric.Lyric)),
+		Romanization: lyrics.PreferredChannel(lyricChannel(r.Yromalrc.Lyric), lyricChannel(r.Romalrc.Lyric)), WordTiming: "unavailable"}
+	if word.Status == "error" {
+		out.WordTiming = "error"
+	}
+	if word.Status == "available" {
+		out.WordTiming = "available"
+	}
+	return out, nil
 }
 
 // 网易云会把无歌词状态放进 LRC 正文，而非只使用 nolyric 标志。

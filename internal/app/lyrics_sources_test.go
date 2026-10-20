@@ -30,7 +30,7 @@ func replayService(body string) lyrics.Service {
 	c.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
 		response := body
 		if r.URL.Host == "u.y.qq.com" && !strings.Contains(body, "\"body\"") {
-			response = `{"code":1}`
+			response = `{}`
 		}
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(response))}, nil
 	})
@@ -40,7 +40,7 @@ func channelSummary(c *lyrics.Channel) string {
 	if c == nil {
 		return "unknown"
 	}
-	return fmt.Sprintf("%s bytes=%d", c.Status, len(c.Text))
+	return fmt.Sprintf("%s origin=%s sync=%s bytes=%d", c.Status, c.Origin, c.SyncStatus, len(c.Text))
 }
 
 func TestTextFormatsAndInvalidInput(t *testing.T) {
@@ -208,6 +208,10 @@ func TestLiveSources(t *testing.T) {
 				}
 				if audit.gate() != nil {
 					t.Fatal(errLiveStopped)
+				}
+				content := lyrics.ScoreContent(candidate, d, duration)
+				if content.TotalScore != nil {
+					t.Logf("match=%d total=%d terms=%+v auto_preview=%t", candidate.MatchScore, *content.TotalScore, content.Terms, content.AutoPreviewEligible)
 				}
 				t.Logf("ref=%s format=%s bytes=%d original=%s translation=%s romanization=%s wordTiming=%s warnings=%d", candidate.Ref, d.Format, len(d.Text), channelSummary(d.Original), channelSummary(d.Translation), channelSummary(d.Romanization), d.WordTiming, len(d.Warnings))
 				return

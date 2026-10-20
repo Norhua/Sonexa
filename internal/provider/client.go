@@ -168,7 +168,7 @@ func (c *Client) getWithRetry(ctx context.Context, req GetRequest) ([]byte, erro
 		lastErr = err
 
 		// 不可重试的错误立刻上抛：400 的查询语法错误重试多少次都一样
-		if !IsRetryable(err) || attempt == attempts {
+		if stopRestrictedRetry(ctx, err) || !IsRetryable(err) || attempt == attempts {
 			return nil, err
 		}
 		// ctx 已取消时不必再等退避
@@ -232,7 +232,7 @@ func (c *Client) do(ctx context.Context, req GetRequest) ([]byte, error) {
 	}
 	body, readErr := io.ReadAll(reader)
 	if req.MaxResponseBytes > 0 && int64(len(body)) > req.MaxResponseBytes {
-		return nil, fmt.Errorf("上游响应过大")
+		return nil, ErrResponseTooLarge
 	}
 	if resp.StatusCode != http.StatusOK {
 		snippet := string(body)

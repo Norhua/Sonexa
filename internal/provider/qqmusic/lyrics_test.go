@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"compress/zlib"
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -63,6 +65,8 @@ func playBody(t *testing.T, qrc, plain qqLyricData) string {
 func TestQRCConversion(t *testing.T) {
 	for _, tt := range []struct{ name, raw, want string }{
 		{"absolute times and gaps", "[ti:Synthetic]\n[1000,2000]你(1000,300)好(1500,1000)", "[ti:Synthetic]\n[00:01.000]<00:01.000>你<00:01.300><00:01.500>好<00:02.500>"},
+		{"dynamic track and literal quotes", `<QrcInfos><LyricInfo><Lyric_12 LyricType="1" LyricContent="[1000,1000]A "quoted" (aside) 😀(1000,1000)"/></LyricInfo></QrcInfos>`, "[00:01.000]<00:01.000>A \"quoted\" (aside) 😀<00:02.000>"},
+		{"multiple tracks choose index not order", `<QrcInfos><LyricInfo><Lyric_9 LyricContent="[0,1000]wrong(0,1000)"/><Lyric_2 LyricContent="[0,1000]right(0,1000)"/></LyricInfo></QrcInfos>`, "[00:00.000]<00:00.000>right<00:01.000>"},
 		{"xml entities", `<QrcInfos><LyricInfo><Lyric_1 LyricContent="[1000,1000]A&amp;B(1000,1000)"/></LyricInfo></QrcInfos>`, "[00:01.000]<00:01.000>A&B<00:02.000>"},
 		{"credits and empty romaji word", "[0,1000](0,1000)\n[1000,1000]Synthetic credit\n[2000,1000]Test(2000,1000)", "[00:00.000]<00:00.000><00:01.000>\n[00:01.000]Synthetic credit\n[00:02.000]<00:02.000>Test<00:03.000>"},
 	} {
@@ -82,6 +86,23 @@ func TestQRCConversion(t *testing.T) {
 		})
 	}
 }
+func TestQRCContainerBoundaries(t *testing.T) {
+	for _, raw := range []string{
+		`<QrcInfos><LyricInfo><Lyric_2 LyricContent="[0,1000]A "quote"(0,1000)"/>`,
+		`<QrcInfos><LyricInfo><Lyric_1 LyricContent="[0,1000]A "quote"(0,1000)"/><Lyric_1 LyricContent="[0,1000]B(0,1000)"/></LyricInfo></QrcInfos>`,
+		`<QrcInfos><LyricInfo><Lyric_1 LyricContent="[0,1000]A "quoted"(0,1000)" unknown="tail"/></LyricInfo></QrcInfos>`,
+		`<QrcInfos><LyricInfo><Lyric_1 LyricContent="[0,1000]A "<Lyric_2 LyricContent="stolen"/>"(0,1000)"/></LyricInfo></QrcInfos>`,
+	} {
+		decoded, err := decodeQRC(encodedQRC(t, raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := qrcToLRC(decoded); err == nil {
+			t.Fatal("accepted ambiguous container")
+		}
+	}
+}
+
 func TestQRCRejectsMalformedAndOversized(t *testing.T) {
 	for _, encoded := range []string{"", "00", "xx", "0000000000000000", strings.Repeat("a", (4<<20)+1), encodedQRC(t, strings.Repeat("a", lyrics.MaxTextBytes+1)), encodedQRC(t, string([]byte{0xff})), encodedQRC(t, "bad\x00text")} {
 		if _, err := decodeQRC(encoded); err == nil {
@@ -138,6 +159,10 @@ func TestQQOptionalFailuresAndPlainFallback(t *testing.T) {
 		plain                       qqLyricData
 		timing, translation, format string
 	}{
+		{"qrc request returns lrc", qqLyricData{QRC: 1, Lyric: encodedQRC(t, "[00:01]original")}, qqLyricData{}, "unavailable", "unavailable", "lrc"},
+		{"qrc request returns plain", qqLyricData{QRC: 1, Lyric: encodedQRC(t, "original <b>literal</b>")}, qqLyricData{}, "unavailable", "unavailable", "text"},
+		{"empty word shell", qqLyricData{QRC: 1, Lyric: encodedQRC(t, "[0,100](0,100)")}, qqLyricData{Lyric: b64("[00:01]original")}, "error", "unavailable", "lrc"},
+		{"qrc translation", qqLyricData{Lyric: b64("[00:01]original"), Trans: b64(`<QrcInfos><LyricInfo><Lyric_2 LyricContent="[1000,1000]translated(1000,1000)"/></LyricInfo></QrcInfos>`)}, qqLyricData{}, "unavailable", "available", "enhanced_lrc"},
 		{"no extras", qqLyricData{Lyric: b64("[00:01]original")}, qqLyricData{}, "unavailable", "unavailable", "lrc"},
 		{"broken QRC retains translation", qqLyricData{QRC: 1, Lyric: "broken", Trans: b64("plain translation")}, qqLyricData{Lyric: b64("[00:01]original")}, "error", "available", "lrc"},
 		{"broken translation retains QRC", qqLyricData{QRC: 1, Lyric: encodedQRC(t, "[1000,1000]original(1000,1000)"), Trans: "%%%"}, qqLyricData{}, "available", "error", "enhanced_lrc"},
@@ -212,19 +237,43 @@ func TestQQFallbackKeepsNewTranslationAndReportsFailure(t *testing.T) {
 	}
 }
 
-func TestQQServiceFailureIsNotReportedAsMissingTranslation(t *testing.T) {
+func TestQQServiceFailureStopsFallback(t *testing.T) {
+	calls := 0
 	client := providerClientForTest(func(r *http.Request) string {
-		if r.URL.Host == "u.y.qq.com" {
-			return `{"code":2001}`
-		}
-		return `{"code":0,"lyric":"[00:01]original","trans":""}`
+		calls++
+		return `{"code":2001}`
 	})
-	doc, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
-	if err != nil {
-		t.Fatal(err)
+	_, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
+	var business *provider.BusinessError
+	if !errors.As(err, &business) || calls != 1 {
+		t.Fatal(err, calls)
 	}
-	if doc.Translation.Status != "error" || doc.Romanization.Status != "error" || doc.WordTiming != "error" || len(doc.Warnings) == 0 {
-		t.Fatalf("failure hidden as missing fields: %+v", doc)
+}
+
+func TestQQRestrictedErrorsNeverFallback(t *testing.T) {
+	for _, status := range []int{401, 403, 429} {
+		calls := 0
+		client := provider.NewClient(nil, nil, "test")
+		client.HTTP.Transport = protocolTransport(func(r *http.Request) (*http.Response, error) {
+			calls++
+			return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("restricted"))}, nil
+		})
+		if _, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"}); err == nil || calls != 1 {
+			t.Fatal(err, calls)
+		}
+	}
+	calls := 0
+	client := provider.NewClient(nil, nil, "test")
+	client.HTTP.Transport = protocolTransport(func(r *http.Request) (*http.Response, error) { calls++; return nil, x509.UnknownAuthorityError{} })
+	if _, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"}); err == nil || calls != 1 {
+		t.Fatal(err, calls)
+	}
+	for _, body := range []string{strings.Repeat("x", (4<<20)+1), playBody(t, qqLyricData{QRC: 1, Lyric: encodedQRC(t, strings.Repeat("x", lyrics.MaxTextBytes+1))}, qqLyricData{})} {
+		calls = 0
+		client = providerClientForTest(func(*http.Request) string { calls++; return body })
+		if _, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"}); !errors.Is(err, lyrics.ErrTooLarge) || calls != 1 {
+			t.Fatal(err, calls)
+		}
 	}
 }
 
