@@ -1,0 +1,139 @@
+package kugou
+
+import (
+	"bytes"
+	"compress/zlib"
+	"encoding/base64"
+	"fmt"
+	"io"
+	"regexp"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/norhua/sonexa/internal/lyrics"
+)
+
+// Protocol constant, not an authentication credential. Native KRC payloads
+// use the same cyclic XOR after the four-byte magic and before zlib.
+var krcXOR = [...]byte{0x40, 0x47, 0x61, 0x77, 0x5e, 0x32, 0x74, 0x47, 0x51, 0x36, 0x31, 0x2d, 0xce, 0xd2, 0x6e, 0x69}
+
+func decodeKRC(encoded string) (string, error) {
+	if len(encoded) > 4<<20 {
+		return "", lyrics.ErrTooLarge
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(data) < 5 || string(data[:4]) != "krc1" {
+		return "", fmt.Errorf("%w：KRC 编码或文件头无效", lyrics.ErrFormat)
+	}
+	data = data[4:]
+	for i := range data {
+		data[i] ^= krcXOR[i%len(krcXOR)]
+	}
+	r, err := zlib.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("%w：KRC 压缩数据无效", lyrics.ErrFormat)
+	}
+	defer r.Close()
+	text, err := io.ReadAll(io.LimitReader(r, lyrics.MaxTextBytes+1))
+	if len(text) > lyrics.MaxTextBytes {
+		return "", lyrics.ErrTooLarge
+	}
+	if err != nil || !utf8.Valid(text) || bytes.IndexByte(text, 0) >= 0 {
+		return "", fmt.Errorf("%w：KRC 解压或文本编码失败", lyrics.ErrFormat)
+	}
+	return string(text), nil
+}
+
+var krcLine = regexp.MustCompile(`^\[(\d+),(\d+)\](.*)$`)
+var krcWord = regexp.MustCompile(`<(-?\d+),(\d+),(-?\d+)>`)
+var krcMetadata = regexp.MustCompile(`^\[[a-zA-Z]+:[^\]]*\]$`)
+
+func krcMS(n int64) *int64 { return &n }
+func krcNumber(raw string, signed bool) (int64, error) {
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n > lyrics.MaxTimeMS || n < -lyrics.MaxTimeMS || !signed && n < 0 {
+		return 0, fmt.Errorf("%w：KRC 时间超出范围", lyrics.ErrFormat)
+	}
+	return n, nil
+}
+
+// The returned native lines still include empty timing rows: language indices
+// must be resolved before display filtering, sorting or deduplication.
+func parseKRC(raw string) (*lyrics.Track, string, error) {
+	if len(raw) > lyrics.MaxTextBytes {
+		return nil, "", lyrics.ErrTooLarge
+	}
+	if !utf8.ValidString(raw) || strings.ContainsRune(raw, 0) {
+		return nil, "", lyrics.ErrFormat
+	}
+	t := &lyrics.Track{}
+	language := ""
+	for _, line := range strings.Split(strings.TrimPrefix(strings.ReplaceAll(raw, "\r\n", "\n"), "\ufeff"), "\n") {
+		if strings.HasPrefix(line, "[language:") && strings.HasSuffix(line, "]") {
+			if language != "" {
+				return nil, "", fmt.Errorf("%w：重复 KRC language", lyrics.ErrFormat)
+			}
+			language = line[10 : len(line)-1]
+			continue
+		}
+		if krcMetadata.MatchString(line) {
+			t.Metadata = append(t.Metadata, line)
+			continue
+		}
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		m := krcLine.FindStringSubmatch(line)
+		if m == nil {
+			return nil, language, fmt.Errorf("%w：KRC 行时间无效", lyrics.ErrFormat)
+		}
+		start, err := krcNumber(m[1], false)
+		if err != nil {
+			return nil, language, err
+		}
+		duration, err := krcNumber(m[2], false)
+		if err != nil {
+			return nil, language, err
+		}
+		if duration > lyrics.MaxTimeMS-start {
+			return nil, language, lyrics.ErrFormat
+		}
+		l := lyrics.Line{StartMS: krcMS(start), EndMS: krcMS(start + duration)}
+		matches := krcWord.FindAllStringSubmatchIndex(m[3], -1)
+		if len(matches) == 0 {
+			l.Text = m[3]
+		} else {
+			if matches[0][0] != 0 {
+				return nil, language, lyrics.ErrFormat
+			}
+			previous := int64(-1)
+			var text strings.Builder
+			for i, match := range matches {
+				rel, err := krcNumber(m[3][match[2]:match[3]], true)
+				if err != nil {
+					return nil, language, err
+				}
+				dur, err := krcNumber(m[3][match[4]:match[5]], false)
+				if err != nil {
+					return nil, language, err
+				}
+				absolute := start + rel // operands bounded to +/-24h, no integer overflow
+				if absolute < 0 || absolute > lyrics.MaxTimeMS || dur > lyrics.MaxTimeMS-absolute || absolute < previous {
+					return nil, language, fmt.Errorf("%w：KRC 绝对词时间越界或倒序", lyrics.ErrFormat)
+				}
+				end := len(m[3])
+				if i+1 < len(matches) {
+					end = matches[i+1][0]
+				}
+				word := m[3][match[1]:end]
+				text.WriteString(word)
+				l.Parts = append(l.Parts, lyrics.Word{StartMS: krcMS(absolute), EndMS: krcMS(absolute + dur), Text: word})
+				previous = absolute + dur
+			}
+			l.Text = text.String()
+		}
+		t.Lines = append(t.Lines, l)
+	}
+	return t, language, nil
+}

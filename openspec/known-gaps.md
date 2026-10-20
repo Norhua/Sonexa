@@ -67,7 +67,7 @@
 - **现状**：网易云、QQ、酷狗、酷我歌词均使用非公开接口。2026-10-16 实现计划记录四来源均有成功实测，也观察到 QQ `2001` 与酷我 `301` 波动；QQ 新端点已实测原文、翻译、罗马音与增强型 LRC，但不承诺每首歌或任意时刻可用。手动 QQ 歌词、元数据和封面查询现已共用平台配额；该离线验证不代表非公开接口的最新在线复测完成。
 - **最新复测**：2026-10-17「青花瓷 / 周杰伦」在酷狗完成搜索、歌词候选及下载，取得 1961 字节 LRC；日志通道状态为 unknown，不能宣称翻译/罗马音已通过。网易云该查询过滤后的 95 秒候选返回 `ErrNoLyrics`，不是解析异常；另以「君の知らない物語 / supercell」精确专辑/时长样例取得 4967 字节 LRC，原文/翻译 available，罗马音 unavailable。酷我正文 HTTP 200/status=301 后停止；QQ 因同轮回退查找的 -1901 未再运行手动歌词入口。缺失、业务错误及未执行分别保留，不把四来源记为已通过。
 - **依据**：`internal/app/lyrics_sources_test.go` 的 `TestLiveSources`、`internal/provider/qqmusic/lyrics_probe_test.go`、`internal/app/lyrics_test.go`；最新同步与历史验证区分见 [verification.md](verification.md)。
-- **格式范围**：本地只导入 UTF-8 TXT/LRC，不转码 GBK/UTF-16；在线支持 QQ QRC 和网易云 YRC 转换（YRC 新接口仅离线验证，实时可用性待验），酷狗 KRC 尚未接入；不导入本地二进制 QRC/KRC 或原始 YRC。没有播放器/播放同步高亮与独立歌词导出 UI，这些不作为当前已交付能力。
+- **格式范围**：本地只导入 UTF-8 TXT/LRC，不转码 GBK/UTF-16；在线支持 QQ QRC、网易云 YRC 和酷狗 KRC 转换（YRC/KRC 新路径仅离线验证，实时可用性待验）；不导入本地二进制 QRC/KRC 或原始 YRC。没有播放器/播放同步高亮与独立歌词导出 UI，这些不作为当前已交付能力。
 - **回归限制**：第二次实现计划的全量 Playwright 为 241/242，编辑器“用户”徽标旧断言在基线也可复现；歌词定向回归通过不代表该失败已修复。歌词文件选择器只经过可注入 picker 与浏览器替身测试，没有新增原生人工验收。
 - **目标与验收**：按 `SONEXA_LYRICS_LIVE=1 go test ./internal/app -run '^TestLiveSources$' -count=1 -v` 定期复测，使用 `SONEXA_LYRICS_SOURCE/TITLE/ARTIST/ALBUM/DURATION_MS` 限定样例并记录缺失、错误与部分成功；真实网络、原生选择器和既有浏览器断言分别取证，不以离线或桩测试代替。新增逐字格式或播放器需另行定范围。
 

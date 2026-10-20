@@ -122,17 +122,24 @@ func TestKugouUsesHTTPSHashDurationAndLRC(t *testing.T) {
 			}
 			body = `{"status":200,"candidates":[{"id":"short","accesskey":"a","duration":1000},{"id":"full","accesskey":"b","duration":269000}]}`
 		case "/download":
-			if r.URL.Query().Get("id") != "full" || r.URL.Query().Get("fmt") != "lrc" {
+			if r.URL.Query().Get("id") != "full" {
 				t.Fatal(r.URL)
 			}
-			body = `{"status":200,"error_code":0,"fmt":"lrc","content":"` + base64.StdEncoding.EncodeToString([]byte("[00:01.00]歌词")) + `"}`
+			if r.URL.Query().Get("fmt") == "krc" {
+				body = `{"status":200,"error_code":0,"fmt":"krc","content":""}`
+			} else {
+				if r.URL.Query().Get("fmt") != "lrc" {
+					t.Fatal(r.URL)
+				}
+				body = `{"status":200,"error_code":0,"fmt":"lrc","content":"` + base64.StdEncoding.EncodeToString([]byte("[00:01.00]歌词")) + `"}`
+			}
 		default:
 			t.Fatal(r.URL)
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}}, nil
 	})
 	d, err := sourceService(client).Fetch(context.Background(), lyrics.Candidate{Source: "kugou", Ref: "hash", DurationMS: 269000})
-	if err != nil || count != 2 || d.Format != "lrc" {
+	if err != nil || count != 3 || d.Format != "lrc" {
 		t.Fatalf("%+v %v %d", d, err, count)
 	}
 }
