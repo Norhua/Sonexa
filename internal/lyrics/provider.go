@@ -20,8 +20,10 @@ type Provider interface {
 type Payload struct {
 	Text         string
 	Original     *Channel
+	WordOriginal *Channel
 	Translation  *Channel
 	Romanization *Channel
+	Additional   []*Channel
 	WordTiming   string
 	Warnings     []string
 }

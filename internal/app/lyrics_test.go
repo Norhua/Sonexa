@@ -148,7 +148,7 @@ func TestLyricsSearchSessionOwnershipGateAndCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	saved, err := a.GetTrackDetail(id)
-	if err != nil || saved.Metadata.Lyrics == nil || *saved.Metadata.Lyrics != d.Text || !strings.Contains(*saved.Metadata.Lyrics, "测试翻译") || !strings.Contains(*saved.Metadata.Lyrics, "<00:02.00>") {
+	if err != nil || saved.Metadata.Lyrics == nil || *saved.Metadata.Lyrics != d.Text || !strings.Contains(*saved.Metadata.Lyrics, "测试翻译") || !strings.Contains(*saved.Metadata.Lyrics, "<00:02.000>") {
 		t.Fatalf("adoption lost translation or word times: %+v %v", saved, err)
 	}
 	if _, err := a.AdoptLyrics(session, cards[0].ID, rev); !errors.Is(err, store.ErrRevisionConflict) {

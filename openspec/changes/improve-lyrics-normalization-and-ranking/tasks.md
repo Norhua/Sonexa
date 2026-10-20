@@ -1,14 +1,14 @@
 # Tasks
 
-实施依据：[设计](design.md)、[歌词搜索 delta](specs/upstream/lyrics-search/spec.md)、[QQ delta](specs/upstream/qqmusic/spec.md)。本清单未开始执行；采用最新确认的「每源 Top 3 预取 → 内容综合排序 → 翻译加分、罗马音较小加分 → 候选卡片显示两种通道状态」。默认使用离线测试，真实网络必须显式启用；较小的既有 probe 预算优先，不能自动抬高网络验证授权上限。
+实施依据：[设计](design.md)、[歌词搜索 delta](specs/upstream/lyrics-search/spec.md)、[QQ delta](specs/upstream/qqmusic/spec.md)。实施进度按下方勾选记录；采用最新确认的「每源 Top 3 预取 → 内容综合排序 → 翻译加分、罗马音较小加分 → 候选卡片显示两种通道状态」。默认使用离线测试，真实网络必须显式启用；较小的既有 probe 预算优先，不能自动抬高网络验证授权上限。
 
 ## 1. 统一歌词模型、解析与序列化
 
-- [ ] 1.1 在 `internal/lyrics` 增加毫秒行/词模型、通道诊断、origin/syncStatus 和预览行 DTO，将 `Payload.Text` 和多通道入口接到共同文档构建流程；用 `service_test.go` 验证单能力来源、空原文拒绝、可选通道失败仍保留原文，以及 unavailable 与 unknown 不混用。
-- [ ] 1.2 实现 TXT/LRC/增强型 LRC 结构化解析与序列化，保留 BOM/CRLF 规范化、1–3 位小数、多行首时间戳、纯文本、空白/Unicode 和真实词起止；新增合成 fixture 与往返测试，验证不丢正文、不编造词结束时间、不误删普通括号。
-- [ ] 1.3 重构通道合并：只选择一套原文，按可靠时间关联附加行，歧义/未同步内容独立保留，支持未分类 additional 文本；用 `channels_test.go` 覆盖同刻多行、重复副歌、错序通道、不同断句和去重保留词时间。
-- [ ] 1.4 实现独立通道 offset 的等价合并及单次应用，保留单文本导入原文；测试正负偏移、矛盾标签、以全局 offset 保留负实际时间，以及序列化后时间不漂移。
-- [ ] 1.5 为时间溢出、解析展开、预览结构及最终文本设置有界检查，统一解析/超限错误；扩展多时间戳展开超限测试，运行 `go test ./internal/lyrics`，在 `openspec/design.md` 更新已落地模型和采用文本边界。
+- [x] 1.1 在 `internal/lyrics` 增加毫秒行/词模型、通道诊断、origin/syncStatus 和预览行 DTO，将 `Payload.Text` 和多通道入口接到共同文档构建流程；用 `service_test.go` 验证单能力来源、空原文拒绝、可选通道失败仍保留原文，以及 unavailable 与 unknown 不混用。
+- [x] 1.2 实现 TXT/LRC/增强型 LRC 结构化解析与序列化，保留 BOM/CRLF 规范化、1–3 位小数、多行首时间戳、纯文本、空白/Unicode 和真实词起止；新增合成 fixture 与往返测试，验证不丢正文、不编造词结束时间、不误删普通括号。
+- [x] 1.3 重构通道合并：只选择一套原文，按可靠时间关联附加行，歧义/未同步内容独立保留，支持未分类 additional 文本；用 `channels_test.go` 覆盖同刻多行、重复副歌、错序通道、不同断句和去重保留词时间。
+- [x] 1.4 实现独立通道 offset 的等价合并及单次应用，保留单文本导入原文；测试正负偏移、矛盾标签、以全局 offset 保留负实际时间，以及序列化后时间不漂移。
+- [x] 1.5 为时间溢出、解析展开、预览结构及最终文本设置有界检查，统一解析/超限错误；扩展多时间戳展开超限测试，运行 `go test ./internal/lyrics`，在 `openspec/design.md` 更新已落地模型和采用文本边界。
 
 ## 2. 两阶段评分与可解释排序
 

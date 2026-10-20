@@ -51,7 +51,7 @@ provider 父包 → domain（不反向依赖业务或具体上游）
 
 歌词与封面集合类型明确，构造时拒绝重复 ID，列表、来源校验及执行读取同一份登记；
 元数据 Registry 保留原覆盖语义。默认顺序分别为 163/QQ/酷狗/酷我、CAA/iTunes/QQ/163，
-元数据按设置排序，导入仅 MB。公共 Wails 绑定及 DTO JSON 结构不变。
+元数据按设置排序，导入仅 MB。歌词 Document 新增只读行投影及通道诊断，其他能力 DTO 不受影响。
 封面结果只能是新 `CoverCatalogInput` 或已登记的 `CoverCatalogKey`，后者只读取，
 不会二次保存覆盖 CAA 实际发行、目录版本或文件关联。
 
@@ -65,6 +65,18 @@ QRC/DES/zlib/XML 位于 `provider/qqmusic/{qrc.go,qrcdes/}`，MIT 许可证及�
 网易云占位文案在 `provider/netease/lyrics.go` 归一化为无歌词或通道 unavailable；
 lyrics 不使用跨来源正文黑名单，只处理 UTF-8、大小、文本格式与通道合并。
 来源占位不得掩盖超限或损坏，其他来源的同文案真实正文不因此被拒绝。
+
+歌词公共模型以 `Track / Line / Word` 保存毫秒时间、正文及可空真实词终点，
+`Payload.Text` 与多通道均经同一文档构建入口。仅选一套原文；附加轨只有精确时间唯一
+匹配时才挂到对应预览行，同刻歧义、独立时间、未同步和未分类内容独立保留。
+去重保留不同词时间，同刻逐行副本让位于逐字轨，不删除不同时刻的重复副歌。
+通道区分 unavailable 与 unknown，记录 origin、syncStatus 和诊断，不生成翻译或音译。
+各轨按 `标签时间 - offset` 比较，多轨合并只折算一次并输出等价全局 offset；
+负实际时间通过全局 offset 保留，矛盾标签在单文本中保真并警告，多轨无法安全合并则拒绝。
+`ParseText` 只规范化 BOM/换行，不重写导入的空白、标签和正文；在线多轨生成规范化文本。
+`ErrFormat / ErrTooLarge / ErrNoLyrics` 分别表示解析、超限和无正文；绝对标签不超过 24 小时，
+单轨、展开结构、预览投影和最终文本均有 2 MiB 边界。仅 `Document.Text` 可供采用，
+行投影和通道中间结构不入库。当前搜索 UI 尚未消费新投影，前端接入另属后续任务。
 
 `assembleUpstreams` 不写盘、不出网、不重配桶，先验证三个业务集合及图片策略；
 `publishUpstreamsLocked` 在 App 锁下发布并原位配置长期 Limiters，启动先建封面服务，

@@ -1,0 +1,8 @@
+[
+  {"name":"plain markup", "input":" 1 < 2 (hello) [aside] <b>text</b> 😀 é　\n\nnext ", "text":" 1 < 2 (hello) [aside] <b>text</b> 😀 é　\n\nnext ", "format":"text", "rows":[" 1 < 2 (hello) [aside] <b>text</b> 😀 é　","","next "]},
+  {"name":"BOM CRLF and multiple stamps", "input":"﻿[ti:Synthetic]\r\n[00:10.1][00:20.100]副歌\r\n[00:30.12] again ", "text":"[ti:Synthetic]\n[00:10.1][00:20.100]副歌\n[00:30.12] again ", "format":"lrc", "rows":["副歌","副歌"," again "]},
+  {"name":"unknown end", "input":"[00:12.000]<00:12.100>Hello <00:12.600>world<00:13.000>", "text":"[00:12.000]<00:12.100>Hello <00:12.600>world<00:13.000>", "format":"enhanced_lrc", "rows":["Hello world"]},
+  {"name":"explicit ends and gap", "input":"[00:01]<00:01> A <00:01.2><00:01.5>😀 (B)<00:02>", "text":"[00:01]<00:01> A <00:01.2><00:01.5>😀 (B)<00:02>", "format":"enhanced_lrc", "rows":[" A 😀 (B)"]},
+  {"name":"only leading line tags", "input":"[00:01]literal [00:02] (10,20)\nplain <00:01> literal", "text":"[00:01]literal [00:02] (10,20)\nplain <00:01> literal", "format":"lrc", "rows":["literal [00:02] (10,20)","plain <00:01> literal"]},
+  {"name":"paragraphs", "input":"\n\n  hello\n\nworld  \n", "text":"\n\n  hello\n\nworld  \n", "format":"text", "rows":["","","  hello","","world  ",""]}
+]

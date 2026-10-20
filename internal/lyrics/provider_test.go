@@ -45,14 +45,14 @@ func TestLyricsOnlyContract(t *testing.T) {
 	}
 }
 
-func TestPublicDTOStructureUnchanged(t *testing.T) {
+func TestPublicDTOStructure(t *testing.T) {
 	for _, tc := range []struct {
 		value any
 		keys  []string
 	}{
 		{Query{}, []string{"title", "artist", "album", "durationMs"}},
 		{Candidate{Ref: "private-native-reference"}, []string{"id", "source", "title", "artist", "album", "durationMs", "score", "highConfidence", "matchNotes"}},
-		{Document{}, []string{"text", "format"}},
+		{Document{}, []string{"text", "format", "rows", "offsetMs"}},
 		{Source{}, []string{"id", "name"}},
 	} {
 		body, err := json.Marshal(tc.value)

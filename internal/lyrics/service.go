@@ -39,18 +39,26 @@ type Candidate struct {
 
 // Channel distinguishes absent optional content from a protocol/decoder error.
 type Channel struct {
-	Text    string `json:"text,omitempty"`
-	Status  string `json:"status"`
-	Message string `json:"message,omitempty"`
+	Track       *Track       `json:"-"`
+	Text        string       `json:"text,omitempty"`
+	Status      string       `json:"status"`
+	Origin      string       `json:"origin"`
+	SyncStatus  string       `json:"syncStatus"`
+	Message     string       `json:"message,omitempty"`
+	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
+	Err         error        `json:"-"`
 }
 type Document struct {
-	Text         string   `json:"text"`
-	Format       string   `json:"format"`
-	Original     *Channel `json:"original,omitempty"`
-	Translation  *Channel `json:"translation,omitempty"`
-	Romanization *Channel `json:"romanization,omitempty"`
-	WordTiming   string   `json:"wordTiming,omitempty"`
-	Warnings     []string `json:"warnings,omitempty"`
+	Text         string       `json:"text"`
+	Format       string       `json:"format"`
+	Rows         []PreviewRow `json:"rows"`
+	OffsetMS     int64        `json:"offsetMs"`
+	Additional   []*Channel   `json:"additional,omitempty"`
+	Original     *Channel     `json:"original,omitempty"`
+	Translation  *Channel     `json:"translation,omitempty"`
+	Romanization *Channel     `json:"romanization,omitempty"`
+	WordTiming   string       `json:"wordTiming,omitempty"`
+	Warnings     []string     `json:"warnings,omitempty"`
 }
 
 type Service struct{ Sources *Registry }
@@ -129,21 +137,22 @@ func DocumentFromPayload(p *Payload) (*Document, error) {
 	if p == nil {
 		return nil, fmt.Errorf("歌词来源未返回正文")
 	}
-	if p.Original == nil {
-		if p.Translation != nil || p.Romanization != nil {
-			return nil, ErrNoLyrics
-		}
-		return ParseText(p.Text)
+	original := p.Original
+	if original == nil && p.Text != "" {
+		original = TextChannel(p.Text, nil)
 	}
-	validate := func(ch *Channel) *Channel {
-		if ch == nil {
-			return AbsentChannel()
+	warnings := append([]string(nil), p.Warnings...)
+	timing := p.WordTiming
+	if p.WordOriginal != nil {
+		word := normalizeChannel(p.WordOriginal)
+		if word.Status == "available" && hasWords(word.Track) {
+			original = word
+		} else if word.Status == "error" {
+			timing = "error"
+			warnings = append(warnings, "逐字原文解析失败："+word.Message)
+		} else if original == nil || normalizeChannel(original).Status != "available" {
+			original = word
 		}
-		if ch.Status == "available" {
-			return TextChannel(ch.Text, nil)
-		}
-		copy := *ch
-		return &copy
 	}
-	return channelDocument(validate(p.Original), validate(p.Translation), validate(p.Romanization), p.WordTiming, append([]string(nil), p.Warnings...))
+	return buildDocument(original, p.Translation, p.Romanization, p.Additional, timing, warnings)
 }

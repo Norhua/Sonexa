@@ -86,6 +86,35 @@ func TestBusinessTextDoesNotInterpretUpstreamPlaceholders(t *testing.T) {
 	}
 }
 
+func TestPayloadStructuredModelAndUnknownChannels(t *testing.T) {
+	text := "[00:01.20]<00:01.200>Hello <00:01.500>world<00:02.000>"
+	for _, p := range []*Payload{{Text: text}, {Original: TextChannel(text, nil)}} {
+		d, err := DocumentFromPayload(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Text != text || d.Format != "enhanced_lrc" || d.Original.Status != "available" || d.WordTiming != "available" || len(d.Rows) != 1 || d.Rows[0].Text != "Hello world" || *d.Rows[0].TimeMS != 1200 {
+			t.Fatalf("%+v", d)
+		}
+		parts := d.Original.Track.Lines[0].Parts
+		if len(parts) != 2 || parts[0].EndMS != nil || *parts[1].EndMS != 2000 {
+			t.Fatalf("invented word ends: %+v", parts)
+		}
+		if d.Translation.Status != "unknown" || d.Romanization.Status != "unknown" {
+			t.Fatal("missing capability is not an absence claim")
+		}
+	}
+	d, err := DocumentFromPayload(&Payload{Text: "original", Translation: AbsentChannel(), Romanization: UnknownChannel()})
+	if err != nil || d.Translation.Status != "unavailable" || d.Romanization.Status != "unknown" || d.Original.SyncStatus != "unsynced" {
+		t.Fatal(d, err)
+	}
+	for _, ch := range []*Channel{{Status: "available", Text: ""}, {Status: "unknown", Text: "unclassified"}, {Status: "available", Track: &Track{}}} {
+		if _, err := DocumentFromPayload(&Payload{Original: ch, Translation: TextChannel("translation", nil)}); !errors.Is(err, ErrNoLyrics) {
+			t.Fatal(ch, err)
+		}
+	}
+}
+
 func TestPayloadBusinessValidation(t *testing.T) {
 	for _, p := range []*Payload{nil, {}, {Translation: TextChannel("translation", nil)}, {Original: FailedChannel(errors.New("decode"))}, {Text: strings.Repeat("x", MaxTextBytes+1)}} {
 		if _, err := DocumentFromPayload(p); err == nil {

@@ -1,6 +1,7 @@
 package lyrics
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -21,12 +22,99 @@ func TestMergeNeverDropsUntimedExtras(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+func TestConservativeAlignmentAndAdditional(t *testing.T) {
+	p := &Payload{
+		Original:    TextChannel("[00:02]B\n[00:01]A\n[00:01]other\n[00:10.1][00:20.100]chorus\n[00:10.100]chorus", nil),
+		Translation: TextChannel("[00:20.1]repeat\n[00:01]ambiguous\n[00:02]second\n[00:03]own time\nuntimed", nil),
+		Additional:  []*Channel{{Status: "unknown", Origin: "embedded", Text: "unclassified"}},
+	}
+	d, err := DocumentFromPayload(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(d.Text, "[00:10.100]chorus") != 1 || !strings.Contains(d.Text, "[00:20.100]chorus") {
+		t.Fatal(d.Text)
+	}
+	found := map[string]PreviewRow{}
+	for _, r := range d.Rows {
+		found[r.Text] = r
+	}
+	if len(found["A"].Translation) != 0 || found["ambiguous"].Channel != "translation" || len(found["B"].Translation) != 1 || found["B"].Translation[0] != "second" {
+		t.Fatal(d.Rows)
+	}
+	if *found["own time"].TimeMS != 3000 || found["untimed"].TimeMS != nil || found["unclassified"].Channel != "additional" || d.Additional[0].Status != "unknown" {
+		t.Fatal(d.Rows)
+	}
+	if d.Translation.SyncStatus != "partial" || len(d.Translation.Diagnostics) == 0 {
+		t.Fatal(d.Translation)
+	}
+}
+
+func TestOneOriginalAndDistinctWordTimelines(t *testing.T) {
+	p := &Payload{Original: TextChannel("[00:01]line version", nil), WordOriginal: TextChannel("[00:02]<00:02>word <00:02.5>version", nil), Translation: TextChannel("[00:01]translation", nil)}
+	d, err := DocumentFromPayload(p)
+	if err != nil || strings.Contains(d.Text, "line version") || d.Rows[0].Channel != "translation" || len(d.Rows[1].Translation) != 0 {
+		t.Fatal(d, err)
+	}
+	p = &Payload{Original: TextChannel("[00:01]same\n[00:01]<00:01>same<00:02>\n[00:01]<00:01.5>same<00:02>", nil), Translation: TextChannel("plain extra", nil)}
+	d, err = DocumentFromPayload(p)
+	if err != nil || strings.Count(d.Text, "same") != 2 || strings.Contains(d.Text, "[00:01.000]same\n") {
+		t.Fatal(d, err)
+	}
+}
+
+func TestIndependentOffsetsAppliedOnce(t *testing.T) {
+	for _, tt := range []struct {
+		name, original, translation string
+		wantOffset, wantTime        int64
+	}{
+		{"positive", "[offset:500]\n[00:01]A", "[offset:-500]\n[00:00]B", 0, 500},
+		{"negative actual", "[offset:1500]\n[00:01]A", "[offset:500]\n[00:00]B", 500, 0},
+		{"same", "[offset:1000]\n[00:01]A", "[offset:1000]\n[00:01]B", 1000, 1000},
+		{"negative", "[offset:-500]\n[00:01]A", "[00:01.5]B", 0, 1500},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d, err := DocumentFromPayload(&Payload{Original: TextChannel(tt.original, nil), Translation: TextChannel(tt.translation, nil)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d.OffsetMS != tt.wantOffset || len(d.Rows) != 1 || *d.Rows[0].TimeMS != tt.wantTime || len(d.Rows[0].Translation) != 1 {
+				t.Fatalf("%+v rows=%+v", d, d.Rows)
+			}
+			round, err := ParseText(d.Text)
+			if err != nil || round.OffsetMS != d.OffsetMS || *round.Rows[0].TimeMS-round.OffsetMS != tt.wantTime-tt.wantOffset {
+				t.Fatal(round, err)
+			}
+			if strings.Count(d.Text, "[offset:") > 1 {
+				t.Fatal(d.Text)
+			}
+		})
+	}
+}
+
+func TestConflictingOffsetsDiagnosedAndSingleTextPreserved(t *testing.T) {
+	for _, text := range []string{"[offset:500]\n[00:01]A", "[offset:500]\n[offset:-1]\n[00:01]A", "[offset:bad]\n[00:01]A"} {
+		d, err := ParseText(text)
+		if err != nil || d.Text != text {
+			t.Fatal(d, err)
+		}
+		if strings.Contains(text, "bad") || strings.Contains(text, "-1") {
+			if len(d.Warnings) == 0 {
+				t.Fatal("ambiguous offset not diagnosed")
+			}
+			if _, err := DocumentFromPayload(&Payload{Text: text, Translation: TextChannel("[00:01]B", nil)}); err == nil {
+				t.Fatal("ambiguous offsets merged")
+			}
+		}
+	}
+}
+
 func TestTimestampExpansionIsBounded(t *testing.T) {
 	var timestamps strings.Builder
 	for i := 0; i < 1000; i++ {
 		timestamps.WriteString(fmt.Sprintf("[%02d:%02d.000]", i/60, i%60))
 	}
-	if _, err := mergeTimed(timestamps.String()+strings.Repeat("a", 10000), "translation"); err == nil {
+	if _, err := mergeTimed(timestamps.String()+strings.Repeat("a", 10000), "translation"); !errors.Is(err, ErrTooLarge) {
 		t.Fatal("unbounded timestamp expansion")
 	}
 }
