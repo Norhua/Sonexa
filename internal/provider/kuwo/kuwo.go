@@ -20,7 +20,7 @@ func New(client *provider.Client) *Provider { return &Provider{client: client} }
 func (*Provider) ID() provider.ProviderID   { return "kuwo" }
 func (*Provider) DisplayName() string       { return "酷我音乐" }
 func (p *Provider) request(ctx context.Context, base, path string, params map[string]string) ([]byte, error) {
-	return p.client.Get(ctx, provider.GetRequest{Provider: provider.KuwoQuota, BaseURL: base, Endpoint: path, Params: params, CacheMode: provider.NoStore, MaxResponseBytes: 4 << 20, Headers: map[string]string{"Referer": "https://www.kuwo.cn/"}, Redirects: &provider.RedirectPolicy{Hosts: []string{"search.kuwo.cn", "m.kuwo.cn"}, MaxRedirects: 4}})
+	return p.client.Get(ctx, provider.GetRequest{Provider: provider.KuwoQuota, BaseURL: base, Endpoint: path, Params: params, CacheMode: provider.NoStore, MaxResponseBytes: 4 << 20, Headers: map[string]string{"Referer": base + "/"}, Redirects: &provider.RedirectPolicy{Hosts: []string{"search.kuwo.cn", "m.kuwo.cn", "www.kuwo.cn"}, MaxRedirects: 4}})
 }
 func number(n json.Number) int { v, _ := strconv.Atoi(n.String()); return v }
 func (p *Provider) SearchLyrics(ctx context.Context, q lyrics.Query) ([]lyrics.Candidate, error) {
@@ -48,16 +48,41 @@ func (p *Provider) SearchLyrics(ctx context.Context, q lyrics.Query) ([]lyrics.C
 	}
 	return out, nil
 }
+
+const openapiLyricsPath = "/openapi/v1/www/lyric/getlyric"
+
 func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics.Payload, error) {
-	body, err := p.request(ctx, "https://m.kuwo.cn", "/newh5/singles/songinfoandlrc", map[string]string{"musicId": c.Ref})
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	ctx = provider.WithStopRestrictedRetries(ctx)
+	body, err := p.request(ctx, "https://www.kuwo.cn", openapiLyricsPath, map[string]string{"musicId": c.Ref})
+	if err == nil {
+		var payload *lyrics.Payload
+		payload, err = parseLyricsResponse(body, true)
+		if err == nil {
+			return payload, nil
+		}
+	}
+	if !lyrics.CanFallback(err) {
+		return nil, err
+	}
+	body, err = p.request(ctx, "https://m.kuwo.cn", "/newh5/singles/songinfoandlrc", map[string]string{"musicId": c.Ref})
 	if err != nil {
 		return nil, err
 	}
-	return parseLyrics(body)
+	payload, err := parseLyrics(body)
+	if err != nil {
+		return nil, err
+	}
+	payload.Warnings = append(payload.Warnings, "openapi 未取得可用逐行歌词，已回退 HTTPS H5")
+	return payload, nil
 }
-func parseLyrics(body []byte) (*lyrics.Payload, error) {
+func parseLyrics(body []byte) (*lyrics.Payload, error) { return parseLyricsResponse(body, false) }
+func parseLyricsResponse(body []byte, openapi bool) (*lyrics.Payload, error) {
 	var r struct {
-		Status int
+		Code   *int
+		Status *int
 		Msg    string
 		Data   *struct {
 			Lrclist []struct {
@@ -67,12 +92,22 @@ func parseLyrics(body []byte) (*lyrics.Payload, error) {
 		}
 	}
 	if err := json.Unmarshal(body, &r); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w：酷我歌词响应无法解析", lyrics.ErrFormat)
 	}
-	if r.Status != 200 {
-		return nil, fmt.Errorf("酷我歌词接口错误（status=%d）：%s", r.Status, r.Msg)
+	status := r.Status
+	if openapi {
+		status = r.Code
+	}
+	if status == nil {
+		return nil, fmt.Errorf("%w：酷我歌词响应缺少业务状态", lyrics.ErrFormat)
+	}
+	if *status != 200 {
+		return nil, &provider.BusinessError{Source: "酷我", Block: "lyrics", Code: *status}
 	}
 	if r.Data == nil || r.Data.Lrclist == nil {
+		return nil, lyrics.ErrNoLyrics
+	}
+	if len(r.Data.Lrclist) == 0 {
 		return nil, lyrics.ErrNoLyrics
 	}
 	timed := []lyrics.TimedLine{}
