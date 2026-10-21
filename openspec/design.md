@@ -17,7 +17,8 @@ Wails v2 + Go；Vue 3 + TypeScript + Tailwind CSS v4 + Volt + Lucide Icons + Pin
 | `internal/importer/`、`internal/export/` | 表格解析、持久化队列、CSV / JSON 导出 |
 | `internal/covers/`、`internal/config/` | 通用封面目录、用途解析、下载工作池、专辑图片文件与本地图片服务；数据路径与设置 |
 | `internal/covers/sources/` | 封面搜索消费侧契约、来源集合、相关性规则；不含具体来源协议 |
-| `internal/lyrics/` | 歌词消费侧契约、来源集合、候选评分、通道状态与合并文本；不含具体来源协议或元数据注册 |
+| `internal/lyrics/` | 歌词消费侧契约、来源集合、匹配/内容评分与编排；只读上游交付文档 |
+| `internal/lyricdoc/` | 公共行词/文档模型、TXT/LRC 标准格式、通道合并、序列化及只读契约校验；仅依赖标准库 |
 | `frontend/src/` | 页面、共享组件、状态管理与统一 API 入口 |
 
 Volt 组件源码位于 `frontend/src/volt/`，基于 `primevue@4.5.5` 的无样式模式，使用本地 Tailwind 样式与 Lucide 图标。颜色统一定义在 `frontend/src/style.css` 的 `--p-*` 变量中。来源与许可见 [组件说明](../frontend/src/volt/README.md)，依赖版本以锁文件为准。
@@ -43,8 +44,11 @@ app/upstreams.go → 各 provider/<upstream> 实现
        ├─ provider.Registry（MetadataProvider）
        ├─ lyrics.Service / Registry（lyrics.Provider）
        └─ covers/sources.Registry（sources.Provider）
-provider/<upstream> → 消费侧契约、provider 父包、domain
+provider/<upstream> → 消费侧契约、provider 父包、domain、lyricdoc
+provider/<upstream> → provider/lyricfetch → lyrics.FetchError（适配错误，不是传输设施）
 lyrics、covers/sources → provider 父包、domain / matching
+lyrics → lyricdoc（只读校验与评分，不构建内容）
+lyricdoc → 标准库
 covers → provider 图片策略、domain / store
 provider 父包 → domain（不反向依赖业务或具体上游）
 ```
@@ -61,19 +65,26 @@ QQ 三用途复用私有歌曲搜索原语，元数据和手动歌词共享 musi
 CAA 目录与缩略图共享索引解码及结构校验，目录身份/档位校验不混入缩略图回退。
 QQ 旧歌词端点也只有一份传输与解析：元数据优先详情原文、缺失才回退，手动歌词另有通道与逐字策略。
 QRC/DES/zlib/XML 位于 `provider/qqmusic/{qrc.go,qrcdes/}`，MIT 许可证及来源提交随代码保留。
-通用文本校验、评分、通道合并留在 lyrics；获取总超时覆盖配额等待、重试和所有子请求。
+公共格式、文本校验和通道合并在 lyricdoc，由来源返回前调用；评分留在 lyrics。
+获取总超时覆盖配额等待、重试和所有子请求。
 网易云占位文案在 `provider/netease/lyrics.go` 归一化为无歌词或通道 unavailable；
-lyrics 不使用跨来源正文黑名单，只处理 UTF-8、大小、文本格式与通道合并。
+lyrics 不使用跨来源正文黑名单，也不补做 UTF-8 解析、选轨、offset、去重或合并。
 来源占位不得掩盖超限或损坏，其他来源的同文案真实正文不因此被拒绝。
 
-歌词公共模型以 `Track / Line / Word` 保存毫秒时间、正文及可空真实词终点，
-`Payload.Text` 与多通道均经同一文档构建入口。仅选一套原文；附加轨只有精确时间唯一
+歌词公共模型以 `Track / Line / Word` 保存毫秒时间、正文及可空真实词终点。
+四来源成功获取均直接返回完整 `lyricdoc.Document`；`lyricdoc.Input` 仅为适配器构建输入，
+不跨能力边界。原生 YRC/KRC 行终点与空计时词片段保留，空壳不声明有效逐字。
+仅选一套原文；附加轨只有精确时间唯一
 匹配时才挂到对应预览行，同刻歧义、独立时间、未同步和未分类内容独立保留。
 去重保留不同词时间，同刻逐行副本让位于逐字轨，不删除不同时刻的重复副歌。
 通道区分 unavailable 与 unknown，记录 origin、syncStatus 和诊断，不生成翻译或音译。
 各轨按 `标签时间 - offset` 比较，多轨合并只折算一次并输出等价全局 offset；
 负实际时间通过全局 offset 保留，矛盾标签在单文本中保真并警告，多轨无法安全合并则拒绝。
 `ParseText` 只规范化 BOM/换行，不重写导入的空白、标签和正文；在线多轨生成规范化文本。
+本地文件入口独立位于 `app/bindings_lyrics_input.go`；在线采用只校验已有文档并原样保存文本。
+构建器在同一结果上生成文本、行投影、状态及内容摘要；只读 `Validate` 验证必要字段、大小和摘要，
+拒绝半成品及交付后的字段变化，不重新解析、分类、序列化或修复。摘要不是会话权限或用户预览批准。
+业务版本和预览批准不属于公共 Document；当前仍待预取阶段接入。
 `ErrFormat / ErrTooLarge / ErrNoLyrics` 分别表示解析、超限和无正文；绝对标签不超过 24 小时，
 单轨、展开结构、预览投影和最终文本均有 2 MiB 边界。仅 `Document.Text` 可供采用，
 行投影和通道中间结构不入库。当前搜索 UI 尚未消费新投影，前端接入另属后续任务。
@@ -148,7 +159,7 @@ SQLite 开启 WAL 与外键，先检查 `upstream-snapshot-v1` 模型代际，�
 6. 保存固定字段、绑定、保存方式、迁入集合、对应位置及文件动作，事务内重验相关修订与准入；原地修改封存全部关联歌曲修订，结构变化检查全部收藏位置，仅当前编辑歌曲接收歌曲字段草稿。新发行提前选择 JavaScript 安全整数 ID 而不创建实体，用于提交前准备最终封面目录；事务检验碰撞。失败保留旧正式数据与草稿，成功发布统一刷新事件。
 7. 封面来源策略保留缓存、配额、共享工作池和取消语义；编辑采用先暂存，不调用立即采用接口。明确使用上游封面时读取上游预览，不把目标的用户采用误当上游值；既有详情页独立采用入口仍可使用。
 8. 独立歌词搜索按来源建立有界内存会话，关闭取消、30 分钟失效，不读写原始响应缓存。候选复用默认评分，局部准入与高置信规则不影响元数据；汇总当前来源后才自动预览高置信最优项，人工选择优先，采用仍须明确点击。`StageLyrics / SaveLyrics` 复用文件哈希、事务引用及曲目修订，只改当前歌词，保留既有 user/follow 比较规则。
-9. 歌词能力执行复用 provider 传输、当前门禁、交互优先级、共享平台桶与有限重试；上游专有编码、错误与回退由适配器处理，业务仅接收候选或 Payload 并组装 Document。手动 QQ 批量请求逐字与普通块，保留可用通道，必要时回退；元数据不改用手动逐字链路。协议及内容边界见[歌词搜索](specs/upstream/lyrics-search/spec.md)和[QQ 音乐](specs/upstream/qqmusic/spec.md)。
+9. 歌词能力执行复用 provider 传输、当前门禁、交互优先级、共享平台桶与有限重试；上游专有编码、错误与回退由适配器处理，业务仅接收候选或完整 Document。手动 QQ 批量请求逐字与普通块，保留可用通道，必要时回退；元数据不改用手动逐字链路。协议及内容边界见[歌词搜索](specs/upstream/lyrics-search/spec.md)和[QQ 音乐](specs/upstream/qqmusic/spec.md)。
 
 ## 前端约定
 
@@ -167,4 +178,4 @@ SQLite 开启 WAL 与外键，先检查 `upstream-snapshot-v1` 模型代际，�
 
 Wails 绑定、`dist/`、测试报告为生成产物，不提交。首次检出或修改 Go API 后先生成绑定，命令见[开发说明](../README.md#开发与验证)。
 
-Go 测试通常与实现同包，跨上游组合测试放在 `internal/app`，避免反向导入造成循环；生产依赖由 `internal/acceptance/upstream_boundaries_test.go` 检查。离线测试数据位于 `testdata/`。业务回归应经过实际绑定、解析和隔离数据库；仅测试存储函数不足以证明页面功能完成。前端使用 Vitest 及带 Wails 测试替身的 Chromium/WebKit 回归。2026-10-16 用户确认的原生人工验收属于此前上游/编辑器变更，不扩展为后续独立歌词功能验收；最近文档同步、既有浏览器失败及历史测试边界见[核对记录](verification.md)，后续原生回归及大曲库性能仍须使用独立证据。
+Go 测试通常与实现同包，跨上游组合测试放在 `internal/app`，避免反向导入造成循环；生产依赖由 `internal/acceptance/upstream_boundaries_test.go` 检查（包含公共格式工具、provider 父包、装配例外、歌词前端与后处理调用禁令）。离线测试数据位于 `testdata/`。业务回归应经过实际绑定、解析和隔离数据库；仅测试存储函数不足以证明页面功能完成。前端使用 Vitest 及带 Wails 测试替身的 Chromium/WebKit 回归。2026-10-16 用户确认的原生人工验收属于此前上游/编辑器变更，不扩展为后续独立歌词功能验收；最近文档同步、既有浏览器失败及历史测试边界见[核对记录](verification.md)，后续原生回归及大曲库性能仍须使用独立证据。

@@ -20,6 +20,33 @@ import (
 	"time"
 )
 
+// Even local upstream defaults are wired here. Binding code consumes the
+// injected data/functions without importing a concrete provider.
+func newAppWithUpstreamDefaults(version string) *App {
+	a := &App{version: version, registry: provider.NewRegistry(), countries: []CountryOption{}}
+	for _, code := range itunes.SupportedCountries() {
+		a.countries = append(a.countries, CountryOption{Code: code, Name: itunes.CountryDisplayName(code)})
+	}
+	a.countryHint = func(text string) CountryHint {
+		s := itunes.DetectCountry(text)
+		return CountryHint{Country: s.Country, Message: s.Message(), Detected: s.Detected}
+	}
+	return a
+}
+
+func configureCoverDefaults(svc *covers.Service) error {
+	svc.RegisterArtwork((&musicbrainz.Provider{}).ArtworkStrategy())
+	svc.RegisterArtwork((&itunes.Provider{}).ArtworkStrategy())
+	svc.RegisterArtwork((&qqmusic.Provider{}).ArtworkStrategy())
+	policies, err := defaultImagePolicies()
+	if err != nil {
+		return err
+	}
+	svc.SetImagePolicies(policies)
+	svc.Pool().SetIndexParser(caa.ParseCAAThumbnailIndex)
+	return nil
+}
+
 type upstreamServices struct {
 	client   *provider.Client
 	metadata *provider.Registry

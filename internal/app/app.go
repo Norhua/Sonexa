@@ -18,10 +18,6 @@ import (
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
-	"github.com/norhua/sonexa/internal/provider/caa"
-	"github.com/norhua/sonexa/internal/provider/itunes"
-	"github.com/norhua/sonexa/internal/provider/musicbrainz"
-	"github.com/norhua/sonexa/internal/provider/qqmusic"
 	"github.com/norhua/sonexa/internal/store"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -50,6 +46,8 @@ type App struct {
 	pickLyricsFile  func(context.Context, runtime.OpenDialogOptions) (string, error)
 	lyricSessions   map[string]*lyricSession
 	lyricWorkers    sync.WaitGroup
+	countries       []CountryOption
+	countryHint     func(string) CountryHint
 	runner          *importer.Runner
 	// enricher 是后台的「补全信息匹配」任务：入库不再同步补详情，
 	// 详情由它在空闲时按条补上（见 enrichWorker）。
@@ -74,7 +72,7 @@ type App struct {
 
 // NewApp 构造绑定层实例。真正的初始化在 startup 中完成。
 func NewApp(version string) *App {
-	return &App{version: version, registry: provider.NewRegistry()}
+	return newAppWithUpstreamDefaults(version)
 }
 
 // startup 在 Wails 启动时调用。
@@ -384,14 +382,9 @@ func newCoverService(st *store.Store, paths config.Paths, cur config.Settings, v
 		return nil, err
 	}
 	svc := covers.NewService(cache, cur.Cache.CoverConcurrency, provider.UserAgentFor(version, cur.MusicBrainz.Contact))
-	svc.RegisterArtwork((&musicbrainz.Provider{}).ArtworkStrategy())
-	svc.RegisterArtwork((&itunes.Provider{}).ArtworkStrategy())
-	svc.RegisterArtwork((&qqmusic.Provider{}).ArtworkStrategy())
-	policies, err := defaultImagePolicies()
-	if err != nil {
+	if err := configureCoverDefaults(svc); err != nil {
 		return nil, err
 	}
-	svc.SetImagePolicies(policies)
 	if err := svc.AttachLibrary(st); err != nil {
 		return nil, err
 	}
@@ -420,7 +413,6 @@ func (a *App) attachLadderBuilder(svc *covers.Service) *covers.Service {
 			svc.RegisterArtwork(source.ArtworkStrategy())
 		}
 	}
-	svc.Pool().SetIndexParser(caa.ParseCAAThumbnailIndex)
 	svc.SetLadderBuilder(func(providerID, ref, releaseGroupRef string) []string {
 		var rg *string
 		if releaseGroupRef != "" {

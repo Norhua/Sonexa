@@ -9,7 +9,6 @@ import (
 
 	"github.com/norhua/sonexa/internal/config"
 	"github.com/norhua/sonexa/internal/provider"
-	"github.com/norhua/sonexa/internal/provider/itunes"
 )
 
 // ProviderInfo 描述一个已注册的上游，供界面动态渲染。
@@ -147,12 +146,7 @@ type CountryOption struct {
 
 // ListCountries 返回地区下拉的候选。
 func (a *App) ListCountries() []CountryOption {
-	codes := itunes.SupportedCountries()
-	out := make([]CountryOption, 0, len(codes))
-	for _, c := range codes {
-		out = append(out, CountryOption{Code: c, Name: itunes.CountryDisplayName(c)})
-	}
-	return out
+	return append([]CountryOption{}, a.countries...)
 }
 
 // CountryHint 是文字系统探测给出的建议。
@@ -166,8 +160,10 @@ type CountryHint struct {
 //
 // 探测结果仅作为建议并在界面上明确提示；用户手动选择优先，不被反复覆盖。
 func (a *App) SuggestCountry(text string) CountryHint {
-	s := itunes.DetectCountry(text)
-	return CountryHint{Country: s.Country, Message: s.Message(), Detected: s.Detected}
+	if a.countryHint == nil {
+		return CountryHint{}
+	}
+	return a.countryHint(text)
 }
 
 // AboutInfo 是「关于」页的内容。

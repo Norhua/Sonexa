@@ -13,7 +13,7 @@
 - [x] 1.5 为时间溢出、解析展开、预览结构及最终文本设置有界检查，统一解析/超限错误；扩展多时间戳展开超限测试，运行 `go test ./internal/lyrics`，在 `openspec/design.md` 更新已落地模型和采用文本边界。
 - [x] 1.6 将歌词 Provider 获取契约改为返回完整 `lyricdoc.Document`，迁移 QQ/网易云/酷狗/酷我及单能力 fake；普通/逐字原文选择、通道识别、原生错误归一化、回退、合并和序列化均在适配器返回前完成，构建输入不再跨能力边界。直接调用四来源能力的离线测试须无需 Service 组装即可取得一致的文本、结构、阅读行和状态，验证部分失败及纯文本来源同样满足契约。
 - [x] 1.7 删除 `lyrics.Service` 的 Payload/DocumentFromPayload 后处理链，评分只读已规范化文档，业务入口只能不修改内容地接受或拒绝；拆分本地 TXT/LRC 输入适配和在线采用路径。用注入假来源测试半成品拒绝且不修复，原文选择/通道分类/offset/去重不在业务重复发生，评分、预览和采用前后文本与结构完全相同，本地 BOM/空白保真回归通过。
-- [ ] 1.8 核对并收紧 `internal/app/upstreams.go` 装配注入和 `internal/acceptance/upstream_boundaries_test.go`：具体来源只能由装配创建，业务/绑定/前端无来源专有内容分支，公共格式工具与 provider 父包无反向依赖；增加检查器反例及非内置单能力来源替换测试。运行 `go test ./internal/acceptance ./internal/lyricdoc ./internal/lyrics ./internal/provider/... ./internal/app`，迁移 1.2–1.5 的合成测试，更新 README、当前架构中的真实职责及调用方向。
+- [x] 1.8 核对并收紧 `internal/app/upstreams.go` 装配注入和 `internal/acceptance/upstream_boundaries_test.go`：具体来源只能由装配创建，业务/绑定/前端无来源专有内容分支，公共格式工具与 provider 父包无反向依赖；增加检查器反例及非内置单能力来源替换测试。运行 `go test ./internal/acceptance ./internal/lyricdoc ./internal/lyrics ./internal/provider/... ./internal/app`，迁移 1.2–1.5 的合成测试，更新 README、当前架构中的真实职责及调用方向。
 
 ## 2. 两阶段评分与可解释排序
 

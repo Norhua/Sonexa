@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,7 +18,7 @@ const internalModule = "github.com/norhua/sonexa/internal/"
 
 func capabilityBusiness(path string) bool {
 	return strings.HasPrefix(path, "lyrics/") || strings.HasPrefix(path, "covers/") ||
-		path == "app/bindings_lyrics.go" || path == "app/bindings_cover_search.go"
+		strings.HasPrefix(path, "app/bindings_lyrics") || path == "app/bindings_cover_search.go"
 }
 
 // Inspect production ASTs, including files excluded by today's platform/build
@@ -26,11 +27,23 @@ func capabilityViolations(path string, file *ast.File) []string {
 	var problems []string
 	business := capabilityBusiness(path)
 	parent := filepath.ToSlash(filepath.Dir(path)) == "provider"
+	formatTool := strings.HasPrefix(path, "lyricdoc/")
+	adapter := strings.HasPrefix(path, "provider/") && !parent
+	imports := map[string]string{}
 	for _, spec := range file.Imports {
 		imported, _ := strconv.Unquote(spec.Path.Value)
-		if (business && strings.HasPrefix(imported, internalModule+"provider/")) ||
-			(parent && strings.HasPrefix(imported, internalModule) && imported != internalModule+"domain") {
+		name := filepath.Base(imported)
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		imports[name] = imported
+		if (!adapter && path != "app/upstreams.go" && strings.HasPrefix(imported, internalModule+"provider/")) ||
+			(parent && strings.HasPrefix(imported, internalModule) && imported != internalModule+"domain") ||
+			(formatTool && (strings.Contains(imported, ".") || imported == "net" || strings.HasPrefix(imported, "net/") || imported == "os")) {
 			problems = append(problems, "反向依赖: "+imported)
+		}
+		if business && imported == internalModule+"lyricdoc" && name == "." {
+			problems = append(problems, "业务不能点导入格式工具")
 		}
 		if business {
 			switch imported {
@@ -39,16 +52,30 @@ func capabilityViolations(path string, file *ast.File) []string {
 			}
 		}
 	}
-	if !business {
+	if !business && !formatTool {
 		return problems
 	}
 	ast.Inspect(file, func(n ast.Node) bool {
-		if literal, ok := n.(*ast.BasicLit); ok && literal.Kind == token.STRING {
-			value, _ := strconv.Unquote(literal.Value)
-			lower := strings.ToLower(value)
-			for _, protocol := range []string{"https://", "http://", "musicu.fcg", "fcg_query_lyric", "dosearchforqqmusicdesktop", "getplaylyricinfo", "weapi/", "encseckey", "accesskey", "json:\"songmid", "json:\"qrc", "release-group", "纯音乐请欣赏", "纯音乐，请欣赏", "此歌曲暂无歌词"} {
-				if strings.Contains(lower, protocol) {
-					problems = append(problems, "上游协议字符串: "+protocol)
+		// Catch direct calls and aliases such as finish := doc.Build. The
+		// only allowed consumer-side construction is the local file adapter.
+		if selector, ok := n.(*ast.SelectorExpr); ok && business {
+			if pkg, ok := selector.X.(*ast.Ident); ok && imports[pkg.Name] == internalModule+"lyricdoc" {
+				switch selector.Sel.Name {
+				case "Build", "Input", "TextChannel", "AbsentChannel", "UnknownChannel", "FailedChannel", "PreferredChannel", "SerializeTrack", "RenderTimed", "ParseText":
+					if path != "app/bindings_lyrics_input.go" || selector.Sel.Name != "ParseText" {
+						problems = append(problems, "业务不能构建或修复来源文档: "+selector.Sel.Name)
+					}
+				}
+			}
+		}
+		if !formatTool {
+			if literal, ok := n.(*ast.BasicLit); ok && literal.Kind == token.STRING {
+				value, _ := strconv.Unquote(literal.Value)
+				lower := strings.ToLower(value)
+				for _, protocol := range []string{"https://", "http://", "musicu.fcg", "fcg_query_lyric", "dosearchforqqmusicdesktop", "getplaylyricinfo", "weapi/", "encseckey", "accesskey", "json:\"songmid", "json:\"qrc", "release-group", "纯音乐请欣赏", "纯音乐，请欣赏", "此歌曲暂无歌词"} {
+					if strings.Contains(lower, protocol) {
+						problems = append(problems, "上游协议字符串: "+protocol)
+					}
 				}
 			}
 		}
@@ -106,9 +133,6 @@ func TestUpstreamCapabilityDependencyBoundaries(t *testing.T) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if !capabilityBusiness(rel) && filepath.ToSlash(filepath.Dir(rel)) != "provider" {
-			return nil
-		}
 		counts[strings.Split(rel, "/")[0]]++
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 		if err != nil {
@@ -122,7 +146,7 @@ func TestUpstreamCapabilityDependencyBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, area := range []string{"lyrics", "covers", "provider", "app"} {
+	for _, area := range []string{"lyrics", "lyricdoc", "covers", "provider", "app"} {
 		if counts[area] == 0 {
 			t.Errorf("未扫描 %s 生产源码", area)
 		}
@@ -137,6 +161,7 @@ func TestRetiredUpstreamPathsStayRemoved(t *testing.T) {
 		}
 	}
 	for path, names := range map[string][]string{
+		"lyrics":               {"Payload", "DocumentFromPayload", "ParseText", "TextChannel", "buildDocument", "normalizeChannel", "deduplicate"},
 		"provider":             {"Provider", "CoverGroup", "Head"},
 		"provider/itunes":      {"ResolveArtwork", "VerifyArtwork"},
 		"provider/musicbrainz": {"SearchCovers", "CoverArtProviderKey"},
@@ -173,6 +198,28 @@ func TestRetiredUpstreamPathsStayRemoved(t *testing.T) {
 	}
 }
 
+var lyricFrontendRule = regexp.MustCompile(`(?i)(?:[=!]==?\s*["'](?:qq|163|kugou|kuwo)["']|["'](?:qq|163|kugou|kuwo)["']\s*[=!]==?|case\s+["'](?:qq|163|kugou|kuwo)["']|getplaylyricinfo|weapi/|adoptKuwoBakedTranslation)`)
+
+func TestLyricsFrontendDoesNotInterpretSources(t *testing.T) {
+	for _, path := range []string{"../../frontend/src/stores/lyricsSearch.ts", "../../frontend/src/views/LyricsSearchView.vue", "../../frontend/src/lib/lyrics.ts"} {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if found := lyricFrontendRule.FindString(string(body)); found != "" {
+			t.Errorf("%s: 来源内容规则 %s", path, found)
+		}
+	}
+	for _, source := range []string{`if (source === 'kuwo') split()`, `if ('qq' !== source) parse()`, `case "163":`, `GetPlayLyricInfo`} {
+		if !lyricFrontendRule.MatchString(source) {
+			t.Fatalf("missed regression: %s", source)
+		}
+	}
+	if lyricFrontendRule.MatchString(`if (channel.status === 'available') show()`) {
+		t.Fatal("generic state rejected")
+	}
+}
+
 func TestCapabilityBoundaryCheckerRejectsRegressions(t *testing.T) {
 	for _, tc := range []struct {
 		path, source string
@@ -182,6 +229,20 @@ func TestCapabilityBoundaryCheckerRejectsRegressions(t *testing.T) {
 		{"covers/sources/search.go", `import "encoding/json"`, true},
 		{"provider/new.go", `import "github.com/norhua/sonexa/internal/lyrics"`, true},
 		{"provider/new.go", `import "github.com/norhua/sonexa/internal/provider/caa"`, true},
+		{"app/app.go", `import "github.com/norhua/sonexa/internal/provider/qqmusic"`, true},
+		{"app/bindings_settings.go", `import "github.com/norhua/sonexa/internal/provider/itunes"`, true},
+		{"app/upstreams.go", `import "github.com/norhua/sonexa/internal/provider/qqmusic"`, false},
+		{"lyricdoc/text.go", `import "github.com/norhua/sonexa/internal/provider"`, true},
+		{"lyricdoc/text.go", `import "github.com/norhua/sonexa/internal/lyrics"`, true},
+		{"lyricdoc/text.go", `import "net/http"`, true},
+		{"lyricdoc/text.go", `func f(source string) { if source == "kuwo" {} }`, true},
+		{"lyrics/service.go", `import d "github.com/norhua/sonexa/internal/lyricdoc"; var finish = d.Build`, true},
+		{"lyrics/service.go", `import . "github.com/norhua/sonexa/internal/lyricdoc"`, true},
+		{"app/bindings_lyrics.go", `import "github.com/norhua/sonexa/internal/lyricdoc"; var parse = lyricdoc.ParseText`, true},
+		{"app/bindings_lyrics_input.go", `import "github.com/norhua/sonexa/internal/lyricdoc"; var parse = lyricdoc.ParseText`, false},
+		{"lyrics/service.go", `import "github.com/norhua/sonexa/internal/lyricdoc"; var validate = lyricdoc.Validate`, false},
+		{"provider/new.go", `import "github.com/norhua/sonexa/internal/lyricdoc"`, true},
+		{"provider/new.go", `import "github.com/norhua/sonexa/internal/provider/lyricfetch"`, true},
 		{"provider/new.go", `import "github.com/norhua/sonexa/internal/domain"`, false},
 		{"app/bindings_lyrics.go", `var url = "https://y.qq.com/"`, true},
 		{"covers/search.go", `func f(source string) { if source == "qq" {} }`, true},

@@ -28,7 +28,8 @@ internal/
   matching/           文本处理、评分、入库判定
   importer/           表格解析与持久化导入队列
   covers/             目录、工作池、缓存与本地服务；sources/ 为消费侧契约
-  lyrics/             歌词能力契约、候选评分、通道合并与文本校验
+  lyrics/             歌词能力契约、匹配/内容评分与业务编排
+  lyricdoc/           公共行词模型、格式解析、通道合并和只读契约校验
   export/             CSV / JSON 导出
   config/             路径与设置
   acceptance/         跨模块验收测试
@@ -93,8 +94,14 @@ SONEXA_E2E_PREVIEW=1 npm run test:e2e
 
 ## 歌词来源验证
 
-歌词业务契约、评分和通道合并位于 `internal/lyrics`；四来源协议位于
-`internal/provider/{netease,qqmusic,kugou,kuwo}`，由 App 注入并由会话保留服务快照。
+歌词消费契约与评分位于 `internal/lyrics`；公共模型及标准格式工具位于
+`internal/lyricdoc`，不依赖业务、上游或网络。四来源协议位于
+`internal/provider/{netease,qqmusic,kugou,kuwo}`，由 `app/upstreams.go` 创建并注入，
+会话保留服务快照。每个来源在返回前完成选轨、通道识别、合并、去重和序列化，
+直接交付完整 `lyricdoc.Document`；业务只读校验、评分、预览和采用，不再组装 Payload。
+本地 TXT/LRC 由 `app/bindings_lyrics_input.go` 独立解析，在线采用不复用本地解析入口。
+适配器共用 `provider/lyricfetch` 映射统一错误类别，保留停止语义和错误链；
+该包不属于通用传输父包，业务不调用它解释平台错误。
 QQ QRC 转换和 MIT 许可的 DES 实现位于 `internal/provider/qqmusic/{qrc.go,qrcdes/}`，
 许可证及来源提交记录随实现保留。QQ 解码后按实际 QRC/LRC/文本识别三通道，
 容器支持动态轨名及唯一边界的字面引号容错；原文可用时保留同批普通块，
@@ -107,6 +114,7 @@ QQ QRC 转换和 MIT 许可的 DES 实现位于 `internal/provider/qqmusic/{qrc.
 酷狗 hash 子候选先验证标题/版本和下载标识，再按时长稳定选择；优先 KRC，
 Base64/文件头/XOR/有界 zlib 解码后保留相对词时间（包括合法负偏移）。
 language 按原始计时行关联，数量不符保留非同步内容，中文谐音不假称罗马音。
+原生行终点和空词片段起止保留在结构中；空片段不计为有效逐字覆盖。
 仅允许同候选 KRC→LRC 回退，候选搜索加下载最多三个协议阶段，限制类错误不回退。
 KRC 与附加轨已通过离线合成测试，真实来源可用性仍待显式验证。
 
@@ -119,6 +127,13 @@ SONEXA_QQ_PROBE=/path/to/local-response.json go test -v ./internal/provider/qqmu
 ```
 
 迁移后的离线回归不代表当前真实来源已验通；在线与原生验证边界单独记录。
+完整文档边界的阶段回归：
+
+```sh
+go test ./internal/acceptance ./internal/lyricdoc ./internal/lyrics ./internal/provider/... ./internal/app
+```
+
+Top 3 调度、版本预览批准及新阅读/综合列表 UI 仍在后续任务中，不由接口迁移宣称完成。
 
 上述歌词入口复用生产能力装配与共享平台桶，从 QQ 30 请求/分钟开始，全部来源合计最多
 40 次 API 实际发送，每来源最多试前三个候选。可选通道缺失照实记录；HTTP/业务限制或
