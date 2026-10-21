@@ -15,7 +15,7 @@ import Select from '@/volt/Select.vue'
 const store = useLyricsSearchStore()
 const settings = useSettingsStore()
 const extraChannel = ref<LyricExtraChannel>('translation')
-const extraOptions = [{ label: '歌词', value: 'translation' }, { label: '罗马音', value: 'romanization' }]
+const extraOptions = [{ label: '翻译', value: 'translation' }, { label: '罗马音', value: 'romanization' }]
 const searching = computed(() => Object.values(store.results).some(result => !lyricRoundFinished(result.phase)))
 const searchFailed = computed(() => Object.values(store.results).some(result => result.state === 'error'))
 const sourceName = (id: string) => store.sourceOptions.find(s => s.id === id)?.name ?? id
@@ -39,10 +39,6 @@ const sourceName = (id: string) => store.sourceOptions.find(s => s.id === id)?.n
               <button v-if="lyricRoundFinished(store.results[source.id]!.phase)" type="button" class="rounded p-1 text-muted-color hover:bg-emphasis focus-visible:outline focus-visible:outline-primary disabled:opacity-50" :aria-label="`重试 ${source.name}`" :title="`重试 ${source.name}`" :disabled="!settings.outboundAllowed || store.busy" @click="store.search(source.id)"><RotateCw class="size-3.5" aria-hidden="true" /></button>
               <span v-else role="status" :aria-label="`${source.name}：${lyricPhase(store.results[source.id]!.phase)}`"><LoaderCircle class="size-3.5 animate-spin text-muted-color" aria-hidden="true" /></span>
             </template>
-          </div>
-          <div class="ml-auto flex items-center gap-2 text-sm">
-            <label for="lyrics-extra-channel">额外展示：</label>
-            <Select v-model="extraChannel" input-id="lyrics-extra-channel" aria-label="额外展示" :options="extraOptions" option-label="label" option-value="value" size="small" class="w-28" />
           </div>
         </div>
         <p class="mt-2 text-xs text-muted-color">每来源按歌曲匹配预取前 3 项，再按歌词综合分跨来源排序。分数不是概率；等待所有来源结束后才自动预览合格高置信项，人工选择优先。</p>
@@ -81,7 +77,14 @@ const sourceName = (id: string) => store.sourceOptions.find(s => s.id === id)?.n
           <template v-if="store.selection">
             <p v-if="store.loading[store.selection.id]" role="status" class="text-sm text-muted-color">正在等待或获取歌词…</p>
             <template v-else-if="store.document">
-              <LyricsPreview :document="store.document" :candidate-id="store.selection.id" :version="store.documentVersion" :extra-channel="extraChannel" @displayed="store.acknowledge" />
+              <LyricsPreview :document="store.document" :candidate-id="store.selection.id" :version="store.documentVersion" :extra-channel="extraChannel" @displayed="store.acknowledge">
+                <template #toolbar-end>
+                  <div class="ml-auto flex items-center gap-2 text-sm">
+                    <label for="lyrics-extra-channel">额外展示：</label>
+                    <Select v-model="extraChannel" input-id="lyrics-extra-channel" aria-label="额外展示" :options="extraOptions" option-label="label" option-value="value" size="small" class="w-28" />
+                  </div>
+                </template>
+              </LyricsPreview>
               <SecondaryButton class="mt-4" size="small" :disabled="!settings.outboundAllowed || store.busy || !lyricRoundFinished(store.results[store.selection.source]?.phase ?? '')" @click="store.fetchSelected(true)">重新获取歌词</SecondaryButton>
             </template>
             <template v-else>

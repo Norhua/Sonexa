@@ -17,9 +17,12 @@ watch(() => [props.candidateId, props.version, props.document] as const, async (
 
 <template>
   <section aria-label="歌词正文">
-    <div class="mb-4 flex flex-wrap gap-2" role="group" aria-label="预览模式">
-      <SecondaryButton size="small" :aria-pressed="mode === 'reading'" @click="mode = 'reading'">阅读</SecondaryButton>
-      <SecondaryButton size="small" :aria-pressed="mode === 'raw'" @click="mode = 'raw'">原始文本</SecondaryButton>
+    <div class="mb-4 flex flex-wrap items-center gap-3" aria-label="歌词预览工具栏">
+      <div class="flex gap-2" role="group" aria-label="预览模式">
+        <SecondaryButton size="small" :aria-pressed="mode === 'reading'" @click="mode = 'reading'">阅读</SecondaryButton>
+        <SecondaryButton size="small" :aria-pressed="mode === 'raw'" @click="mode = 'raw'">原始文本</SecondaryButton>
+      </div>
+      <slot name="toolbar-end" />
     </div>
     <p v-if="document.offsetMs" class="mb-3 text-xs text-muted-color">全局偏移：{{ document.offsetMs }} 毫秒；时间列与原始文本标签一致。</p>
     <template v-if="mode === 'reading'">

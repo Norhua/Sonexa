@@ -50,6 +50,44 @@ func TestConservativeAlignmentAndAdditional(t *testing.T) {
 	}
 }
 
+// Characterizes the current exact-time policy, not a tolerance-based fix.
+// A centisecond translation can precede the millisecond original after sorting.
+func TestExactAlignmentKeepsSubCentisecondDifferences(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		original    string
+		translation string
+		want        int64
+		matched     bool
+	}{
+		{"exact", "[00:42.743]<00:42.743>Original <00:43.100>line", "[00:42.743]Translation", 42743, true},
+		{"three milliseconds", "[00:42.743]<00:42.743>Original <00:43.100>line", "[00:42.74]Translation", 42740, false},
+		{"six milliseconds", "[00:47.856]<00:47.856>Original <00:48.100>line", "[00:47.85]Translation", 47850, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, err := Build(&Input{Original: TextChannel(tc.original, nil), Translation: TextChannel(tc.translation, nil)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.matched {
+				if len(d.Rows) != 1 || len(d.Rows[0].Translation) != 1 || d.Rows[0].Translation[0] != "Translation" {
+					t.Fatalf("expected exact association: %+v", d.Rows)
+				}
+			} else {
+				if len(d.Rows) != 2 || d.Rows[0].Channel != "translation" || *d.Rows[0].TimeMS != tc.want || d.Rows[1].Channel != "original" || len(d.Rows[1].Translation) != 0 || *d.Rows[0].TimeMS >= *d.Rows[1].TimeMS {
+					t.Fatalf("expected independent earlier translation: %+v", d.Rows)
+				}
+				if len(d.Translation.Diagnostics) != 1 || d.Translation.Diagnostics[0].Code != "unaligned" {
+					t.Fatalf("missing alignment diagnostic: %+v", d.Translation.Diagnostics)
+				}
+			}
+			if !strings.Contains(d.Text, tc.original) || !strings.Contains(d.Text, "["+clock(tc.want)+"]Translation") || *d.Translation.Track.Lines[0].StartMS != tc.want {
+				t.Fatalf("normalization changed original timing: %q", d.Text)
+			}
+		})
+	}
+}
+
 func TestOneOriginalAndDistinctWordTimelines(t *testing.T) {
 	p := &Input{Original: TextChannel("[00:01]line version", nil), WordOriginal: TextChannel("[00:02]<00:02>word <00:02.5>version", nil), Translation: TextChannel("[00:01]translation", nil)}
 	d, err := Build(p)
