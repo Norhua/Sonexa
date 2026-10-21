@@ -73,8 +73,13 @@ func TestSettingsRetainLyricsServiceForUnfetchedCandidates(t *testing.T) {
 	if a.lyricSessions[session].service != oldService || a.lyricSessions[newSession].service != a.lyricSvc || a.lyricSvc == oldService || oldClient.Limiters != a.client.Limiters {
 		t.Fatal("旧会话、能力重建或共享配额身份丢失")
 	}
+	// An ended work round permits a single explicit fetch while retaining the
+	// original capability snapshot; do not prefetch both fixtures here.
+	sessionState := a.lyricSessions[session]
+	sessionState.roundCancel()
+	finishLyricsPrefetch(t, a, session)
 	doc, err := a.FetchLyrics(session, rows[0].ID)
-	if err != nil || doc.Text != "[00:01]旧候选的新获取" || calls.Load() != 2 {
+	if err != nil || doc.Document.Text != "[00:01]旧候选的新获取" || calls.Load() != 2 {
 		t.Fatalf("旧候选未使用原服务: doc=%+v err=%v calls=%d", doc, err, calls.Load())
 	}
 	next.MusicBrainz.Contact = ""
@@ -83,6 +88,9 @@ func TestSettingsRetainLyricsServiceForUnfetchedCandidates(t *testing.T) {
 	}
 	if _, err := a.FetchLyrics(session, rows[1].ID); err == nil || !strings.Contains(err.Error(), OutboundDisabledReason) || calls.Load() != 2 {
 		t.Fatalf("旧服务绕过当前门禁: %v calls=%d", err, calls.Load())
+	}
+	if err := a.AcknowledgeLyricsPreview(session, rows[0].ID, doc.Version); err != nil {
+		t.Fatal(err)
 	}
 	rev, _ := a.LyricsRevision(track)
 	if _, err := a.AdoptLyrics(session, rows[0].ID, rev); err != nil {

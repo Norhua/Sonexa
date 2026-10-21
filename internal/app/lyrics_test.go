@@ -133,8 +133,13 @@ func TestLyricsSearchSessionOwnershipGateAndCancellation(t *testing.T) {
 	if _, err := a.FetchLyrics(session, "forged"); err == nil {
 		t.Fatal("forged candidate")
 	}
-	d, err := a.FetchLyrics(session, cards[0].ID)
-	if err != nil || d.Format != "enhanced_lrc" {
+	finishLyricsPrefetch(t, a, session)
+	preview, err := a.FetchLyrics(session, cards[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := preview.Document
+	if d.Format != "enhanced_lrc" {
 		t.Fatalf("%+v %v", d, err)
 	}
 	other, err := a.CreateLyricsSearch(id)
@@ -144,6 +149,9 @@ func TestLyricsSearchSessionOwnershipGateAndCancellation(t *testing.T) {
 	defer a.CancelLyricsSearch(other)
 	if _, err := a.AdoptLyrics(other, cards[0].ID, rev); err == nil {
 		t.Fatal("adopt across sessions")
+	}
+	if err := a.AcknowledgeLyricsPreview(session, cards[0].ID, preview.Version); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := a.AdoptLyrics(session, cards[0].ID, rev); err != nil {
 		t.Fatal(err)

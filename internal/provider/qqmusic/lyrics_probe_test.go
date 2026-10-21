@@ -26,7 +26,7 @@ func TestLocalQQProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	channels := parseQQPlay(body)
+	channels, _ := parseQQPlay(body)
 	for _, ch := range []*lyricdoc.Channel{channels.Original, channels.Translation, channels.Romanization} {
 		t.Log(channelSummary(ch))
 	}

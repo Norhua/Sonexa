@@ -61,10 +61,12 @@ func TestKuwoInferenceStaysInsideAdapter(t *testing.T) {
 			if err != nil || len(candidates) != 1 {
 				t.Fatal(candidates, err)
 			}
-			d, err := a.FetchLyrics(session, candidates[0].ID)
+			finishLyricsPrefetch(t, a, session)
+			preview, err := a.FetchLyrics(session, candidates[0].ID)
 			if err != nil {
 				t.Fatal(err)
 			}
+			d := preview.Document
 			score := lyrics.ScoreContent(candidates[0], d, 0)
 			if source == "kuwo" {
 				if d.Translation.Status != "available" || len(d.Original.Track.Lines) != 8 || score.Terms[3].Value != 15 {
@@ -76,6 +78,9 @@ func TestKuwoInferenceStaysInsideAdapter(t *testing.T) {
 				}
 			} else if len(d.Original.Track.Lines) != 16 || score.Terms[3].Value != 0 || d.Translation.Status == "available" {
 				t.Fatal("other source ran Kuwo rule", d)
+			}
+			if err := a.AcknowledgeLyricsPreview(session, candidates[0].ID, preview.Version); err != nil {
+				t.Fatal(err)
 			}
 			revision, _ := a.LyricsRevision(id)
 			if _, err := a.AdoptLyrics(session, candidates[0].ID, revision); err != nil {

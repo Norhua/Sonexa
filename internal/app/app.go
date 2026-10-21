@@ -46,6 +46,7 @@ type App struct {
 	pickLyricsFile  func(context.Context, runtime.OpenDialogOptions) (string, error)
 	lyricSessions   map[string]*lyricSession
 	lyricWorkers    sync.WaitGroup
+	lyricRetention  *lyrics.RetentionBudget
 	countries       []CountryOption
 	countryHint     func(string) CountryHint
 	runner          *importer.Runner
@@ -327,6 +328,12 @@ func (a *App) shutdown(ctx context.Context) {
 	a.mu.Unlock()
 	a.coverWorkers.Wait()
 	a.lyricWorkers.Wait()
+	a.mu.Lock()
+	for id, session := range a.lyricSessions {
+		session.close()
+		delete(a.lyricSessions, id)
+	}
+	a.mu.Unlock()
 	if a.enricher != nil {
 		a.enricher.Stop()
 	}

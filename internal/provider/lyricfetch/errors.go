@@ -40,6 +40,8 @@ func Normalize(err error) error {
 		kind = "cancelled"
 	case errors.Is(err, context.DeadlineExceeded):
 		kind = "timeout"
+	case errors.Is(err, provider.ErrSendBudget):
+		kind = "budget"
 	case errors.Is(err, provider.ErrResponseTooLarge), errors.Is(err, lyricdoc.ErrTooLarge):
 		kind = "too_large"
 		if !errors.Is(err, lyricdoc.ErrTooLarge) {

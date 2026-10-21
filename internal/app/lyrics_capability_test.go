@@ -79,10 +79,12 @@ func TestSingleLyricsProviderThroughRealBindings(t *testing.T) {
 	if _, err := a.FetchLyrics(session, "forged"); err == nil {
 		t.Fatal("forged candidate accepted")
 	}
-	doc, err := a.FetchLyrics(session, rows[0].ID)
+	finishLyricsPrefetch(t, a, session)
+	preview, err := a.FetchLyrics(session, rows[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
+	doc := preview.Document
 	if doc != delivered {
 		t.Fatal("binding replaced upstream document")
 	}
@@ -92,6 +94,9 @@ func TestSingleLyricsProviderThroughRealBindings(t *testing.T) {
 	}
 	if err := lyricdoc.Validate(delivered); err != nil {
 		t.Fatal("preview/score changed content", err)
+	}
+	if err := a.AcknowledgeLyricsPreview(session, rows[0].ID, preview.Version); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := a.AdoptLyrics(session, rows[0].ID, rev); err != nil {
 		t.Fatal(err)

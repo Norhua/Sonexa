@@ -238,6 +238,26 @@ func TestQQFallbackKeepsNewTranslationAndReportsFailure(t *testing.T) {
 	}
 }
 
+func TestQQPartialBusinessFailureStopsBudgetButKeepsOrdinaryBlock(t *testing.T) {
+	calls := 0
+	client := providerClientForTest(func(*http.Request) string {
+		calls++
+		return `{"code":0,"req":{"code":2001},"plain":{"code":0,"data":{"lyric":"` + b64("[00:01]ordinary") + `"}}}`
+	})
+	budget := provider.NewSendBudget(16)
+	ctx := provider.WithSendBudget(context.Background(), budget)
+	doc, err := New(client, Config{}, nil).FetchLyrics(ctx, lyrics.Candidate{Ref: "mid"})
+	if err != nil || doc == nil || doc.Original.Status != "available" {
+		t.Fatal("same-response ordinary block lost", err)
+	}
+	if budget.Err() == nil || budget.Sent() != 1 || calls != 1 {
+		t.Fatal("partial restriction hidden from round", budget.Err(), calls)
+	}
+	if _, err := New(client, Config{}, nil).FetchLyrics(ctx, lyrics.Candidate{Ref: "next"}); err == nil || calls != 1 {
+		t.Fatal("restricted budget sent next candidate", err, calls)
+	}
+}
+
 func TestQQServiceFailureStopsFallback(t *testing.T) {
 	calls := 0
 	client := providerClientForTest(func(r *http.Request) string {
@@ -280,7 +300,8 @@ func TestQQRestrictedErrorsNeverFallback(t *testing.T) {
 
 func TestQQErrorsAndCancellation(t *testing.T) {
 	for _, body := range []string{`{}`, `{"code":2001}`, `{"code":0,"req":{"code":1},"plain":{"code":2}}`, `{"code":0,"req":{"code":0},"plain":{"code":0}}`, `not json`} {
-		if _, err := lyricdoc.Build(parseQQPlay([]byte(body))); err == nil {
+		channels, _ := parseQQPlay([]byte(body))
+		if _, err := lyricdoc.Build(channels); err == nil {
 			t.Fatalf("accepted %s", body)
 		}
 	}

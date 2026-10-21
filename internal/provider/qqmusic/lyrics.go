@@ -108,16 +108,21 @@ func qqRomanization(text string) *lyricdoc.Channel {
 	}
 	return qqDecodedChannel(decodeQRC(text))
 }
-func parseQQPlay(body []byte) *lyricdoc.Input {
+func parseQQPlay(body []byte) (*lyricdoc.Input, error) {
 	out := newQQChannels()
 	response, err := decodeEnvelope(body)
 	if err != nil {
-		return failedQQChannels(err)
+		return failedQQChannels(err), err
 	}
+	var restriction error
 	for i, name := range []string{"req", "plain"} {
 		data, err := qqBlockData(response, name)
 		if err != nil {
 			err = qqFormatError(err)
+			var failure *lyrics.FetchError
+			if normalized := lyricfetch.Normalize(err); errors.As(normalized, &failure) && failure.StopSource {
+				restriction = normalized
+			}
 			out.Warnings = append(out.Warnings, err.Error())
 			if i == 0 {
 				out.WordTiming = "error"
@@ -142,7 +147,7 @@ func parseQQPlay(body []byte) *lyricdoc.Input {
 		out.Translation = lyricdoc.PreferredChannel(out.Translation, qqDecodedChannel(qqText(data.Trans, data.Crypt == 1)))
 		out.Romanization = lyricdoc.PreferredChannel(out.Romanization, qqRomanization(data.Roma))
 	}
-	return out
+	return out, restriction
 }
 
 func legacyPayload(parsed *legacyLyrics) *lyricdoc.Input {
@@ -161,7 +166,9 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 	body, err := p.musicu(ctx, provider.NoStore, blocks)
 	channels := newQQChannels()
 	if err == nil {
-		channels = parseQQPlay(body)
+		var restriction error
+		channels, restriction = parseQQPlay(body)
+		provider.StopSendBudget(ctx, restriction)
 	} else {
 		// Transport errors have no permission to start another protocol stage.
 		if !lyricfetch.CanFallback(err) {
@@ -171,6 +178,18 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	for _, ch := range []*lyricdoc.Channel{channels.Original, channels.WordOriginal, channels.Translation, channels.Romanization} {
+		if ch == nil || ch.Err == nil {
+			continue
+		}
+		failure := lyricfetch.Normalize(ch.Err)
+		var stopped *lyrics.FetchError
+		if errors.As(failure, &stopped) && stopped.StopSource {
+			// A valid ordinary block can still be delivered, but a restricted
+			// sibling block must stop the remaining candidates in this round.
+			provider.StopSendBudget(ctx, failure)
+		}
 	}
 	if doc, parseErr := lyricdoc.Build(channels); parseErr == nil {
 		return doc, nil

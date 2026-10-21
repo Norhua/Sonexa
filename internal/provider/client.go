@@ -155,7 +155,9 @@ func (c *Client) getWithRetry(ctx context.Context, req GetRequest) ([]byte, erro
 
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
-		if c.Limiters != nil {
+		// Budgeted operations take quota at each actual send, including
+		// redirects. Unbudgeted callers retain their existing retry semantics.
+		if c.Limiters != nil && sendBudget(ctx) == nil {
 			if err := c.Limiters.Wait(ctx, req.Provider); err != nil {
 				return nil, err
 			}
@@ -166,6 +168,10 @@ func (c *Client) getWithRetry(ctx context.Context, req GetRequest) ([]byte, erro
 			return body, nil
 		}
 		lastErr = err
+		if budget := sendBudget(ctx); budget != nil && restrictedTransportError(err) {
+			budget.Stop(err)
+			return nil, err
+		}
 
 		// 不可重试的错误立刻上抛：400 的查询语法错误重试多少次都一样
 		if stopRestrictedRetry(ctx, err) || !IsRetryable(err) || attempt == attempts {
@@ -220,7 +226,15 @@ func (c *Client) do(ctx context.Context, req GetRequest) ([]byte, error) {
 	}
 	httpReq.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpForRequest(req.Redirects).Do(httpReq)
+	client := c.httpForRequest(req.Redirects)
+	if budget := sendBudget(ctx); budget != nil {
+		base := client.Transport
+		if base == nil {
+			base = http.DefaultTransport
+		}
+		client.Transport = budgetTransport{base: base, client: c, quota: req.Provider, budget: budget}
+	}
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, err
 	}

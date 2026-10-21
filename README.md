@@ -144,7 +144,9 @@ SONEXA_QQ_PROBE=/path/to/local-response.json go test -v ./internal/provider/qqmu
 go test ./internal/acceptance ./internal/lyricdoc ./internal/lyrics ./internal/provider/... ./internal/app
 ```
 
-Top 3 调度、版本预览批准及新阅读/综合列表 UI 仍在后续任务中，不由接口迁移宣称完成。
+后端已接入 Top 3 有界预取、摘要事件/快照、显式版本预览批准和保留内存限制，
+预算与取消边界见[架构设计](openspec/design.md#上游能力与装配)。
+新阅读/综合列表 UI 仍在后续任务中，不由后端测试宣称完成。
 
 上述歌词入口复用生产能力装配与共享平台桶，从 QQ 30 请求/分钟开始，全部来源合计最多
 40 次 API 实际发送，每来源最多试前三个候选。可选通道缺失照实记录；HTTP/业务限制或
