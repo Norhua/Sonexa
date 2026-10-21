@@ -54,6 +54,56 @@ func TestLyricsRetentionCloseBeforeReservedWorkerStarts(t *testing.T) {
 	}
 }
 
+func TestLyricsCancelledLateDocumentCannotAffectReplacementTarget(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	calls := 0
+	p := &prefetchSource{id: "only", count: 1, fetch: func(context.Context, lyrics.Candidate) (*lyricdoc.Document, error) {
+		calls++
+		if calls == 1 {
+			close(started)
+			<-release // deliberately ignore cancellation, like a late transport
+			return lyricdoc.ParseText("old target document")
+		}
+		return lyricdoc.ParseText("new target document")
+	}}
+	a, _, done := prefetchApp(t, p)
+	defer done()
+	firstTrack, nextTrack := lyricTrack(t, a), lyricTrack(t, a)
+	old, _ := a.CreateLyricsSearch(firstTrack)
+	oldCards, _ := a.SearchLyrics(old, "only", lyrics.Query{Title: "Song"})
+	oldSession := a.lyricSessions[old]
+	a.StartLyricsPrefetch(old)
+	<-started
+	a.CancelLyricsSearch(old)
+	next, _ := a.CreateLyricsSearch(nextTrack)
+	cards, _ := a.SearchLyrics(next, "only", lyrics.Query{Title: "Song"})
+	a.StartLyricsPrefetch(next)
+	close(release)
+	a.lyricWorkers.Wait()
+	if len(oldSession.documents) != 0 || oldSession.retainedBytes != 0 {
+		t.Fatal("cancelled source committed late document")
+	}
+	if _, err := a.FetchLyrics(old, oldCards[0].ID); err == nil {
+		t.Fatal("cancelled session revived")
+	}
+	preview, err := a.FetchLyrics(next, cards[0].ID)
+	if err != nil || preview.Document.Text != "new target document" {
+		t.Fatal("replacement target lost its document", err)
+	}
+	if err := a.AcknowledgeLyricsPreview(next, cards[0].ID, preview.Version); err != nil {
+		t.Fatal(err)
+	}
+	revision, _ := a.LyricsRevision(nextTrack)
+	if _, err := a.AdoptLyrics(next, cards[0].ID, revision); err != nil {
+		t.Fatal(err)
+	}
+	oldDetail, _ := a.GetTrackDetail(firstTrack)
+	newDetail, _ := a.GetTrackDetail(nextTrack)
+	if oldDetail.Metadata.Lyrics != nil || newDetail.Metadata.Lyrics == nil || *newDetail.Metadata.Lyrics != preview.Document.Text {
+		t.Fatal("late document changed target")
+	}
+}
+
 func TestLyricsRetentionRejectsNewDocumentsWithoutEviction(t *testing.T) {
 	doc, err := lyricdoc.Build(&lyricdoc.Input{Text: "[00:01]private original", Translation: lyricdoc.TextChannel("private translation", nil)})
 	if err != nil {

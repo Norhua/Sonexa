@@ -61,7 +61,10 @@ func TestKuwoInferenceStaysInsideAdapter(t *testing.T) {
 			if err != nil || len(candidates) != 1 {
 				t.Fatal(candidates, err)
 			}
-			finishLyricsPrefetch(t, a, session)
+			snapshot := finishLyricsPrefetch(t, a, session)
+			if snapshot.Success != 1 || snapshot.Candidates[0].Translation.Status != map[string]string{"kuwo": "available", "163": "unavailable"}[source] {
+				t.Fatal("candidate summary did not match source channels")
+			}
 			preview, err := a.FetchLyrics(session, candidates[0].ID)
 			if err != nil {
 				t.Fatal(err)
