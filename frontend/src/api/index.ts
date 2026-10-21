@@ -15,6 +15,7 @@ export const Events = {
   LibraryChanged: 'library:changed',
   CoverChanged: 'cover:changed',
   CoverResults: 'cover:results',
+  LyricsProgress: 'lyrics:progress',
   ProviderResults: 'upstream:providerResults',
 } as const
 

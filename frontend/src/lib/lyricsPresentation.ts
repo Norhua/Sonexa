@@ -1,0 +1,36 @@
+import type { Models } from '@/api'
+
+// Model shapes come from Wails; the bridge sends data, not class helper methods.
+export type LyricData<T> = T extends (infer U)[] ? LyricData<U>[] : T extends object
+  ? { [K in keyof T as T[K] extends (...args: never[]) => unknown ? never : K]: LyricData<T[K]> }
+  : T
+export type LyricDocument = LyricData<Models.lyricdoc.Document>
+export type LyricCandidate = Omit<LyricData<Models.lyrics.Candidate>, 'totalScore'> & { totalScore?: number | null }
+export type LyricChannel = LyricData<Models.lyrics.ChannelSummary>
+export type LyricCard = LyricCandidate & Omit<LyricData<Models.lyrics.CandidateSummary>, 'candidate'>
+export type LyricProgress = Omit<LyricData<Models.app.LyricsProgress>, 'candidates'> & {
+  candidates: (Omit<LyricData<Models.lyrics.CandidateSummary>, 'candidate'> & { candidate: LyricCandidate })[]
+}
+
+export const lyricFormat = (format?: string) => ({ text: '文本', lrc: 'LRC 时间轴歌词', enhanced_lrc: '增强型 LRC' }[format ?? ''] ?? '待确认')
+export const lyricPhase = (phase: string) => ({ searching: '正在搜索', ready: '等待预取', prefetching: '正在预取', done: '已完成', partial: '部分完成', stopped: '已停止', error: '搜索失败' }[phase] ?? phase)
+export const lyricFailure = (kind?: string) => ({ no_lyrics: '暂无歌词', format: '解析失败', contract: '文档校验失败', timeout: '已超时', cancelled: '已取消', budget: '请求预算耗尽', memory_limit: '会话内存已达上限', too_large: '歌词超限', auth: '来源需要认证', rate_limit: '来源限流', tls: '安全连接失败', transport: '网络请求失败', upstream: '来源限制', source_stopped: '来源已停止', fetch: '获取失败' }[kind ?? ''] ?? '尚未检查')
+export const lyricChannelStatus = (channel?: LyricChannel) => {
+  const status = channel?.status ?? 'pending'
+  const label = ({ available: '有', unavailable: '未提供', pending: '待检查', loading: '获取中', error: '失败', unknown: '无法确认' }[status] ?? '无法确认')
+  if (status !== 'available') return label
+  const notes: string[] = []
+  if (channel?.diagnostics?.some(d => d.ruleVersion)) notes.push('启发式识别')
+  if (channel?.syncStatus === 'unsynced') notes.push('未同步')
+  if (channel?.syncStatus === 'partial') notes.push('部分')
+  return label + (notes.length ? `（${notes.join('、')}）` : '')
+}
+export const lyricChannelBasis = (channel?: LyricChannel) => channel?.diagnostics?.filter(d => d.ruleVersion)
+  .map(d => `规则 ${d.ruleVersion} · 第 ${d.layer} 层 · ${d.count} 行；经验推断，可能误判`).join('；') ?? ''
+export const lyricRoundFinished = (phase: string) => ['done', 'partial', 'stopped', 'error'].includes(phase)
+export const lyricTime = (ms?: number) => ms == null ? '—' : `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`
+
+export function pendingLyricCard(candidate: LyricCandidate, prefetch: boolean): LyricCard {
+  const pending = (): LyricChannel => ({ status: 'pending', origin: 'unknown', syncStatus: 'unknown' })
+  return { ...candidate, prefetch, fetchState: 'pending', documentVersion: 0, wordTiming: 'pending', translation: pending(), romanization: pending() }
+}

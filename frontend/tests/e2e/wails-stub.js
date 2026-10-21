@@ -60,6 +60,11 @@
     return fn(...args)
   }
 
+  const lyricSessions = new Map()
+  const lyricChannel = (status = 'unavailable') => ({ status, origin: 'independent', syncStatus: 'unknown' })
+  const lyricSnapshot = session => JSON.parse(JSON.stringify(session.progress))
+  const lyricDocument = id => window.__lyricDocument?.(id) ?? ({ text: '[00:01.00]歌词', format: 'lrc', offsetMs: 0, rows: [{ timeMs: 1000, text: '歌词', channel: 'original' }], original: lyricChannel('available'), translation: lyricChannel(), romanization: lyricChannel(), wordTiming: 'unavailable' })
+
   window.go = {
     app: {
       App: {
@@ -104,11 +109,64 @@
         CoverTargetOutcomes: async queries => queries.map(() => 'empty'),
         LyricsRevision: async () => 0,
         ListLyricsSources: async () => [{ id: '163', name: '网易云音乐' }, { id: 'qq', name: 'QQ 音乐' }, { id: 'kugou', name: '酷狗音乐' }, { id: 'kuwo', name: '酷我音乐' }],
-        CreateLyricsSearch: async () => crypto.randomUUID(),
-        CancelLyricsSearch: async () => {},
-        SearchLyrics: async () => [],
-        FetchLyrics: async () => ({ text: '[00:01.00]歌词', format: 'lrc' }),
-        AdoptLyrics: async () => 1,
+        CreateLyricsSearch: async () => { const id = crypto.randomUUID(); lyricSessions.set(id, { documents: {}, approved: {}, started: false }); return id },
+        CancelLyricsSearch: async id => { lyricSessions.delete(id) },
+        SearchLyrics: async (id, source, query) => {
+          const rows = await window.__lyricSearch?.(source, query) ?? []
+          const session = lyricSessions.get(id)
+          if (!session) throw new Error('session closed')
+          session.progress = { sessionId: id, source, sequence: 2, phase: rows.length ? 'ready' : 'done', searched: rows.length, selected: Math.min(3, rows.length), success: 0, noLyrics: 0, failed: 0, incomplete: Math.min(3, rows.length), candidates: rows.map((candidate, i) => ({ candidate, fetchState: 'pending', prefetch: i < 3, documentVersion: 0, translation: lyricChannel('pending'), romanization: lyricChannel('pending'), wordTiming: 'pending' })) }
+          return rows
+        },
+        StartLyricsPrefetch: async id => {
+          const session = lyricSessions.get(id)
+          if (!session) throw new Error('session closed')
+          if (!session.started) {
+            session.started = true
+            for (const item of session.progress.candidates.filter(c => c.prefetch)) {
+              const doc = await lyricDocument(item.candidate.id)
+              session.documents[item.candidate.id] = { document: doc, version: 1 }
+              Object.assign(item, { fetchState: 'ready', format: doc.format, documentVersion: 1, translation: { ...doc.translation, diagnostics: doc.translation?.diagnostics?.map(d => ({ code: d.code, ...d.inference, associations: undefined })) }, romanization: doc.romanization, wordTiming: doc.wordTiming })
+            }
+            Object.assign(session.progress, { phase: 'done', sequence: 4, success: session.progress.selected, incomplete: 0 })
+            emit('lyrics:progress', lyricSnapshot(session))
+          }
+          return lyricSnapshot(session)
+        },
+        LyricsSearchSnapshot: async id => lyricSnapshot(lyricSessions.get(id)),
+        FetchLyrics: async (id, key) => {
+          window.__lyricReads = (window.__lyricReads ?? 0) + 1
+          const session = lyricSessions.get(id)
+          if (!session) throw new Error('session closed')
+          if (!session.documents[key]) {
+            const item = session.progress.candidates.find(c => c.candidate.id === key)
+            if (!item) throw new Error('暂无歌词')
+            const doc = await lyricDocument(key)
+            session.documents[key] = { document: doc, version: 1 }
+            Object.assign(item, { fetchState: 'ready', format: doc.format, documentVersion: 1, translation: doc.translation, romanization: doc.romanization, wordTiming: doc.wordTiming })
+            item.candidate.totalScore = item.candidate.matchScore + 10
+            session.progress.sequence++
+            emit('lyrics:progress', lyricSnapshot(session))
+          }
+          return session.documents[key]
+        },
+        AcknowledgeLyricsPreview: async (id, key, version) => {
+          const session = lyricSessions.get(id)
+          if (session?.documents[key]?.version !== version) throw new Error('歌词版本已变化')
+          if (window.__lyricAcknowledge) await window.__lyricAcknowledge(id, key, version)
+          session.approved[key] = version
+        },
+        RefreshLyrics: async (id, key) => {
+          const session = lyricSessions.get(id), version = (session.documents[key]?.version ?? 0) + 1
+          delete session.approved[key]
+          session.documents[key] = { document: await lyricDocument(key), version }
+          return session.documents[key]
+        },
+        AdoptLyrics: async (id, key) => {
+          const session = lyricSessions.get(id)
+          if (!session?.approved[key] || session.approved[key] !== session.documents[key]?.version) throw new Error('请先预览')
+          return 1
+        },
         PickAndAdoptLyrics: async () => ({ cancelled: true, revision: 0 }),
         ClearLyrics: async () => 1,
         CoverRevision: async () => 0,
@@ -239,6 +297,10 @@
   }
 
   function emit(name, ...data) {
+    if (name === 'lyrics:progress') {
+      window.__lyricProgress ??= {}
+      window.__lyricProgress[data[0].source] = JSON.parse(JSON.stringify(data[0]))
+    }
     for (const fn of listeners[name] ?? []) fn(...data)
   }
 

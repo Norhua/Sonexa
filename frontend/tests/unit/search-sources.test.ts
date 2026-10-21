@@ -6,8 +6,8 @@ import { useLyricsSearchStore } from '../../src/stores/lyricsSearch'
 
 vi.mock('../../src/api', () => ({ App: {
   ListCoverSources: vi.fn(), CoverRevision: vi.fn(), StartCoverSearch: vi.fn(), CancelCoverSearch: vi.fn(), CoverSearchResults: vi.fn(),
-  ListLyricsSources: vi.fn(), LyricsRevision: vi.fn(), CreateLyricsSearch: vi.fn(), SearchLyrics: vi.fn(), CancelLyricsSearch: vi.fn(),
-}, Events: { CoverResults: 'cover:results' }, EventsOn: vi.fn(() => vi.fn()) }))
+  ListLyricsSources: vi.fn(), LyricsRevision: vi.fn(), CreateLyricsSearch: vi.fn(), SearchLyrics: vi.fn(), CancelLyricsSearch: vi.fn(), StartLyricsPrefetch: vi.fn(), LyricsSearchSnapshot: vi.fn(),
+}, Events: { CoverResults: 'cover:results', LyricsProgress: 'lyrics:progress' }, EventsOn: vi.fn(() => vi.fn()) }))
 
 const detail = (id: number) => ({ track: { id, releaseId: id, title: 'song' } }) as Models.app.TrackDetail
 const deferred = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r }); return { promise, resolve } }
@@ -18,8 +18,15 @@ beforeEach(() => {
   vi.mocked(App.CoverRevision).mockResolvedValue(0)
   vi.mocked(App.LyricsRevision).mockResolvedValue(0)
   vi.mocked(App.CoverSearchResults).mockResolvedValue([])
-  vi.mocked(App.SearchLyrics).mockResolvedValue([])
-  vi.mocked(App.CreateLyricsSearch).mockResolvedValue('session')
+  const snapshots = new Map<string, Models.app.LyricsProgress>()
+  let next = 0
+  vi.mocked(App.SearchLyrics).mockImplementation(async (id, source) => {
+    snapshots.set(id, { sessionId: id, source, phase: 'done', sequence: 3, candidates: [], selected: 0, searched: 0, success: 0, noLyrics: 0, failed: 0, incomplete: 0 } as Models.app.LyricsProgress)
+    return []
+  })
+  vi.mocked(App.CreateLyricsSearch).mockImplementation(async () => `session-${++next}`)
+  vi.mocked(App.StartLyricsPrefetch).mockImplementation(async id => snapshots.get(id)!)
+  vi.mocked(App.LyricsSearchSnapshot).mockImplementation(async id => snapshots.get(id)!)
 })
 
 for (const area of ['cover', 'lyrics'] as const) {
