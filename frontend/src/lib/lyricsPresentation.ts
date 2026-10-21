@@ -22,13 +22,16 @@ export const lyricChannelStatus = (channel?: LyricChannel) => {
   const label = ({ available: '有', unavailable: '未提供', pending: '待检查', loading: '获取中', error: '失败', unknown: '无法确认' }[status] ?? '无法确认')
   if (status !== 'available') return label
   const notes: string[] = []
-  if (channel?.diagnostics?.some(d => d.ruleVersion)) notes.push('启发式识别')
+  if (channel?.diagnostics?.some(d => d.ruleVersion && d.code !== 'time_precision_alignment')) notes.push('启发式识别')
+  if (channel?.diagnostics?.some(d => d.code === 'time_precision_alignment')) notes.push('时间精度对齐')
   if (channel?.syncStatus === 'unsynced') notes.push('未同步')
   if (channel?.syncStatus === 'partial') notes.push('部分')
   return label + (notes.length ? `（${notes.join('、')}）` : '')
 }
 export const lyricChannelBasis = (channel?: LyricChannel) => channel?.diagnostics?.filter(d => d.ruleVersion)
-  .map(d => `规则 ${d.ruleVersion} · 第 ${d.layer} 层 · ${d.count} 行；经验推断，可能误判`).join('；') ?? ''
+  .map(d => d.code === 'time_precision_alignment'
+    ? `规则 ${d.ruleVersion} · ${d.count} 行；±10 毫秒内唯一且无交叉地对齐原文行首，保留原时间与词时间`
+    : `规则 ${d.ruleVersion} · 第 ${d.layer} 层 · ${d.count} 行；经验推断，可能误判`).join('；') ?? ''
 export const lyricRoundFinished = (phase: string) => ['done', 'partial', 'stopped', 'error'].includes(phase)
 export const lyricTime = (ms?: number) => ms == null ? '—' : `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`
 

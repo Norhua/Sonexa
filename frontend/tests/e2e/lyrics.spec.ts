@@ -162,9 +162,6 @@ test('extra channel selector switches only the third column and preserves every 
   expect(selectorBounds.x).toBeGreaterThan(modeBounds.x + modeBounds.width)
   expect(Math.abs(selectorBounds.y + selectorBounds.height / 2 - modeBounds.y - modeBounds.height / 2)).toBeLessThan(1)
   expect(selectorBounds.y).toBeGreaterThan((await dialog.getByLabel('歌词预览', { exact: true }).boundingBox())!.y)
-  await selector.click()
-  await expect(page.getByRole('option')).toHaveText(['翻译', '罗马音'])
-  await page.getByRole('option', { name: '翻译', exact: true }).click()
   await expect(reading).toContainText('译文首行')
   await expect(reading).not.toContainText('hello roma')
   await expect(reading.getByRole('row').filter({ hasText: '独立译文' }).getByRole('cell')).toHaveText(['00:02.000', '', '翻译 · 独立行独立译文'])
@@ -172,7 +169,12 @@ test('extra channel selector switches only the third column and preserves every 
   await expect(dialog.getByText('全局偏移：100 毫秒', { exact: false })).toBeVisible()
   await expect(dialog.getByRole('button', { name: '应用到歌曲' })).toBeEnabled()
   // Keyboard interaction with the Volt Select must not reset reading/approval.
-  await selector.focus(); await page.keyboard.press('ArrowDown'); await page.keyboard.press('End'); await page.keyboard.press('Enter')
+  await selector.focus(); await page.keyboard.press('ArrowDown')
+  await expect(selector).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('option')).toHaveText(['翻译', '罗马音'])
+  await page.keyboard.press('End')
+  await expect(selector).toHaveAttribute('aria-activedescendant', (await page.getByRole('option', { name: '罗马音', exact: true }).getAttribute('id'))!)
+  await page.keyboard.press('Enter')
   await expect(selector).toHaveText('罗马音')
   await expect(reading.getByRole('columnheader')).toHaveText(['时间', '歌词', '罗马音'])
   await expect(reading).toContainText('Hello world')
@@ -205,6 +207,49 @@ test('extra channel selector switches only the third column and preserves every 
   await dialog.getByRole('button', { name: '搜索', exact: true }).click()
   await dialog.getByRole('button', { name: /候选-bilingual/ }).click()
   await expect(selector).toHaveText('翻译')
+})
+
+test('normalized precision-aligned rows share the original time in reading and adopted text', async ({ page }, testInfo) => {
+  await page.evaluate(() => {
+    const w = window as any, api = w.go.app.App
+    w.__lyricSearch = async (source: string) => source === 'qq' ? [{ id: 'aligned', source, sortKey: '01', title: '精度对齐候选', matchScore: 80, totalScore: 130, highConfidence: false, autoPreviewEligible: false }] : []
+    const diagnostic = { code: 'time_precision_alignment', message: '时间精度对齐', inference: { ruleVersion: 'time-precision-v1', layer: 1, count: 2, associations: [
+      { sourcePosition: 0, originalPosition: 0, sourceTimeMs: 42740, associatedTimeMs: 42743 },
+      { sourcePosition: 1, originalPosition: 1, sourceTimeMs: 47850, associatedTimeMs: 47856 },
+    ] } }
+    // Complete producer output; frontend must not reconstruct associations or
+    // use the diagnostic's old times as the visible/serialized row time.
+    w.__lyricDocument = () => ({ text: '[00:42.743]<00:42.743>First <00:43.100>line\n[00:42.743]第一句译文\n[00:42.743]first roma\n[00:47.856]<00:47.856>Second <00:48.100>line\n[00:47.856]第二句译文\n[00:47.856]second roma', format: 'enhanced_lrc', offsetMs: 0, wordTiming: 'available',
+      rows: [{ timeMs: 42743, text: 'First line', channel: 'original', translation: ['第一句译文'], romanization: ['first roma'] }, { timeMs: 47856, text: 'Second line', channel: 'original', translation: ['第二句译文'], romanization: ['second roma'] }],
+      translation: { status: 'available', origin: 'independent', syncStatus: 'synced', diagnostics: [diagnostic] }, romanization: { status: 'available', origin: 'independent', syncStatus: 'synced', diagnostics: [diagnostic] } })
+    const adopt = api.AdoptLyrics
+    api.AdoptLyrics = async (session: string, id: string, revision: number) => { await adopt(session, id, revision); w.__alignedSaved = w.__lyricDocument().text; return 1 }
+  })
+  await page.getByRole('button', { name: /查看歌词/ }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '从网络搜索歌词' }).click()
+  const dialog = page.getByRole('dialog', { name: '从网络搜索歌词' }), reading = dialog.getByLabel('可读歌词')
+  await dialog.getByRole('button', { name: '搜索', exact: true }).click()
+  const card = dialog.getByRole('button', { name: /精度对齐候选/ })
+  await expect(card).toContainText('翻译：有（时间精度对齐）')
+  await expect(card).not.toContainText('启发式识别')
+  await card.click()
+  await expect(reading.getByRole('row')).toHaveCount(3)
+  await expect(reading.getByRole('row').nth(1).getByRole('cell')).toHaveText(['00:42.743', 'First line', '第一句译文'])
+  await expect(reading.getByRole('row').nth(2).getByRole('cell')).toHaveText(['00:47.856', 'Second line', '第二句译文'])
+  await expect(reading).not.toContainText('独立行')
+  await page.screenshot({ path: testInfo.outputPath('lyrics-precision-aligned.png') })
+  await dialog.getByRole('combobox', { name: '额外展示' }).click()
+  await page.getByRole('option', { name: '罗马音', exact: true }).click()
+  await expect(reading.getByRole('row').nth(1).getByRole('cell')).toHaveText(['00:42.743', 'First line', 'first roma'])
+  await dialog.getByRole('button', { name: '原始文本', exact: true }).click()
+  const raw = dialog.getByLabel('原始歌词文本')
+  await expect(raw).toContainText('[00:42.743]第一句译文')
+  await expect(raw).toContainText('[00:47.856]second roma')
+  await expect(raw).not.toContainText('[00:42.740]')
+  await expect(raw).not.toContainText('[00:47.850]')
+  await dialog.getByRole('button', { name: '应用到歌曲' }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__alignedSaved)).toBe(await raw.textContent())
+  expect(await page.evaluate(() => (window as any).__lyricReads)).toBe(1)
 })
 
 test('failed searches and operations remain recoverable without raw errors or layout expansion', async ({ page }) => {

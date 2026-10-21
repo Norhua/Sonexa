@@ -66,7 +66,7 @@ func (p *observedLyrics) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*
 }
 
 func TestLyricsFourSourceAppPipeline(t *testing.T) {
-	qrc := bundleFixture(t, "qrc", "[1000,1000]Hello (1000,400)world(1500,400)")
+	qrc := bundleFixture(t, "qrc", "[1005,1000]Hello (1005,400)world(1500,400)")
 	roma := bundleFixture(t, "qrc", "[00:01]ro ma")
 	krc := bundleFixture(t, "krc", "[language:"+base64.StdEncoding.EncodeToString([]byte(`{"content":[{"type":1,"lyricContent":[["译文"]]},{"type":0,"lyricContent":[["ro","ma"]]}]}`))+"]\n[1000,1000]<0,400,0>Hello <500,400,0>world")
 	for _, source := range []string{"qq", "qq-legacy", "163", "kugou", "kuwo"} {
@@ -200,6 +200,16 @@ func TestLyricsFourSourceAppPipeline(t *testing.T) {
 			delivered := observed.docs[a.lyricSessions[id].candidates[cards[0].ID].Ref]
 			if preview.Document != delivered || sends != wantSends {
 				t.Fatal("preview transformed or refetched upstream result")
+			}
+			if source == "qq" {
+				if len(delivered.Rows) != 1 || *delivered.Rows[0].TimeMS != 1005 || len(delivered.Rows[0].Translation) != 1 || len(delivered.Rows[0].Romanization) != 1 || strings.Contains(delivered.Text, "[00:01.000]") {
+					t.Fatal("precision alignment missing from provider/preview text", delivered)
+				}
+				for _, ch := range []*lyricdoc.Channel{delivered.Translation, delivered.Romanization} {
+					if *ch.Track.Lines[0].StartMS != 1005 || len(ch.Diagnostics) != 1 || ch.Diagnostics[0].Code != "time_precision_alignment" || ch.Diagnostics[0].Inference.Associations[0].SourceTimeMS != 1000 {
+						t.Fatal("precision association missing from channel", ch)
+					}
+				}
 			}
 			summary := snapshot.Candidates[0]
 			if !reflect.DeepEqual(summary.Translation, lyrics.SummarizeChannel(delivered.Translation)) || !reflect.DeepEqual(summary.Romanization, lyrics.SummarizeChannel(delivered.Romanization)) {

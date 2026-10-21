@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { lyricChannelStatus, lyricChannelBasis, lyricReadingRows, lyricTime, type LyricDocument } from '../../src/lib/lyricsPresentation'
+import { lyricChannelStatus, lyricChannelBasis, lyricReadingRows, lyricTime, type LyricChannel, type LyricDocument } from '../../src/lib/lyricsPresentation'
 it('reports all channel states without a source-specific branch', () => {
   for (const [status, expected] of Object.entries({ available: '有', unavailable: '未提供', pending: '待检查', loading: '获取中', error: '失败', unknown: '无法确认' })) {
     expect(lyricChannelStatus({ status, origin: 'unknown', syncStatus: 'unknown' })).toBe(expected)
@@ -7,6 +7,15 @@ it('reports all channel states without a source-specific branch', () => {
   expect(lyricChannelStatus({ status: 'available', origin: 'embedded', syncStatus: 'partial', diagnostics: [{ code: 'inferred', ruleVersion: 'custom-v1', layer: 2, count: 4 }] })).toBe('有（启发式识别、部分）')
   expect(lyricChannelBasis({ status: 'available', origin: 'embedded', syncStatus: 'synced', diagnostics: [{ code: 'inferred', ruleVersion: 'custom-v1', layer: 2, count: 4 }] })).toContain('第 2 层 · 4 行')
   expect(lyricTime(12123)).toBe('00:12.123'); expect(lyricTime()).toBe('—')
+})
+it('distinguishes timestamp precision alignment from heuristic channel identification', () => {
+  const channel: LyricChannel = { status: 'available', origin: 'independent', syncStatus: 'synced', diagnostics: [{ code: 'time_precision_alignment', ruleVersion: 'time-precision-v1', layer: 1, count: 3 }] }
+  expect(lyricChannelStatus(channel)).toBe('有（时间精度对齐）')
+  expect(lyricChannelBasis(channel)).toContain('±10 毫秒内唯一且无交叉')
+  expect(lyricChannelBasis(channel)).not.toContain('经验推断')
+  channel.diagnostics!.push({ code: 'heuristic_translation', ruleVersion: 'embedded-v1', layer: 2, count: 4 })
+  expect(lyricChannelStatus(channel)).toBe('有（启发式识别、时间精度对齐）')
+  expect(lyricChannelBasis(channel)).toContain('经验推断')
 })
 it('projects three columns using only existing associations and keeps independent extras separate', () => {
   const rows: LyricDocument['rows'] = [

@@ -146,6 +146,40 @@ func TestQQPlayPreservesChannelsAndUsesExplicitFlags(t *testing.T) {
 	}
 }
 
+func TestQQPrecisionAlignmentBeforeDelivery(t *testing.T) {
+	calls := 0
+	body := playBody(t, qqLyricData{QRC: 1,
+		Lyric: encodedQRC(t, "[42743,1000]First (42743,300)line(43100,500)\n[47856,1000]Second (47856,300)line(48200,500)"),
+		Trans: b64("[00:42.74]第一句译文\n[00:47.85]第二句译文"),
+		Roma:  encodedQRC(t, "[00:42.74]first roma\n[00:47.85]second roma"),
+	}, qqLyricData{Lyric: b64("[00:42.74]First line\n[00:47.85]Second line")})
+	client := providerClientForTest(func(*http.Request) string { calls++; return body })
+	d, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Ref: "001wMai814HLgJ"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || len(d.Rows) != 2 || d.Format != "enhanced_lrc" || d.WordTiming != "available" {
+		t.Fatal("not completed before provider return", d, calls)
+	}
+	for i, want := range []int64{42743, 47856} {
+		row := d.Rows[i]
+		if *row.TimeMS != want || len(row.Translation) != 1 || len(row.Romanization) != 1 || *d.Translation.Track.Lines[i].StartMS != want || *d.Romanization.Track.Lines[i].StartMS != want {
+			t.Fatalf("unaligned row/track: %+v", row)
+		}
+	}
+	for _, ch := range []*lyricdoc.Channel{d.Translation, d.Romanization} {
+		if ch.SyncStatus != "synced" || len(ch.Diagnostics) != 1 || ch.Diagnostics[0].Code != "time_precision_alignment" || ch.Diagnostics[0].Inference.Count != 2 || ch.Diagnostics[0].Inference.Associations[0].SourceTimeMS != 42740 {
+			t.Fatal("missing alignment facts", ch)
+		}
+	}
+	if strings.Contains(d.Text, "[00:42.740]") || strings.Contains(d.Text, "[00:47.850]") || !strings.Contains(d.Text, "<00:42.743>First <00:43.043><00:43.100>line<00:43.600>") {
+		t.Fatal("serialized result drifted", d.Text)
+	}
+	if err := lyricdoc.Validate(d); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestQQOptionalFailuresAndPlainFallback(t *testing.T) {
 	for _, tt := range []struct {
 		name                        string

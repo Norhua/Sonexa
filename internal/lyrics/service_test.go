@@ -120,6 +120,30 @@ func TestServiceRejectsIncompleteDocumentsWithoutRepair(t *testing.T) {
 	}
 }
 
+func TestPrecisionAlignmentDoesNotChangePresenceScores(t *testing.T) {
+	var baseline ContentScore
+	for _, translation := range []string{"[00:01.005]Translation", "[00:01]Translation"} {
+		d, err := lyricdoc.Build(&lyricdoc.Input{Text: "[00:01.005]<00:01.005>A <00:01.500>B", Translation: lyricdoc.TextChannel(translation, nil)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := businessService(t, &businessSource{fetch: func(context.Context, Candidate) (*lyricdoc.Document, error) { return d, nil }})
+		got, err := s.Fetch(context.Background(), Candidate{Source: "only"})
+		if err != nil || got != d {
+			t.Fatal("business reconstructed aligned document", err)
+		}
+		score := ScoreContent(Candidate{MatchScore: 80, HighConfidence: true}, got, 5000)
+		if baseline.TotalScore == nil {
+			baseline = score
+		} else if !reflect.DeepEqual(score, baseline) {
+			t.Fatal("precision diagnostic changed score", score, baseline)
+		}
+		if err := lyricdoc.Validate(d); err != nil {
+			t.Fatal("business mutated aligned document", err)
+		}
+	}
+}
+
 func TestServiceAndScoreReadCompletedDocumentUnchanged(t *testing.T) {
 	d, err := lyricdoc.Build(&lyricdoc.Input{
 		Original:     lyricdoc.TextChannel("[00:03]unused ordinary", nil),

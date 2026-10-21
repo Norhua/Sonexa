@@ -78,6 +78,23 @@ func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	anyAligned, err := alignPrecision(channels)
+	if err != nil {
+		return nil, nil, err
+	}
+	// When precision alignment changes a line, retain the common axis in all
+	// delivered channel projections too. This keeps offsets/text replayable,
+	// including an auxiliary line that originally preceded time zero.
+	if anyAligned {
+		for _, c := range channels {
+			if c.channel.Track != nil {
+				c.channel.Text, err = SerializeTrack(c.channel.Track)
+				if err != nil {
+					return nil, nil, err
+				}
+			}
+		}
+	}
 	merged := &Track{Metadata: append([]string(nil), channels[0].channel.Track.Metadata...), OffsetMS: offset}
 	entries := []taggedLine{}
 	used := 0
@@ -141,8 +158,8 @@ func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
 			result = append(result, row)
 		}
 	}
-	// Independently timed but unassociated extras remain available, with an
-	// explicit alignment diagnostic. They never inherit a nearby line time.
+	// Unassociated extras retain their times after bounded precision alignment.
+	// They never inherit an ambiguous or more distant line time.
 	for _, c := range channels[1:] {
 		if c.channel.Track == nil {
 			continue
@@ -165,6 +182,10 @@ func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
 		}
 	}
 	for i := range channels {
+		if anyAligned {
+			originalChannels[i].channel.Track = channels[i].channel.Track
+			originalChannels[i].channel.Text = channels[i].channel.Text
+		}
 		originalChannels[i].channel.Diagnostics = channels[i].channel.Diagnostics
 		originalChannels[i].channel.SyncStatus = channels[i].channel.SyncStatus
 	}
