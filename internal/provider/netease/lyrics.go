@@ -7,8 +7,10 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/provider/lyricfetch"
 )
 
 func (p *Provider) SearchLyrics(ctx context.Context, q lyrics.Query) ([]lyrics.Candidate, error) {
@@ -29,7 +31,8 @@ func (p *Provider) SearchLyrics(ctx context.Context, q lyrics.Query) ([]lyrics.C
 
 const lyricV1Path = "/api/song/lyric/v1"
 
-func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics.Payload, error) {
+func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *lyricdoc.Document, err error) {
+	defer func() { err = lyricfetch.Normalize(err) }()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -41,17 +44,18 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics
 		Headers:   map[string]string{"Referer": baseURL + "/"},
 		Redirects: &provider.RedirectPolicy{Hosts: []string{"music.163.com"}, MaxRedirects: 4},
 	})
-	var bundle *lyrics.Payload
+	var bundle *lyricdoc.Input
 	if err == nil {
 		bundle, err = parseLyrics(body)
 	}
 	if err == nil {
-		_, err = lyrics.DocumentFromPayload(bundle)
+		var doc *lyricdoc.Document
+		doc, err = lyricdoc.Build(bundle)
 		if err == nil {
-			return bundle, nil
+			return doc, nil
 		}
 	}
-	if !lyrics.CanFallback(err) {
+	if !lyricfetch.CanFallback(err) {
 		return nil, err
 	}
 	body, fallbackErr := p.request(ctx, "/weapi/song/lyric", map[string]any{"id": c.Ref, "lv": -1, "kv": -1, "tv": -1, "csrf_token": ""})
@@ -63,13 +67,13 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics
 		return nil, fallbackErr
 	}
 	if bundle != nil {
-		fallback.Translation = lyrics.PreferredChannel(bundle.Translation, fallback.Translation)
-		fallback.Romanization = lyrics.PreferredChannel(bundle.Romanization, fallback.Romanization)
+		fallback.Translation = lyricdoc.PreferredChannel(bundle.Translation, fallback.Translation)
+		fallback.Romanization = lyricdoc.PreferredChannel(bundle.Romanization, fallback.Romanization)
 		fallback.WordTiming = bundle.WordTiming
 		fallback.Warnings = append(fallback.Warnings, bundle.Warnings...)
 	}
 	fallback.Warnings = append(fallback.Warnings, "YRC 接口未取得可用原文，已回退普通歌词")
-	return fallback, nil
+	return lyricdoc.Build(fallback)
 }
 
 type lyricBundle struct {
@@ -78,24 +82,24 @@ type lyricBundle struct {
 	Lrc, Tlyric, Romalrc, Yrc, Ytlyric, Yromalrc struct{ Lyric string }
 }
 
-func parseLyrics(body []byte) (*lyrics.Payload, error) {
+func parseLyrics(body []byte) (*lyricdoc.Input, error) {
 	var r lyricBundle
 	if err := json.Unmarshal(body, &r); err != nil {
-		return nil, fmt.Errorf("%w：网易云歌词响应无法解析", lyrics.ErrFormat)
+		return nil, fmt.Errorf("%w：网易云歌词响应无法解析", lyricdoc.ErrFormat)
 	}
 	if r.Code != 200 {
 		return nil, &provider.BusinessError{Source: "网易云", Block: "lyrics", Code: r.Code}
 	}
 	if r.Nolyric || r.Uncollected {
-		return nil, lyrics.ErrNoLyrics
+		return nil, lyricdoc.ErrNoLyrics
 	}
 	original, word := lyricChannel(r.Lrc.Lyric), yrcChannel(r.Yrc.Lyric)
 	if original.Status == "unavailable" && word.Status == "unavailable" {
-		return nil, lyrics.ErrNoLyrics
+		return nil, lyricdoc.ErrNoLyrics
 	}
-	out := &lyrics.Payload{Original: original, WordOriginal: word,
-		Translation:  lyrics.PreferredChannel(lyricChannel(r.Ytlyric.Lyric), lyricChannel(r.Tlyric.Lyric)),
-		Romanization: lyrics.PreferredChannel(lyricChannel(r.Yromalrc.Lyric), lyricChannel(r.Romalrc.Lyric)), WordTiming: "unavailable"}
+	out := &lyricdoc.Input{Original: original, WordOriginal: word,
+		Translation:  lyricdoc.PreferredChannel(lyricChannel(r.Ytlyric.Lyric), lyricChannel(r.Tlyric.Lyric)),
+		Romanization: lyricdoc.PreferredChannel(lyricChannel(r.Yromalrc.Lyric), lyricChannel(r.Romalrc.Lyric)), WordTiming: "unavailable"}
 	if word.Status == "error" {
 		out.WordTiming = "error"
 	}
@@ -110,8 +114,8 @@ func parseLyrics(body []byte) (*lyrics.Payload, error) {
 var lyricTimeTags = regexp.MustCompile(`\[\d{1,3}:[0-5]?\d(?:[.:]\d{1,3})?\]|<\d{1,3}:[0-5]?\d(?:[.:]\d{1,3})?>`)
 var lyricPlaceholderPunctuation = strings.NewReplacer("，", "", ",", "", "。", "", " ", "", "！", "", "!", "")
 
-func lyricChannel(text string) *lyrics.Channel {
-	channel := lyrics.TextChannel(text, nil)
+func lyricChannel(text string) *lyricdoc.Channel {
+	channel := lyricdoc.TextChannel(text, nil)
 	if channel.Status != "available" {
 		return channel
 	}
@@ -119,7 +123,7 @@ func lyricChannel(text string) *lyrics.Channel {
 		plain := lyricPlaceholderPunctuation.Replace(strings.TrimSpace(lyricTimeTags.ReplaceAllString(line, "")))
 		switch plain {
 		case "纯音乐请欣赏", "纯音乐请您欣赏", "此歌曲为没有填词的纯音乐请您欣赏", "暂无歌词", "此歌曲暂无歌词":
-			return lyrics.AbsentChannel()
+			return lyricdoc.AbsentChannel()
 		}
 	}
 	return channel

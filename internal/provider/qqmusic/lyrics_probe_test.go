@@ -5,10 +5,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/norhua/sonexa/internal/lyrics"
+	"github.com/norhua/sonexa/internal/lyricdoc"
 )
 
-func channelSummary(c *lyrics.Channel) string {
+func channelSummary(c *lyricdoc.Channel) string {
 	if c == nil {
 		return "unknown"
 	}
@@ -27,11 +27,11 @@ func TestLocalQQProbe(t *testing.T) {
 		t.Fatal(err)
 	}
 	channels := parseQQPlay(body)
-	for _, ch := range []*lyrics.Channel{channels.Original, channels.Translation, channels.Romanization} {
+	for _, ch := range []*lyricdoc.Channel{channels.Original, channels.Translation, channels.Romanization} {
 		t.Log(channelSummary(ch))
 	}
 	t.Log(channels.WordTiming, channels.Warnings)
-	doc, err := lyrics.DocumentFromPayload(channels)
+	doc, err := lyricdoc.Build(channels)
 	if err != nil {
 		t.Fatal(err)
 	}

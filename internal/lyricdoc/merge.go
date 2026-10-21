@@ -1,4 +1,4 @@
-package lyrics
+package lyricdoc
 
 import (
 	"fmt"

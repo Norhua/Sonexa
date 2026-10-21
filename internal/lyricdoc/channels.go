@@ -1,4 +1,4 @@
-package lyrics
+package lyricdoc
 
 import (
 	"errors"
@@ -38,14 +38,31 @@ func normalizeChannel(ch *Channel) *Channel {
 	}
 	text := ch.Text
 	var err error
-	if ch.Track != nil && text == "" {
-		text, err = SerializeTrack(ch.Track)
-	}
-	if err == nil {
+	if ch.Track != nil {
+		// Preserve real line ends and timestamp pointers from native adapters;
+		// LRC cannot encode every native line-end field.
+		_, err = SerializeTrack(ch.Track)
+		if err == nil && !hasContent(ch.Track) {
+			err = ErrNoLyrics
+		}
+		if err == nil {
+			copy.Track = cloneTrack(ch.Track)
+			if text == "" {
+				text, err = SerializeTrack(copy.Track)
+			}
+			copy.Text = text
+			// A caller providing both projections must not hide a different
+			// text behind its structured track.
+			if ch.Text != "" {
+				var parsed *Track
+				parsed, copy.Text, err = parseTrack(text)
+				if err == nil {
+					err = matchingTrackText(copy.Track, parsed)
+				}
+			}
+		}
+	} else {
 		copy.Track, copy.Text, err = parseTrack(text)
-	}
-	if err == nil && ch.Track != nil && ch.Text == "" {
-		copy.Track.Diagnostics = append(copy.Track.Diagnostics, ch.Track.Diagnostics...)
 	}
 	if errors.Is(err, ErrNoLyrics) {
 		copy.Status, copy.Text, copy.Track = "unavailable", "", nil
@@ -113,7 +130,7 @@ func buildDocument(original, translation, romanization *Channel, additional []*C
 	}
 	for _, extra := range []*Channel{translation, romanization} {
 		if AvailableContent(extra) && duplicateOriginal(original.Track, extra.Track) {
-			extra.Status, extra.Text, extra.Track = "unavailable", "", nil
+			extra.Status, extra.Text, extra.Track, extra.SyncStatus = "unavailable", "", nil, "unknown"
 			extra.Diagnostics = append(extra.Diagnostics, Diagnostic{"duplicate_original", "仅为原文副本，不计作附加内容"})
 		}
 	}
@@ -125,6 +142,13 @@ func buildDocument(original, translation, romanization *Channel, additional []*C
 	}
 	doc.WordTiming = timing
 	channels := []channelTrack{{"original", original}, {"translation", translation}, {"romanization", romanization}}
+	// Normalize the selected channel structure at the producer, never in the
+	// scorer. Local imports retain their encoded text, but share this projection.
+	for _, c := range channels {
+		if err := canonicalTrack(c.channel.Track); err != nil {
+			return nil, err
+		}
+	}
 	for _, extra := range []struct {
 		name, key string
 		ch        *Channel
@@ -141,6 +165,9 @@ func buildDocument(original, translation, romanization *Channel, additional []*C
 	}
 	for _, ch := range additional {
 		ch = normalizeChannel(ch)
+		if err := canonicalTrack(ch.Track); err != nil {
+			return nil, err
+		}
 		doc.Additional = append(doc.Additional, ch)
 		channels = append(channels, channelTrack{"additional", ch})
 	}
@@ -170,5 +197,8 @@ func buildDocument(original, translation, romanization *Channel, additional []*C
 		return nil, err
 	}
 	doc.Format = trackFormat(merged)
+	if err := seal(doc); err != nil {
+		return nil, err
+	}
 	return doc, nil
 }

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/provider/qqmusic"
@@ -36,7 +37,7 @@ func replayService(body string) lyrics.Service {
 	})
 	return sourceService(c)
 }
-func channelSummary(c *lyrics.Channel) string {
+func channelSummary(c *lyricdoc.Channel) string {
 	if c == nil {
 		return "unknown"
 	}
@@ -47,13 +48,13 @@ func TestTextFormatsAndInvalidInput(t *testing.T) {
 	for _, tt := range []struct{ text, format string }{
 		{"无时间轴\n第二行", "text"}, {"\ufeff[ti:歌曲]\r\n[00:01.20][00:02.300]正文", "lrc"}, {"[01:02.345]<01:02.345>逐<01:02.500>字", "enhanced_lrc"}, {"1 < 2 普通文字", "text"},
 	} {
-		d, err := lyrics.ParseText(tt.text)
+		d, err := lyricdoc.ParseText(tt.text)
 		if err != nil || d.Format != tt.format {
 			t.Fatalf("%q: %+v %v", tt.text, d, err)
 		}
 	}
-	for _, text := range []string{"", "[ti:歌名]\n[00:01.00]", "krc1binary", "a\x00b", string([]byte{0xff}), strings.Repeat("a", lyrics.MaxTextBytes+1)} {
-		if _, err := lyrics.ParseText(text); err == nil {
+	for _, text := range []string{"", "[ti:歌名]\n[00:01.00]", "krc1binary", "a\x00b", string([]byte{0xff}), strings.Repeat("a", lyricdoc.MaxTextBytes+1)} {
+		if _, err := lyricdoc.ParseText(text); err == nil {
 			t.Fatalf("accepted invalid lyrics %q", text[:min(50, len(text))])
 		}
 	}
@@ -210,7 +211,7 @@ func TestLiveSources(t *testing.T) {
 					if audit.gate() != nil {
 						t.Fatal(errLiveStopped)
 					}
-					t.Logf("candidate=%s unavailable no_lyrics=%t error_type=%T", candidate.Ref, errors.Is(err, lyrics.ErrNoLyrics), err)
+					t.Logf("candidate=%s unavailable no_lyrics=%t error_type=%T", candidate.Ref, errors.Is(err, lyricdoc.ErrNoLyrics), err)
 					continue
 				}
 				if audit.gate() != nil {

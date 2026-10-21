@@ -1,4 +1,4 @@
-package lyrics
+package lyricdoc
 
 import (
 	"errors"
@@ -23,12 +23,12 @@ func TestMergeNeverDropsUntimedExtras(t *testing.T) {
 	}
 }
 func TestConservativeAlignmentAndAdditional(t *testing.T) {
-	p := &Payload{
+	p := &Input{
 		Original:    TextChannel("[00:02]B\n[00:01]A\n[00:01]other\n[00:10.1][00:20.100]chorus\n[00:10.100]chorus", nil),
 		Translation: TextChannel("[00:20.1]repeat\n[00:01]ambiguous\n[00:02]second\n[00:03]own time\nuntimed", nil),
 		Additional:  []*Channel{{Status: "unknown", Origin: "embedded", Text: "unclassified"}},
 	}
-	d, err := DocumentFromPayload(p)
+	d, err := Build(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,13 +51,13 @@ func TestConservativeAlignmentAndAdditional(t *testing.T) {
 }
 
 func TestOneOriginalAndDistinctWordTimelines(t *testing.T) {
-	p := &Payload{Original: TextChannel("[00:01]line version", nil), WordOriginal: TextChannel("[00:02]<00:02>word <00:02.5>version", nil), Translation: TextChannel("[00:01]translation", nil)}
-	d, err := DocumentFromPayload(p)
+	p := &Input{Original: TextChannel("[00:01]line version", nil), WordOriginal: TextChannel("[00:02]<00:02>word <00:02.5>version", nil), Translation: TextChannel("[00:01]translation", nil)}
+	d, err := Build(p)
 	if err != nil || strings.Contains(d.Text, "line version") || d.Rows[0].Channel != "translation" || len(d.Rows[1].Translation) != 0 {
 		t.Fatal(d, err)
 	}
-	p = &Payload{Original: TextChannel("[00:01]same\n[00:01]<00:01>same<00:02>\n[00:01]<00:01.5>same<00:02>", nil), Translation: TextChannel("plain extra", nil)}
-	d, err = DocumentFromPayload(p)
+	p = &Input{Original: TextChannel("[00:01]same\n[00:01]<00:01>same<00:02>\n[00:01]<00:01.5>same<00:02>", nil), Translation: TextChannel("plain extra", nil)}
+	d, err = Build(p)
 	if err != nil || strings.Count(d.Text, "same") != 2 || strings.Contains(d.Text, "[00:01.000]same\n") {
 		t.Fatal(d, err)
 	}
@@ -74,7 +74,7 @@ func TestIndependentOffsetsAppliedOnce(t *testing.T) {
 		{"negative", "[offset:-500]\n[00:01]A", "[00:01.5]B", 0, 1500},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			d, err := DocumentFromPayload(&Payload{Original: TextChannel(tt.original, nil), Translation: TextChannel(tt.translation, nil)})
+			d, err := Build(&Input{Original: TextChannel(tt.original, nil), Translation: TextChannel(tt.translation, nil)})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -102,7 +102,7 @@ func TestConflictingOffsetsDiagnosedAndSingleTextPreserved(t *testing.T) {
 			if len(d.Warnings) == 0 {
 				t.Fatal("ambiguous offset not diagnosed")
 			}
-			if _, err := DocumentFromPayload(&Payload{Text: text, Translation: TextChannel("[00:01]B", nil)}); err == nil {
+			if _, err := Build(&Input{Text: text, Translation: TextChannel("[00:01]B", nil)}); err == nil {
 				t.Fatal("ambiguous offsets merged")
 			}
 		}

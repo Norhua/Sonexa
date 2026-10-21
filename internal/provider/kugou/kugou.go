@@ -12,9 +12,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/provider/lyricfetch"
 )
 
 type Provider struct{ client *provider.Client }
@@ -73,7 +75,7 @@ func selectLyricCandidate(c lyrics.Candidate, candidates []lyricCandidate) (lyri
 		valid = append(valid, candidate)
 	}
 	if len(valid) == 0 {
-		return lyricCandidate{}, lyrics.ErrNoLyrics
+		return lyricCandidate{}, lyricdoc.ErrNoLyrics
 	}
 	sort.Slice(valid, func(i, j int) bool {
 		a, b := valid[i], valid[j]
@@ -94,7 +96,8 @@ func selectLyricCandidate(c lyrics.Candidate, candidates []lyricCandidate) (lyri
 	return valid[0], nil
 }
 
-func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics.Payload, error) {
+func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *lyricdoc.Document, err error) {
+	defer func() { err = lyricfetch.Normalize(err) }()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -111,7 +114,7 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics
 		return nil, err
 	}
 	if r.Status != 200 {
-		return nil, fmt.Errorf("酷狗歌词候选接口错误（status=%d）", r.Status)
+		return nil, &provider.BusinessError{Source: "酷狗", Block: "lyrics search", Code: r.Status}
 	}
 	candidate, err := selectLyricCandidate(c, r.Candidates)
 	if err != nil {
@@ -119,12 +122,13 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics
 	}
 	payload, err := p.download(ctx, candidate, "krc")
 	if err == nil {
-		_, err = lyrics.DocumentFromPayload(payload)
+		var doc *lyricdoc.Document
+		doc, err = lyricdoc.Build(payload)
 		if err == nil {
-			return payload, nil
+			return doc, nil
 		}
 	}
-	if !lyrics.CanFallback(err) {
+	if !lyricfetch.CanFallback(err) {
 		return nil, err
 	}
 	fallback, fallbackErr := p.download(ctx, candidate, "lrc")
@@ -132,17 +136,17 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics
 		return nil, fallbackErr
 	}
 	fallback.WordTiming = "error"
-	if errors.Is(err, lyrics.ErrNoLyrics) {
+	if errors.Is(err, lyricdoc.ErrNoLyrics) {
 		fallback.WordTiming = "unavailable"
 	}
 	fallback.Warnings = append(fallback.Warnings, "KRC 未取得可用原文，已回退同候选 LRC")
 	if payload != nil {
 		fallback.Translation, fallback.Romanization, fallback.Additional = payload.Translation, payload.Romanization, payload.Additional
 	}
-	return fallback, nil
+	return lyricdoc.Build(fallback)
 }
 
-func (p *Provider) download(ctx context.Context, candidate lyricCandidate, format string) (*lyrics.Payload, error) {
+func (p *Provider) download(ctx context.Context, candidate lyricCandidate, format string) (*lyricdoc.Input, error) {
 	body, err := p.request(ctx, "https://lyrics.kugou.com", "/download", map[string]string{"ver": "1", "client": "pc", "id": candidate.ID, "accesskey": candidate.Accesskey, "fmt": format, "charset": "utf8"})
 	if err != nil {
 		return nil, err
@@ -153,25 +157,25 @@ func (p *Provider) download(ctx context.Context, candidate lyricCandidate, forma
 		Fmt, Content string
 	}
 	if err := json.Unmarshal(body, &d); err != nil {
-		return nil, fmt.Errorf("%w：酷狗歌词响应无法解析", lyrics.ErrFormat)
+		return nil, fmt.Errorf("%w：酷狗歌词响应无法解析", lyricdoc.ErrFormat)
 	}
 	if d.Status != 200 || d.ErrorCode != 0 {
 		return nil, &provider.BusinessError{Source: "酷狗", Block: "download", Code: d.Status}
 	}
 	if d.Content == "" {
-		return nil, lyrics.ErrNoLyrics
+		return nil, lyricdoc.ErrNoLyrics
 	}
 	if d.Fmt != format {
-		return nil, fmt.Errorf("%w：酷狗歌词格式不符", lyrics.ErrFormat)
+		return nil, fmt.Errorf("%w：酷狗歌词格式不符", lyricdoc.ErrFormat)
 	}
 	if format == "krc" {
 		return krcPayload(d.Content)
 	}
 	text, err := base64.StdEncoding.DecodeString(d.Content)
 	if err != nil {
-		return nil, fmt.Errorf("%w：酷狗歌词 Base64 解码失败", lyrics.ErrFormat)
+		return nil, fmt.Errorf("%w：酷狗歌词 Base64 解码失败", lyricdoc.ErrFormat)
 	}
-	return &lyrics.Payload{Original: lyrics.TextChannel(string(text), nil), Translation: lyrics.UnknownChannel(), Romanization: lyrics.UnknownChannel(), WordTiming: "unavailable"}, nil
+	return &lyricdoc.Input{Original: lyricdoc.TextChannel(string(text), nil), Translation: lyricdoc.UnknownChannel(), Romanization: lyricdoc.UnknownChannel(), WordTiming: "unavailable"}, nil
 }
 
 var _ lyrics.Provider = (*Provider)(nil)

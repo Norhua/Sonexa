@@ -1,4 +1,4 @@
-package lyrics
+package lyricdoc
 
 import (
 	"encoding/json"
@@ -82,17 +82,53 @@ func TestWordEndsAndWhitespace(t *testing.T) {
 	}
 }
 
+func TestEmptyTimedSegmentsRoundTrip(t *testing.T) {
+	for _, text := range []string{
+		"[00:01.000]<00:01.000><00:01.500>\n[00:03.000]body",
+		"[00:01.000]<00:01.000><00:01.200><00:01.500>A<00:02.000>",
+		"[00:01.000]<00:01.000>A<00:01.200><00:01.300><00:01.400><00:01.500>B<00:02.000>",
+		"[00:01.000]<00:01.000>A<00:01.200><00:01.300><00:01.500>",
+		"[00:01.000]<00:01.000>\n[00:03.000]body",
+	} {
+		t.Run(text, func(t *testing.T) {
+			d, err := ParseText(text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rendered, err := SerializeTrack(d.Original.Track)
+			if err != nil || rendered != text {
+				t.Fatalf("%q: %v", rendered, err)
+			}
+			again, err := ParseText(rendered)
+			if err != nil || !reflect.DeepEqual(d.Original.Track, again.Original.Track) {
+				t.Fatal("empty timing changed", err)
+			}
+			if !strings.Contains(text, ">A") && (d.WordTiming == "available" || d.Format == "enhanced_lrc") {
+				t.Fatal("empty timing counted as words")
+			}
+		})
+	}
+	d, err := ParseText("[00:01.000]<00:01.000><00:01.500>\n[00:03.000]body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := d.Original.Track.Lines[0].Parts
+	if len(parts) != 1 || parts[0].Text != "" || *parts[0].StartMS != 1000 || *parts[0].EndMS != 1500 {
+		t.Fatal(parts)
+	}
+}
+
 func TestStructuredAndPreviewLimits(t *testing.T) {
-	for _, payload := range []*Payload{
+	for _, payload := range []*Input{
 		{Original: &Channel{Status: "available", Track: &Track{Lines: []Line{{StartMS: ms(-1), Text: "bad"}}}}},
 		{Original: &Channel{Status: "available", Track: &Track{Lines: []Line{{Text: "wrong", Parts: []Word{{Text: "mismatch"}}}}}}},
 	} {
-		if _, err := DocumentFromPayload(payload); !errors.Is(err, ErrFormat) {
+		if _, err := Build(payload); !errors.Is(err, ErrFormat) {
 			t.Fatal(err)
 		}
 	}
 	large := strings.Repeat("x", MaxTextBytes/2)
-	if _, err := DocumentFromPayload(&Payload{Text: large, Translation: TextChannel("y"+large, nil)}); !errors.Is(err, ErrTooLarge) {
+	if _, err := Build(&Input{Text: large, Translation: TextChannel("y"+large, nil)}); !errors.Is(err, ErrTooLarge) {
 		t.Fatal(err)
 	}
 	if _, err := ParseText(strings.Repeat("\n", MaxTextBytes/96)); !errors.Is(err, ErrTooLarge) {

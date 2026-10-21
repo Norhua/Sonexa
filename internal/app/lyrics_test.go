@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
@@ -38,7 +39,7 @@ func TestLyricsPickerClearAndConflict(t *testing.T) {
 		}
 	}
 	file := filepath.Join(t.TempDir(), "lyrics.lrc")
-	text := "\ufeff[00:01.00]<00:01.00>逐<00:02.00>字"
+	text := "\ufeff[00:01.00]<00:01.00>逐<00:02.00>字  \r\n\r\n  1 < 2 (旁白) 😀　"
 	if err := os.WriteFile(file, []byte(text), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +50,7 @@ func TestLyricsPickerClearAndConflict(t *testing.T) {
 		t.Fatalf("%+v %v", result, err)
 	}
 	d, _ := a.GetTrackDetail(first)
-	if d.Metadata.Lyrics == nil || *d.Metadata.Lyrics != strings.TrimPrefix(text, "\ufeff") {
+	if d.Metadata.Lyrics == nil || *d.Metadata.Lyrics != strings.TrimPrefix(strings.ReplaceAll(text, "\r\n", "\n"), "\ufeff") {
 		t.Fatalf("lyrics lost: %+v", d.Metadata)
 	}
 	other, _ := a.GetTrackDetail(second)
@@ -86,7 +87,7 @@ func TestLyricsPickerRejectsBadFilesWithoutChangingCurrent(t *testing.T) {
 	id := lyricTrack(t, a)
 	file := filepath.Join(t.TempDir(), "bad.lrc")
 	a.pickLyricsFile = func(context.Context, wruntime.OpenDialogOptions) (string, error) { return file, nil }
-	for _, body := range [][]byte{[]byte("[ti:only metadata]"), {0xff, 0xfe, 0x00}, []byte(strings.Repeat("a", lyrics.MaxTextBytes+1)), []byte("krc1binary")} {
+	for _, body := range [][]byte{[]byte("[ti:only metadata]"), {0xff, 0xfe, 0x00}, []byte(strings.Repeat("a", lyricdoc.MaxTextBytes+1)), []byte("krc1binary")} {
 		if err := os.WriteFile(file, body, 0600); err != nil {
 			t.Fatal(err)
 		}

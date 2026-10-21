@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
 	des "github.com/norhua/sonexa/internal/provider/qqmusic/qrcdes"
@@ -26,13 +27,6 @@ func providerClientForTest(fn func(*http.Request) string) *provider.Client {
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(fn(r)))}, nil
 	})
 	return c
-}
-func lyricServiceForTest(client *provider.Client) lyrics.Service {
-	r, err := lyrics.NewRegistry(lyrics.Entry{Provider: New(client, Config{}, nil)})
-	if err != nil {
-		panic(err)
-	}
-	return lyrics.Service{Sources: r}
 }
 
 func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
@@ -79,7 +73,7 @@ func TestQRCConversion(t *testing.T) {
 			if err != nil || got != tt.want {
 				t.Fatalf("%q %v", got, err)
 			}
-			doc, err := lyrics.ParseText(got)
+			doc, err := lyricdoc.ParseText(got)
 			if err != nil || doc.Format != "enhanced_lrc" {
 				t.Fatalf("%+v %v", doc, err)
 			}
@@ -104,7 +98,7 @@ func TestQRCContainerBoundaries(t *testing.T) {
 }
 
 func TestQRCRejectsMalformedAndOversized(t *testing.T) {
-	for _, encoded := range []string{"", "00", "xx", "0000000000000000", strings.Repeat("a", (4<<20)+1), encodedQRC(t, strings.Repeat("a", lyrics.MaxTextBytes+1)), encodedQRC(t, string([]byte{0xff})), encodedQRC(t, "bad\x00text")} {
+	for _, encoded := range []string{"", "00", "xx", "0000000000000000", strings.Repeat("a", (4<<20)+1), encodedQRC(t, strings.Repeat("a", lyricdoc.MaxTextBytes+1)), encodedQRC(t, string([]byte{0xff})), encodedQRC(t, "bad\x00text")} {
 		if _, err := decodeQRC(encoded); err == nil {
 			t.Fatal("accepted bad QRC")
 		}
@@ -138,7 +132,7 @@ func TestQQPlayPreservesChannelsAndUsesExplicitFlags(t *testing.T) {
 		}
 		return playBody(t, qqLyricData{QRC: 1, Lyric: encodedQRC(t, "[1000,1000]原文(1000,1000)"), Trans: b64("[00:01.00]翻译"), Roma: encodedQRC(t, "[1000,1000]roma(1000,1000)")}, qqLyricData{Lyric: b64("[00:01.00]原文")})
 	})
-	doc, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "001wMai814HLgJ"})
+	doc, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "001wMai814HLgJ"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,10 +164,17 @@ func TestQQOptionalFailuresAndPlainFallback(t *testing.T) {
 		{"encrypted translation", qqLyricData{Crypt: 1, Lyric: encodedQRC(t, "[00:01]original"), Trans: encodedQRC(t, "[00:01]translation")}, qqLyricData{}, "unavailable", "available", "lrc"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			channels := parseQQPlay([]byte(playBody(t, tt.qrc, tt.plain)))
-			doc, err := lyrics.DocumentFromPayload(channels)
+			calls := 0
+			client := providerClientForTest(func(*http.Request) string {
+				calls++
+				return playBody(t, tt.qrc, tt.plain)
+			})
+			doc, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Ref: "mid"})
 			if err != nil {
 				t.Fatal(err)
+			}
+			if err := lyricdoc.Validate(doc); err != nil || calls != 1 {
+				t.Fatal("incomplete provider result", err, calls)
 			}
 			if doc.WordTiming != tt.timing || doc.Translation.Status != tt.translation || doc.Format != tt.format {
 				t.Fatalf("%+v", doc)
@@ -207,7 +208,7 @@ func TestQQPlayBlockErrorsPreserveOtherChannels(t *testing.T) {
 					}
 					return string(body)
 				})
-				doc, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
+				doc, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
 				if err != nil || calls != 1 {
 					t.Fatalf("calls=%d err=%v", calls, err)
 				}
@@ -231,7 +232,7 @@ func TestQQFallbackKeepsNewTranslationAndReportsFailure(t *testing.T) {
 		}
 		return `{"code":0,"retcode":0,"subcode":0,"lyric":"[00:01]original"}`
 	})
-	doc, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
+	doc, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
 	if err != nil || calls != 2 || doc.Format != "lrc" || doc.WordTiming != "error" || !strings.Contains(doc.Text, "untimed translation") || len(doc.Warnings) == 0 {
 		t.Fatalf("%+v %v", doc, err)
 	}
@@ -243,7 +244,7 @@ func TestQQServiceFailureStopsFallback(t *testing.T) {
 		calls++
 		return `{"code":2001}`
 	})
-	_, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
+	_, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
 	var business *provider.BusinessError
 	if !errors.As(err, &business) || calls != 1 {
 		t.Fatal(err, calls)
@@ -258,20 +259,20 @@ func TestQQRestrictedErrorsNeverFallback(t *testing.T) {
 			calls++
 			return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("restricted"))}, nil
 		})
-		if _, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"}); err == nil || calls != 1 {
+		if _, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"}); err == nil || calls != 1 {
 			t.Fatal(err, calls)
 		}
 	}
 	calls := 0
 	client := provider.NewClient(nil, nil, "test")
 	client.HTTP.Transport = protocolTransport(func(r *http.Request) (*http.Response, error) { calls++; return nil, x509.UnknownAuthorityError{} })
-	if _, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"}); err == nil || calls != 1 {
+	if _, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"}); err == nil || calls != 1 {
 		t.Fatal(err, calls)
 	}
-	for _, body := range []string{strings.Repeat("x", (4<<20)+1), playBody(t, qqLyricData{QRC: 1, Lyric: encodedQRC(t, strings.Repeat("x", lyrics.MaxTextBytes+1))}, qqLyricData{})} {
+	for _, body := range []string{strings.Repeat("x", (4<<20)+1), playBody(t, qqLyricData{QRC: 1, Lyric: encodedQRC(t, strings.Repeat("x", lyricdoc.MaxTextBytes+1))}, qqLyricData{})} {
 		calls = 0
 		client = providerClientForTest(func(*http.Request) string { calls++; return body })
-		if _, err := lyricServiceForTest(client).Fetch(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"}); !errors.Is(err, lyrics.ErrTooLarge) || calls != 1 {
+		if _, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"}); !errors.Is(err, lyricdoc.ErrTooLarge) || calls != 1 {
 			t.Fatal(err, calls)
 		}
 	}
@@ -279,7 +280,7 @@ func TestQQRestrictedErrorsNeverFallback(t *testing.T) {
 
 func TestQQErrorsAndCancellation(t *testing.T) {
 	for _, body := range []string{`{}`, `{"code":2001}`, `{"code":0,"req":{"code":1},"plain":{"code":2}}`, `{"code":0,"req":{"code":0},"plain":{"code":0}}`, `not json`} {
-		if _, err := lyrics.DocumentFromPayload(parseQQPlay([]byte(body))); err == nil {
+		if _, err := lyricdoc.Build(parseQQPlay([]byte(body))); err == nil {
 			t.Fatalf("accepted %s", body)
 		}
 	}
@@ -291,7 +292,7 @@ func TestQQErrorsAndCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
 	client := providerClientForTest(func(*http.Request) string { calls++; cancel(); return `{"code":2001}` })
-	if _, err := lyricServiceForTest(client).Fetch(ctx, lyrics.Candidate{Source: "qq", Ref: "mid"}); err == nil || calls != 1 {
+	if _, err := New(client, Config{}, nil).FetchLyrics(ctx, lyrics.Candidate{Source: "qq", Ref: "mid"}); err == nil || calls != 1 {
 		t.Fatalf("fallback after cancel: %d %v", calls, err)
 	}
 }

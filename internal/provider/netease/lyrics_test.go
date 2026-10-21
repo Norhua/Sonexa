@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
 )
@@ -67,7 +68,12 @@ func TestYRCBundleGETAndBoundedFallback(t *testing.T) {
 				}
 				return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
 			})
-			_, err := p.FetchLyrics(context.Background(), lyrics.Candidate{Ref: "123"})
+			doc, err := p.FetchLyrics(context.Background(), lyrics.Candidate{Ref: "123"})
+			if err == nil {
+				if err := lyricdoc.Validate(doc); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if calls != tt.calls || forms != tt.calls-1 {
 				t.Fatal(calls, forms, err)
 			}
@@ -103,9 +109,9 @@ func TestYRCBundleNormalization(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			d, err := lyrics.DocumentFromPayload(p)
+			d, err := lyricdoc.Build(p)
 			if tt.fail {
-				if !errors.Is(err, lyrics.ErrFormat) {
+				if !errors.Is(err, lyricdoc.ErrFormat) {
 					t.Fatal(err)
 				}
 				return
@@ -129,7 +135,7 @@ func TestYRCContentScoreUsesConfirmedChannels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := lyrics.DocumentFromPayload(p)
+	d, err := lyricdoc.Build(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +154,7 @@ func TestLyricsNormalizeNativePlaceholders(t *testing.T) {
 		"[00:01]纯音乐，请您欣赏！", "[00:01]此歌曲为没有填词的纯音乐，请您欣赏",
 		"暂无歌词", "[00:01]此歌曲暂无歌词", "[00:01]<00:01>纯音乐，请欣赏",
 	} {
-		if payload, err := parseLyrics(lyricResponse(t, text, "translation", "roma")); !errors.Is(err, lyrics.ErrNoLyrics) || payload != nil {
+		if payload, err := parseLyrics(lyricResponse(t, text, "translation", "roma")); !errors.Is(err, lyricdoc.ErrNoLyrics) || payload != nil {
 			t.Fatalf("未归一化占位 %q: %+v %v", text, payload, err)
 		}
 	}
@@ -156,7 +162,7 @@ func TestLyricsNormalizeNativePlaceholders(t *testing.T) {
 	if err != nil || payload.Original.Status != "available" || payload.Translation.Status != "unavailable" || payload.Romanization.Status != "unavailable" {
 		t.Fatalf("附加通道占位影响原文: %+v %v", payload, err)
 	}
-	doc, err := lyrics.DocumentFromPayload(payload)
+	doc, err := lyricdoc.Build(payload)
 	if err != nil || doc.Text != "[00:01]原文" {
 		t.Fatal(doc, err)
 	}
@@ -167,7 +173,7 @@ func TestLyricsKeepTextAndValidationErrors(t *testing.T) {
 	if err != nil || payload.Translation.Text != "[00:01]翻译" || payload.Romanization.Status != "available" {
 		t.Fatal(payload, err)
 	}
-	for _, text := range []string{"[00:01]纯音乐，请欣赏\n" + strings.Repeat("x", lyrics.MaxTextBytes), "暂无歌词\x00"} {
+	for _, text := range []string{"[00:01]纯音乐，请欣赏\n" + strings.Repeat("x", lyricdoc.MaxTextBytes), "暂无歌词\x00"} {
 		if ch := lyricChannel(text); ch.Status != "error" {
 			t.Fatalf("占位不能掩盖格式或大小错误: %+v", ch)
 		}

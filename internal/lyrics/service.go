@@ -1,4 +1,4 @@
-// Package lyrics owns lyric search validation, scoring and document assembly.
+// Package lyrics owns lyric search validation, scoring and orchestration.
 // Concrete upstream packages implement its consumer-owned Provider contract.
 package lyrics
 
@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/provider"
 )
 
 const MaxResults = 20
-const MaxTextBytes = 2 << 20
 
 type Source struct {
 	ID   string `json:"id"`
@@ -40,30 +40,6 @@ type Candidate struct {
 	SortKey             string      `json:"sortKey"`
 	HighConfidence      bool        `json:"highConfidence"`
 	MatchNotes          []string    `json:"matchNotes"`
-}
-
-// Channel distinguishes absent optional content from a protocol/decoder error.
-type Channel struct {
-	Track       *Track       `json:"-"`
-	Text        string       `json:"text,omitempty"`
-	Status      string       `json:"status"`
-	Origin      string       `json:"origin"`
-	SyncStatus  string       `json:"syncStatus"`
-	Message     string       `json:"message,omitempty"`
-	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
-	Err         error        `json:"-"`
-}
-type Document struct {
-	Text         string       `json:"text"`
-	Format       string       `json:"format"`
-	Rows         []PreviewRow `json:"rows"`
-	OffsetMS     int64        `json:"offsetMs"`
-	Additional   []*Channel   `json:"additional,omitempty"`
-	Original     *Channel     `json:"original,omitempty"`
-	Translation  *Channel     `json:"translation,omitempty"`
-	Romanization *Channel     `json:"romanization,omitempty"`
-	WordTiming   string       `json:"wordTiming,omitempty"`
-	Warnings     []string     `json:"warnings,omitempty"`
 }
 
 type Service struct{ Sources *Registry }
@@ -120,7 +96,7 @@ func (s Service) Search(ctx context.Context, source string, q Query) ([]Candidat
 	return out, nil
 }
 
-func (s Service) Fetch(ctx context.Context, c Candidate) (*Document, error) {
+func (s Service) Fetch(ctx context.Context, c Candidate) (*lyricdoc.Document, error) {
 	p, err := s.Sources.Get(provider.ProviderID(c.Source))
 	if err != nil {
 		return nil, err
@@ -132,39 +108,15 @@ func (s Service) Fetch(ctx context.Context, c Candidate) (*Document, error) {
 		return nil, err
 	}
 	ctx = provider.WithStopRestrictedRetries(ctx)
-	payload, err := p.FetchLyrics(ctx, c)
+	doc, err := p.FetchLyrics(ctx, c)
 	if err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return DocumentFromPayload(payload)
-}
-
-func DocumentFromPayload(p *Payload) (*Document, error) {
-	if p == nil {
-		return nil, fmt.Errorf("歌词来源未返回正文")
+	if err := lyricdoc.Validate(doc); err != nil {
+		return nil, err
 	}
-	original := p.Original
-	if original == nil && p.Text != "" {
-		original = TextChannel(p.Text, nil)
-	}
-	warnings := append([]string(nil), p.Warnings...)
-	timing := p.WordTiming
-	if p.WordOriginal != nil {
-		word := normalizeChannel(p.WordOriginal)
-		if word.Status == "available" && hasWords(word.Track) {
-			original = word
-		} else if word.Status == "error" {
-			if original == nil || normalizeChannel(original).Status != "available" {
-				return nil, fmt.Errorf("逐字原文解析失败：%w", word.Err)
-			}
-			timing = "error"
-			warnings = append(warnings, "逐字原文解析失败："+word.Message)
-		} else if original == nil || normalizeChannel(original).Status != "available" {
-			original = word
-		}
-	}
-	return buildDocument(original, p.Translation, p.Romanization, p.Additional, timing, warnings)
+	return doc, nil
 }

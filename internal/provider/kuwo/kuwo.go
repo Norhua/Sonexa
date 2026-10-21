@@ -10,8 +10,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/provider/lyricfetch"
 )
 
 type Provider struct{ client *provider.Client }
@@ -51,20 +53,25 @@ func (p *Provider) SearchLyrics(ctx context.Context, q lyrics.Query) ([]lyrics.C
 
 const openapiLyricsPath = "/openapi/v1/www/lyric/getlyric"
 
-func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics.Payload, error) {
+func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *lyricdoc.Document, err error) {
+	defer func() { err = lyricfetch.Normalize(err) }()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	ctx = provider.WithStopRestrictedRetries(ctx)
 	body, err := p.request(ctx, "https://www.kuwo.cn", openapiLyricsPath, map[string]string{"musicId": c.Ref})
 	if err == nil {
-		var payload *lyrics.Payload
+		var payload *lyricdoc.Input
 		payload, err = parseLyricsResponse(body, true)
 		if err == nil {
-			return payload, nil
+			var doc *lyricdoc.Document
+			doc, err = lyricdoc.Build(payload)
+			if err == nil {
+				return doc, nil
+			}
 		}
 	}
-	if !lyrics.CanFallback(err) {
+	if !lyricfetch.CanFallback(err) {
 		return nil, err
 	}
 	body, err = p.request(ctx, "https://m.kuwo.cn", "/newh5/singles/songinfoandlrc", map[string]string{"musicId": c.Ref})
@@ -76,10 +83,10 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics
 		return nil, err
 	}
 	payload.Warnings = append(payload.Warnings, "openapi 未取得可用逐行歌词，已回退 HTTPS H5")
-	return payload, nil
+	return lyricdoc.Build(payload)
 }
-func parseLyrics(body []byte) (*lyrics.Payload, error) { return parseLyricsResponse(body, false) }
-func parseLyricsResponse(body []byte, openapi bool) (*lyrics.Payload, error) {
+func parseLyrics(body []byte) (*lyricdoc.Input, error) { return parseLyricsResponse(body, false) }
+func parseLyricsResponse(body []byte, openapi bool) (*lyricdoc.Input, error) {
 	var r struct {
 		Code   *int
 		Status *int
@@ -92,25 +99,25 @@ func parseLyricsResponse(body []byte, openapi bool) (*lyrics.Payload, error) {
 		}
 	}
 	if err := json.Unmarshal(body, &r); err != nil {
-		return nil, fmt.Errorf("%w：酷我歌词响应无法解析", lyrics.ErrFormat)
+		return nil, fmt.Errorf("%w：酷我歌词响应无法解析", lyricdoc.ErrFormat)
 	}
 	status := r.Status
 	if openapi {
 		status = r.Code
 	}
 	if status == nil {
-		return nil, fmt.Errorf("%w：酷我歌词响应缺少业务状态", lyrics.ErrFormat)
+		return nil, fmt.Errorf("%w：酷我歌词响应缺少业务状态", lyricdoc.ErrFormat)
 	}
 	if *status != 200 {
 		return nil, &provider.BusinessError{Source: "酷我", Block: "lyrics", Code: *status}
 	}
 	if r.Data == nil || r.Data.Lrclist == nil {
-		return nil, lyrics.ErrNoLyrics
+		return nil, lyricdoc.ErrNoLyrics
 	}
 	if len(r.Data.Lrclist) == 0 {
-		return nil, lyrics.ErrNoLyrics
+		return nil, lyricdoc.ErrNoLyrics
 	}
-	timed := []lyrics.TimedLine{}
+	timed := []lyricdoc.TimedLine{}
 	plain := []string{}
 	for _, l := range r.Data.Lrclist {
 		text := html.UnescapeString(l.LineLyric)
@@ -122,20 +129,20 @@ func parseLyricsResponse(body []byte, openapi bool) (*lyrics.Payload, error) {
 			plain = append(plain, text)
 			continue
 		}
-		timed = append(timed, lyrics.TimedLine{MS: int(math.Round(t * 1000)), Text: text})
+		timed = append(timed, lyricdoc.TimedLine{MS: int(math.Round(t * 1000)), Text: text})
 	}
 	if len(plain) > 0 {
 		plain = nil
 		for _, l := range r.Data.Lrclist {
 			plain = append(plain, html.UnescapeString(l.LineLyric))
 		}
-		return &lyrics.Payload{Text: strings.Join(plain, "\n")}, nil
+		return &lyricdoc.Input{Text: strings.Join(plain, "\n"), WordTiming: "unsupported", Warnings: []string{"时间轴无效，按来源原序保留全部正文为普通文本"}}, nil
 	}
-	text, err := lyrics.RenderTimed(timed)
+	text, err := lyricdoc.RenderTimed(timed)
 	if err != nil {
 		return nil, err
 	}
-	return &lyrics.Payload{Text: text}, nil
+	return &lyricdoc.Input{Text: text, WordTiming: "unsupported"}, nil
 }
 
 var _ lyrics.Provider = (*Provider)(nil)

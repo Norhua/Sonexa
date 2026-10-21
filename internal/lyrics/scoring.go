@@ -3,49 +3,14 @@ package lyrics
 import (
 	"strings"
 	"unicode"
+
+	"github.com/norhua/sonexa/internal/lyricdoc"
 )
 
 type ContentScore struct {
 	TotalScore          *int        `json:"totalScore"`
 	Terms               []ScoreTerm `json:"terms"`
 	AutoPreviewEligible bool        `json:"autoPreviewEligible"`
-}
-
-// AvailableContent is shared by channel presence and content bonuses. A
-// provider must identify upstream content; unknown/additional text is retained
-// but never promoted to a confirmed translation or romanization here.
-func AvailableContent(ch *Channel) bool {
-	if ch == nil || ch.Status != "available" || ch.Origin != "independent" && ch.Origin != "embedded" || ch.Track == nil {
-		return false
-	}
-	for _, l := range ch.Track.Lines {
-		if strings.TrimSpace(l.Text) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func duplicateOriginal(original, extra *Track) bool {
-	visible := func(t *Track) []string {
-		out := []string{}
-		for _, l := range t.Lines {
-			if strings.TrimSpace(l.Text) != "" {
-				out = append(out, l.Text)
-			}
-		}
-		return out
-	}
-	a, b := visible(original), visible(extra)
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return len(a) > 0
 }
 
 func letters(text string) int {
@@ -60,9 +25,9 @@ func letters(text string) int {
 
 // ScoreContent is lyric-local, not matching confidence or a probability.
 // Duration penalty from song matching is already included in MatchScore.
-func ScoreContent(c Candidate, d *Document, durationMS int) ContentScore {
+func ScoreContent(c Candidate, d *lyricdoc.Document, durationMS int) ContentScore {
 	result := ContentScore{}
-	if d == nil || !AvailableContent(d.Original) {
+	if d == nil || !lyricdoc.AvailableContent(d.Original) {
 		return result
 	}
 	t := d.Original.Track
@@ -73,22 +38,13 @@ func ScoreContent(c Candidate, d *Document, durationMS int) ContentScore {
 			abnormal = true
 		}
 	}
-	entries := make([]taggedLine, len(t.Lines))
-	for i, l := range t.Lines {
-		entries[i] = taggedLine{l, "original"}
-	}
-	unique, err := deduplicate(entries)
-	if err != nil {
-		return result
-	}
-	for _, e := range unique {
-		l := e.line
+	for _, l := range t.Lines {
 		if strings.TrimSpace(l.Text) == "" {
 			continue
 		}
 		lines++
 		chars += letters(l.Text)
-		if !invalidOffset(t) && l.StartMS != nil {
+		if !lyricdoc.InvalidOffset(t) && l.StartMS != nil {
 			timed++
 			check(l.StartMS)
 		}
@@ -108,12 +64,12 @@ func ScoreContent(c Candidate, d *Document, durationMS int) ContentScore {
 			previous = w.StartMS
 			words++
 			wordChars += letters(w.Text)
-			if !invalidOffset(t) {
+			if !lyricdoc.InvalidOffset(t) {
 				check(w.StartMS)
 				check(w.EndMS)
 			}
 		}
-		if valid && !invalidOffset(t) && words >= 2 && different {
+		if valid && !lyricdoc.InvalidOffset(t) && words >= 2 && different {
 			covered += wordChars
 		}
 	}
@@ -127,10 +83,10 @@ func ScoreContent(c Candidate, d *Document, durationMS int) ContentScore {
 	if chars > 0 {
 		word = 20 * covered / chars
 	}
-	if AvailableContent(d.Translation) {
+	if lyricdoc.AvailableContent(d.Translation) {
 		translation = 15
 	}
-	if AvailableContent(d.Romanization) {
+	if lyricdoc.AvailableContent(d.Romanization) {
 		romanization = 5
 	}
 	if abnormal {
@@ -142,11 +98,11 @@ func ScoreContent(c Candidate, d *Document, durationMS int) ContentScore {
 		total += term.Value
 	}
 	result.TotalScore = &total
-	result.AutoPreviewEligible = c.HighConfidence && !abnormal && !invalidOffset(t)
+	result.AutoPreviewEligible = c.HighConfidence && !abnormal && !lyricdoc.InvalidOffset(t)
 	return result
 }
 
-func WithContentScore(c Candidate, d *Document, durationMS int) Candidate {
+func WithContentScore(c Candidate, d *lyricdoc.Document, durationMS int) Candidate {
 	s := ScoreContent(c, d, durationMS)
 	c.TotalScore, c.ScoreTerms, c.AutoPreviewEligible = s.TotalScore, s.Terms, s.AutoPreviewEligible
 	return c

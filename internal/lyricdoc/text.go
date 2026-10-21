@@ -1,4 +1,4 @@
-package lyrics
+package lyricdoc
 
 import (
 	"errors"
@@ -8,13 +8,14 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/norhua/sonexa/internal/provider"
 )
 
 var ErrNoLyrics = errors.New("该候选暂无歌词")
 var ErrFormat = errors.New("歌词格式无效")
-var ErrTooLarge = provider.ErrResponseTooLarge
+var ErrTooLarge = errors.New("歌词内容过大")
+var ErrContract = errors.New("歌词文档契约无效")
+
+const MaxTextBytes = 2 << 20
 
 const MaxTimeMS int64 = 24 * 3600 * 1000
 const MaxProjectionBytes = MaxTextBytes
@@ -43,7 +44,7 @@ func normalizeText(text string) (string, error) {
 // ParseText keeps imported text (apart from BOM/newlines). The reading
 // projection does not rewrite the adoption text or infer word ends.
 func ParseText(text string) (*Document, error) {
-	return DocumentFromPayload(&Payload{Text: text})
+	return buildDocument(TextChannel(text, nil), nil, nil, nil, "", nil)
 }
 
 func parseTrack(text string) (*Track, string, error) {
@@ -151,7 +152,13 @@ func parseWords(body string) ([]Word, string, error) {
 		}
 		previous = n
 		isEnd := m[1] == len(body) || i+1 < len(matches) && matches[i+1][0] == m[1]
-		if isEnd && len(parts) > 0 && parts[len(parts)-1].StartMS != nil && parts[len(parts)-1].EndMS == nil {
+		if isEnd && text == "" && start != nil {
+			// A pending start followed immediately by its end is a real empty
+			// segment (native formats use these as timing placeholders). Keep
+			// its bounds without inventing visible text or word coverage.
+			parts = append(parts, Word{StartMS: start, EndMS: ms(n)})
+			start = nil
+		} else if isEnd && len(parts) > 0 && parts[len(parts)-1].StartMS != nil && parts[len(parts)-1].EndMS == nil {
 			parts[len(parts)-1].EndMS = ms(n)
 			start = nil
 		} else {
@@ -162,6 +169,8 @@ func parseWords(body string) ([]Word, string, error) {
 	if pos < len(body) {
 		parts = append(parts, Word{StartMS: start, Text: body[pos:]})
 		visible.WriteString(body[pos:])
+	} else if start != nil {
+		parts = append(parts, Word{StartMS: start})
 	}
 	return parts, visible.String(), nil
 }

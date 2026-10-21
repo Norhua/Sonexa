@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/provider"
 )
 
@@ -22,9 +23,9 @@ func (p *lyricsOnly) SearchLyrics(_ context.Context, q Query) ([]Candidate, erro
 	p.calls++
 	return []Candidate{{Source: string(p.id), Ref: "native", Title: q.Title}}, nil
 }
-func (p *lyricsOnly) FetchLyrics(_ context.Context, c Candidate) (*Payload, error) {
+func (p *lyricsOnly) FetchLyrics(_ context.Context, c Candidate) (*lyricdoc.Document, error) {
 	p.calls++
-	return &Payload{Text: c.Title}, nil
+	return lyricdoc.ParseText(c.Title)
 }
 
 var _ Provider = (*lyricsOnly)(nil)
@@ -52,7 +53,7 @@ func TestPublicDTOStructure(t *testing.T) {
 	}{
 		{Query{}, []string{"title", "artist", "album", "durationMs"}},
 		{Candidate{Ref: "private-native-reference"}, []string{"id", "source", "title", "artist", "album", "durationMs", "matchScore", "totalScore", "scoreTerms", "autoPreviewEligible", "matchTerms", "sortKey", "highConfidence", "matchNotes"}},
-		{Document{}, []string{"text", "format", "rows", "offsetMs"}},
+		{lyricdoc.Document{}, []string{"text", "format", "rows", "offsetMs"}},
 		{Source{}, []string{"id", "name"}},
 	} {
 		body, err := json.Marshal(tc.value)
@@ -76,7 +77,7 @@ func TestPublicDTOStructure(t *testing.T) {
 		}
 	}
 	// Optional channel names are also part of the public document contract.
-	v := reflect.TypeOf(Document{})
+	v := reflect.TypeOf(lyricdoc.Document{})
 	for field, tag := range map[string]string{"Original": "original,omitempty", "Translation": "translation,omitempty", "Romanization": "romanization,omitempty", "WordTiming": "wordTiming,omitempty", "Warnings": "warnings,omitempty"} {
 		f, ok := v.FieldByName(field)
 		if !ok || f.Tag.Get("json") != tag {

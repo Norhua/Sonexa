@@ -13,7 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/norhua/sonexa/internal/lyrics"
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	des "github.com/norhua/sonexa/internal/provider/qqmusic/qrcdes"
 )
 
@@ -21,7 +21,7 @@ import (
 // files are deliberately not accepted. Keep each stage bounded independently.
 func decodeQRC(encoded string) (string, error) {
 	if len(encoded) > 4<<20 {
-		return "", fmt.Errorf("%w：QRC 数据过大", lyrics.ErrTooLarge)
+		return "", fmt.Errorf("%w：QRC 数据过大", lyricdoc.ErrTooLarge)
 	}
 	data, err := hex.DecodeString(encoded)
 	if err != nil || len(data) == 0 || len(data)%8 != 0 {
@@ -35,12 +35,12 @@ func decodeQRC(encoded string) (string, error) {
 		return "", fmt.Errorf("QRC 解压失败: %w", err)
 	}
 	defer r.Close()
-	plain, err := io.ReadAll(io.LimitReader(r, lyrics.MaxTextBytes+1))
+	plain, err := io.ReadAll(io.LimitReader(r, lyricdoc.MaxTextBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("QRC 解压失败: %w", err)
 	}
-	if len(plain) > lyrics.MaxTextBytes {
-		return "", lyrics.ErrTooLarge
+	if len(plain) > lyricdoc.MaxTextBytes {
+		return "", lyricdoc.ErrTooLarge
 	}
 	if !utf8.Valid(plain) || bytes.IndexByte(plain, 0) >= 0 {
 		return "", fmt.Errorf("QRC 解码结果不是有效的 2 MiB 以内 UTF-8 文本")
@@ -121,7 +121,7 @@ func extractQRCContent(raw string) (string, error) {
 				return tracks[key], nil
 			}
 		}
-		return "", lyrics.ErrNoLyrics
+		return "", lyricdoc.ErrNoLyrics
 	}
 	if content, err := parse(raw); err == nil {
 		return content, nil
@@ -161,7 +161,7 @@ func extractQRCContent(raw string) (string, error) {
 			return content, nil
 		}
 	}
-	return "", fmt.Errorf("%w：QRC XML 边界无效或不唯一", lyrics.ErrFormat)
+	return "", fmt.Errorf("%w：QRC XML 边界无效或不唯一", lyricdoc.ErrFormat)
 }
 
 var qrcMetadata = regexp.MustCompile(`^\[[a-zA-Z]+:[^\]]*\]$`)
@@ -182,8 +182,8 @@ func clock(ms int) string { return fmt.Sprintf("%02d:%02d.%03d", ms/60000, ms/10
 // Preserve real word ends too, including gaps, instead of deriving durations
 // from the next word. Untimed credit lines stay ordinary LRC.
 func qrcToLRC(raw string) (string, error) {
-	if len(raw) > lyrics.MaxTextBytes {
-		return "", fmt.Errorf("%w：QRC 文本过大", lyrics.ErrTooLarge)
+	if len(raw) > lyricdoc.MaxTextBytes {
+		return "", fmt.Errorf("%w：QRC 文本过大", lyricdoc.ErrTooLarge)
 	}
 	if !utf8.ValidString(raw) || strings.ContainsRune(raw, 0) {
 		return "", fmt.Errorf("QRC 不是有效 UTF-8 文本")
@@ -244,8 +244,8 @@ func qrcToLRC(raw string) (string, error) {
 			}
 			out.WriteString(text)
 			out.WriteString("<" + clock(ts+dur) + ">")
-			if out.Len() > lyrics.MaxTextBytes {
-				return "", lyrics.ErrTooLarge
+			if out.Len() > lyricdoc.MaxTextBytes {
+				return "", lyricdoc.ErrTooLarge
 			}
 			pos, previousEnd = w[1], ts+dur
 			if strings.TrimSpace(text) != "" {
@@ -256,8 +256,8 @@ func qrcToLRC(raw string) (string, error) {
 			return "", fmt.Errorf("QRC 存在没有时间的尾部文字")
 		}
 		out.WriteString(m[3][pos:] + "\n")
-		if out.Len() > lyrics.MaxTextBytes {
-			return "", lyrics.ErrTooLarge
+		if out.Len() > lyricdoc.MaxTextBytes {
+			return "", lyricdoc.ErrTooLarge
 		}
 	}
 	if wordCount == 0 {

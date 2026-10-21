@@ -2,13 +2,14 @@ package lyrics
 
 import (
 	"errors"
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"strings"
 	"testing"
 )
 
-func scoreDocument(t *testing.T, p *Payload, match, duration int) ContentScore {
+func scoreDocument(t *testing.T, p *lyricdoc.Input, match, duration int) ContentScore {
 	t.Helper()
-	d, err := DocumentFromPayload(p)
+	d, err := lyricdoc.Build(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,17 +42,17 @@ func TestContentScoreFormula(t *testing.T) {
 		{"repeat copy", "[00:01]AB CD\n[00:01]<00:01>AB <00:02>CD", 110, 10, 20},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			s := scoreDocument(t, &Payload{Text: tt.text}, 80, 0)
+			s := scoreDocument(t, &lyricdoc.Input{Text: tt.text}, 80, 0)
 			if *s.TotalScore != tt.score || s.Terms[1].Value != tt.sync || s.Terms[2].Value != tt.word {
 				t.Fatal(s)
 			}
 		})
 	}
-	full := scoreDocument(t, &Payload{Text: "[00:01]<00:01>A <00:02>B", Translation: TextChannel("translation", nil), Romanization: TextChannel("roma", nil)}, 100, 0)
+	full := scoreDocument(t, &lyricdoc.Input{Text: "[00:01]<00:01>A <00:02>B", Translation: lyricdoc.TextChannel("translation", nil), Romanization: lyricdoc.TextChannel("roma", nil)}, 100, 0)
 	if *full.TotalScore != 150 {
 		t.Fatal(full)
 	}
-	for _, doc := range []*Document{nil, {}, {Translation: TextChannel("only translation", nil)}} {
+	for _, doc := range []*lyricdoc.Document{nil, {}, {Translation: lyricdoc.TextChannel("only translation", nil)}} {
 		if ScoreContent(Candidate{MatchScore: 100}, doc, 0).TotalScore != nil {
 			t.Fatal("no original scored")
 		}
@@ -61,21 +62,21 @@ func TestContentScoreFormula(t *testing.T) {
 func TestChannelPresenceAndBonusesAgree(t *testing.T) {
 	for _, tt := range []struct {
 		name              string
-		translation, roma *Channel
+		translation, roma *lyricdoc.Channel
 		bonus             int
 	}{
-		{"none", AbsentChannel(), AbsentChannel(), 0},
-		{"roma", AbsentChannel(), TextChannel("roma", nil), 5},
-		{"translation", TextChannel("translation", nil), AbsentChannel(), 15},
-		{"both", TextChannel("translation", nil), TextChannel("roma", nil), 20},
-		{"error", FailedChannel(errors.New("decode")), UnknownChannel(), 0},
-		{"empty", TextChannel("[00:01]", nil), AbsentChannel(), 0},
-		{"unknown origin", &Channel{Status: "available", Origin: "unknown", Text: "unclassified"}, UnknownChannel(), 0},
-		{"duplicate", TextChannel("original", nil), AbsentChannel(), 0},
-		{"partial", &Channel{Status: "available", Origin: "embedded", SyncStatus: "partial", Text: "[00:01]translation"}, AbsentChannel(), 15},
+		{"none", lyricdoc.AbsentChannel(), lyricdoc.AbsentChannel(), 0},
+		{"roma", lyricdoc.AbsentChannel(), lyricdoc.TextChannel("roma", nil), 5},
+		{"translation", lyricdoc.TextChannel("translation", nil), lyricdoc.AbsentChannel(), 15},
+		{"both", lyricdoc.TextChannel("translation", nil), lyricdoc.TextChannel("roma", nil), 20},
+		{"error", lyricdoc.FailedChannel(errors.New("decode")), lyricdoc.UnknownChannel(), 0},
+		{"empty", lyricdoc.TextChannel("[00:01]", nil), lyricdoc.AbsentChannel(), 0},
+		{"unknown origin", &lyricdoc.Channel{Status: "available", Origin: "unknown", Text: "unclassified"}, lyricdoc.UnknownChannel(), 0},
+		{"duplicate", lyricdoc.TextChannel("original", nil), lyricdoc.AbsentChannel(), 0},
+		{"partial", &lyricdoc.Channel{Status: "available", Origin: "embedded", SyncStatus: "partial", Text: "[00:01]translation"}, lyricdoc.AbsentChannel(), 15},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			d, err := DocumentFromPayload(&Payload{Text: "[00:01]original", Translation: tt.translation, Romanization: tt.roma})
+			d, err := lyricdoc.Build(&lyricdoc.Input{Text: "[00:01]original", Translation: tt.translation, Romanization: tt.roma})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -83,8 +84,8 @@ func TestChannelPresenceAndBonusesAgree(t *testing.T) {
 			if s.TotalScore == nil || *s.TotalScore != 90+tt.bonus {
 				t.Fatal(s)
 			}
-			for i, ch := range []*Channel{d.Translation, d.Romanization} {
-				if (ch.Status == "available") != AvailableContent(ch) || AvailableContent(ch) != (s.Terms[3+i].Value > 0) {
+			for i, ch := range []*lyricdoc.Channel{d.Translation, d.Romanization} {
+				if (ch.Status == "available") != lyricdoc.AvailableContent(ch) || lyricdoc.AvailableContent(ch) != (s.Terms[3+i].Value > 0) {
 					t.Fatal("status and score disagree", ch, s)
 				}
 				if ch.Track != nil && !strings.Contains(d.Text, ch.Track.Lines[0].Text) {
@@ -100,18 +101,18 @@ func TestChannelPresenceAndBonusesAgree(t *testing.T) {
 
 func TestCoverageDoesNotRewardLineCountOrTailLength(t *testing.T) {
 	base := "[00:01]<00:01>A <00:02>B"
-	a := scoreDocument(t, &Payload{Text: base}, 85, 200000)
-	b := scoreDocument(t, &Payload{Text: base + "\n[00:10]<00:10>A <00:11>B"}, 85, 200000)
+	a := scoreDocument(t, &lyricdoc.Input{Text: base}, 85, 200000)
+	b := scoreDocument(t, &lyricdoc.Input{Text: base + "\n[00:10]<00:10>A <00:11>B"}, 85, 200000)
 	if *a.TotalScore != *b.TotalScore || !a.AutoPreviewEligible || !b.AutoPreviewEligible {
 		t.Fatal(a, b)
 	}
-	plain := scoreDocument(t, &Payload{Text: "[00:01]original"}, 90, 0)
-	translated := scoreDocument(t, &Payload{Text: "[00:01]original", Translation: TextChannel("translation", nil)}, 85, 0)
+	plain := scoreDocument(t, &lyricdoc.Input{Text: "[00:01]original"}, 90, 0)
+	translated := scoreDocument(t, &lyricdoc.Input{Text: "[00:01]original", Translation: lyricdoc.TextChannel("translation", nil)}, 85, 0)
 	if *plain.TotalScore != 100 || *translated.TotalScore != 110 {
 		t.Fatal(plain, translated)
 	}
 	// Optional track times do not penalize the selected original timeline.
-	extra := scoreDocument(t, &Payload{Text: base, Translation: TextChannel("[23:00]translation", nil)}, 85, 200000)
+	extra := scoreDocument(t, &lyricdoc.Input{Text: base, Translation: lyricdoc.TextChannel("[23:00]translation", nil)}, 85, 200000)
 	if extra.Terms[5].Value != 0 || !extra.AutoPreviewEligible {
 		t.Fatal(extra)
 	}
@@ -130,7 +131,7 @@ func TestTimelinePenaltyAndEligibility(t *testing.T) {
 		{"[00:59]A", 0, 10, true},
 		{"[00:01]A", 300000, 10, true},
 	} {
-		s := scoreDocument(t, &Payload{Text: tt.text}, 0, tt.duration)
+		s := scoreDocument(t, &lyricdoc.Input{Text: tt.text}, 0, tt.duration)
 		if *s.TotalScore != tt.total || s.AutoPreviewEligible != tt.eligible {
 			t.Fatalf("%s: %+v", tt.text, s)
 		}

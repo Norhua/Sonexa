@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/norhua/sonexa/internal/covers/sources"
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
 )
@@ -82,7 +83,7 @@ func TestLiveQQMetadata(t *testing.T) {
 	if !fallback || d.Lyrics == nil || *d.Lyrics == "" {
 		t.Fatal("真实样例未触发并成功取得歌词回退；保持未验证")
 	}
-	if _, err := lyrics.DocumentFromPayload(&lyrics.Payload{Text: *d.Lyrics}); err != nil {
+	if _, err := lyricdoc.ParseText(*d.Lyrics); err != nil {
 		t.Fatal("真实回退内容不是可用歌词；非空响应不能作为成功补取证据")
 	}
 	t.Logf("metadata fallback requests=%d lyric_bytes=%d", len(audit.snapshot())-before, len(*d.Lyrics))
@@ -168,7 +169,7 @@ func TestLiveQQFallbackDiscovery(t *testing.T) {
 			usable := false
 			if d.Lyrics != nil {
 				lyricBytes = len(*d.Lyrics)
-				_, parseErr := lyrics.DocumentFromPayload(&lyrics.Payload{Text: *d.Lyrics})
+				_, parseErr := lyricdoc.ParseText(*d.Lyrics)
 				usable = parseErr == nil
 			}
 			t.Logf("discovery candidate=%d album=%s track=%s fallback=%t usable_lyrics=%t lyric_bytes=%d", checked, *c.ReleaseRef, c.MatchRef, fallback, usable, lyricBytes)

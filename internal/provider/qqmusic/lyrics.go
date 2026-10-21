@@ -10,8 +10,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/provider/lyricfetch"
 )
 
 func (p *Provider) SearchLyrics(ctx context.Context, q lyrics.Query) ([]lyrics.Candidate, error) {
@@ -52,12 +54,12 @@ type qqLyricData struct {
 	Roma  string `json:"roma"`
 }
 
-func newQQChannels() *lyrics.Payload {
-	return &lyrics.Payload{Original: lyrics.AbsentChannel(), Translation: lyrics.AbsentChannel(), Romanization: lyrics.AbsentChannel(), WordTiming: "unavailable"}
+func newQQChannels() *lyricdoc.Input {
+	return &lyricdoc.Input{Original: lyricdoc.AbsentChannel(), Translation: lyricdoc.AbsentChannel(), Romanization: lyricdoc.AbsentChannel(), WordTiming: "unavailable"}
 }
-func failedQQChannels(err error) *lyrics.Payload {
+func failedQQChannels(err error) *lyricdoc.Input {
 	err = qqFormatError(err)
-	return &lyrics.Payload{Original: lyrics.FailedChannel(err), Translation: lyrics.FailedChannel(err), Romanization: lyrics.FailedChannel(err), WordTiming: "error"}
+	return &lyricdoc.Input{Original: lyricdoc.FailedChannel(err), Translation: lyricdoc.FailedChannel(err), Romanization: lyricdoc.FailedChannel(err), WordTiming: "error"}
 }
 func qqBlockData(raw map[string]json.RawMessage, name string) (*qqLyricData, error) {
 	body, err := decodeBlock(raw, name)
@@ -84,29 +86,29 @@ func qqText(text string, encrypted bool) (string, error) {
 }
 func qqFormatError(err error) error {
 	var business *provider.BusinessError
-	if err == nil || errors.As(err, &business) || errors.Is(err, lyrics.ErrTooLarge) {
+	if err == nil || errors.As(err, &business) || errors.Is(err, lyricdoc.ErrTooLarge) {
 		return err
 	}
-	return fmt.Errorf("%w：%w", lyrics.ErrFormat, err)
+	return fmt.Errorf("%w：%w", lyricdoc.ErrFormat, err)
 }
 
-func qqDecodedChannel(raw string, err error) *lyrics.Channel {
+func qqDecodedChannel(raw string, err error) *lyricdoc.Channel {
 	if err != nil {
-		return lyrics.FailedChannel(qqFormatError(err))
+		return lyricdoc.FailedChannel(qqFormatError(err))
 	}
 	trimmed := strings.TrimSpace(raw)
 	if strings.HasPrefix(trimmed, "<QrcInfos") || strings.HasPrefix(trimmed, "<?xml") || qrcLineStart.MatchString(raw) {
 		raw, err = qrcToLRC(raw)
 	}
-	return lyrics.TextChannel(raw, qqFormatError(err))
+	return lyricdoc.TextChannel(raw, qqFormatError(err))
 }
-func qqRomanization(text string) *lyrics.Channel {
+func qqRomanization(text string) *lyricdoc.Channel {
 	if text == "" {
-		return lyrics.AbsentChannel()
+		return lyricdoc.AbsentChannel()
 	}
 	return qqDecodedChannel(decodeQRC(text))
 }
-func parseQQPlay(body []byte) *lyrics.Payload {
+func parseQQPlay(body []byte) *lyricdoc.Input {
 	out := newQQChannels()
 	response, err := decodeEnvelope(body)
 	if err != nil {
@@ -120,34 +122,36 @@ func parseQQPlay(body []byte) *lyrics.Payload {
 			if i == 0 {
 				out.WordTiming = "error"
 			}
-			out.Original = lyrics.PreferredChannel(out.Original, lyrics.FailedChannel(err))
-			out.Translation = lyrics.PreferredChannel(out.Translation, lyrics.FailedChannel(err))
-			out.Romanization = lyrics.PreferredChannel(out.Romanization, lyrics.FailedChannel(err))
+			out.Original = lyricdoc.PreferredChannel(out.Original, lyricdoc.FailedChannel(err))
+			out.Translation = lyricdoc.PreferredChannel(out.Translation, lyricdoc.FailedChannel(err))
+			out.Romanization = lyricdoc.PreferredChannel(out.Romanization, lyricdoc.FailedChannel(err))
 			continue
 		}
 		original := qqDecodedChannel(qqText(data.Lyric, data.QRC == 1 || data.Crypt == 1))
 		if original.Status == "available" {
-			actual, parseErr := lyrics.ParseText(original.Text)
+			actual, parseErr := lyricdoc.ParseText(original.Text)
 			if parseErr == nil && actual.WordTiming == "available" {
 				out.WordTiming = "available"
-				out.WordOriginal = lyrics.PreferredChannel(out.WordOriginal, original)
+				out.WordOriginal = lyricdoc.PreferredChannel(out.WordOriginal, original)
 			}
 		} else if original.Status == "error" && i == 0 {
 			out.WordTiming = "error"
 			out.Warnings = append(out.Warnings, "逐字歌词解析失败："+original.Message)
 		}
-		out.Original = lyrics.PreferredChannel(out.Original, original)
-		out.Translation = lyrics.PreferredChannel(out.Translation, qqDecodedChannel(qqText(data.Trans, data.Crypt == 1)))
-		out.Romanization = lyrics.PreferredChannel(out.Romanization, qqRomanization(data.Roma))
+		out.Original = lyricdoc.PreferredChannel(out.Original, original)
+		out.Translation = lyricdoc.PreferredChannel(out.Translation, qqDecodedChannel(qqText(data.Trans, data.Crypt == 1)))
+		out.Romanization = lyricdoc.PreferredChannel(out.Romanization, qqRomanization(data.Roma))
 	}
 	return out
 }
 
-func legacyPayload(parsed *legacyLyrics) *lyrics.Payload {
-	return &lyrics.Payload{Original: lyrics.TextChannel(parsed.Original, parsed.OriginalError), Translation: lyrics.TextChannel(parsed.Translation, parsed.TranslationError), Romanization: lyrics.AbsentChannel(), WordTiming: "unsupported"}
+func legacyPayload(parsed *legacyLyrics) *lyricdoc.Input {
+	return &lyricdoc.Input{Original: lyricdoc.TextChannel(parsed.Original, parsed.OriginalError), Translation: lyricdoc.TextChannel(parsed.Translation, parsed.TranslationError), Romanization: lyricdoc.AbsentChannel(), WordTiming: "unsupported"}
 }
 
-func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics.Payload, error) {
+func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *lyricdoc.Document, err error) {
+	defer func() { err = lyricfetch.Normalize(err) }()
+	ctx = provider.WithStopRestrictedRetries(ctx)
 	blocks := map[string]any{}
 	for name, qrc := range map[string]int{"req": 1, "plain": 0} {
 		blocks[name] = map[string]any{"module": "music.musichallSong.PlayLyricInfo", "method": "GetPlayLyricInfo", "param": map[string]any{
@@ -160,7 +164,7 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics
 		channels = parseQQPlay(body)
 	} else {
 		// Transport errors have no permission to start another protocol stage.
-		if !lyrics.CanFallback(err) {
+		if !lyricfetch.CanFallback(err) {
 			return nil, err
 		}
 		channels = failedQQChannels(err)
@@ -168,37 +172,37 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*lyrics
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if _, parseErr := lyrics.DocumentFromPayload(channels); parseErr == nil {
-		return channels, nil
+	if doc, parseErr := lyricdoc.Build(channels); parseErr == nil {
+		return doc, nil
 	} else {
 		err = parseErr
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if !lyrics.CanFallback(err) {
+	if !lyricfetch.CanFallback(err) {
 		return nil, err
 	}
-	for _, ch := range []*lyrics.Channel{channels.Original, channels.Translation, channels.Romanization} {
-		if ch.Err != nil && !lyrics.CanFallback(ch.Err) {
+	for _, ch := range []*lyricdoc.Channel{channels.Original, channels.Translation, channels.Romanization} {
+		if ch.Err != nil && !lyricfetch.CanFallback(ch.Err) {
 			return nil, ch.Err
 		}
 	}
 	parsed, fallbackErr := p.legacyLyrics(ctx, c.Ref, provider.NoStore)
-	var legacy *lyrics.Payload
+	var legacy *lyricdoc.Input
 	if fallbackErr == nil {
 		legacy = legacyPayload(parsed)
-		_, fallbackErr = lyrics.DocumentFromPayload(legacy)
+		_, fallbackErr = lyricdoc.Build(legacy)
 	}
 	if fallbackErr != nil {
-		return nil, fmt.Errorf("QQ 新歌词接口：%w；普通歌词回退：%v", err, fallbackErr)
+		return nil, fmt.Errorf("QQ 新歌词接口：%w；普通歌词回退：%w", err, fallbackErr)
 	}
 	channels.Original = legacy.Original
-	channels.Translation = lyrics.PreferredChannel(channels.Translation, legacy.Translation)
-	channels.Romanization = lyrics.PreferredChannel(channels.Romanization, legacy.Romanization)
+	channels.Translation = lyricdoc.PreferredChannel(channels.Translation, legacy.Translation)
+	channels.Romanization = lyricdoc.PreferredChannel(channels.Romanization, legacy.Romanization)
 	channels.WordTiming = "error"
 	channels.Warnings = append(channels.Warnings, "QQ 新歌词接口未取得可用原文，已回退普通歌词："+err.Error())
-	return channels, nil
+	return lyricdoc.Build(channels)
 }
 
 var _ lyrics.Provider = (*Provider)(nil)

@@ -1,4 +1,4 @@
-package lyrics
+package lyricdoc
 
 import (
 	"fmt"
@@ -8,6 +8,10 @@ import (
 func isOffset(tag string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(tag)), "[offset:")
 }
+
+// InvalidOffset reports a diagnosed ambiguous timeline without changing it.
+func InvalidOffset(t *Track) bool { return invalidOffset(t) }
+
 func invalidOffset(t *Track) bool {
 	for _, d := range t.Diagnostics {
 		if d.Code == "invalid_offset" {

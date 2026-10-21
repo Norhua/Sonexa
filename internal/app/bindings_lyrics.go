@@ -3,17 +3,13 @@ package app
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type lyricSession struct {
@@ -25,7 +21,7 @@ type lyricSession struct {
 	mu         sync.Mutex
 	searched   bool
 	candidates map[string]lyrics.Candidate
-	documents  map[string]*lyrics.Document
+	documents  map[string]*lyricdoc.Document
 }
 
 func (a *App) ListLyricsSources() []lyrics.Source {
@@ -55,7 +51,7 @@ func (a *App) CreateLyricsSearch(trackID int64) (string, error) {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	ctx = provider.WithRequestGate(provider.WithPriority(ctx, provider.PriorityInteractive), a.checkCoverOutbound)
-	session := &lyricSession{ctx: ctx, cancel: cancel, trackID: trackID, created: time.Now(), candidates: map[string]lyrics.Candidate{}, documents: map[string]*lyrics.Document{}}
+	session := &lyricSession{ctx: ctx, cancel: cancel, trackID: trackID, created: time.Now(), candidates: map[string]lyrics.Candidate{}, documents: map[string]*lyricdoc.Document{}}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.lyricSvc == nil {
@@ -132,7 +128,7 @@ func (a *App) SearchLyrics(id, source string, q lyrics.Query) ([]lyrics.Candidat
 	}
 	return candidates, nil
 }
-func (a *App) FetchLyrics(id, candidateID string) (*lyrics.Document, error) {
+func (a *App) FetchLyrics(id, candidateID string) (*lyricdoc.Document, error) {
 	s, service, err := a.lyricWork(id)
 	if err != nil {
 		return nil, err
@@ -170,11 +166,10 @@ func (a *App) AdoptLyrics(id, candidateID string, revision int64) (int64, error)
 	if doc == nil {
 		return 0, fmt.Errorf("请先获取并预览歌词")
 	}
-	return a.saveLyrics(s.ctx, s.trackID, doc.Text, revision)
+	return a.saveLyrics(s.ctx, s.trackID, doc, revision)
 }
-func (a *App) saveLyrics(ctx context.Context, trackID int64, text string, revision int64) (int64, error) {
-	doc, err := lyrics.ParseText(text)
-	if err != nil {
+func (a *App) saveLyrics(ctx context.Context, trackID int64, doc *lyricdoc.Document, revision int64) (int64, error) {
+	if err := lyricdoc.Validate(doc); err != nil {
 		return 0, err
 	}
 	draft, err := a.store.StageLyrics(ctx, doc.Text)
@@ -189,63 +184,6 @@ func (a *App) saveLyrics(ctx context.Context, trackID int64, text string, revisi
 	return revision + 1, nil
 }
 
-type LyricsPickResult struct {
-	Cancelled bool  `json:"cancelled"`
-	Revision  int64 `json:"revision"`
-}
-
-func (a *App) PickAndAdoptLyrics(trackID, revision int64) (*LyricsPickResult, error) {
-	if _, err := a.LyricsRevision(trackID); err != nil {
-		return nil, err
-	}
-	pick := a.pickLyricsFile
-	if pick == nil {
-		pick = wruntime.OpenFileDialog
-	}
-	path, err := pick(a.ctx, wruntime.OpenDialogOptions{Title: "选择歌词", Filters: []wruntime.FileFilter{{DisplayName: "UTF-8 歌词（TXT / LRC）", Pattern: "*.txt;*.lrc"}}})
-	if err != nil {
-		return nil, err
-	}
-	if path == "" {
-		return &LyricsPickResult{Cancelled: true, Revision: revision}, nil
-	}
-	ext := strings.ToLower(filepath.Ext(path))
-	if ext != ".txt" && ext != ".lrc" {
-		return nil, fmt.Errorf("请选择 UTF-8 编码的 .txt 或 .lrc 文件")
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Size() > lyrics.MaxTextBytes {
-		return nil, fmt.Errorf("歌词必须是 2 MiB 以内的普通文本文件")
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	info, err = f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Size() > lyrics.MaxTextBytes {
-		return nil, fmt.Errorf("歌词必须是 2 MiB 以内的普通文本文件")
-	}
-	body, err := io.ReadAll(io.LimitReader(f, lyrics.MaxTextBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	ctx := a.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	rev, err := a.saveLyrics(ctx, trackID, string(body), revision)
-	if err != nil {
-		return nil, err
-	}
-	return &LyricsPickResult{Revision: rev}, nil
-}
 func (a *App) ClearLyrics(trackID, revision int64) (int64, error) {
 	if err := a.ready(); err != nil {
 		return 0, err

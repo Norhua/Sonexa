@@ -3,6 +3,8 @@ package lyrics
 import (
 	"context"
 	"errors"
+	"github.com/norhua/sonexa/internal/lyricdoc"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -12,7 +14,7 @@ import (
 
 type businessSource struct {
 	search func(context.Context, Query) ([]Candidate, error)
-	fetch  func(context.Context, Candidate) (*Payload, error)
+	fetch  func(context.Context, Candidate) (*lyricdoc.Document, error)
 }
 
 func (*businessSource) ID() provider.ProviderID { return "only" }
@@ -20,7 +22,7 @@ func (*businessSource) DisplayName() string     { return "Only" }
 func (p *businessSource) SearchLyrics(ctx context.Context, q Query) ([]Candidate, error) {
 	return p.search(ctx, q)
 }
-func (p *businessSource) FetchLyrics(ctx context.Context, c Candidate) (*Payload, error) {
+func (p *businessSource) FetchLyrics(ctx context.Context, c Candidate) (*lyricdoc.Document, error) {
 	return p.fetch(ctx, c)
 }
 func businessService(t *testing.T, p *businessSource) Service {
@@ -52,7 +54,7 @@ func TestServiceOwnsValidationRankingAndDeduplication(t *testing.T) {
 	}
 }
 func TestFetchDeadlineIncludesProviderWork(t *testing.T) {
-	p := &businessSource{fetch: func(ctx context.Context, _ Candidate) (*Payload, error) {
+	p := &businessSource{fetch: func(ctx context.Context, _ Candidate) (*lyricdoc.Document, error) {
 		deadline, ok := ctx.Deadline()
 		if !ok || time.Until(deadline) > 40*time.Second {
 			t.Fatal("no total deadline")
@@ -69,64 +71,78 @@ func TestFetchDeadlineIncludesProviderWork(t *testing.T) {
 }
 func TestBusinessTextDoesNotInterpretUpstreamPlaceholders(t *testing.T) {
 	for _, text := range []string{"[00:01]纯音乐，请欣赏", "[00:01]真实正文\n[00:02]暂无歌词"} {
-		s := businessService(t, &businessSource{fetch: func(context.Context, Candidate) (*Payload, error) {
-			return &Payload{Text: text}, nil
+		s := businessService(t, &businessSource{fetch: func(context.Context, Candidate) (*lyricdoc.Document, error) {
+			return lyricdoc.ParseText(text)
 		}})
 		doc, err := s.Fetch(context.Background(), Candidate{Source: "only"})
 		if err != nil || doc.Text != text {
 			t.Fatalf("单能力来源正文被公共层解释: %+v %v", doc, err)
 		}
-		channel := TextChannel(text, nil)
+		channel := lyricdoc.TextChannel(text, nil)
 		if channel.Status != "available" {
 			t.Fatal(channel)
 		}
-		if _, err := DocumentFromPayload(&Payload{Original: channel}); err != nil {
+		if _, err := lyricdoc.Build(&lyricdoc.Input{Original: channel}); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-func TestPayloadStructuredModelAndUnknownChannels(t *testing.T) {
-	text := "[00:01.20]<00:01.200>Hello <00:01.500>world<00:02.000>"
-	for _, p := range []*Payload{{Text: text}, {Original: TextChannel(text, nil)}} {
-		d, err := DocumentFromPayload(p)
+func TestServiceRejectsIncompleteDocumentsWithoutRepair(t *testing.T) {
+	for _, doc := range []*lyricdoc.Document{nil, {}, {Text: "only text"}, {Text: "only translation", Translation: lyricdoc.TextChannel("only translation", nil)}} {
+		calls := 0
+		s := businessService(t, &businessSource{fetch: func(context.Context, Candidate) (*lyricdoc.Document, error) {
+			calls++
+			return doc, nil
+		}})
+		if got, err := s.Fetch(context.Background(), Candidate{Source: "only"}); err == nil || got != nil || calls != 1 {
+			t.Fatal("half-built document was repaired or fetched again", got, err, calls)
+		}
+	}
+	for _, change := range []func(*lyricdoc.Document){
+		func(d *lyricdoc.Document) { d.Rows[0].Text = "wrong projection" },
+		func(d *lyricdoc.Document) { d.Translation.Status = "available" },
+		func(d *lyricdoc.Document) { d.Original.Track.Lines[0].Parts[0].EndMS = nil },
+	} {
+		d, err := lyricdoc.Build(&lyricdoc.Input{Text: "[00:01]<00:01>A <00:01.2><00:01.5>B"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if d.Text != text || d.Format != "enhanced_lrc" || d.Original.Status != "available" || d.WordTiming != "available" || len(d.Rows) != 1 || d.Rows[0].Text != "Hello world" || *d.Rows[0].TimeMS != 1200 {
-			t.Fatalf("%+v", d)
+		change(d)
+		before := *d
+		s := businessService(t, &businessSource{fetch: func(context.Context, Candidate) (*lyricdoc.Document, error) { return d, nil }})
+		if _, err := s.Fetch(context.Background(), Candidate{Source: "only"}); !errors.Is(err, lyricdoc.ErrContract) {
+			t.Fatal(err)
 		}
-		parts := d.Original.Track.Lines[0].Parts
-		if len(parts) != 2 || parts[0].EndMS != nil || *parts[1].EndMS != 2000 {
-			t.Fatalf("invented word ends: %+v", parts)
-		}
-		if d.Translation.Status != "unknown" || d.Romanization.Status != "unknown" {
-			t.Fatal("missing capability is not an absence claim")
-		}
-	}
-	d, err := DocumentFromPayload(&Payload{Text: "original", Translation: AbsentChannel(), Romanization: UnknownChannel()})
-	if err != nil || d.Translation.Status != "unavailable" || d.Romanization.Status != "unknown" || d.Original.SyncStatus != "unsynced" {
-		t.Fatal(d, err)
-	}
-	for _, ch := range []*Channel{{Status: "available", Text: ""}, {Status: "unknown", Text: "unclassified"}, {Status: "available", Track: &Track{}}} {
-		if _, err := DocumentFromPayload(&Payload{Original: ch, Translation: TextChannel("translation", nil)}); !errors.Is(err, ErrNoLyrics) {
-			t.Fatal(ch, err)
+		if !reflect.DeepEqual(*d, before) {
+			t.Fatal("invalid document changed")
 		}
 	}
 }
 
-func TestPayloadBusinessValidation(t *testing.T) {
-	for _, p := range []*Payload{nil, {}, {Translation: TextChannel("translation", nil)}, {Original: FailedChannel(errors.New("decode"))}, {Text: strings.Repeat("x", MaxTextBytes+1)}} {
-		if _, err := DocumentFromPayload(p); err == nil {
-			t.Fatal("invalid original accepted")
-		}
+func TestServiceAndScoreReadCompletedDocumentUnchanged(t *testing.T) {
+	d, err := lyricdoc.Build(&lyricdoc.Input{
+		Original:     lyricdoc.TextChannel("[00:03]unused ordinary", nil),
+		WordOriginal: lyricdoc.TextChannel("[offset:500]\n[00:01]<00:01>A <00:01.2><00:01.5>B\n[00:01]A B", nil),
+		Translation:  lyricdoc.TextChannel("[offset:-500]\n[00:00]译文", nil),
+		Additional:   []*lyricdoc.Channel{{Status: "unknown", Origin: "embedded", Text: "unclassified"}},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	p := &Payload{Original: TextChannel("[00:01]original", nil), Translation: FailedChannel(errors.New("bad translation")), Romanization: AbsentChannel(), WordTiming: "unavailable"}
-	d, err := DocumentFromPayload(p)
-	if err != nil || d.Text != "[00:01]original" || d.Translation.Status != "error" || len(d.Warnings) != 1 {
-		t.Fatal(d, err)
+	s := businessService(t, &businessSource{fetch: func(context.Context, Candidate) (*lyricdoc.Document, error) { return d, nil }})
+	got, err := s.Fetch(context.Background(), Candidate{Source: "only"})
+	if err != nil || got != d {
+		t.Fatal("service replaced provider document", err)
 	}
-	if len(p.Warnings) != 0 {
-		t.Fatal("document mutated provider payload")
+	score := ScoreContent(Candidate{MatchScore: 80, HighConfidence: true}, got, 5000)
+	if score.TotalScore == nil || *score.TotalScore != 125 {
+		t.Fatal(score)
+	}
+	if err := lyricdoc.Validate(d); err != nil {
+		t.Fatal("scoring changed sealed content", err)
+	}
+	if len(d.Original.Track.Lines) != 1 || len(d.Rows[0].Translation) != 1 {
+		t.Fatal(d)
 	}
 }

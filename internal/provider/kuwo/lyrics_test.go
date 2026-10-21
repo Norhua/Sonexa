@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
 )
@@ -21,6 +22,7 @@ func TestOpenapiAndRestrictedH5Fallback(t *testing.T) {
 		fail          bool
 	}{
 		{"success", `{"code":200,"data":{"lrclist":[{"time":"1.2","lineLyric":"body"}]}}`, 200, 1, false},
+		{"plain invalid time", `{"code":200,"data":{"lrclist":[{"time":"bad","lineLyric":"first"},{"time":"1","lineLyric":"second"}]}}`, 200, 1, false},
 		{"missing", `{"code":200,"data":null}`, 200, 2, false},
 		{"malformed", `{`, 200, 2, false},
 		{"wrong status shape", `{"status":200}`, 200, 2, false},
@@ -54,8 +56,11 @@ func TestOpenapiAndRestrictedH5Fallback(t *testing.T) {
 				t.Fatal(calls, err)
 			}
 			if err == nil {
-				if _, err := lyrics.DocumentFromPayload(p); err != nil {
+				if err := lyricdoc.Validate(p); err != nil {
 					t.Fatal(err)
+				}
+				if tt.name == "plain invalid time" && (p.Text != "first\nsecond" || p.Format != "text" || p.WordTiming != "unsupported" || len(p.Warnings) == 0) {
+					t.Fatal(p)
 				}
 			}
 		})

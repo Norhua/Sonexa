@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
 )
@@ -37,21 +38,21 @@ func TestKRCRelativeTimesAndBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := lyrics.DocumentFromPayload(p)
+	d, err := lyricdoc.Build(p)
 	if err != nil || d.WordTiming != "available" || !strings.Contains(d.Text, "<00:09.750>A <00:09.950><00:10.250>B (aside) 😀<00:10.750>") {
 		t.Fatal(d, err)
 	}
 	for _, text := range []string{"[100,100]<-200,10,0>bad", "[86400000,0]<1,0,0>bad", "[9999999999999999999999,1]<0,1,0>bad", "[0,100]<0,99999999999999999999999,0>bad"} {
-		if _, err := krcPayload(encryptedKRC(t, text)); !errors.Is(err, lyrics.ErrFormat) {
+		if _, err := krcPayload(encryptedKRC(t, text)); !errors.Is(err, lyricdoc.ErrFormat) {
 			t.Fatal(err)
 		}
 	}
 	for _, s := range []string{"%%%", base64.StdEncoding.EncodeToString([]byte("bad header")), base64.StdEncoding.EncodeToString([]byte("krc1broken"))} {
-		if _, err := decodeKRC(s); !errors.Is(err, lyrics.ErrFormat) {
+		if _, err := decodeKRC(s); !errors.Is(err, lyricdoc.ErrFormat) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := decodeKRC(encryptedKRC(t, strings.Repeat("x", lyrics.MaxTextBytes+1))); !errors.Is(err, lyrics.ErrTooLarge) {
+	if _, err := decodeKRC(encryptedKRC(t, strings.Repeat("x", lyricdoc.MaxTextBytes+1))); !errors.Is(err, lyricdoc.ErrTooLarge) {
 		t.Fatal(err)
 	}
 }
@@ -69,13 +70,35 @@ func TestKRCLanguageUsesNativeRowsIncludingEmpty(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			text := "[language:" + base64.StdEncoding.EncodeToString([]byte(tt.language)) + "]\n[1000,1000]<0,500,0>A\n[2000,1000]<0,500,0>\n[3000,1000]<0,500,0>C"
-			p, err := krcPayload(encryptedKRC(t, text))
+			calls := 0
+			client := provider.NewClient(nil, nil, "test")
+			client.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+				calls++
+				body := `{"status":200,"candidates":[{"id":"1","accesskey":"test"}]}`
+				if calls == 2 {
+					if r.URL.Query().Get("fmt") != "krc" {
+						t.Fatal(r.URL)
+					}
+					encoded, err := json.Marshal(map[string]any{"status": 200, "fmt": "krc", "content": encryptedKRC(t, text)})
+					if err != nil {
+						t.Fatal(err)
+					}
+					body = string(encoded)
+				} else if calls > 2 {
+					t.Fatal("successful KRC must not fall back")
+				}
+				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			})
+			d, err := New(client).FetchLyrics(context.Background(), lyrics.Candidate{Ref: "hash", Title: "Song"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			d, err := lyrics.DocumentFromPayload(p)
-			if err != nil {
-				t.Fatal(err)
+			if err := lyricdoc.Validate(d); err != nil || calls != 2 {
+				t.Fatal(err, calls)
+			}
+			empty := d.Original.Track.Lines[1]
+			if empty.Text != "" || empty.EndMS == nil || *empty.EndMS != 3000 || len(empty.Parts) != 1 || *empty.Parts[0].EndMS != 2500 {
+				t.Fatal("native empty timing lost", empty)
 			}
 			if d.Translation.Status != tt.wantTranslation || d.Romanization.Status != tt.wantRoma {
 				t.Fatal(d)
@@ -113,7 +136,7 @@ func TestKRCDowloadStages(t *testing.T) {
 		{"fallback with language", encryptedKRC(t, "[language:"+base64.StdEncoding.EncodeToString([]byte(`{"content":[{"type":1,"lyricContent":[["retained translation"]]}]}`))+"]\n[0,1]<-1,1,0>bad"), 200, 3},
 		{"fallback", "bad", 200, 3},
 		{"stop", "", 429, 2},
-		{"too large", encryptedKRC(t, strings.Repeat("x", lyrics.MaxTextBytes+1)), 200, 2},
+		{"too large", encryptedKRC(t, strings.Repeat("x", lyricdoc.MaxTextBytes+1)), 200, 2},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			calls := 0
@@ -154,10 +177,10 @@ func TestKRCDowloadStages(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if d, err := lyrics.DocumentFromPayload(p); err != nil {
+				if err := lyricdoc.Validate(p); err != nil {
 					t.Fatal(err)
-				} else if tt.name == "fallback with language" && (!strings.Contains(d.Text, "retained translation") || d.Translation.SyncStatus != "unsynced") {
-					t.Fatal(d)
+				} else if tt.name == "fallback with language" && (!strings.Contains(p.Text, "retained translation") || p.Translation.SyncStatus != "unsynced") {
+					t.Fatal(p)
 				}
 			} else if err == nil {
 				t.Fatal("restriction hidden")
