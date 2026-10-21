@@ -117,7 +117,9 @@ Base64/文件头/XOR/有界 zlib 解码后保留相对词时间（包括合法�
 language 按原始计时行关联，数量不符保留非同步内容，中文谐音不假称罗马音。
 原生行终点和空词片段起止保留在结构中；空片段不计为有效逐字覆盖。
 仅允许同候选 KRC→LRC 回退，候选搜索加下载最多三个协议阶段，限制类错误不回退。
-KRC 与附加轨已通过离线合成测试，真实来源可用性仍待显式验证。
+KRC 与附加轨已通过离线合成测试；2026-10-21 单轮样例也取得三份 KRC，language 翻译/罗马音部分可用。
+同轮网易云仅返回普通 LRC，QQ 逐字/罗马音解析失败、普通原文与翻译保留，酷我无歌词；
+不把部分成功宣称为四来源全部验通，详见[本轮验证记录](openspec/changes/improve-lyrics-normalization-and-ranking/validation.md)。
 
 酷我逐行首选 `https://www.kuwo.cn/openapi/v1/www/lyric/getlyric`，允许条件下仅回退一次
 HTTPS H5；不接入 HTTP、mobi 或 LRCX。两端点在适配器中共用两层内嵌译文识别：
@@ -151,7 +153,8 @@ go test ./internal/acceptance ./internal/lyricdoc ./internal/lyrics ./internal/p
 Chromium/WebKit 离线回归不代表真实来源或原生窗口验收。
 
 上述歌词入口复用生产能力装配与共享平台桶，从 QQ 30 请求/分钟开始，全部来源合计最多
-40 次 API 实际发送，每来源最多试前三个候选。可选通道缺失照实记录；HTTP/业务限制或
+40 次 API 实际发送。入口通过实际 App 绑定冻结每源 Top 3、等待整轮预取结束后读取摘要，
+不因第一份成功提前省略其余项；不足三项按实际数量，无歌词不补第 4 项。可选通道缺失照实记录；HTTP/业务限制或
 传输失败立即停止该轮，不因部分歌词成功而继续探测。日志不输出通道正文或上游错误消息原文。
 
 封面搜索消费 `internal/covers/sources` 的窄接口，由 CAA/iTunes/QQ/网易云实现。

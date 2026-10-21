@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -180,10 +179,40 @@ func TestLyricsRejectsCrossHostRedirect(t *testing.T) {
 	}
 }
 
-// Opt-in manual verification; only logs titles, type and byte counts, not lyrics.
+// runLiveLyricsRound uses the actual App session/prefetch path. Waiting for
+// registered work is bounded by the production 60-second round; no polling,
+// second search, explicit fetch of a fourth item, or fresh send budget occurs.
+func runLiveLyricsRound(ctx context.Context, a *App, trackID int64, source string, query lyrics.Query) (id string, snapshot *LyricsProgress, err error) {
+	id, err = a.CreateLyricsSearch(trackID)
+	if err != nil {
+		return
+	}
+	if _, err = a.SearchLyrics(id, source, query); err != nil {
+		return
+	}
+	if _, err = a.StartLyricsPrefetch(id); err != nil {
+		return
+	}
+	done := make(chan struct{})
+	go func() { a.lyricWorkers.Wait(); close(done) }()
+	select {
+	case <-ctx.Done():
+		a.CancelLyricsSearch(id)
+		<-done
+		err = ctx.Err()
+		return
+	case <-done:
+	}
+	snapshot, err = a.LyricsSearchSnapshot(id)
+	return
+}
+
+// Opt-in manual verification; only logs identity metadata, states, scores and
+// byte counts. A failure stops the entire authorized run, not just a provider.
 func TestLiveSources(t *testing.T) {
 	requireLive(t, "SONEXA_LYRICS_LIVE", os.Getenv("SONEXA_LYRICS_LIVE"))
 	a, audit := newLiveApp(t, 40)
+	defer func() { t.Logf("total_actual_sends=%d budget=40", len(audit.snapshot())) }()
 	matched := false
 	for _, source := range a.ListLyricsSources() {
 		if only := os.Getenv("SONEXA_LYRICS_SOURCE"); only != "" && source.ID != only {
@@ -191,7 +220,7 @@ func TestLiveSources(t *testing.T) {
 		}
 		matched = true
 		if !t.Run(source.ID, func(t *testing.T) {
-			ctx, cancel := liveContext(a, audit, 2*time.Minute)
+			ctx, cancel := liveContext(a, audit, 65*time.Second)
 			defer cancel()
 			title := os.Getenv("SONEXA_LYRICS_TITLE")
 			if title == "" {
@@ -202,47 +231,64 @@ func TestLiveSources(t *testing.T) {
 				artist = "周杰伦"
 			}
 			duration, _ := strconv.Atoi(os.Getenv("SONEXA_LYRICS_DURATION_MS"))
-			candidates, err := a.lyricSvc.Search(ctx, source.ID, lyrics.Query{Title: title, Artist: artist, Album: os.Getenv("SONEXA_LYRICS_ALBUM"), DurationMS: duration})
+			query := lyrics.Query{Title: title, Artist: artist, Album: os.Getenv("SONEXA_LYRICS_ALBUM"), DurationMS: duration}
+			before := len(audit.snapshot())
+			id, snapshot, err := runLiveLyricsRound(ctx, a, lyricTrack(t, a), source.ID, query)
+			defer a.CancelLyricsSearch(id)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("round_failed error_kind=%s error_type=%T sends=%d", lyricFailureKind(err), err, len(audit.snapshot())-before)
 			}
-			if len(candidates) == 0 {
-				t.Fatal("no songs")
-			}
-			t.Logf("songs=%d first_ref=%s duration=%d", len(candidates), candidates[0].Ref, candidates[0].DurationMS)
-			for _, candidate := range candidates[:min(3, len(candidates))] {
-				t.Logf("candidate=%s title=%q artist=%q album=%q duration=%d score=%d high_confidence=%t", candidate.Ref, candidate.Title, candidate.Artist, candidate.Album, candidate.DurationMS, candidate.MatchScore, candidate.HighConfidence)
-				d, err := a.lyricSvc.Fetch(ctx, candidate)
-				if err != nil {
-					if audit.gate() != nil {
-						t.Fatal(errLiveStopped)
-					}
-					var failure *lyrics.FetchError
-					if errors.As(err, &failure) {
-						t.Logf("candidate=%s error_kind=%s stop_source=%t", candidate.Ref, failure.Kind, failure.StopSource)
-						if failure.StopSource {
-							t.Fatal(errLiveStopped)
-						}
-					}
-					t.Logf("candidate=%s unavailable no_lyrics=%t error_type=%T", candidate.Ref, errors.Is(err, lyricdoc.ErrNoLyrics), err)
+			t.Logf("phase=%s searched=%d selected=%d success=%d no_lyrics=%d failed=%d incomplete=%d sends=%d", snapshot.Phase, snapshot.Searched, snapshot.Selected, snapshot.Success, snapshot.NoLyrics, snapshot.Failed, snapshot.Incomplete, len(audit.snapshot())-before)
+			for index, item := range snapshot.Candidates {
+				if !item.Prefetch {
 					continue
 				}
-				if audit.gate() != nil {
-					t.Fatal(errLiveStopped)
+				candidate := item.Candidate
+				t.Logf("candidate=%d title=%q artist=%q album=%q duration=%d match=%d match_terms=%+v high_confidence=%t state=%s error_kind=%s stop_reason=%s", index+1, candidate.Title, candidate.Artist, candidate.Album, candidate.DurationMS, candidate.MatchScore, candidate.MatchTerms, candidate.HighConfidence, item.FetchState, item.ErrorKind, item.StopReason)
+				if candidate.TotalScore != nil {
+					t.Logf("candidate=%d total=%d terms=%+v auto_preview=%t version=%d", index+1, *candidate.TotalScore, candidate.ScoreTerms, candidate.AutoPreviewEligible, item.DocumentVersion)
 				}
-				content := lyrics.ScoreContent(candidate, d, duration)
-				if content.TotalScore != nil {
-					t.Logf("match=%d total=%d terms=%+v auto_preview=%t", candidate.MatchScore, *content.TotalScore, content.Terms, content.AutoPreviewEligible)
+				if item.FetchState != "ready" {
+					continue
 				}
-				t.Logf("ref=%s format=%s bytes=%d original=%s translation=%s romanization=%s wordTiming=%s warnings=%d", candidate.Ref, d.Format, len(d.Text), channelSummary(d.Original), channelSummary(d.Translation), channelSummary(d.Romanization), d.WordTiming, len(d.Warnings))
-				return
+				// Fetch now reads the exact retained document, with no extra send.
+				preview, err := a.FetchLyrics(id, candidate.ID)
+				if err != nil {
+					t.Fatalf("preview_failed error_kind=%s error_type=%T", lyricFailureKind(err), err)
+				}
+				d := preview.Document
+				t.Logf("candidate=%d format=%s bytes=%d retained_bytes=%d original=%s translation=%s romanization=%s wordTiming=%s warnings=%d", index+1, d.Format, len(d.Text), lyricdoc.RetainedBytes(d), channelSummary(d.Original), channelSummary(d.Translation), channelSummary(d.Romanization), d.WordTiming, len(d.Warnings))
 			}
-			t.Fatal("no lyrics in first three candidates")
+			if audit.gate() != nil || snapshot.Phase == "stopped" {
+				t.Fatal(errLiveStopped)
+			}
+			if snapshot.Success == 0 {
+				t.Fatal("no usable lyrics in frozen Top 3; no replacement search")
+			}
 		}) {
 			return
 		}
 	}
 	if !matched {
 		t.Fatal("unknown SONEXA_LYRICS_SOURCE")
+	}
+}
+
+func TestLiveLyricsRoundUsesFrozenTopThree(t *testing.T) {
+	p := &prefetchSource{id: "only", count: 5}
+	a, _, done := prefetchApp(t, p)
+	defer done()
+	id, snapshot, err := runLiveLyricsRound(context.Background(), a, lyricTrack(t, a), "only", lyrics.Query{Title: "Song"})
+	defer a.CancelLyricsSearch(id)
+	if err != nil || snapshot.Selected != 3 || snapshot.Success != 3 || len(p.calls()) != 3 {
+		t.Fatal("live entry skipped or expanded frozen Top 3", err)
+	}
+	for _, item := range snapshot.Candidates[:3] {
+		if _, err := a.FetchLyrics(id, item.Candidate.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(p.calls()) != 3 {
+		t.Fatal("reading live summaries refetched")
 	}
 }
