@@ -87,10 +87,6 @@ func liveResponseRestricted(host string, status int, body []byte) bool {
 		return check(root["status"], 1) || check(root["errcode"], 0)
 	case "lyrics.kugou.com":
 		return check(root["status"], 200) || check(root["error_code"], 0)
-	case "m.kuwo.cn":
-		return check(root["status"], 200)
-	case "www.kuwo.cn":
-		return check(root["code"], 200) || check(root["status"], 200)
 	}
 	return false
 }
@@ -215,8 +211,7 @@ func TestLiveAuditStopsBeforeAnotherRequest(t *testing.T) {
 	}{
 		{"u.y.qq.com", `{"code":0,"req":{"code":2001}}`, 200},
 		{"u.y.qq.com", `{}`, 429}, {"u.y.qq.com", `{}`, 403},
-		{"music.163.com", `{"code":301}`, 200}, {"m.kuwo.cn", `{"status":301}`, 200},
-		{"www.kuwo.cn", `{"code":301}`, 200}, {"www.kuwo.cn", `{"status":301}`, 200},
+		{"music.163.com", `{"code":301}`, 200},
 	} {
 		t.Run(fmt.Sprint(tc.host, tc.status), func(t *testing.T) {
 			calls := 0

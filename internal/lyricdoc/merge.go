@@ -36,7 +36,11 @@ func deduplicate(lines []taggedLine) ([]taggedLine, error) {
 			out = append(out, entry)
 			continue
 		}
-		key := fmt.Sprintf("%d\x00%s", *l.StartMS, l.Text)
+		end := ""
+		if l.EndMS != nil {
+			end = fmt.Sprint(*l.EndMS)
+		}
+		key := fmt.Sprintf("%s\x00%d\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%t", entry.channel, *l.StartMS, l.Text, l.ID, l.ParentID, l.Language, l.Voice, fmt.Sprint(l.Ruby), end, l.Independent)
 		rendered, err := serializeLine(l)
 		if err != nil {
 			return nil, err
@@ -78,20 +82,38 @@ func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	anyAligned, err := alignPrecision(channels)
+	resolveParent := parentResolver(channels[0].channel.Track)
+	for _, c := range channels[1:] {
+		if c.channel.Track == nil {
+			continue
+		}
+		for i := range c.channel.Track.Lines {
+			l := &c.channel.Track.Lines[i]
+			if l.ParentID == "" {
+				continue
+			}
+			target := resolveParent(*l)
+			if target < 0 {
+				return nil, nil, fmt.Errorf("%w：附加行父标识不存在", ErrFormat)
+			}
+			parent := channels[0].channel.Track.Lines[target]
+			if (l.StartMS == nil) != (parent.StartMS == nil) || l.StartMS != nil && *l.StartMS != *parent.StartMS || l.Voice != "" && l.Voice != parent.Voice {
+				return nil, nil, fmt.Errorf("%w：附加行与显式父行事实矛盾", ErrFormat)
+			}
+			l.Voice = parent.Voice
+		}
+	}
+	_, err = alignPrecision(channels)
 	if err != nil {
 		return nil, nil, err
 	}
-	// When precision alignment changes a line, retain the common axis in all
-	// delivered channel projections too. This keeps offsets/text replayable,
-	// including an auxiliary line that originally preceded time zero.
-	if anyAligned {
-		for _, c := range channels {
-			if c.channel.Track != nil {
-				c.channel.Text, err = SerializeTrack(c.channel.Track)
-				if err != nil {
-					return nil, nil, err
-				}
+	// Every delivered channel uses the same axis as XLRC, not only channels
+	// whose millisecond precision happened to need correction.
+	for _, c := range channels {
+		if c.channel.Track != nil {
+			c.channel.Text, err = SerializeTrack(c.channel.Track)
+			if err != nil {
+				return nil, nil, err
 			}
 		}
 	}
@@ -102,6 +124,9 @@ func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
 		if c.channel.Track == nil {
 			continue
 		}
+		if c.channel.Status != "available" && c.key != "original" {
+			c.key = "additional"
+		}
 		for _, l := range c.channel.Track.Lines {
 			used += lineBytes(l)
 			if used > MaxProjectionBytes {
@@ -110,10 +135,8 @@ func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
 			entries = append(entries, taggedLine{l, c.key})
 		}
 	}
-	entries, err = deduplicate(entries)
-	if err != nil {
-		return nil, nil, err
-	}
+	// Deduplication is channel-local; equal translations in different
+	// languages or voices must never erase one another.
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i].line.StartMS, entries[j].line.StartMS
 		if a == nil {
@@ -124,32 +147,56 @@ func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
 		}
 		return *a < *b
 	})
-	originalAt := map[int64][]int{}
+	originalRows := &Track{}
+	rowIndices := []int{}
+	originalID := map[string]bool{}
 	for i, e := range entries {
-		if e.channel == "original" && e.line.StartMS != nil && strings.TrimSpace(e.line.Text) != "" {
-			originalAt[*e.line.StartMS] = append(originalAt[*e.line.StartMS], i)
+		if e.channel == "original" {
+			if e.line.ID != "" {
+				if originalID[e.line.ID] {
+					return nil, nil, ErrFormat
+				}
+				originalID[e.line.ID] = true
+			}
+			originalRows.Lines = append(originalRows.Lines, e.line)
+			rowIndices = append(rowIndices, i)
 		}
 		merged.Lines = append(merged.Lines, e.line)
 	}
 	rows := make([]PreviewRow, len(entries))
 	attached := map[int]bool{}
 	for i, e := range entries {
-		rows[i] = PreviewRow{TimeMS: e.line.StartMS, Text: e.line.Text, Channel: e.channel}
+		rows[i] = previewLine(e.line, e.channel)
+	}
+	resolveRow := parentResolver(originalRows)
+	findParent := func(l Line) int {
+		if i := resolveRow(l); i >= 0 {
+			return rowIndices[i]
+		}
+		return -1
 	}
 	for i, e := range entries {
-		if e.channel != "translation" && e.channel != "romanization" || e.line.StartMS == nil {
+		if e.channel == "original" {
 			continue
 		}
-		matches := originalAt[*e.line.StartMS]
-		if len(matches) != 1 {
+		index := findParent(e.line)
+		if e.channel == "additional" && e.line.ParentID == "" {
 			continue
 		}
-		target := &rows[matches[0]]
+		if index < 0 {
+			if e.line.ParentID != "" {
+				return nil, nil, fmt.Errorf("%w：附加行父标识不存在", ErrFormat)
+			}
+			continue
+		}
+		target := &rows[index]
 		if e.channel == "translation" {
 			target.Translation = append(target.Translation, e.line.Text)
-		} else {
+		}
+		if e.channel == "romanization" {
 			target.Romanization = append(target.Romanization, e.line.Text)
 		}
+		target.Annotations = append(target.Annotations, Annotation{Channel: e.channel, Language: lineLanguage(e.line, e.channel), Text: e.line.Text, Ruby: e.line.Ruby})
 		attached[i] = true
 	}
 	result := []PreviewRow{}
@@ -170,7 +217,7 @@ func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
 				continue
 			}
 			total++
-			if l.StartMS != nil && len(originalAt[*l.StartMS]) == 1 {
+			if c.channel.Status == "available" && findParent(l) >= 0 && (c.key != "additional" || l.ParentID != "") {
 				matched++
 			}
 		}
@@ -182,10 +229,8 @@ func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
 		}
 	}
 	for i := range channels {
-		if anyAligned {
-			originalChannels[i].channel.Track = channels[i].channel.Track
-			originalChannels[i].channel.Text = channels[i].channel.Text
-		}
+		originalChannels[i].channel.Track = channels[i].channel.Track
+		originalChannels[i].channel.Text = channels[i].channel.Text
 		originalChannels[i].channel.Diagnostics = channels[i].channel.Diagnostics
 		originalChannels[i].channel.SyncStatus = channels[i].channel.SyncStatus
 	}

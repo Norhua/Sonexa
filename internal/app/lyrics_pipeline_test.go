@@ -65,12 +65,11 @@ func (p *observedLyrics) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*
 	return d, err
 }
 
-func TestLyricsFourSourceArtistComparison(t *testing.T) {
+func TestLyricsThreeSourceArtistComparison(t *testing.T) {
 	responses := map[string]string{
 		"qq":    `{"code":0,"req":{"code":0,"data":{"body":{"song":{"list":[{"mid":"001wMai814HLg1","name":"七里香","singer":[{"name":"周杰伦"}],"album":{"name":"七里香"},"interval":299}]}}}}}`,
 		"163":   `{"code":200,"result":{"songs":[{"id":1,"name":"七里香","ar":[{"name":"周杰伦"}],"al":{"name":"七里香"},"dt":299000}]}}`,
 		"kugou": `{"status":1,"errcode":0,"data":{"info":[{"hash":"1","songname":"七里香","singername":"周杰伦","album_name":"七里香","duration":299}]}}`,
-		"kuwo":  `{"TOTAL":1,"abslist":[{"MUSICRID":"1","NAME":"七里香","ARTIST":"周杰伦","ALBUM":"七里香","DURATION":299}]}`,
 	}
 	for source, body := range responses {
 		t.Run(source, func(t *testing.T) {
@@ -103,11 +102,11 @@ func TestLyricsFourSourceArtistComparison(t *testing.T) {
 	}
 }
 
-func TestLyricsFourSourceAppPipeline(t *testing.T) {
+func TestLyricsThreeSourceAppPipeline(t *testing.T) {
 	qrc := bundleFixture(t, "qrc", "[1005,1000]Hello (1005,400)world(1500,400)")
 	roma := bundleFixture(t, "qrc", "[00:01]ro ma")
 	krc := bundleFixture(t, "krc", "[language:"+base64.StdEncoding.EncodeToString([]byte(`{"content":[{"type":1,"lyricContent":[["译文"]]},{"type":0,"lyricContent":[["ro","ma"]]}]}`))+"]\n[1000,1000]<0,400,0>Hello <500,400,0>world")
-	for _, source := range []string{"qq", "qq-legacy", "163", "kugou", "kuwo"} {
+	for _, source := range []string{"qq", "qq-legacy", "163", "kugou"} {
 		t.Run(source, func(t *testing.T) {
 			actual := source
 			if source == "qq-legacy" {
@@ -171,18 +170,6 @@ func TestLyricsFourSourceAppPipeline(t *testing.T) {
 					} else {
 						t.Error("unexpected Kugou protocol")
 					}
-				case "search.kuwo.cn":
-					rows := []any{}
-					for _, n := range []int{4, 3, 2, 1, 1} {
-						rows = append(rows, map[string]any{"MUSICRID": fmt.Sprint(n), "NAME": "Song", "ARTIST": "Artist", "DURATION": 90})
-					}
-					body = map[string]any{"TOTAL": 5, "abslist": rows}
-				case "www.kuwo.cn":
-					rows := []any{}
-					for i := 0; i < 8; i++ {
-						rows = append(rows, map[string]any{"time": 2*i + 1, "lineLyric": fmt.Sprintf("Original verse %d", i)}, map[string]any{"time": 2*i + 2, "lineLyric": fmt.Sprintf("译文%d", i)})
-					}
-					body = map[string]any{"code": 200, "data": map[string]any{"lrclist": rows}}
 				default:
 					t.Error("unexpected host: no generation service allowed", r.URL.Host)
 				}
@@ -239,6 +226,16 @@ func TestLyricsFourSourceAppPipeline(t *testing.T) {
 			if preview.Document != delivered || sends != wantSends {
 				t.Fatal("preview transformed or refetched upstream result")
 			}
+			if delivered.Format != "xlrc" {
+				t.Fatal("provider did not deliver XLRC")
+			}
+			reparsed, err := lyricdoc.ParseXLRC(delivered.Text)
+			if err != nil || !reflect.DeepEqual(reparsed.Rows, delivered.Rows) {
+				t.Fatal("XLRC roundtrip lost rows", err)
+			}
+			if !reflect.DeepEqual(reparsed.Original.Track.Lines[0].EndMS, delivered.Original.Track.Lines[0].EndMS) || !reflect.DeepEqual(reparsed.Original.Track.Lines[0].Parts, delivered.Original.Track.Lines[0].Parts) {
+				t.Fatal("native line/word ends lost")
+			}
 			if source == "qq" {
 				if len(delivered.Rows) != 1 || *delivered.Rows[0].TimeMS != 1005 || len(delivered.Rows[0].Translation) != 1 || len(delivered.Rows[0].Romanization) != 1 || strings.Contains(delivered.Text, "[00:01.000]") {
 					t.Fatal("precision alignment missing from provider/preview text", delivered)
@@ -254,11 +251,8 @@ func TestLyricsFourSourceAppPipeline(t *testing.T) {
 				t.Fatal("summary mismatch")
 			}
 			terms := summary.Candidate.ScoreTerms
-			if terms[3].Value != 15 || (source != "kuwo" && terms[4].Value != 5) {
+			if terms[3].Value != 15 || terms[4].Value != 5 {
 				t.Fatal("channel bonuses", terms)
-			}
-			if source == "kuwo" && (delivered.Translation.Origin != "embedded" || len(delivered.Original.Track.Lines) != 8 || len(summary.Translation.Diagnostics) == 0) {
-				t.Fatal("inference not propagated")
 			}
 			raw, _ := json.Marshal(snapshot)
 			if strings.Contains(string(raw), "Hello") || strings.Contains(string(raw), "Original verse") || strings.Contains(string(raw), "fixture-key") || strings.Contains(string(raw), "associations") {

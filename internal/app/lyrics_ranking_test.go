@@ -17,7 +17,6 @@ func TestAllLyricSourcesRankAndDeduplicate(t *testing.T) {
 		"qq":    `{"code":0,"req":{"code":0,"data":{"body":{"song":{"list":[{"mid":"0039MnYb0qxYhV","title":"Wrong","singer":[{"name":"Alice"}]},{"mid":"001wMai814HLgJ","title":"Song","singer":[{"name":"Alice"}]},{"mid":"001wMai814HLgJ","title":"Song","singer":[{"name":"Alice"}]}]}}}}}`,
 		"163":   `{"code":200,"result":{"songs":[{"id":1,"name":"Wrong","ar":[{"name":"Alice"}]},{"id":2,"name":"Song","ar":[{"name":"Alice"}]},{"id":2,"name":"Song","ar":[{"name":"Alice"}]}]}}`,
 		"kugou": `{"status":1,"errcode":0,"data":{"info":[{"hash":"1","songname":"Wrong","singername":"Alice"},{"hash":"2","songname":"Song","singername":"Alice"},{"hash":"2","songname":"Song","singername":"Alice"}]}}`,
-		"kuwo":  `{"TOTAL":"3","abslist":[{"MUSICRID":"1","NAME":"Wrong","ARTIST":"Alice"},{"MUSICRID":"2","NAME":"Song","ARTIST":"Alice"},{"MUSICRID":"2","NAME":"Song","ARTIST":"Alice"}]}`,
 	}
 	for source, body := range fixtures {
 		t.Run(source, func(t *testing.T) {

@@ -72,7 +72,7 @@ func TestAlignmentNormalizesSubCentisecondDifferences(t *testing.T) {
 			if len(d.Rows) != 1 || *d.Rows[0].TimeMS != tc.want || len(d.Rows[0].Translation) != 1 || d.Rows[0].Translation[0] != "Translation" {
 				t.Fatalf("expected precision association: %+v", d.Rows)
 			}
-			if !strings.Contains(d.Text, tc.original) || !strings.Contains(d.Text, "["+clock(tc.want)+"]Translation") || *d.Translation.Track.Lines[0].StartMS != tc.want {
+			if !strings.Contains(d.Text, tc.original) || !strings.Contains(d.Text, "[>und]Translation") || *d.Translation.Track.Lines[0].StartMS != tc.want {
 				t.Fatalf("text and track must use aligned time: %q", d.Text)
 			}
 			if tc.before != tc.want {

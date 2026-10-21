@@ -103,7 +103,7 @@ func TestKRCLanguageUsesNativeRowsIncludingEmpty(t *testing.T) {
 			if d.Translation.Status != tt.wantTranslation || d.Romanization.Status != tt.wantRoma {
 				t.Fatal(d)
 			}
-			if tt.sync && !strings.Contains(d.Text, "[00:02.000]空行译文") {
+			if tt.sync && (len(d.Rows[1].Translation) != 1 || d.Rows[1].Translation[0] != "空行译文") {
 				t.Fatal(d.Text)
 			}
 			if tt.name == "mismatch" && (d.Translation.SyncStatus != "unsynced" || !strings.HasSuffix(d.Text, "one")) {

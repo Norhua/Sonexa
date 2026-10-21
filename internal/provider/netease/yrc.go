@@ -132,6 +132,10 @@ func parseYRC(text string) (*lyricdoc.Track, error) {
 				previous = wordEnd
 			}
 		}
+		line, err = lyricdoc.DecodeInline(line)
+		if err != nil {
+			return nil, err
+		}
 		t.Lines = append(t.Lines, line)
 	}
 	return t, nil

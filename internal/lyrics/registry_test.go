@@ -7,12 +7,12 @@ import (
 )
 
 func TestRegistrySingleCapabilityAndStableList(t *testing.T) {
-	entries := []Entry{{&lyricsOnly{id: "163"}, "网易云音乐"}, {&lyricsOnly{id: "qq"}, "QQ 音乐"}, {&lyricsOnly{id: "kugou"}, "酷狗音乐"}, {&lyricsOnly{id: "kuwo"}, "酷我音乐"}}
+	entries := []Entry{{&lyricsOnly{id: "163"}, "网易云音乐"}, {&lyricsOnly{id: "qq"}, "QQ 音乐"}, {&lyricsOnly{id: "kugou"}, "酷狗音乐"}}
 	r, err := NewRegistry(entries...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Source{{"163", "网易云音乐"}, {"qq", "QQ 音乐"}, {"kugou", "酷狗音乐"}, {"kuwo", "酷我音乐"}}
+	want := []Source{{"163", "网易云音乐"}, {"qq", "QQ 音乐"}, {"kugou", "酷狗音乐"}}
 	entries[0].Name = "changed"
 	if !reflect.DeepEqual(r.List(), want) {
 		t.Fatal(r.List())

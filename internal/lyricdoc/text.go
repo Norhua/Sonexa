@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,7 +25,7 @@ var lineTime = regexp.MustCompile(`^\[(\d+):([0-5]?\d)(?:[.:](\d{1,3}))?\]`)
 var wordTime = regexp.MustCompile(`<(\d+):([0-5]?\d)(?:[.:](\d{1,3}))?>`)
 var timeLike = regexp.MustCompile(`^[\[<]\d+:`)
 var wordLike = regexp.MustCompile(`<\d+:[^>]*(?:>|$)`)
-var metadata = regexp.MustCompile(`^\[[a-zA-Z]+:[^\]]*\]$`)
+var metadata = regexp.MustCompile(`^\[[a-zA-Z][a-zA-Z0-9_-]*:[^\]]*\]$`)
 
 func normalizeText(text string) (string, error) {
 	if len(text) > MaxTextBytes {
@@ -44,6 +45,9 @@ func normalizeText(text string) (string, error) {
 // ParseText keeps imported text (apart from BOM/newlines). The reading
 // projection does not rewrite the adoption text or infer word ends.
 func ParseText(text string) (*Document, error) {
+	if isXLRCText(text) {
+		return ParseXLRC(text)
+	}
 	return buildDocument(TextChannel(text, nil), nil, nil, nil, "", nil)
 }
 
@@ -88,8 +92,20 @@ func parseTrack(text string) (*Track, string, error) {
 			return nil, "", fmt.Errorf("%w：行时间无效", ErrFormat)
 		}
 		line := Line{Text: body}
+		if len(starts) > 0 && strings.HasPrefix(body, "[v:") {
+			end := strings.IndexByte(body, ']')
+			if end < 4 {
+				return nil, "", ErrFormat
+			}
+			line.Voice, body = body[3:end], body[end+1:]
+			line.Text = body
+		}
 		if len(starts) > 0 {
 			line.Parts, line.Text, err = parseWords(body)
+			if err != nil {
+				return nil, "", err
+			}
+			line, err = DecodeInline(line)
 			if err != nil {
 				return nil, "", err
 			}
@@ -110,6 +126,18 @@ func parseTrack(text string) (*Track, string, error) {
 			used += cost
 		}
 	}
+	language := ""
+	for _, tag := range t.Metadata {
+		if strings.HasPrefix(tag, "[lang:") {
+			language = strings.TrimSuffix(strings.TrimPrefix(tag, "[lang:"), "]")
+		}
+	}
+	if language != "" && !languageTag.MatchString(language) {
+		return nil, "", ErrFormat
+	}
+	for i := range t.Lines {
+		t.Lines[i].Language = language
+	}
 	if err := validateTrackSize(t); err != nil {
 		return nil, "", err
 	}
@@ -121,13 +149,36 @@ func parseTrack(text string) (*Track, string, error) {
 
 // A tag between two text fragments is the next start, not proof of a real
 // previous end. A trailing tag or the first of consecutive tags is an end.
-func parseWords(body string) ([]Word, string, error) {
-	for _, tag := range wordLike.FindAllString(body, -1) {
+func parseWords(body string) ([]Word, string, error) { return parseWordsMode(body, false) }
+
+func escapedAt(s string, i int) bool {
+	n := 0
+	for i > 0 && s[i-1] == '\\' {
+		n++
+		i--
+	}
+	return n%2 == 1
+}
+func parseWordsMode(body string, escaped bool) ([]Word, string, error) {
+	for _, loc := range wordLike.FindAllStringIndex(body, -1) {
+		if escaped && escapedAt(body, loc[0]) {
+			continue
+		}
+		tag := body[loc[0]:loc[1]]
 		if wordTime.FindString(tag) != tag {
 			return nil, "", fmt.Errorf("%w：逐字标签无效", ErrFormat)
 		}
 	}
 	matches := wordTime.FindAllStringSubmatchIndex(body, -1)
+	if escaped {
+		filtered := matches[:0]
+		for _, m := range matches {
+			if !escapedAt(body, m[0]) {
+				filtered = append(filtered, m)
+			}
+		}
+		matches = filtered
+	}
 	if len(matches) == 0 {
 		return nil, body, nil
 	}
@@ -218,7 +269,7 @@ func trackFormat(t *Track) string {
 func projectTrack(t *Track, channel string) []PreviewRow {
 	rows := make([]PreviewRow, 0, len(t.Lines))
 	for _, l := range t.Lines {
-		rows = append(rows, PreviewRow{TimeMS: l.StartMS, Text: l.Text, Channel: channel})
+		rows = append(rows, previewLine(l, channel))
 	}
 	return rows
 }
@@ -226,14 +277,39 @@ func projectTrack(t *Track, channel string) []PreviewRow {
 func serializeLine(l Line) (string, error) {
 	var out strings.Builder
 	valid := func(n *int64) bool { return n == nil || *n >= 0 && *n <= MaxTimeMS }
-	if !valid(l.StartMS) || !valid(l.EndMS) {
+	if !valid(l.StartMS) || !valid(l.EndMS) || l.EndMS != nil && l.StartMS != nil && *l.EndMS < *l.StartMS {
 		return "", fmt.Errorf("%w：行时间超出范围", ErrFormat)
 	}
 	if l.StartMS != nil {
 		out.WriteString("[" + clock(*l.StartMS) + "]")
 	}
+	if _, err := renderRuby(l.Text, l.Ruby, false); err != nil {
+		return "", err
+	}
+	if len(l.Parts) > 0 {
+		var ruby []Ruby
+		shift := 0
+		for _, p := range l.Parts {
+			for _, r := range p.Ruby {
+				r.Start += shift
+				r.End += shift
+				ruby = append(ruby, r)
+			}
+			shift += len([]rune(p.Text))
+		}
+		if !slices.Equal(ruby, l.Ruby) {
+			return "", fmt.Errorf("%w：词注音与行注音不一致", ErrFormat)
+		}
+	}
+	if l.Voice != "" {
+		out.WriteString("[v:" + l.Voice + "]")
+	}
 	if len(l.Parts) == 0 {
-		out.WriteString(l.Text)
+		s, err := renderRuby(l.Text, l.Ruby, false)
+		if err != nil {
+			return "", err
+		}
+		out.WriteString(s)
 	} else {
 		var plain strings.Builder
 		var previous int64 = -1
@@ -245,7 +321,11 @@ func serializeLine(l Line) (string, error) {
 				out.WriteString("<" + clock(*p.StartMS) + ">")
 				previous = *p.StartMS
 			}
-			out.WriteString(p.Text)
+			s, err := renderRuby(p.Text, p.Ruby, false)
+			if err != nil {
+				return "", err
+			}
+			out.WriteString(s)
 			plain.WriteString(p.Text)
 			if p.EndMS != nil {
 				out.WriteString("<" + clock(*p.EndMS) + ">")

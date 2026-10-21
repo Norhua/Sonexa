@@ -108,7 +108,7 @@
         CoverOutcomes: async queries => queries.map(() => 'empty'),
         CoverTargetOutcomes: async queries => queries.map(() => 'empty'),
         LyricsRevision: async () => 0,
-        ListLyricsSources: async () => [{ id: '163', name: '网易云音乐' }, { id: 'qq', name: 'QQ 音乐' }, { id: 'kugou', name: '酷狗音乐' }, { id: 'kuwo', name: '酷我音乐' }],
+        ListLyricsSources: async () => [{ id: '163', name: '网易云音乐' }, { id: 'qq', name: 'QQ 音乐' }, { id: 'kugou', name: '酷狗音乐' }],
         CreateLyricsSearch: async () => { const id = crypto.randomUUID(); lyricSessions.set(id, { documents: {}, approved: {}, started: false }); return id },
         CancelLyricsSearch: async id => { lyricSessions.delete(id) },
         SearchLyrics: async (id, source, query) => {

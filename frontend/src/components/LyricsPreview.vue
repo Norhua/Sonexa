@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { lyricReadingRows, lyricTime, type LyricDocument, type LyricExtraChannel } from '@/lib/lyricsPresentation'
+import LyricRichText from '@/components/LyricRichText.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 const props = defineProps<{ document: LyricDocument; candidateId: string; version: number; extraChannel: LyricExtraChannel }>()
 const emit = defineEmits<{ displayed: [id: string, version: number] }>()
@@ -32,10 +33,11 @@ watch(() => [props.candidateId, props.version, props.document] as const, async (
         </div>
         <div v-for="(row, index) in rows" :key="index" role="row" class="grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] items-start gap-3 py-1">
           <span role="cell" class="select-none whitespace-nowrap tabular-nums text-muted-color">{{ lyricTime(row.timeMs) }}</span>
-          <div role="cell" class="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{{ row.text || '\u00a0' }}</div>
+          <div role="cell" class="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]"><span v-if="row.voice" class="mr-2 text-xs text-muted-color" :aria-label="`人声 ${row.voice}`">{{ row.voice }}</span><LyricRichText :text="row.text || '\u00a0'" :ruby="row.ruby" /></div>
           <div role="cell" class="min-w-0 whitespace-pre-wrap text-muted-color [overflow-wrap:anywhere]">
             <span v-if="row.note" class="block text-xs">{{ row.note }}</span>
-            <p v-for="(text, i) in row.extra" :key="i">{{ text || '\u00a0' }}</p>
+            <template v-if="row.annotations?.length"><p v-for="(annotation, i) in row.annotations" :key="i"><span v-if="!annotation.language.startsWith('und')" class="mr-2 text-xs">{{ annotation.language }}</span><span v-if="annotation.channel === 'additional'" class="mr-2 text-xs">附加文本（归属未确认）</span><LyricRichText :text="annotation.text || '\u00a0'" :ruby="annotation.ruby" /></p></template>
+            <template v-else><p v-for="(text, i) in row.extra" :key="i">{{ text || '\u00a0' }}</p></template>
           </div>
         </div>
       </div>

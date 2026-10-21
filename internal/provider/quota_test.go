@@ -9,7 +9,7 @@ import (
 func TestFixedQuotasReuseBucketsAcrossClients(t *testing.T) {
 	l := NewLimiters()
 	l.ConfigureFixedQuotas()
-	for _, id := range []QuotaID{NetEaseQuota, KugouQuota, KuwoQuota} {
+	for _, id := range []QuotaID{NetEaseQuota, KugouQuota} {
 		if l.bucketFor(id).Limit() != 1 || l.bucketFor(id).Burst() != 1 {
 			t.Fatal("平台默认配额不符", id)
 		}

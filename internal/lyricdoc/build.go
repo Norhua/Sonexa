@@ -22,6 +22,22 @@ func Build(p *Input) (*Document, error) {
 	if p == nil {
 		return nil, fmt.Errorf("%w：来源未返回正文", ErrNoLyrics)
 	}
+	if p.Text != "" && p.Original == nil && isXLRCText(p.Text) {
+		d, err := ParseXLRC(p.Text)
+		if err != nil {
+			return nil, err
+		}
+		copy := *p
+		copy.Text, copy.Original = "", d.Original
+		if copy.Translation == nil {
+			copy.Translation = d.Translation
+		}
+		if copy.Romanization == nil {
+			copy.Romanization = d.Romanization
+		}
+		copy.Additional = append(append([]*Channel(nil), d.Additional...), p.Additional...)
+		return Build(&copy)
+	}
 	original := p.Original
 	if original == nil && p.Text != "" {
 		original = TextChannel(p.Text, nil)
@@ -42,7 +58,19 @@ func Build(p *Input) (*Document, error) {
 			original = word
 		}
 	}
-	return buildDocument(original, p.Translation, p.Romanization, p.Additional, timing, warnings)
+	d, err := buildDocument(original, p.Translation, p.Romanization, p.Additional, timing, warnings)
+	if err != nil {
+		return nil, err
+	}
+	d.Text, err = SerializeXLRC(d)
+	if err != nil {
+		return nil, err
+	}
+	d.Format = "xlrc"
+	if err := seal(d); err != nil {
+		return nil, err
+	}
+	return d, nil
 }
 
 // AvailableContent is the single presence predicate used by completed
@@ -65,6 +93,11 @@ func hasContent(t *Track) bool {
 }
 
 func duplicateOriginal(original, extra *Track) bool {
+	for _, l := range extra.Lines {
+		if l.ParentID != "" || l.Language != "" {
+			return false
+		}
+	}
 	visible := func(t *Track) []string {
 		out := []string{}
 		for _, l := range t.Lines {

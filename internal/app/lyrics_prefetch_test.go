@@ -185,8 +185,8 @@ func TestLyricsPrefetchFrozenTopThreeAndIdempotence(t *testing.T) {
 	}
 }
 
-func TestLyricsPrefetchFourSourcesAtMostTwelve(t *testing.T) {
-	ps := []*prefetchSource{{id: "163", count: 20}, {id: "qq", count: 20}, {id: "kugou", count: 20}, {id: "kuwo", count: 20}}
+func TestLyricsPrefetchThreeSourcesAtMostNine(t *testing.T) {
+	ps := []*prefetchSource{{id: "163", count: 20}, {id: "qq", count: 20}, {id: "kugou", count: 20}}
 	a, events, done := prefetchApp(t, ps...)
 	defer done()
 	for _, p := range ps {
@@ -208,7 +208,7 @@ func TestLyricsPrefetchFourSourcesAtMostTwelve(t *testing.T) {
 	for _, p := range ps {
 		total += len(p.calls())
 	}
-	if total != 12 {
+	if total != 9 {
 		t.Fatal(total)
 	}
 }

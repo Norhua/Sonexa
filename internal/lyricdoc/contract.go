@@ -36,10 +36,12 @@ func cloneTrack(t *Track) *Track {
 	for i := range out.Lines {
 		l := &out.Lines[i]
 		l.StartMS, l.EndMS = copyTime(l.StartMS), copyTime(l.EndMS)
+		l.Ruby = append([]Ruby(nil), l.Ruby...)
 		l.Parts = append([]Word(nil), l.Parts...)
 		for j := range l.Parts {
 			w := &l.Parts[j]
 			w.StartMS, w.EndMS = copyTime(w.StartMS), copyTime(w.EndMS)
+			w.Ruby = append([]Ruby(nil), w.Ruby...)
 		}
 	}
 	return &out
@@ -172,7 +174,7 @@ func checkDocument(d *Document) error {
 	if !utf8.ValidString(d.Text) || strings.ContainsRune(d.Text, 0) || len(d.Rows) == 0 {
 		return ErrContract
 	}
-	if d.Format != "text" && d.Format != "lrc" && d.Format != "enhanced_lrc" {
+	if d.Format != "text" && d.Format != "lrc" && d.Format != "enhanced_lrc" && d.Format != "xlrc" {
 		return ErrContract
 	}
 	if d.WordTiming != "available" && d.WordTiming != "unavailable" && d.WordTiming != "unsupported" && d.WordTiming != "error" {

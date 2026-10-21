@@ -6,7 +6,7 @@ export type LyricData<T> = T extends (infer U)[] ? LyricData<U>[] : T extends ob
   : T
 export type LyricDocument = LyricData<Models.lyricdoc.Document>
 export type LyricExtraChannel = 'translation' | 'romanization'
-export type LyricReadingRow = { timeMs?: number; text: string; extra: string[]; note: string }
+export type LyricReadingRow = { timeMs?: number; text: string; extra: string[]; note: string; voice?: string; ruby?: LyricData<Models.lyricdoc.Ruby>[]; annotations?: LyricData<Models.lyricdoc.Annotation>[] }
 export type LyricCandidate = Omit<LyricData<Models.lyrics.Candidate>, 'totalScore'> & { totalScore?: number | null }
 export type LyricChannel = LyricData<Models.lyrics.ChannelSummary>
 export type LyricCard = LyricCandidate & Omit<LyricData<Models.lyrics.CandidateSummary>, 'candidate'>
@@ -14,7 +14,7 @@ export type LyricProgress = Omit<LyricData<Models.app.LyricsProgress>, 'candidat
   candidates: (Omit<LyricData<Models.lyrics.CandidateSummary>, 'candidate'> & { candidate: LyricCandidate })[]
 }
 
-export const lyricFormat = (format?: string) => ({ text: '文本', lrc: 'LRC 时间轴歌词', enhanced_lrc: '增强型 LRC' }[format ?? ''] ?? '待确认')
+export const lyricFormat = (format?: string) => ({ xlrc: 'XLRC', text: '文本', lrc: 'LRC 时间轴歌词', enhanced_lrc: '增强型 LRC' }[format ?? ''] ?? '待确认')
 export const lyricPhase = (phase: string) => ({ searching: '正在搜索', ready: '等待预取', prefetching: '正在预取', done: '已完成', partial: '部分完成', stopped: '已停止', error: '搜索失败' }[phase] ?? phase)
 export const lyricFailure = (kind?: string) => ({ no_lyrics: '暂无歌词', format: '解析失败', contract: '文档校验失败', timeout: '已超时', cancelled: '已取消', budget: '请求预算耗尽', memory_limit: '会话内存已达上限', too_large: '歌词超限', auth: '来源需要认证', rate_limit: '来源限流', tls: '安全连接失败', transport: '网络请求失败', upstream: '来源限制', source_stopped: '来源已停止', fetch: '获取失败' }[kind ?? ''] ?? '尚未检查')
 export const lyricChannelStatus = (channel?: LyricChannel) => {
@@ -39,10 +39,25 @@ export const lyricTime = (ms?: number) => ms == null ? '—' : `${String(Math.fl
 // pair independent extras by index or change the document used for adoption.
 export function lyricReadingRows(rows: LyricDocument['rows'], channel: LyricExtraChannel): LyricReadingRow[] {
   return rows.filter(row => row.channel !== (channel === 'translation' ? 'romanization' : 'translation')).map(row => {
-    if (row.channel === 'original') return { timeMs: row.timeMs, text: row.text, extra: row[channel] ?? [], note: '' }
+    if (row.channel === 'original') return { timeMs: row.timeMs, text: row.text, extra: row[channel] ?? [], note: '', voice: row.voice, ruby: row.ruby, annotations: row.annotations?.filter(a => a.channel === channel || a.channel === 'additional') }
     const name = ({ translation: '翻译', romanization: '罗马音' }[row.channel] ?? '附加文本（归属未确认）')
-    return { timeMs: row.timeMs, text: '', extra: [row.text], note: `${name} · ${row.timeMs == null ? '未同步' : '独立行'}` }
+    return { timeMs: row.timeMs, text: '', extra: [row.text], note: `${name} · ${row.timeMs == null ? '未同步' : '独立行'}`, voice: row.voice,
+      ...(row.language ? { annotations: [{ channel: row.channel, language: row.language, text: row.text, ruby: row.ruby }] } : {}) }
   })
+}
+
+// Go offsets are Unicode code points, so never slice UTF-16 strings directly.
+export function lyricRubySegments(text: string, ruby: LyricData<Models.lyricdoc.Ruby>[] = []) {
+  const chars = Array.from(text), segments: { text: string; reading?: string }[] = []
+  let cursor = 0
+  for (const annotation of ruby) {
+    if (annotation.start < cursor || annotation.end <= annotation.start || annotation.end > chars.length) continue
+    if (annotation.start > cursor) segments.push({ text: chars.slice(cursor, annotation.start).join('') })
+    segments.push({ text: chars.slice(annotation.start, annotation.end).join(''), reading: annotation.reading })
+    cursor = annotation.end
+  }
+  if (cursor < chars.length) segments.push({ text: chars.slice(cursor).join('') })
+  return segments
 }
 
 // The backend scoring formula has a fixed maximum: 100 + 10 + 20 + 15 + 5.

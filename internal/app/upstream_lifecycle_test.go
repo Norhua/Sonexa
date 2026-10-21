@@ -79,7 +79,7 @@ func TestSettingsRetainLyricsServiceForUnfetchedCandidates(t *testing.T) {
 	sessionState.roundCancel()
 	finishLyricsPrefetch(t, a, session)
 	doc, err := a.FetchLyrics(session, rows[0].ID)
-	if err != nil || doc.Document.Text != "[00:01]旧候选的新获取" || calls.Load() != 2 {
+	if err != nil || doc.Document.Text != "[xlrc:0.1]\n[x-sonexa:1]\n[00:01.000]旧候选的新获取" || calls.Load() != 2 {
 		t.Fatalf("旧候选未使用原服务: doc=%+v err=%v calls=%d", doc, err, calls.Load())
 	}
 	next.MusicBrainz.Contact = ""

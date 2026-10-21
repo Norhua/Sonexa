@@ -17,7 +17,7 @@ type LyricsPickResult struct {
 	Revision  int64 `json:"revision"`
 }
 
-// PickAndAdoptLyrics is the local TXT/LRC input adapter. Online documents never
+// PickAndAdoptLyrics is the local TXT/LRC/XLRC input adapter. Online documents never
 // enter this path: only local file bytes are parsed/normalized here.
 func (a *App) PickAndAdoptLyrics(trackID, revision int64) (*LyricsPickResult, error) {
 	if _, err := a.LyricsRevision(trackID); err != nil {
@@ -27,7 +27,7 @@ func (a *App) PickAndAdoptLyrics(trackID, revision int64) (*LyricsPickResult, er
 	if pick == nil {
 		pick = wruntime.OpenFileDialog
 	}
-	path, err := pick(a.ctx, wruntime.OpenDialogOptions{Title: "选择歌词", Filters: []wruntime.FileFilter{{DisplayName: "UTF-8 歌词（TXT / LRC）", Pattern: "*.txt;*.lrc"}}})
+	path, err := pick(a.ctx, wruntime.OpenDialogOptions{Title: "选择歌词", Filters: []wruntime.FileFilter{{DisplayName: "UTF-8 歌词（TXT / LRC / XLRC）", Pattern: "*.txt;*.lrc;*.xlrc"}}})
 	if err != nil {
 		return nil, err
 	}
@@ -35,8 +35,8 @@ func (a *App) PickAndAdoptLyrics(trackID, revision int64) (*LyricsPickResult, er
 		return &LyricsPickResult{Cancelled: true, Revision: revision}, nil
 	}
 	ext := strings.ToLower(filepath.Ext(path))
-	if ext != ".txt" && ext != ".lrc" {
-		return nil, fmt.Errorf("请选择 UTF-8 编码的 .txt 或 .lrc 文件")
+	if ext != ".txt" && ext != ".lrc" && ext != ".xlrc" {
+		return nil, fmt.Errorf("请选择 UTF-8 编码的 .txt、.lrc 或 .xlrc 文件")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -61,7 +61,12 @@ func (a *App) PickAndAdoptLyrics(trackID, revision int64) (*LyricsPickResult, er
 	if err != nil {
 		return nil, err
 	}
-	doc, err := lyricdoc.ParseText(string(body))
+	var doc *lyricdoc.Document
+	if ext == ".xlrc" {
+		doc, err = lyricdoc.ParseXLRC(string(body))
+	} else {
+		doc, err = lyricdoc.ParseText(string(body))
+	}
 	if err != nil {
 		return nil, err
 	}

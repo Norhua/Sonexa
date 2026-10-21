@@ -98,7 +98,27 @@ func qqDecodedChannel(raw string, err error) *lyricdoc.Channel {
 	}
 	trimmed := strings.TrimSpace(raw)
 	if strings.HasPrefix(trimmed, "<QrcInfos") || strings.HasPrefix(trimmed, "<?xml") || qrcLineStart.MatchString(raw) {
-		raw, err = qrcToLRC(raw)
+		raw, err = qrcContent(raw)
+		if err != nil {
+			return lyricdoc.FailedChannel(qqFormatError(err))
+		}
+		text, err := qrcToLRC(raw)
+		ch := lyricdoc.TextChannel(text, qqFormatError(err))
+		if ch.Track != nil {
+			i := 0
+			for _, line := range strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n") {
+				m := qrcLine.FindStringSubmatch(line)
+				if m == nil {
+					continue
+				}
+				start, _ := milliseconds(m[1])
+				duration, _ := milliseconds(m[2])
+				end := int64(start + duration)
+				ch.Track.Lines[i].EndMS = &end
+				i++
+			}
+		}
+		return ch
 	}
 	return lyricdoc.TextChannel(raw, qqFormatError(err))
 }

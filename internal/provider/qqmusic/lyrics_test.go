@@ -136,10 +136,10 @@ func TestQQPlayPreservesChannelsAndUsesExplicitFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 || doc.Format != "enhanced_lrc" || doc.WordTiming != "available" || doc.Translation.Status != "available" || doc.Romanization.Status != "available" || len(doc.Warnings) != 0 {
+	if calls != 1 || doc.Format != "xlrc" || doc.WordTiming != "available" || doc.Translation.Status != "available" || doc.Romanization.Status != "available" || len(doc.Warnings) != 0 {
 		t.Fatalf("%+v", doc)
 	}
-	for _, part := range []string{"<00:01.000>原文", "[00:01.000]翻译", "<00:01.000>roma"} {
+	for _, part := range []string{"<00:01.000>原文", "[>und]翻译", "<00:01.000>roma"} {
 		if !strings.Contains(doc.Text, part) {
 			t.Fatal(doc.Text)
 		}
@@ -158,7 +158,7 @@ func TestQQPrecisionAlignmentBeforeDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 || len(d.Rows) != 2 || d.Format != "enhanced_lrc" || d.WordTiming != "available" {
+	if calls != 1 || len(d.Rows) != 2 || d.Format != "xlrc" || d.WordTiming != "available" {
 		t.Fatal("not completed before provider return", d, calls)
 	}
 	for i, want := range []int64{42743, 47856} {
@@ -210,7 +210,7 @@ func TestQQOptionalFailuresAndPlainFallback(t *testing.T) {
 			if err := lyricdoc.Validate(doc); err != nil || calls != 1 {
 				t.Fatal("incomplete provider result", err, calls)
 			}
-			if doc.WordTiming != tt.timing || doc.Translation.Status != tt.translation || doc.Format != tt.format {
+			if doc.WordTiming != tt.timing || doc.Translation.Status != tt.translation || doc.Format != "xlrc" {
 				t.Fatalf("%+v", doc)
 			}
 			if tt.translation == "error" && len(doc.Warnings) == 0 {
@@ -267,7 +267,7 @@ func TestQQFallbackKeepsNewTranslationAndReportsFailure(t *testing.T) {
 		return `{"code":0,"retcode":0,"subcode":0,"lyric":"[00:01]original"}`
 	})
 	doc, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
-	if err != nil || calls != 2 || doc.Format != "lrc" || doc.WordTiming != "error" || !strings.Contains(doc.Text, "untimed translation") || len(doc.Warnings) == 0 {
+	if err != nil || calls != 2 || doc.Format != "xlrc" || doc.WordTiming != "error" || !strings.Contains(doc.Text, "untimed translation") || len(doc.Warnings) == 0 {
 		t.Fatalf("%+v %v", doc, err)
 	}
 }

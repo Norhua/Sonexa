@@ -23,7 +23,7 @@ func (c forbiddenLyricCache) PutCache(string, string, string, []byte, time.Durat
 	return nil
 }
 func TestAllLyricsCapabilitiesUseNoStore(t *testing.T) {
-	for _, source := range []string{"163", "qq", "kugou", "kuwo"} {
+	for _, source := range []string{"163", "qq", "kugou"} {
 		t.Run(source, func(t *testing.T) {
 			client := provider.NewClient(nil, forbiddenLyricCache{t}, "test")
 			client.Retry.MaxAttempts = 1

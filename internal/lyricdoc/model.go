@@ -8,13 +8,27 @@ type Word struct {
 	StartMS *int64 `json:"startMs,omitempty"`
 	EndMS   *int64 `json:"endMs,omitempty"`
 	Text    string `json:"text"`
+	Ruby    []Ruby `json:"ruby,omitempty"`
+}
+
+// Ruby offsets count Unicode code points in Text, not bytes or UTF-16 units.
+type Ruby struct {
+	Start   int    `json:"start"`
+	End     int    `json:"end"`
+	Reading string `json:"reading"`
 }
 
 type Line struct {
-	StartMS *int64 `json:"startMs,omitempty"`
-	EndMS   *int64 `json:"endMs,omitempty"`
-	Parts   []Word `json:"parts,omitempty"`
-	Text    string `json:"text"`
+	StartMS     *int64 `json:"startMs,omitempty"`
+	EndMS       *int64 `json:"endMs,omitempty"`
+	Parts       []Word `json:"parts,omitempty"`
+	Text        string `json:"text"`
+	ID          string `json:"id,omitempty"`
+	ParentID    string `json:"parentId,omitempty"`
+	Independent bool   `json:"independent,omitempty"`
+	Language    string `json:"language,omitempty"`
+	Voice       string `json:"voice,omitempty"`
+	Ruby        []Ruby `json:"ruby,omitempty"`
 }
 
 type Diagnostic struct {
@@ -51,11 +65,23 @@ type Track struct {
 }
 
 type PreviewRow struct {
-	TimeMS       *int64   `json:"timeMs,omitempty"`
-	Text         string   `json:"text"`
-	Channel      string   `json:"channel"`
-	Translation  []string `json:"translation,omitempty"`
-	Romanization []string `json:"romanization,omitempty"`
+	TimeMS       *int64       `json:"timeMs,omitempty"`
+	Text         string       `json:"text"`
+	Channel      string       `json:"channel"`
+	Translation  []string     `json:"translation,omitempty"`
+	Romanization []string     `json:"romanization,omitempty"`
+	Voice        string       `json:"voice,omitempty"`
+	Ruby         []Ruby       `json:"ruby,omitempty"`
+	Language     string       `json:"language,omitempty"`
+	Annotations  []Annotation `json:"annotations,omitempty"`
+}
+
+// Annotation preserves the language and rich text of each attached XLRC line.
+type Annotation struct {
+	Channel  string `json:"channel"`
+	Language string `json:"language"`
+	Text     string `json:"text"`
+	Ruby     []Ruby `json:"ruby,omitempty"`
 }
 
 // Channel is a completed channel in a Document; builders also accept it as

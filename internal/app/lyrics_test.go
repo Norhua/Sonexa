@@ -139,7 +139,7 @@ func TestLyricsSearchSessionOwnershipGateAndCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := preview.Document
-	if d.Format != "enhanced_lrc" {
+	if d.Format != "xlrc" {
 		t.Fatalf("%+v %v", d, err)
 	}
 	other, err := a.CreateLyricsSearch(id)

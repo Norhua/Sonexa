@@ -37,7 +37,7 @@ func alignPrecision(channels []channelTrack) (bool, error) {
 		claims := make([]int, len(times)+1)
 		for i, line := range lines {
 			matches[i] = -1
-			if line.StartMS == nil || strings.TrimSpace(line.Text) == "" {
+			if line.Independent || line.ParentID != "" || line.StartMS == nil || strings.TrimSpace(line.Text) == "" {
 				continue
 			}
 			t := *line.StartMS

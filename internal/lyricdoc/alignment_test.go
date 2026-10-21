@@ -36,7 +36,7 @@ func TestPrecisionAlignmentBoundaries(t *testing.T) {
 				t.Fatalf("out-of-window time changed: %+v", d.Rows)
 			}
 			for _, ch := range []*Channel{d.Translation, d.Romanization} {
-				if *ch.Track.Lines[0].StartMS != want || !strings.Contains(d.Text, "["+clock(want)+"]"+ch.Track.Lines[0].Text) {
+				if *ch.Track.Lines[0].StartMS != want || !strings.Contains(ch.Text, "["+clock(want)+"]"+ch.Track.Lines[0].Text) {
 					t.Fatal("text/structure disagree", d.Text)
 				}
 				if before != want && len(precisionLinks(ch)) != 1 {
@@ -108,7 +108,7 @@ func TestPrecisionAlignmentPreservesWordsAndInputOwnership(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("builder mutated input")
 	}
-	if !strings.Contains(d.Text, "[00:01.005]<00:01.000>Translated <00:02.000>line<00:02.500>") || !reflect.DeepEqual(d.Translation.Track.Lines[0].Parts, input.Translation.Track.Lines[0].Parts) {
+	if !strings.Contains(d.Text, "[>und]<00:01.000>Translated <00:02.000>line<00:02.500>") || !reflect.DeepEqual(d.Translation.Track.Lines[0].Parts, input.Translation.Track.Lines[0].Parts) {
 		t.Fatal("word times changed", d.Text)
 	}
 	if err := matchingTrackText(d.Translation.Track, TextChannel(d.Translation.Text, nil).Track); err != nil {

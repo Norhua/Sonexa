@@ -24,7 +24,7 @@ func TestProductionAssemblyListsAndFailedBuildDoesNotPublish(t *testing.T) {
 	if !reflect.DeepEqual(ids, []string{"musicbrainz", "itunes", "qq"}) {
 		t.Fatal(ids)
 	}
-	if !reflect.DeepEqual(a.ListLyricsSources(), []lyrics.Source{{ID: "163", Name: "网易云音乐"}, {ID: "qq", Name: "QQ 音乐"}, {ID: "kugou", Name: "酷狗音乐"}, {ID: "kuwo", Name: "酷我音乐"}}) {
+	if !reflect.DeepEqual(a.ListLyricsSources(), []lyrics.Source{{ID: "163", Name: "网易云音乐"}, {ID: "qq", Name: "QQ 音乐"}, {ID: "kugou", Name: "酷狗音乐"}}) {
 		t.Fatal(a.ListLyricsSources())
 	}
 	if !reflect.DeepEqual(a.ListCoverSources(), []CoverSourceInfo{{"caa", "CAA", false}, {"itunes", "iTunes", true}, {"qq", "QQ", false}, {"163", "网易云", false}}) {

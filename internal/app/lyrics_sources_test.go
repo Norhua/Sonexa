@@ -67,11 +67,9 @@ func TestTextFormatsAndInvalidInput(t *testing.T) {
 func TestDocumentParsers(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte("[00:02.50]You &amp; me"))
 	for _, tt := range []struct{ source, body, want string }{
-		{"qq", `callback({"code":0,"retcode":0,"lyric":"` + encoded + `"});`, "[00:02.50]You & me"},
-		{"qq", `{"code":0,"lyric":"[00:01.00]原文","trans":"[00:01.00]翻译"}`, "[00:01.000]原文\n[00:01.000]翻译"},
-		{"163", `{"code":200,"lrc":{"lyric":"[00:03.00]三\n[00:01.20][00:02.300]一"},"tlyric":{"lyric":"[00:02.30]译\n[00:03.0]三"}}`, "[00:01.200]一\n[00:02.300]一\n[00:02.300]译\n[00:03.000]三"},
-		{"kuwo", `{"status":200,"data":{"lrclist":[{"time":"12.50","lineLyric":"后"},{"time":"2.3","lineLyric":"前"}]}}`, "[00:02.300]前\n[00:12.500]后"},
-		{"kuwo", `{"status":200,"data":{"lrclist":[{"time":"bad","lineLyric":"无时间"},{"time":"1","lineLyric":"有时间"}]}}`, "无时间\n有时间"},
+		{"qq", `callback({"code":0,"retcode":0,"lyric":"` + encoded + `"});`, "[xlrc:0.1]\n[x-sonexa:1]\n[00:02.500]You & me"},
+		{"qq", `{"code":0,"lyric":"[00:01.00]原文","trans":"[00:01.00]翻译"}`, "[xlrc:0.1]\n[x-sonexa:1]\n[00:01.000]原文\n[>und]翻译"},
+		{"163", `{"code":200,"lrc":{"lyric":"[00:03.00]三\n[00:01.20][00:02.300]一"},"tlyric":{"lyric":"[00:02.30]译\n[00:03.0]三"}}`, "[xlrc:0.1]\n[x-sonexa:1]\n[00:01.200]一\n[00:02.300]一\n[>und]译\n[00:03.000]三\n[>und]三"},
 	} {
 		d, err := replayService(tt.body).Fetch(context.Background(), lyrics.Candidate{Source: tt.source, Ref: "native"})
 		if err != nil || d.Text != tt.want {
@@ -80,7 +78,7 @@ func TestDocumentParsers(t *testing.T) {
 	}
 	for _, tt := range []struct{ source, body string }{
 		{"163", `{"code":200,"lrc":{"lyric":"[00:01.00]作曲 : 人\n[00:05.00]纯音乐，请欣赏"}}`},
-		{"163", `{"code":301}`}, {"163", `{"code":200,"nolyric":true}`}, {"qq", `callback({"code":0,"lyric":""});alert(1)`}, {"qq", `{"code":1000}`}, {"qq", `{}`}, {"kuwo", `{"status":301,"msg":"音乐查询失败","data":null}`},
+		{"163", `{"code":301}`}, {"163", `{"code":200,"nolyric":true}`}, {"qq", `callback({"code":0,"lyric":""});alert(1)`}, {"qq", `{"code":1000}`}, {"qq", `{}`},
 	} {
 		if _, err := replayService(tt.body).Fetch(context.Background(), lyrics.Candidate{Source: tt.source, Ref: "native"}); err == nil {
 			t.Fatalf("accepted %s", tt.body)
@@ -95,7 +93,6 @@ func TestSearchParsers(t *testing.T) {
 		{"163", `{"code":200,"result":{"songs":[{"id":123,"name":"歌","ar":[{"name":"人"}],"al":{"name":"专辑"},"dt":123456}]}}`, "123", 123456},
 		{"qq", `{"code":0,"req":{"code":0,"data":{"body":{"song":{"list":[{"mid":"0039MnYb0qxYhV","name":"歌","singer":[{"name":"人"}],"album":{"name":"专辑"},"interval":123}]}}}}}`, "0039MnYb0qxYhV", 123000},
 		{"kugou", `{"status":1,"errcode":0,"data":{"info":[{"hash":"abcd","songname":"歌","singername":"人","album_name":"专辑","duration":123}]}}`, "abcd", 123000},
-		{"kuwo", `{"TOTAL":"1","abslist":[{"MUSICRID":"MUSIC_123","NAME":"歌","ARTIST":"人","ALBUM":"专辑","DURATION":"123"}]}`, "123", 123000},
 	} {
 		got, err := replayService(tt.body).Search(context.Background(), tt.source, lyrics.Query{Title: "歌"})
 		if err != nil || len(got) != 1 || got[0].Ref != tt.ref || got[0].DurationMS != tt.ms || got[0].Source != tt.source {
@@ -145,7 +142,7 @@ func TestKugouUsesHTTPSHashDurationAndLRC(t *testing.T) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}}, nil
 	})
 	d, err := sourceService(client).Fetch(context.Background(), lyrics.Candidate{Source: "kugou", Ref: "hash", DurationMS: 269000})
-	if err != nil || count != 3 || d.Format != "lrc" {
+	if err != nil || count != 3 || d.Format != "xlrc" {
 		t.Fatalf("%+v %v %d", d, err, count)
 	}
 }

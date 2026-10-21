@@ -91,7 +91,14 @@ func (s *Store) prepareLyrics(ctx context.Context, trackID int64, draft LyricsDr
 	if err := ctx.Err(); err != nil {
 		return preparedLyrics{}, err
 	}
-	rel := fmt.Sprintf("current/%d-%s.lrc", trackID, hash)
+	ext := ".lrc"
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "[xlrc:") || strings.HasPrefix(line, "[>") {
+			ext = ".xlrc"
+			break
+		}
+	}
+	rel := fmt.Sprintf("current/%d-%s%s", trackID, hash, ext)
 	path := filepath.Join(s.lyricsRoot, rel)
 	if old, err := os.ReadFile(path); err == nil {
 		oldHash := sha256.Sum256(old)

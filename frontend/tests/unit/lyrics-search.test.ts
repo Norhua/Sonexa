@@ -19,7 +19,7 @@ beforeEach(() => {
   setActivePinia(createPinia()); vi.resetAllMocks(); snapshots = new Map(); listeners = new Set()
   let id = 0
   vi.mocked(EventsOn).mockImplementation((_, fn) => { listeners.add(fn); return () => { listeners.delete(fn) } })
-  vi.mocked(App.ListLyricsSources).mockResolvedValue(['163', 'qq', 'kugou', 'kuwo'].map(id => ({ id, name: id })))
+  vi.mocked(App.ListLyricsSources).mockResolvedValue(['163', 'qq', 'kugou'].map(id => ({ id, name: id })))
   vi.mocked(App.LyricsRevision).mockResolvedValue(4)
   vi.mocked(App.CreateLyricsSearch).mockImplementation(async () => `session-${++id}`)
   vi.mocked(App.CancelLyricsSearch).mockResolvedValue()
@@ -94,7 +94,7 @@ it('submits edited duration only on a new search and restores defaults on reopen
   store.durationInput = '5:01.5'; await store.search()
   expect(App.SearchLyrics).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), expect.objectContaining({ durationMs: 301500 }))
   store.durationInput = 'invalid'; await store.search()
-  expect(App.SearchLyrics).toHaveBeenCalledTimes(4); expect(store.error).toContain('时长请输入')
+  expect(App.SearchLyrics).toHaveBeenCalledTimes(3); expect(store.error).toContain('时长请输入')
   store.durationInput = ''; await store.search()
   expect(App.SearchLyrics).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), expect.objectContaining({ durationMs: 0 }))
   expect(target.metadata!.durationMs).toBe(299123)

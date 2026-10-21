@@ -91,11 +91,20 @@ func addKRCLanguage(p *lyricdoc.Input, track *lyricdoc.Track, encoded string) {
 			l := lyricdoc.Line{Text: text}
 			if len(rows) == len(native) {
 				l.StartMS = native[i].StartMS
+				l.ParentID, l.Voice = native[i].ID, native[i].Voice
+				// type=0 syllables correspond to native words only when every
+				// count agrees; otherwise preserve the text without guessed timing.
+				if *descriptor.Type == 0 && len(row) == len(native[i].Parts) {
+					for j, text := range row {
+						w := native[i].Parts[j]
+						w.Text, w.Ruby = text, nil
+						l.Parts = append(l.Parts, w)
+					}
+				}
 			}
 			t.Lines = append(t.Lines, l)
 		}
-		text, err := lyricdoc.SerializeTrack(t)
-		ch := lyricdoc.TextChannel(text, err)
+		ch := lyricdoc.TrackChannel(t, nil)
 		ch.Origin = "embedded"
 		if len(rows) != len(native) {
 			ch.SyncStatus = "unsynced"

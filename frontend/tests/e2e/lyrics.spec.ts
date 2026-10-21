@@ -56,7 +56,7 @@ test('compact lyric search keeps metadata on cards, hides diagnostics and applie
     const w = window as any, api = w.go.app.App
     w.__lyricSearch = async (source: string, query: unknown) => {
       w.__submittedLyricQuery = query
-      if (source === 'kuwo') throw new Error('酷我暂时限流')
+      if (source === 'kugou') throw new Error('酷狗暂时限流')
       return [{ id: source, source, sortKey: source, title: `歌曲-${source}`, artist: '歌手', album: '专辑', durationMs: 123000, matchScore: 80, totalScore: 125, matchTerms: [{ code: 'title', label: '曲名', value: 55 }], scoreTerms: [{ code: 'translation', label: '翻译', value: 15 }], highConfidence: false, autoPreviewEligible: false, matchNotes: ['艺术家不同或缺失，需确认'] }]
     }
     w.__lyricDocument = (id: string) => ({ text: id === 'qq' ? '[00:12.000]<00:12.100>Hello <00:12.600>world<00:13.000>\n[00:12.000]测试翻译\n<b>literal</b>' : '纯文本歌词', format: id === 'qq' ? 'enhanced_lrc' : 'text', offsetMs: 0, rows: [{ timeMs: 12000, text: 'Hello world', channel: 'original', translation: ['测试翻译'] }, { text: '<b>literal</b>', channel: 'original' }], translation: { status: 'available', origin: 'independent', syncStatus: 'synced' }, romanization: { status: 'unavailable', origin: 'independent', syncStatus: 'unknown' }, wordTiming: 'available', warnings: ['内部协议诊断不应显示'] })
@@ -99,7 +99,7 @@ test('compact lyric search keeps metadata on cards, hides diagnostics and applie
   expect(scoreBox.y - cardBox.y).toBeLessThan(20)
   expect(await page.evaluate(() => (window as any).__submittedLyricQuery.durationMs)).toBe(299123)
   await expect(dialog.getByRole('status', { name: 'QQ 音乐：共 1 个候选', exact: true })).toHaveText('1')
-  await expect(dialog.getByRole('status', { name: '酷我音乐：获取异常，可重试', exact: true }).locator('svg')).toBeVisible()
+  await expect(dialog.getByRole('status', { name: '酷狗音乐：获取异常，可重试', exact: true }).locator('svg')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '应用到歌曲' })).toBeDisabled()
   await expect(dialog.getByLabel('歌词预览', { exact: true }).locator('pre')).toHaveCount(0)
   await expect(qq).toContainText('翻译：有')
@@ -145,10 +145,10 @@ test('compact lyric search keeps metadata on cards, hides diagnostics and applie
   await expect(dialog.getByLabel('原始歌词文本')).toContainText('测试翻译')
   await dialog.getByRole('button', { name: '阅读', exact: true }).click()
   expect(await page.evaluate(() => (window as any).__lyricReads)).toBe(1)
-  await expect(dialog.getByText('酷我暂时限流', { exact: false })).toHaveCount(0)
+  await expect(dialog.getByText('酷狗暂时限流', { exact: false })).toHaveCount(0)
   await expect(dialog.getByLabel('歌词来源进度')).toHaveCount(0)
   await duration.fill('1:23')
-  await dialog.getByRole('button', { name: '重试 酷我音乐', exact: true }).click()
+  await dialog.getByRole('button', { name: '重试 酷狗音乐', exact: true }).click()
   expect(await page.evaluate(() => (window as any).__submittedLyricQuery.durationMs)).toBe(299123)
   await expect(qq).toHaveAttribute('aria-pressed', 'true')
   await expect(dialog.getByLabel('可读歌词')).toContainText('Hello world')
@@ -164,6 +164,32 @@ test('compact lyric search keeps metadata on cards, hides diagnostics and applie
   await drawer.getByRole('button', { name: /查看歌词/ }).click()
   await expect(drawer.getByLabel('歌曲歌词')).toContainText('Hello world')
   await expect(drawer.getByLabel('歌曲歌词')).not.toContainText('<00:12.100>')
+})
+
+test('XLRC voices, ruby and multiple languages survive preview and adoption', async ({ page }) => {
+  await page.evaluate(() => {
+    const w = window as any, api = w.go.app.App
+    w.__lyricSearch = async (source: string) => source === 'qq' ? [{ id: 'xlrc', source, sortKey: 'xlrc', title: 'XLRC 示例', artist: 'Artist', album: '', durationMs: 10000, matchScore: 100, totalScore: 130, highConfidence: false, autoPreviewEligible: false, matchNotes: [], matchTerms: [], scoreTerms: [] }] : []
+    w.__lyricDocument = () => ({ text: '[xlrc:0.1]\n[x-sonexa:1]\n[lang:ja]\n[00:01.000][v:A]私[わたし]\n[>en]I\n[>fr]Moi\n[>ja-Latn]watashi\n[00:01.000][v:B]君[きみ]\n[>en]You', format: 'xlrc', offsetMs: 0, rows: [
+      { timeMs: 1000, channel: 'original', text: '私', voice: 'A', ruby: [{ start: 0, end: 1, reading: 'わたし' }], translation: ['I', 'Moi'], romanization: ['watashi'], annotations: [{ channel: 'translation', language: 'en', text: 'I' }, { channel: 'translation', language: 'fr', text: 'Moi' }, { channel: 'romanization', language: 'ja-Latn', text: 'watashi' }] },
+      { timeMs: 1000, channel: 'original', text: '君', voice: 'B', ruby: [{ start: 0, end: 1, reading: 'きみ' }], translation: ['You'], annotations: [{ channel: 'translation', language: 'en', text: 'You' }] },
+    ], translation: { status: 'available', origin: 'independent', syncStatus: 'synced' }, romanization: { status: 'available', origin: 'independent', syncStatus: 'synced' } })
+    const adopt = api.AdoptLyrics
+    api.AdoptLyrics = async (...args: any[]) => { const result = await adopt(...args); w.__lyricText = w.__lyricDocument().text; return result }
+  })
+  await page.getByLabel('歌曲详情抽屉').getByRole('button', { name: /查看歌词/ }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '从网络搜索歌词' }).click()
+  const dialog = page.getByRole('dialog', { name: '从网络搜索歌词' })
+  await expect(dialog.getByText('酷我音乐', { exact: true })).toHaveCount(0)
+  await dialog.getByRole('button', { name: '搜索', exact: true }).click()
+  await dialog.getByRole('button', { name: /XLRC 示例/ }).click()
+  await expect(dialog.getByLabel('人声 A')).toBeVisible(); await expect(dialog.getByLabel('人声 B')).toBeVisible()
+  await expect(dialog.getByLabel('可读歌词').locator('rt')).toHaveText(['わたし', 'きみ'])
+  await expect(dialog.getByLabel('可读歌词')).toContainText('frMoi')
+  await dialog.getByRole('button', { name: '原始文本', exact: true }).click()
+  await expect(dialog.getByLabel('原始歌词文本')).toContainText('[>ja-Latn]watashi')
+  await dialog.getByRole('button', { name: '应用到歌曲' }).click()
+  expect(await page.evaluate(() => (window as any).__lyricText)).toContain('[v:B]君[きみ]')
 })
 
 test('extra channel selector switches only the third column and preserves every channel for adoption', async ({ page }, testInfo) => {
@@ -442,7 +468,7 @@ test('closing while a lyric search starts discards late results and cancels the 
   await page.getByRole('button', { name: /查看歌词/ }).click({ button: 'right' })
   await page.getByRole('menuitem', { name: '从网络搜索歌词' }).click()
   const dialog = page.getByRole('dialog', { name: '从网络搜索歌词' })
-  for (const name of ['网易云音乐', '酷狗音乐', '酷我音乐']) await dialog.getByText(name, { exact: true }).click()
+  for (const name of ['网易云音乐', '酷狗音乐']) await dialog.getByText(name, { exact: true }).click()
   await dialog.getByRole('button', { name: '搜索', exact: true }).click()
   await expect.poll(() => page.evaluate(() => typeof (window as any).__finishLyricsStart)).toBe('function')
   await expect(dialog.getByRole('status', { name: 'QQ 音乐：正在搜索', exact: true }).filter({ hasText: '—' })).toHaveText('—')

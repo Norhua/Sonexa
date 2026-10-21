@@ -61,8 +61,8 @@ func capabilityViolations(path string, file *ast.File) []string {
 		if selector, ok := n.(*ast.SelectorExpr); ok && business {
 			if pkg, ok := selector.X.(*ast.Ident); ok && imports[pkg.Name] == internalModule+"lyricdoc" {
 				switch selector.Sel.Name {
-				case "Build", "Input", "TextChannel", "AbsentChannel", "UnknownChannel", "FailedChannel", "PreferredChannel", "SerializeTrack", "RenderTimed", "ParseText":
-					if path != "app/bindings_lyrics_input.go" || selector.Sel.Name != "ParseText" {
+				case "Build", "Input", "TextChannel", "TrackChannel", "AbsentChannel", "UnknownChannel", "FailedChannel", "PreferredChannel", "SerializeTrack", "SerializeXLRC", "ParseXLRC", "DecodeInline", "RenderTimed", "ParseText":
+					if path != "app/bindings_lyrics_input.go" || selector.Sel.Name != "ParseText" && selector.Sel.Name != "ParseXLRC" {
 						problems = append(problems, "业务不能构建或修复来源文档: "+selector.Sel.Name)
 					}
 				}
@@ -161,7 +161,7 @@ func TestRetiredUpstreamPathsStayRemoved(t *testing.T) {
 		}
 	}
 	for path, names := range map[string][]string{
-		"lyrics":               {"Payload", "DocumentFromPayload", "ParseText", "TextChannel", "buildDocument", "normalizeChannel", "deduplicate"},
+		"lyrics":               {"Payload", "DocumentFromPayload", "ParseText", "ParseXLRC", "SerializeXLRC", "DecodeInline", "TextChannel", "buildDocument", "normalizeChannel", "deduplicate"},
 		"provider":             {"Provider", "CoverGroup", "Head"},
 		"provider/itunes":      {"ResolveArtwork", "VerifyArtwork"},
 		"provider/musicbrainz": {"SearchCovers", "CoverArtProviderKey"},

@@ -169,7 +169,7 @@ func TestQQThreeCapabilitiesShareHTTPQuotaIncludingRetryAndFallback(t *testing.T
 		func() error { _, err := a.lyricSvc.Search(ctx, "qq", lyrics.Query{Title: "song"}); return err },
 		func() error {
 			doc, err := fresh.lyrics.Fetch(ctx, lyrics.Candidate{Source: "qq", Ref: "0039MnYb0qxYhV"})
-			if err == nil && doc.Text != "[00:01]歌词回退" {
+			if err == nil && doc.Text != "[xlrc:0.1]\n[x-sonexa:1]\n[00:01.000]歌词回退" {
 				return fmt.Errorf("回退歌词丢失")
 			}
 			return err
@@ -232,9 +232,6 @@ func TestPlatformQuotasIndependentAndNetEaseCapabilitiesShared(t *testing.T) {
 		if r.URL.Host == "mobileservice.kugou.com" {
 			body = `{"status":1,"data":{"info":[]}}`
 		}
-		if r.URL.Host == "search.kuwo.cn" {
-			body = `{"TOTAL":"0","abslist":[]}`
-		}
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
@@ -243,15 +240,15 @@ func TestPlatformQuotasIndependentAndNetEaseCapabilitiesShared(t *testing.T) {
 	if _, err := cover.SearchCovers(ctx, sources.Query{Title: "song"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, source := range []string{"kugou", "kuwo", "163"} {
+	for _, source := range []string{"kugou", "163"} {
 		if _, err := a.lyricSvc.Search(ctx, source, lyrics.Query{Title: "song"}); err != nil {
 			t.Fatal(source, err)
 		}
 	}
-	if len(arrivals) != 4 || arrivals[3].at.Sub(arrivals[0].at) < 950*time.Millisecond {
+	if len(arrivals) != 3 || arrivals[2].at.Sub(arrivals[0].at) < 950*time.Millisecond {
 		t.Fatal("网易云两能力未共用每秒一次配额", arrivals)
 	}
-	if arrivals[2].at.Sub(arrivals[0].at) > 750*time.Millisecond {
+	if arrivals[1].at.Sub(arrivals[0].at) > 750*time.Millisecond {
 		t.Fatal("其他平台被 QQ/网易云配额阻塞", arrivals)
 	}
 	short, stop := context.WithTimeout(ctx, time.Millisecond)

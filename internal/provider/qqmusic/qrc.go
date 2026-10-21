@@ -181,6 +181,13 @@ func clock(ms int) string { return fmt.Sprintf("%02d:%02d.%03d", ms/60000, ms/10
 // QRC word times are absolute milliseconds (not offsets from the line).
 // Preserve real word ends too, including gaps, instead of deriving durations
 // from the next word. Untimed credit lines stay ordinary LRC.
+func qrcContent(raw string) (string, error) {
+	if strings.HasPrefix(strings.TrimSpace(raw), "<") {
+		return extractQRCContent(strings.TrimSpace(raw))
+	}
+	return raw, nil
+}
+
 func qrcToLRC(raw string) (string, error) {
 	if len(raw) > lyricdoc.MaxTextBytes {
 		return "", fmt.Errorf("%w：QRC 文本过大", lyricdoc.ErrTooLarge)
@@ -188,19 +195,15 @@ func qrcToLRC(raw string) (string, error) {
 	if !utf8.ValidString(raw) || strings.ContainsRune(raw, 0) {
 		return "", fmt.Errorf("QRC 不是有效 UTF-8 文本")
 	}
-	raw = strings.TrimSpace(raw)
-	if strings.HasPrefix(raw, "<") {
-		var err error
-		raw, err = extractQRCContent(raw)
-		if err != nil {
-			return "", err
-		}
+	var err error
+	raw, err = qrcContent(raw)
+	if err != nil {
+		return "", err
 	}
 	var out strings.Builder
 	wordCount := 0
 	for _, line := range strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		if qrcMetadata.MatchString(line) {
@@ -239,9 +242,7 @@ func qrcToLRC(raw string) (string, error) {
 			if ts < previousEnd || ts+dur > end {
 				return "", fmt.Errorf("QRC 逐字时间无效或越界（行=%d-%d，前词结束=%d，当前=%d-%d，空词=%t）", start, end, previousEnd, ts, ts+dur, text == "")
 			}
-			if pos == 0 || ts != previousEnd {
-				out.WriteString("<" + clock(ts) + ">")
-			}
+			out.WriteString("<" + clock(ts) + ">")
 			out.WriteString(text)
 			out.WriteString("<" + clock(ts+dur) + ">")
 			if out.Len() > lyricdoc.MaxTextBytes {
@@ -263,5 +264,5 @@ func qrcToLRC(raw string) (string, error) {
 	if wordCount == 0 {
 		return "", fmt.Errorf("QRC 未包含逐字时间")
 	}
-	return strings.TrimSpace(out.String()), nil
+	return strings.TrimSuffix(out.String(), "\n"), nil
 }

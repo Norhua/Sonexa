@@ -15,6 +15,13 @@ func UnknownChannel() *Channel {
 func FailedChannel(err error) *Channel {
 	return &Channel{Status: "error", Origin: "independent", SyncStatus: "unknown", Message: err.Error(), Err: err}
 }
+func TrackChannel(track *Track, err error) *Channel {
+	if err != nil {
+		return FailedChannel(err)
+	}
+	return normalizeChannel(&Channel{Track: track, Status: "available", Origin: "independent"})
+}
+
 func TextChannel(text string, err error) *Channel {
 	if err != nil {
 		return FailedChannel(err)
@@ -41,7 +48,8 @@ func normalizeChannel(ch *Channel) *Channel {
 	if ch.Track != nil {
 		// Preserve real line ends and timestamp pointers from native adapters;
 		// LRC cannot encode every native line-end field.
-		_, err = SerializeTrack(ch.Track)
+		serialized, serializeErr := SerializeTrack(ch.Track)
+		err = serializeErr
 		if err == nil && !hasContent(ch.Track) {
 			err = ErrNoLyrics
 		}
@@ -53,7 +61,7 @@ func normalizeChannel(ch *Channel) *Channel {
 			copy.Text = text
 			// A caller providing both projections must not hide a different
 			// text behind its structured track.
-			if ch.Text != "" {
+			if ch.Text != "" && ch.Text != serialized {
 				var parsed *Track
 				parsed, copy.Text, err = parseTrack(text)
 				if err == nil {
@@ -73,6 +81,19 @@ func normalizeChannel(ch *Channel) *Channel {
 		return &copy
 	}
 	copy.Diagnostics = append(copy.Diagnostics, copy.Track.Diagnostics...)
+	for _, tag := range copy.Track.Metadata {
+		if strings.HasPrefix(tag, "[lang:") {
+			language := strings.TrimSuffix(strings.TrimPrefix(tag, "[lang:"), "]")
+			if !languageTag.MatchString(language) {
+				return FailedChannel(ErrFormat)
+			}
+			for i := range copy.Track.Lines {
+				if copy.Track.Lines[i].Language == "" {
+					copy.Track.Lines[i].Language = language
+				}
+			}
+		}
+	}
 	timed, nonempty := 0, 0
 	for _, l := range copy.Track.Lines {
 		if strings.TrimSpace(l.Text) == "" {
@@ -171,6 +192,7 @@ func buildDocument(original, translation, romanization *Channel, additional []*C
 		doc.Additional = append(doc.Additional, ch)
 		channels = append(channels, channelTrack{"additional", ch})
 	}
+	localText := original.Text
 	merged, rows, err := assembleTracks(channels)
 	if err != nil {
 		return nil, err
@@ -191,7 +213,7 @@ func buildDocument(original, translation, romanization *Channel, additional []*C
 	if hasExtra {
 		doc.Text, err = SerializeTrack(merged)
 	} else {
-		doc.Text = original.Text
+		doc.Text = localText
 	}
 	if err != nil {
 		return nil, err

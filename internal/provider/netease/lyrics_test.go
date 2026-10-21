@@ -116,7 +116,7 @@ func TestYRCBundleNormalization(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || d.Format != tt.format || d.WordTiming != tt.timing || d.Translation.Status != "available" || d.Romanization.SyncStatus != "unsynced" {
+			if err != nil || d.Format != "xlrc" || d.WordTiming != tt.timing || d.Translation.Status != "available" || d.Romanization.SyncStatus != "unsynced" {
 				t.Fatal(d, err)
 			}
 			if strings.Contains(d.Text, `"tx"`) || tt.name == "credit" && !strings.Contains(d.Text, "Credit: Person") {
@@ -163,7 +163,7 @@ func TestLyricsNormalizeNativePlaceholders(t *testing.T) {
 		t.Fatalf("附加通道占位影响原文: %+v %v", payload, err)
 	}
 	doc, err := lyricdoc.Build(payload)
-	if err != nil || doc.Text != "[00:01]原文" {
+	if err != nil || doc.Text != "[xlrc:0.1]\n[x-sonexa:1]\n[00:01.000]原文" {
 		t.Fatal(doc, err)
 	}
 }

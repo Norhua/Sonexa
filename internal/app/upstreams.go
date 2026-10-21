@@ -12,7 +12,6 @@ import (
 	"github.com/norhua/sonexa/internal/provider/caa"
 	"github.com/norhua/sonexa/internal/provider/itunes"
 	"github.com/norhua/sonexa/internal/provider/kugou"
-	"github.com/norhua/sonexa/internal/provider/kuwo"
 	"github.com/norhua/sonexa/internal/provider/musicbrainz"
 	"github.com/norhua/sonexa/internal/provider/netease"
 	"github.com/norhua/sonexa/internal/provider/qqmusic"
@@ -188,7 +187,6 @@ func buildLyricsService(client *provider.Client, qq *qqmusic.Provider) (*lyrics.
 		lyrics.Entry{Provider: netease.New(client), Name: "网易云音乐"},
 		lyrics.Entry{Provider: qq, Name: "QQ 音乐"},
 		lyrics.Entry{Provider: kugou.New(client), Name: "酷狗音乐"},
-		lyrics.Entry{Provider: kuwo.New(client), Name: "酷我音乐"},
 	)
 	if err != nil {
 		return nil, err

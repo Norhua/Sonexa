@@ -95,15 +95,17 @@ SONEXA_E2E_PREVIEW=1 npm run test:e2e
 ## 歌词来源验证
 
 歌词消费契约与评分位于 `internal/lyrics`；公共模型及标准格式工具位于
-`internal/lyricdoc`，不依赖业务、上游或网络。四来源协议位于
-`internal/provider/{netease,qqmusic,kugou,kuwo}`，由 `app/upstreams.go` 创建并注入，
+`internal/lyricdoc`，不依赖业务、上游或网络。三来源协议位于
+`internal/provider/{netease,qqmusic,kugou}`，由 `app/upstreams.go` 创建并注入，
 会话保留服务快照。每个来源在返回前完成选轨、通道识别、合并、去重和序列化，
 直接交付完整 `lyricdoc.Document`；业务只读校验、评分、预览和采用，不再组装 Payload。
 歌词搜索的艺术家比较额外接受明确繁简字符等价（例如「周杰倫 / 周杰伦」），
 仅使用[官方 OpenCC 字典](internal/lyrics/data/opencc/README.md)的唯一映射，不改变上游查询、显示名称、元数据匹配或歌词正文。
 歧义映射、两种繁体归并、含假名/谚文的署名不新增此匹配证据；字典与许可证静态随附，无新增转换器运行时依赖。
 搜索时长可编辑并随查询冻结，来源旁显示候选总数/异常标志；卡片右上角显示综合得分/150，悬浮或键盘聚焦可查看匹配说明。
-本地 TXT/LRC 由 `app/bindings_lyrics_input.go` 独立解析，在线采用不复用本地解析入口。
+本地 TXT/LRC/XLRC 由 `app/bindings_lyrics_input.go` 独立解析，在线采用不复用本地解析入口。
+在线统一输出 XLRC，支持从属多语言、罗马音、人声标签和假名注音；真实行/词结束、未同步及独立附加轨通过明确的保真扩展保存，详见 [XLRC 格式与扩展](internal/lyricdoc/README.md)。
+阅读模式消费后端关联并显示人声/ruby，不生成缺失信息；详情仅投影正文，不回写。
 适配器共用 `provider/lyricfetch` 映射统一错误类别，保留停止语义和错误链；
 该包不属于通用传输父包，业务不调用它解释平台错误。
 QQ QRC 转换和 MIT 许可的 DES 实现位于 `internal/provider/qqmusic/{qrc.go,qrcdes/}`，
@@ -125,16 +127,9 @@ KRC 与附加轨已通过离线合成测试；2026-10-21 单轮样例也取得�
 同轮网易云仅返回普通 LRC，QQ 逐字/罗马音解析失败、普通原文与翻译保留，酷我无歌词；
 不把部分成功宣称为四来源全部验通，详见[本轮验证记录](openspec/changes/improve-lyrics-normalization-and-ranking/validation.md)。
 
-酷我逐行首选 `https://www.kuwo.cn/openapi/v1/www/lyric/getlyric`，允许条件下仅回退一次
-HTTPS H5；不接入 HTTP、mobi 或 LRCX。两端点在适配器中共用两层内嵌译文识别：
-- 第一层：外文/纯汉字行各至少 8 行，比例 0.7–1.3，至少 80% 汉字行紧随外文，
-  另需外文曲名/艺术家或至少半数外文行含假名/谚文。
-- 第二层：中文紧跟外文、时间严格更晚且等于下一计时行；第一层未确认时至少 4 个强匹配。
-  拟声不计强匹配，孤立尾行和演唱标签不凑门槛，同刻归属歧义不拆。
-命中仅重分类已有文字，标记 `embedded/available` 和 `kuwo-embedded-v1` 推断依据，翻译加分一次。
-未命中保持 unknown，不声称没有翻译；非法时间/矛盾 offset 禁用识别，保留全文原序为纯文本。
-规则有误判与漏判风险，署名/版权声明不删除、不作为译文证据；离线测试不证明实际在线效果。
-通道摘要仅记录格式、状态、规则版本、命中层及数量，不输出正文或逐行关联详情。
+酷我因可获得信息有限已移除，不再注册歌词能力、调用其接口或执行内嵌译文启发式。
+默认三来源每轮最多预取 9 份、48 次实际发送，每源 Top 3 / 16 次预算不变，通用获取池仍为全局 4 / 同源 1。
+XLRC 改动的离线验证与限制见 [后续修改记录](openspec/changes/improve-lyrics-normalization-and-ranking/change_record/4772dead-tasks.md)。
 
 在线组合测试默认跳过；显式启用时只输出标题、通道状态和字节数，不转储歌词全文：
 

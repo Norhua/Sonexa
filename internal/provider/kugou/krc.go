@@ -133,6 +133,11 @@ func parseKRC(raw string) (*lyricdoc.Track, string, error) {
 			}
 			l.Text = text.String()
 		}
+		l.ID = fmt.Sprintf("krc-%d", len(t.Lines))
+		l, err = lyricdoc.DecodeInline(l)
+		if err != nil {
+			return nil, language, err
+		}
 		t.Lines = append(t.Lines, l)
 	}
 	return t, language, nil

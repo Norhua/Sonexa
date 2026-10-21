@@ -34,7 +34,6 @@ const (
 	QQQuota          QuotaID = QQMusic
 	NetEaseQuota     QuotaID = "163"
 	KugouQuota       QuotaID = "kugou"
-	KuwoQuota        QuotaID = "kuwo"
 )
 
 // RateSource 仅提供限流初始化所需信息，不要求完整元数据能力。
@@ -47,7 +46,7 @@ type RateSource interface {
 // MB/iTunes/QQ 的可配置速率由同一装配入口按有效设置传入。
 // CAA 索引和所有图片走封面工作池，不建立 API 桶。
 func (l *Limiters) ConfigureFixedQuotas() {
-	for _, id := range []QuotaID{NetEaseQuota, KugouQuota, KuwoQuota} {
+	for _, id := range []QuotaID{NetEaseQuota, KugouQuota} {
 		l.Configure(id, 1, time.Second)
 	}
 }
