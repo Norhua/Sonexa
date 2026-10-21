@@ -54,7 +54,8 @@ test('local lyrics, independent lyric page, clear and resizable indented drawer'
 test('compact lyric search keeps metadata on cards, hides diagnostics and applies the previewed document', async ({ page }, testInfo) => {
   await page.evaluate(() => {
     const w = window as any, api = w.go.app.App
-    w.__lyricSearch = async (source: string) => {
+    w.__lyricSearch = async (source: string, query: unknown) => {
+      w.__submittedLyricQuery = query
       if (source === 'kuwo') throw new Error('酷我暂时限流')
       return [{ id: source, source, sortKey: source, title: `歌曲-${source}`, artist: '歌手', album: '专辑', durationMs: 123000, matchScore: 80, totalScore: 125, matchTerms: [{ code: 'title', label: '曲名', value: 55 }], scoreTerms: [{ code: 'translation', label: '翻译', value: 15 }], highConfidence: false, autoPreviewEligible: false, matchNotes: ['艺术家不同或缺失，需确认'] }]
     }
@@ -72,9 +73,33 @@ test('compact lyric search keeps metadata on cards, hides diagnostics and applie
   const dialog = page.getByRole('dialog', { name: '从网络搜索歌词' })
   await expect(dialog.getByText(/目标：|仅修改当前歌曲的歌词/)).toHaveCount(0)
   await expect(dialog.getByRole('combobox', { name: '额外展示' })).toHaveCount(0)
+  const duration = dialog.getByRole('textbox', { name: '时长', exact: true })
+  await duration.fill('4:59.123')
+  const artistBox = (await dialog.getByRole('textbox', { name: '艺术家', exact: true }).boundingBox())!
+  expect((await duration.boundingBox())!.x).toBeGreaterThan(artistBox.x + artistBox.width)
   await dialog.getByRole('button', { name: '搜索', exact: true }).click()
   const qq = dialog.getByRole('button', { name: /歌曲-qq/ })
-  await expect(qq).toContainText('匹配：需确认')
+  const score = dialog.locator('[data-candidate-id="qq"]').getByRole('button', { name: '综合得分 125/150', exact: true })
+  await expect(score).toHaveText('125/150')
+  await expect(qq).not.toContainText('匹配：需确认')
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
+  await score.hover()
+  await expect(page.getByRole('tooltip')).toContainText('歌曲匹配 80 分・歌词综合 125，艺术家不同或缺失，需确认')
+  await page.getByRole('tooltip').hover()
+  await expect(page.getByRole('tooltip')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('lyrics-score-tooltip.png') })
+  await qq.focus()
+  await score.focus()
+  await expect(page.getByRole('tooltip')).toContainText('需确认')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
+  const cardBox = (await dialog.locator('[data-candidate-id="qq"]').boundingBox())!, scoreBox = (await score.boundingBox())!
+  expect(scoreBox.x).toBeGreaterThan(cardBox.x + cardBox.width / 2)
+  expect(scoreBox.y - cardBox.y).toBeLessThan(20)
+  expect(await page.evaluate(() => (window as any).__submittedLyricQuery.durationMs)).toBe(299123)
+  await expect(dialog.getByRole('status', { name: 'QQ 音乐：共 1 个候选', exact: true })).toHaveText('1')
+  await expect(dialog.getByRole('status', { name: '酷我音乐：获取异常，可重试', exact: true }).locator('svg')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '应用到歌曲' })).toBeDisabled()
   await expect(dialog.getByLabel('歌词预览', { exact: true }).locator('pre')).toHaveCount(0)
   await expect(qq).toContainText('翻译：有')
@@ -100,6 +125,16 @@ test('compact lyric search keeps metadata on cards, hides diagnostics and applie
   expect(positions[0]!.right).toBeLessThan(positions[1]!.left)
   expect(positions[1]!.right).toBeLessThan(positions[2]!.left)
   expect(positions[0]!.top).toBe(positions[2]!.top)
+  const typography = await cells.evaluateAll(els => els.map(el => {
+    const style = getComputedStyle(el)
+    const range = document.createRange(), walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    let text: Node | null
+    while ((text = walker.nextNode())) { if (text.textContent?.trim()) break }
+    range.selectNodeContents(text!)
+    return { fontSize: style.fontSize, lineHeight: style.lineHeight, textTop: range.getBoundingClientRect().top }
+  }))
+  expect(typography[0]).toEqual(typography[1])
+  expect(typography[1]).toEqual(typography[2])
   await expect(dialog.getByRole('button', { name: '应用到歌曲' })).toBeDisabled()
   await expect.poll(() => page.evaluate(() => typeof (window as any).__finishLyricsPreview)).toBe('function')
   await page.evaluate(() => (window as any).__finishLyricsPreview())
@@ -112,7 +147,9 @@ test('compact lyric search keeps metadata on cards, hides diagnostics and applie
   expect(await page.evaluate(() => (window as any).__lyricReads)).toBe(1)
   await expect(dialog.getByText('酷我暂时限流', { exact: false })).toHaveCount(0)
   await expect(dialog.getByLabel('歌词来源进度')).toHaveCount(0)
+  await duration.fill('1:23')
   await dialog.getByRole('button', { name: '重试 酷我音乐', exact: true }).click()
+  expect(await page.evaluate(() => (window as any).__submittedLyricQuery.durationMs)).toBe(299123)
   await expect(qq).toHaveAttribute('aria-pressed', 'true')
   await expect(dialog.getByLabel('可读歌词')).toContainText('Hello world')
   expect(await page.evaluate(() => (window as any).__lyricReads)).toBe(1)
@@ -270,6 +307,8 @@ test('failed searches and operations remain recoverable without raw errors or la
     w.go.app.App.FetchLyrics = async () => { throw new Error('RAW_FETCH_ERROR') }
   })
   await dialog.getByRole('button', { name: '重试 QQ 音乐', exact: true }).click()
+  await expect(dialog.getByRole('status', { name: 'QQ 音乐：共 1 个候选', exact: true })).toHaveText('1')
+  await expect(dialog.getByRole('status', { name: '网易云音乐：获取异常，可重试', exact: true }).locator('svg')).toBeVisible()
   await dialog.getByRole('button', { name: /重试成功候选/ }).click()
   await expect(dialog.getByLabel('歌词预览', { exact: true })).toContainText('歌词暂不可用，请重试或选择其他候选。')
   await expect(dialog).not.toContainText('RAW_FETCH_ERROR')
@@ -301,7 +340,10 @@ test('cross-source content ranking and unselected badges stay versioned while fo
   await expect(list.locator('[data-candidate-id]')).toHaveCount(5)
   expect(await list.locator('[data-candidate-id]').evaluateAll(els => els.map(e => e.getAttribute('data-candidate-id')))).toEqual(['a', 'b', 'c', 'e', 'pending'])
   await expect(list.locator('h3')).toHaveCount(0)
-  await expect(list.locator('[data-candidate-id="pending"]')).toContainText('歌词综合 —')
+  await expect(dialog.getByRole('status', { name: '网易云音乐：共 4 个候选', exact: true })).toHaveText('4')
+  await expect(dialog.getByRole('status', { name: '酷狗音乐：共 0 个候选', exact: true })).toHaveText('0')
+  await expect(dialog.getByRole('status', { name: 'QQ 音乐：获取异常，共 1 个候选，可重试', exact: true }).locator('svg')).toBeVisible()
+  await expect(list.locator('[data-candidate-id="pending"]').getByRole('button', { name: '综合得分 —/150', exact: true })).toHaveText('—/150')
   await expect(list.locator('[data-candidate-id="pending"]')).toContainText('未预取，手动获取')
   await expect(list.locator('[data-candidate-id="pending"]')).toContainText('翻译：待检查')
   await expect(list.locator('[data-candidate-id="a"]')).toContainText('翻译：有（启发式识别、部分）')
@@ -328,7 +370,7 @@ test('cross-source content ranking and unselected badges stay versioned while fo
     w.runtime.EventsEmit('lyrics:progress', event)
   })
   await expect(list.locator('[data-candidate-id="b"]')).toContainText('翻译：失败')
-  await expect(list.locator('[data-candidate-id="b"]')).toContainText('歌词综合 150')
+  await expect(list.locator('[data-candidate-id="b"]').getByRole('button', { name: '综合得分 150/150', exact: true })).toHaveText('150/150')
   await list.getByRole('button', { name: /候选-pending/ }).click()
   await expect(dialog.getByText('未预取此候选，请手动获取歌词。')).toBeVisible()
   expect(await page.evaluate(() => (window as any).__lyricReads)).toBe(1)
@@ -359,6 +401,15 @@ test('channel badges distinguish pending and loading before any selection', asyn
   await dialog.getByRole('button', { name: '搜索', exact: true }).click()
   const card = dialog.getByRole('button', { name: /候选-queued/ })
   await expect(card).toContainText('翻译：获取中')
+  await expect(dialog.getByRole('status', { name: 'QQ 音乐：共 1 个候选', exact: true })).toHaveText('1')
+  await expect(dialog.getByRole('status', { name: 'QQ 音乐：正在预取', exact: true })).toBeVisible()
+  await page.evaluate(() => {
+    const w = window as any, event = structuredClone(w.__lyricProgress.qq)
+    event.sequence++; event.phase = 'stopped'; event.candidates[0].fetchState = 'skipped'
+    w.runtime.EventsEmit('lyrics:progress', event)
+  })
+  await expect(dialog.getByRole('status', { name: 'QQ 音乐：获取异常，共 1 个候选，可重试', exact: true }).locator('svg')).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '重试 QQ 音乐', exact: true })).toBeEnabled()
   await expect(card).toContainText('罗马音：待检查')
   await expect(card).toHaveAttribute('aria-pressed', 'false')
   await expect(dialog.getByLabel('歌词正文')).toHaveCount(0)
@@ -394,6 +445,7 @@ test('closing while a lyric search starts discards late results and cancels the 
   for (const name of ['网易云音乐', '酷狗音乐', '酷我音乐']) await dialog.getByText(name, { exact: true }).click()
   await dialog.getByRole('button', { name: '搜索', exact: true }).click()
   await expect.poll(() => page.evaluate(() => typeof (window as any).__finishLyricsStart)).toBe('function')
+  await expect(dialog.getByRole('status', { name: 'QQ 音乐：正在搜索', exact: true }).filter({ hasText: '—' })).toHaveText('—')
   await dialog.getByRole('button', { name: '取消', exact: true }).click()
   await page.evaluate(() => (window as any).__finishLyricsStart())
   await expect.poll(() => page.evaluate(() => (window as any).__cancelledLyrics)).toContain('late-session')

@@ -1,5 +1,33 @@
 import { expect, it } from 'vitest'
-import { lyricChannelStatus, lyricChannelBasis, lyricReadingRows, lyricTime, type LyricChannel, type LyricDocument } from '../../src/lib/lyricsPresentation'
+import { lyricChannelStatus, lyricChannelBasis, lyricReadingRows, lyricTime, lyricDurationInput, parseLyricDuration, lyricSourceStatus, lyricScoreDescription, pendingLyricCard, type LyricCandidate, type LyricChannel, type LyricDocument } from '../../src/lib/lyricsPresentation'
+it('parses search durations without rounding away milliseconds or accepting malformed times', () => {
+  for (const [input, expected] of [['', 0], ['  ', 0], ['4:59', 299000], ['299', 299000], ['4:59.123', 299123], ['299.1', 299100], ['1440:00', 86400000]] as const) {
+    expect(parseLyricDuration(input)).toBe(expected)
+    expect(parseLyricDuration(lyricDurationInput(expected))).toBe(expected)
+  }
+  for (const input of ['0', '-1', 'NaN', 'Infinity', '1:60', '4:9', '1:01:00', '1e3', '2.1234', '86401', '9'.repeat(100)]) expect(parseLyricDuration(input)).toBeUndefined()
+  expect(lyricDurationInput()).toBe(''); expect(lyricDurationInput(null)).toBe('')
+})
+it('shows total candidates rather than prefetch successes and distinguishes errors from no lyrics', () => {
+  const candidate = { id: 'c', matchScore: 80, totalScore: 110, matchNotes: ['曲名相符', '艺术家不同或缺失，需确认'], highConfidence: false } as LyricCandidate
+  const card = pendingLyricCard(candidate, true)
+  const result = { state: 'ok', phase: 'done', cards: Array.from({ length: 7 }, () => card) }
+  expect(lyricSourceStatus(result)).toEqual({ count: 7, failed: false, label: '共 7 个候选' })
+  expect(lyricSourceStatus({ ...result, cards: [] })).toEqual({ count: 0, failed: false, label: '共 0 个候选' })
+  expect(lyricSourceStatus({ ...result, state: 'loading', phase: 'searching', cards: [] })).toEqual({ count: undefined, failed: false, label: '正在搜索' })
+  expect(lyricSourceStatus({ ...result, state: 'error', phase: 'error', cards: [] })).toEqual({ count: undefined, failed: true, label: '获取异常，可重试' })
+  expect(lyricSourceStatus({ ...result, phase: 'stopped' }).failed).toBe(true)
+  expect(lyricSourceStatus({ ...result, phase: 'partial', cards: [{ ...card, fetchState: 'no_lyrics' }] }).failed).toBe(false)
+  expect(lyricSourceStatus({ ...result, phase: 'partial', cards: [{ ...card, fetchState: 'error' }] }).failed).toBe(true)
+  expect(lyricSourceStatus({ ...result, cards: [{ ...card, translation: { ...card.translation, status: 'error' } }] }).failed).toBe(true)
+  expect(lyricSourceStatus({ ...result, cards: [{ ...card, wordTiming: 'error' }] }).failed).toBe(true)
+  expect(lyricSourceStatus({ ...result, cards: [{ ...card, fetchState: 'ready', errorKind: 'format' }] }).failed).toBe(true)
+  expect(lyricSourceStatus({ ...result, state: 'error' }).label).toBe('获取异常，共 7 个候选，可重试')
+  expect(lyricScoreDescription(candidate)).toBe('歌曲匹配 80 分・歌词综合 110，曲名相符；艺术家不同或缺失，需确认（分数不是概率）')
+  expect(lyricScoreDescription({ ...candidate, totalScore: null })).toContain('歌词综合 —')
+  expect(lyricScoreDescription({ ...candidate, totalScore: -10 })).toContain('歌词综合 -10')
+})
+
 it('reports all channel states without a source-specific branch', () => {
   for (const [status, expected] of Object.entries({ available: '有', unavailable: '未提供', pending: '待检查', loading: '获取中', error: '失败', unknown: '无法确认' })) {
     expect(lyricChannelStatus({ status, origin: 'unknown', syncStatus: 'unknown' })).toBe(expected)

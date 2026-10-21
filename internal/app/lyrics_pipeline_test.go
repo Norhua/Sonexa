@@ -65,6 +65,44 @@ func (p *observedLyrics) FetchLyrics(ctx context.Context, c lyrics.Candidate) (*
 	return d, err
 }
 
+func TestLyricsFourSourceArtistComparison(t *testing.T) {
+	responses := map[string]string{
+		"qq":    `{"code":0,"req":{"code":0,"data":{"body":{"song":{"list":[{"mid":"001wMai814HLg1","name":"七里香","singer":[{"name":"周杰伦"}],"album":{"name":"七里香"},"interval":299}]}}}}}`,
+		"163":   `{"code":200,"result":{"songs":[{"id":1,"name":"七里香","ar":[{"name":"周杰伦"}],"al":{"name":"七里香"},"dt":299000}]}}`,
+		"kugou": `{"status":1,"errcode":0,"data":{"info":[{"hash":"1","songname":"七里香","singername":"周杰伦","album_name":"七里香","duration":299}]}}`,
+		"kuwo":  `{"TOTAL":1,"abslist":[{"MUSICRID":"1","NAME":"七里香","ARTIST":"周杰伦","ALBUM":"七里香","DURATION":299}]}`,
+	}
+	for source, body := range responses {
+		t.Run(source, func(t *testing.T) {
+			client := provider.NewClient(nil, forbiddenLyricCache{t}, "test")
+			client.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			})
+			a, done := newTestApp(t)
+			defer done()
+			a.enricher.Pause()
+			service := sourceService(client)
+			a.lyricSvc = &service
+			id, err := a.CreateLyricsSearch(lyricTrack(t, a))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer a.CancelLyricsSearch(id)
+			cards, err := a.SearchLyrics(id, source, lyrics.Query{Title: "七里香", Artist: "周杰倫", Album: "七里香", DurationMS: 299000})
+			if err != nil || len(cards) != 1 {
+				t.Fatal(cards, err)
+			}
+			c := cards[0]
+			if c.Artist != "周杰伦" || c.MatchScore != 100 || c.MatchTerms[1].Value != 20 || !c.HighConfidence || strings.Contains(strings.Join(c.MatchNotes, ";"), "艺术家不同") {
+				t.Fatalf("artist metadata or score lost across adapter/App: %+v", c)
+			}
+			if a.lyricSessions[id].query.Artist != "周杰倫" {
+				t.Fatal("changed submitted query")
+			}
+		})
+	}
+}
+
 func TestLyricsFourSourceAppPipeline(t *testing.T) {
 	qrc := bundleFixture(t, "qrc", "[1005,1000]Hello (1005,400)world(1500,400)")
 	roma := bundleFixture(t, "qrc", "[00:01]ro ma")

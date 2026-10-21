@@ -3,14 +3,14 @@ import { computed, ref } from 'vue'
 import { App, Events, EventsOn, type Models } from '@/api'
 import { useSourceSelection } from '@/lib/sourceSelection'
 import { compareLyrics } from '@/lib/lyricsRanking'
-import { lyricRoundFinished, pendingLyricCard, type LyricCard, type LyricDocument, type LyricProgress } from '@/lib/lyricsPresentation'
+import { lyricRoundFinished, lyricDurationInput, parseLyricDuration, pendingLyricCard, type LyricCard, type LyricDocument, type LyricProgress } from '@/lib/lyricsPresentation'
 export { lyricFormat } from '@/lib/lyricsPresentation'
 
 type Result = { state: 'loading' | 'ok' | 'error'; phase: string; sequence: number; settled: boolean; cards: LyricCard[]; error: string; progress?: LyricProgress }
 
 export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
   const target = ref<Models.app.TrackDetail | null>(null)
-  const title = ref(''), artist = ref(''), album = ref('')
+  const title = ref(''), artist = ref(''), album = ref(''), durationInput = ref('')
   const sourceSelection = useSourceSelection<Models.lyrics.Source>()
   const { selected: sources, options: sourceOptions } = sourceSelection
   const results = ref<Record<string, Result>>({})
@@ -72,6 +72,7 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
   async function open(detail: Models.app.TrackDetail) {
     const closing = close(), current = generation
     target.value = detail; title.value = detail.track.title; artist.value = detail.track.artist ?? ''; album.value = detail.track.album ?? ''
+    durationInput.value = lyricDurationInput(detail.track.durationMs && detail.track.durationMs > 0 ? detail.track.durationMs : detail.metadata?.durationMs)
     off = EventsOn(Events.LyricsProgress, (event: LyricProgress) => { if (current === generation) receive(event) })
     try {
       await closing
@@ -87,7 +88,9 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
     try { chosen = sourceSelection.choose(only) }
     catch { error.value = '所选来源不可用，请重新打开歌词搜索。'; return }
     if (!chosen.length) { error.value = '请选择歌词来源'; return }
-    const query = only && submitted ? { ...submitted } : { title: title.value, artist: artist.value, album: album.value, durationMs: target.value.track.durationMs ?? target.value.metadata?.durationMs ?? 0 }
+    const durationMs = only && submitted ? submitted.durationMs : parseLyricDuration(durationInput.value)
+    if (durationMs == null) { error.value = '时长请输入分:秒或秒数（最多三位小数，不超过 24 小时），未知请留空'; return }
+    const query = only && submitted ? { ...submitted } : { title: title.value, artist: artist.value, album: album.value, durationMs }
     if (![query.title, query.artist, query.album].some(s => s.trim())) { error.value = '请输入歌词搜索条件'; return }
     submitted = { ...query }
     const current = generation, trackID = target.value.track.id
@@ -191,5 +194,5 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
     } catch { if (current === generation) error.value = '歌词未能应用，请关闭后重新打开歌词搜索再试。' }
     finally { if (current === generation) busy.value = false }
   }
-  return { target, title, artist, album, sources, sourceOptions, results, cards, documents, failures, loading, selected, selection, document, documentVersion, canAdopt, error, notice, ready, busy, open, close, search, select, fetchSelected, acknowledge, adopt }
+  return { target, title, artist, album, durationInput, sources, sourceOptions, results, cards, documents, failures, loading, selected, selection, document, documentVersion, canAdopt, error, notice, ready, busy, open, close, search, select, fetchSelected, acknowledge, adopt }
 })

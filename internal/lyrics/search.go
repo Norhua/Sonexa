@@ -27,7 +27,13 @@ func rankCandidates(q Query, candidates []Candidate) []Candidate {
 		if c.DurationMS > 0 {
 			pc.DurationMS = &c.DurationMS
 		}
-		score := w.ScoreCandidate(pq, pc)
+		// Compare script-equivalent artist keys without changing the submitted
+		// query or the provider's display credit (all sources share this rule).
+		comparisonQuery := pq
+		queryArtist, pcArtist := lyricCreditKeys(q.Artist, c.Artist)
+		comparisonQuery.Artist = queryArtist
+		pc.ArtistName = &pcArtist
+		score := w.ScoreCandidate(comparisonQuery, pc)
 		delta := absDuration(q.DurationMS - c.DurationMS)
 		comparableDuration := q.DurationMS > 0 && c.DurationMS > 0
 		if score.Rejected {

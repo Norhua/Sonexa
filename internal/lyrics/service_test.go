@@ -40,7 +40,7 @@ func TestServiceOwnsValidationRankingAndDeduplication(t *testing.T) {
 		return []Candidate{{Ref: "wrong", Title: "wrong"}, {Ref: "exact", Title: q.Title, Artist: q.Artist, DurationMS: q.DurationMS}, {Ref: "exact", Title: q.Title, Artist: q.Artist}, {Title: q.Title}}, nil
 	}}
 	s := businessService(t, p)
-	for _, q := range []Query{{}, {Title: strings.Repeat("a", 2001)}} {
+	for _, q := range []Query{{}, {Title: strings.Repeat("a", 2001)}, {Title: "song", DurationMS: -1}, {Title: "song", DurationMS: int(lyricdoc.MaxTimeMS) + 1}} {
 		if _, err := s.Search(context.Background(), "only", q); err == nil {
 			t.Fatal("bad query accepted")
 		}

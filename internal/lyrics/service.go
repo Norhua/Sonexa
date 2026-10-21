@@ -65,6 +65,9 @@ func (s Service) Search(ctx context.Context, source string, q Query) ([]Candidat
 	if len(term)+len(q.Album) > 2000 {
 		return nil, fmt.Errorf("搜索条件过长")
 	}
+	if q.DurationMS < 0 || int64(q.DurationMS) > lyricdoc.MaxTimeMS {
+		return nil, fmt.Errorf("时长须在 0 到 24 小时之间")
+	}
 	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
 	if err := ctx.Err(); err != nil {

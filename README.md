@@ -99,6 +99,10 @@ SONEXA_E2E_PREVIEW=1 npm run test:e2e
 `internal/provider/{netease,qqmusic,kugou,kuwo}`，由 `app/upstreams.go` 创建并注入，
 会话保留服务快照。每个来源在返回前完成选轨、通道识别、合并、去重和序列化，
 直接交付完整 `lyricdoc.Document`；业务只读校验、评分、预览和采用，不再组装 Payload。
+歌词搜索的艺术家比较额外接受明确繁简字符等价（例如「周杰倫 / 周杰伦」），
+仅使用[官方 OpenCC 字典](internal/lyrics/data/opencc/README.md)的唯一映射，不改变上游查询、显示名称、元数据匹配或歌词正文。
+歧义映射、两种繁体归并、含假名/谚文的署名不新增此匹配证据；字典与许可证静态随附，无新增转换器运行时依赖。
+搜索时长可编辑并随查询冻结，来源旁显示候选总数/异常标志；卡片右上角显示综合得分/150，悬浮或键盘聚焦可查看匹配说明。
 本地 TXT/LRC 由 `app/bindings_lyrics_input.go` 独立解析，在线采用不复用本地解析入口。
 适配器共用 `provider/lyricfetch` 映射统一错误类别，保留停止语义和错误链；
 该包不属于通用传输父包，业务不调用它解释平台错误。

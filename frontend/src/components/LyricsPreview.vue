@@ -30,8 +30,8 @@ watch(() => [props.candidateId, props.version, props.document] as const, async (
         <div role="row" class="mb-2 grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b pb-2 text-xs text-muted-color">
           <span role="columnheader">时间</span><span role="columnheader">歌词</span><span role="columnheader">{{ extraChannel === 'translation' ? '翻译' : '罗马音' }}</span>
         </div>
-        <div v-for="(row, index) in rows" :key="index" role="row" class="grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-3 py-1">
-          <span role="cell" class="select-none whitespace-nowrap text-xs tabular-nums text-muted-color">{{ lyricTime(row.timeMs) }}</span>
+        <div v-for="(row, index) in rows" :key="index" role="row" class="grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] items-start gap-3 py-1">
+          <span role="cell" class="select-none whitespace-nowrap tabular-nums text-muted-color">{{ lyricTime(row.timeMs) }}</span>
           <div role="cell" class="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{{ row.text || '\u00a0' }}</div>
           <div role="cell" class="min-w-0 whitespace-pre-wrap text-muted-color [overflow-wrap:anywhere]">
             <span v-if="row.note" class="block text-xs">{{ row.note }}</span>

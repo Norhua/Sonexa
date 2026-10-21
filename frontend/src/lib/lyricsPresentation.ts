@@ -45,6 +45,38 @@ export function lyricReadingRows(rows: LyricDocument['rows'], channel: LyricExtr
   })
 }
 
+// The backend scoring formula has a fixed maximum: 100 + 10 + 20 + 15 + 5.
+export const lyricMaxScore = 150
+export function lyricScoreDescription(card: LyricCandidate) {
+  const notes = card.matchNotes?.join('；') || '暂无匹配说明'
+  const confidence = card.highConfidence ? '高置信' : '需确认'
+  return `歌曲匹配 ${card.matchScore} 分・歌词综合 ${card.totalScore ?? '—'}，${notes}${notes.includes(confidence) ? '' : `；${confidence}`}（分数不是概率）`
+}
+
+export function lyricSourceStatus(result: { state: string; phase: string; cards: LyricCard[]; progress?: LyricProgress }) {
+  const count = result.progress?.searched ?? result.cards.length
+  const failed = result.state === 'error' || result.phase === 'stopped' || (result.progress?.failed ?? 0) > 0 || result.cards.some(card =>
+    ['error', 'skipped'].includes(card.fetchState) || (!!card.errorKind && card.errorKind !== 'no_lyrics') || card.translation.status === 'error' || card.romanization.status === 'error' || card.wordTiming === 'error')
+  const known = result.cards.length > 0 || (result.phase !== 'searching' && result.state !== 'error')
+  return { count: known ? count : undefined, failed, label: failed ? `获取异常${known ? `，共 ${count} 个候选` : ''}，可重试` : known ? `共 ${count} 个候选` : '正在搜索' }
+}
+
+// Search input preserves milliseconds; blank means unknown, never a zero-length song.
+export function lyricDurationInput(ms?: number | null): string {
+  if (!ms || ms <= 0) return ''
+  const fraction = ms % 1000 ? `.${String(ms % 1000).padStart(3, '0')}` : ''
+  return `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}${fraction}`
+}
+export function parseLyricDuration(value: string): number | undefined {
+  const text = value.trim()
+  if (!text) return 0
+  if (!/^(?:\d+:)?\d+(?:\.\d{1,3})?$/.test(text)) return undefined
+  const parts = text.split(':')
+  if (parts.length === 2 && !/^[0-5]\d(?:\.\d{1,3})?$/.test(parts[1]!)) return undefined
+  const ms = Math.round((parts.length === 2 ? Number(parts[0]) * 60 + Number(parts[1]) : Number(parts[0])) * 1000)
+  return Number.isSafeInteger(ms) && ms > 0 && ms <= 86400000 ? ms : undefined
+}
+
 export function pendingLyricCard(candidate: LyricCandidate, prefetch: boolean): LyricCard {
   const pending = (): LyricChannel => ({ status: 'pending', origin: 'unknown', syncStatus: 'unknown' })
   return { ...candidate, prefetch, fetchState: 'pending', documentVersion: 0, wordTiming: 'pending', translation: pending(), romanization: pending() }

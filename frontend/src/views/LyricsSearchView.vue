@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { LoaderCircle, RotateCw, Search, X } from 'lucide-vue-next'
+import { CircleAlert, LoaderCircle, RotateCw, Search, X } from 'lucide-vue-next'
 import { duration } from '@/api'
 import { useLyricsSearchStore } from '@/stores/lyricsSearch'
-import { lyricFormat, lyricPhase, lyricFailure, lyricChannelStatus, lyricChannelBasis, lyricRoundFinished, type LyricExtraChannel } from '@/lib/lyricsPresentation'
+import { lyricSourceStatus, lyricFormat, lyricPhase, lyricFailure, lyricChannelStatus, lyricChannelBasis, lyricRoundFinished, type LyricExtraChannel } from '@/lib/lyricsPresentation'
 import { useSettingsStore } from '@/stores/settings'
 import LyricsPreview from '@/components/LyricsPreview.vue'
+import LyricsScore from '@/components/LyricsScore.vue'
 import Button from '@/volt/Button.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import InputText from '@/volt/InputText.vue'
@@ -19,6 +20,7 @@ const extraOptions = [{ label: '翻译', value: 'translation' }, { label: '罗�
 const searching = computed(() => Object.values(store.results).some(result => !lyricRoundFinished(result.phase)))
 const searchFailed = computed(() => Object.values(store.results).some(result => result.state === 'error'))
 const sourceName = (id: string) => store.sourceOptions.find(s => s.id === id)?.name ?? id
+const sourceStatuses = computed(() => Object.fromEntries(Object.entries(store.results).map(([id, result]) => [id, lyricSourceStatus(result)])))
 </script>
 
 <template>
@@ -29,13 +31,18 @@ const sourceName = (id: string) => store.sourceOptions.find(s => s.id === id)?.n
         <form class="flex flex-wrap items-end gap-3" @submit.prevent="store.search()">
           <label class="text-xs">歌曲<InputText v-model="store.title" autofocus class="mt-1 block" /></label>
           <label class="text-xs">艺术家<InputText v-model="store.artist" class="mt-1 block" /></label>
+          <label class="text-xs">时长<InputText v-model="store.durationInput" placeholder="分:秒" title="分:秒或秒数，未知请留空" class="mt-1 block w-28" /></label>
           <label class="text-xs">专辑（辅助匹配）<InputText v-model="store.album" class="mt-1 block" /></label>
           <Button type="submit" :disabled="!settings.outboundAllowed || !store.ready || store.busy"><Search class="size-4" />搜索</Button>
         </form>
         <div class="mt-3 flex flex-wrap items-center gap-4">
-          <div v-for="source in store.sourceOptions" :key="source.id" class="flex items-center gap-1">
+          <div v-for="source in store.sourceOptions" :key="source.id" :data-lyrics-source="source.id" class="flex items-center gap-1">
             <label class="flex items-center gap-2 text-sm"><Checkbox v-model="store.sources" :value="source.id" />{{ source.name }}</label>
             <template v-if="store.results[source.id]">
+              <span role="status" :aria-label="`${source.name}：${sourceStatuses[source.id]!.label}`" :title="sourceStatuses[source.id]!.label" class="inline-flex size-5 shrink-0 items-center justify-center text-xs tabular-nums" :class="sourceStatuses[source.id]!.failed ? 'text-orange-600 dark:text-orange-400' : 'rounded-full border text-muted-color'">
+                <CircleAlert v-if="sourceStatuses[source.id]!.failed" class="size-5" aria-hidden="true" />
+                <template v-else>{{ sourceStatuses[source.id]!.count ?? '—' }}</template>
+              </span>
               <button v-if="lyricRoundFinished(store.results[source.id]!.phase)" type="button" class="rounded p-1 text-muted-color hover:bg-emphasis focus-visible:outline focus-visible:outline-primary disabled:opacity-50" :aria-label="`重试 ${source.name}`" :title="`重试 ${source.name}`" :disabled="!settings.outboundAllowed || store.busy" @click="store.search(source.id)"><RotateCw class="size-3.5" aria-hidden="true" /></button>
               <span v-else role="status" :aria-label="`${source.name}：${lyricPhase(store.results[source.id]!.phase)}`"><LoaderCircle class="size-3.5 animate-spin text-muted-color" aria-hidden="true" /></span>
             </template>
@@ -52,13 +59,12 @@ const sourceName = (id: string) => store.sourceOptions.find(s => s.id === id)?.n
         <nav class="overflow-auto border-r p-3" aria-label="歌词候选">
           <p v-if="!Object.keys(store.results).length" class="p-3 text-sm text-muted-color">选择来源并搜索歌词</p>
           <p v-else-if="!store.cards.length" role="status" class="p-3 text-sm text-muted-color">{{ searching ? '正在搜索歌词…' : searchFailed ? '本次搜索未完成，请重试或更换来源。' : '无匹配歌曲' }}</p>
-          <div v-for="card in store.cards" :key="card.id" :data-candidate-id="card.id" class="mb-3 rounded border p-3" :class="store.selected === card.id ? 'border-primary ring-1 ring-primary' : ''">
+          <div v-for="card in store.cards" :key="card.id" :data-candidate-id="card.id" class="relative mb-3 rounded border p-3" :class="store.selected === card.id ? 'border-primary ring-1 ring-primary' : ''">
+            <LyricsScore :candidate="card" />
             <button class="block w-full text-left text-sm hover:bg-emphasis" :aria-pressed="store.selected === card.id" :disabled="store.busy" @click="store.select(card.id)">
-              <span class="block break-words font-medium">{{ card.title || '未命名歌曲' }}</span>
+              <span class="block min-h-6 break-words pr-20 font-medium">{{ card.title || '未命名歌曲' }}</span>
               <span class="mt-1 block break-words text-xs text-muted-color">{{ card.artist }} · {{ card.album }}</span>
               <span class="mt-2 block text-xs">来源：{{ sourceName(card.source) }} · 时长：{{ duration(card.durationMs) }}</span>
-              <span class="mt-1 block text-xs">匹配：{{ card.highConfidence ? '高置信' : '需确认' }} · 歌曲匹配 {{ card.matchScore }} 分 · 歌词综合 {{ card.totalScore ?? '—' }}</span>
-              <span class="mt-1 block text-xs text-muted-color">{{ card.matchNotes?.join('；') }}</span>
               <span class="mt-1 block text-xs">类型：{{ lyricFormat(card.format) }} · {{ card.fetchState === 'ready' ? '已获取' : card.fetchState === 'queued' ? '排队中' : card.fetchState === 'loading' ? '获取中' : card.fetchState === 'pending' ? (card.prefetch ? '待预取' : '未预取，手动获取') : lyricFailure(card.stopReason || card.errorKind) }}</span>
               <span class="mt-2 flex flex-wrap gap-2 text-xs" aria-label="候选通道状态">
                 <span class="rounded bg-emphasis px-2 py-1" :title="lyricChannelBasis(card.translation)">翻译：{{ lyricChannelStatus(card.translation) }}</span>
