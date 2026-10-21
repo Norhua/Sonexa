@@ -79,13 +79,13 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
       if (current !== generation) return
       sourceSelection.update(list)
       revision = rev; ready.value = true
-    } catch (e) { if (current === generation) error.value = String(e) }
+    } catch { if (current === generation) error.value = '无法打开歌词搜索，请关闭后重试。' }
   }
   async function search(only?: string) {
     if (!ready.value || !target.value || busy.value) return
     let chosen: string[]
     try { chosen = sourceSelection.choose(only) }
-    catch (e) { error.value = String(e); return }
+    catch { error.value = '所选来源不可用，请重新打开歌词搜索。'; return }
     if (!chosen.length) { error.value = '请选择歌词来源'; return }
     const query = only && submitted ? { ...submitted } : { title: title.value, artist: artist.value, album: album.value, durationMs: target.value.track.durationMs ?? target.value.metadata?.durationMs ?? 0 }
     if (![query.title, query.artist, query.album].some(s => s.trim())) { error.value = '请输入歌词搜索条件'; return }
@@ -163,7 +163,7 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
       if (!preview.document?.text || !preview.document.rows?.length || preview.version <= 0) throw new Error('歌词文档不完整')
       if (latest && latest.documentVersion > preview.version) return
       documents.value[id] = preview.document; versions.value[id] = preview.version
-    } catch (e) { if (valid()) failures.value[id] = String(e) }
+    } catch { if (valid()) failures.value[id] = '歌词暂不可用，请重试或选择其他候选。' }
     finally { if (valid()) loading.value[id] = false }
   }
   // Called by the mounted preview only after Vue has rendered the document.
@@ -176,7 +176,7 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
     try {
       await App.AcknowledgeLyricsPreview(session, id, version)
       if (valid()) approved.value[id] = version
-    } catch (e) { if (valid()) error.value = String(e) }
+    } catch { if (valid()) error.value = '预览确认失败，请重新选择候选后再试。' }
   }
   async function adopt() {
     const card = selection.value, current = generation
@@ -188,7 +188,7 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
       const rev = await App.AdoptLyrics(session, card.id, revision)
       if (current !== generation || sessions.get(card.source) !== session) return
       revision = rev; notice.value = '歌词已应用到当前歌曲'
-    } catch (e) { if (current === generation) error.value = `${String(e)}（可关闭后重新打开歌词搜索再试）` }
+    } catch { if (current === generation) error.value = '歌词未能应用，请关闭后重新打开歌词搜索再试。' }
     finally { if (current === generation) busy.value = false }
   }
   return { target, title, artist, album, sources, sourceOptions, results, cards, documents, failures, loading, selected, selection, document, documentVersion, canAdopt, error, notice, ready, busy, open, close, search, select, fetchSelected, acknowledge, adopt }

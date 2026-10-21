@@ -5,6 +5,8 @@ export type LyricData<T> = T extends (infer U)[] ? LyricData<U>[] : T extends ob
   ? { [K in keyof T as T[K] extends (...args: never[]) => unknown ? never : K]: LyricData<T[K]> }
   : T
 export type LyricDocument = LyricData<Models.lyricdoc.Document>
+export type LyricExtraChannel = 'translation' | 'romanization'
+export type LyricReadingRow = { timeMs?: number; text: string; extra: string[]; note: string }
 export type LyricCandidate = Omit<LyricData<Models.lyrics.Candidate>, 'totalScore'> & { totalScore?: number | null }
 export type LyricChannel = LyricData<Models.lyrics.ChannelSummary>
 export type LyricCard = LyricCandidate & Omit<LyricData<Models.lyrics.CandidateSummary>, 'candidate'>
@@ -29,6 +31,16 @@ export const lyricChannelBasis = (channel?: LyricChannel) => channel?.diagnostic
   .map(d => `规则 ${d.ruleVersion} · 第 ${d.layer} 层 · ${d.count} 行；经验推断，可能误判`).join('；') ?? ''
 export const lyricRoundFinished = (phase: string) => ['done', 'partial', 'stopped', 'error'].includes(phase)
 export const lyricTime = (ms?: number) => ms == null ? '—' : `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`
+
+// Display only: preserve the provider's row associations and timestamps. Never
+// pair independent extras by index or change the document used for adoption.
+export function lyricReadingRows(rows: LyricDocument['rows'], channel: LyricExtraChannel): LyricReadingRow[] {
+  return rows.filter(row => row.channel !== (channel === 'translation' ? 'romanization' : 'translation')).map(row => {
+    if (row.channel === 'original') return { timeMs: row.timeMs, text: row.text, extra: row[channel] ?? [], note: '' }
+    const name = ({ translation: '翻译', romanization: '罗马音' }[row.channel] ?? '附加文本（归属未确认）')
+    return { timeMs: row.timeMs, text: '', extra: [row.text], note: `${name} · ${row.timeMs == null ? '未同步' : '独立行'}` }
+  })
+}
 
 export function pendingLyricCard(candidate: LyricCandidate, prefetch: boolean): LyricCard {
   const pending = (): LyricChannel => ({ status: 'pending', origin: 'unknown', syncStatus: 'unknown' })

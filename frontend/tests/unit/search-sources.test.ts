@@ -54,7 +54,7 @@ for (const area of ['cover', 'lyrics'] as const) {
       const before = calls().length
       await store.search('single-only')
       expect(calls()).toHaveLength(before)
-      expect(store.error).toContain('未登记')
+      expect(store.error).toContain(area === 'lyrics' ? '所选来源不可用' : '未登记')
       await store.search()
       expect(calls().slice(before)).toEqual(['regional-only'])
       store.sources = ['stale']
@@ -80,7 +80,7 @@ for (const area of ['cover', 'lyrics'] as const) {
       await store.open(detail(2)); await store.search('single-only')
       expect(store.ready).toBe(false)
       expect(store.sourceOptions).toEqual([])
-      expect(store.error).toContain('registry unavailable')
+      expect(store.error).toContain(area === 'lyrics' ? '无法打开歌词搜索，请关闭后重试。' : 'registry unavailable')
       expect(calls()).toEqual([])
       load.mockResolvedValue([])
       await store.open(detail(3)); await store.search()

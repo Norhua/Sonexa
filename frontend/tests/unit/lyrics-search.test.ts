@@ -53,13 +53,23 @@ it('ignores late documents when a new search replaces the source', async () => {
   pending.resolve(preview('old')); await fetching
   expect(store.documents).toEqual({}); expect(store.cards).toEqual([])
 })
-it('does not allow adoption of missing lyrics and preserves a recoverable conflict error', async () => {
-  vi.mocked(App.FetchLyrics).mockRejectedValue(new Error('暂无歌词'))
+it('does not allow adoption of missing lyrics and uses recoverable feedback instead of raw errors', async () => {
+  vi.mocked(App.FetchLyrics).mockRejectedValue(new Error('暂无歌词：upstream.internal diagnostic'))
   const store = useLyricsSearchStore(); await store.open(detail(1)); await store.search('qq'); await store.select('qq'); await store.adopt()
-  expect(App.AdoptLyrics).not.toHaveBeenCalled(); expect(store.failures.qq).toContain('暂无歌词')
+  expect(App.AdoptLyrics).not.toHaveBeenCalled(); expect(store.failures.qq).toBe('歌词暂不可用，请重试或选择其他候选。')
   vi.mocked(App.FetchLyrics).mockResolvedValue(preview('recovered')); await store.select('qq'); await acknowledge(store)
   vi.mocked(App.AdoptLyrics).mockRejectedValue(new Error('修订冲突，请重新打开'))
-  await store.adopt(); expect(store.error).toContain('修订冲突'); expect(store.document?.text).toBe('recovered')
+  await store.adopt(); expect(store.error).toBe('歌词未能应用，请关闭后重新打开歌词搜索再试。'); expect(store.document?.text).toBe('recovered')
+})
+it('does not expose backend initialization or acknowledgement diagnostics', async () => {
+  vi.mocked(App.LyricsRevision).mockRejectedValueOnce(new Error('database /private/lyrics.db unavailable'))
+  const store = useLyricsSearchStore(); await store.open(detail(1))
+  expect(store.error).toBe('无法打开歌词搜索，请关闭后重试。'); expect(store.ready).toBe(false)
+  await store.open(detail(1)); await store.search('qq'); await store.select('qq')
+  vi.mocked(App.AcknowledgeLyricsPreview).mockRejectedValueOnce(new Error('internal session/version mismatch'))
+  await acknowledge(store)
+  expect(store.error).toBe('预览确认失败，请重新选择候选后再试。'); expect(store.canAdopt).toBe(false)
+  await acknowledge(store); expect(store.canAdopt).toBe(true)
 })
 it('late adoption never updates another target or revision', async () => {
   const pending = deferred<number>(); vi.mocked(App.AdoptLyrics).mockReturnValue(pending.promise)

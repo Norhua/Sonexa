@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
-import { lyricTime, type LyricDocument } from '@/lib/lyricsPresentation'
+import { computed, nextTick, ref, watch } from 'vue'
+import { lyricReadingRows, lyricTime, type LyricDocument, type LyricExtraChannel } from '@/lib/lyricsPresentation'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
-const props = defineProps<{ document: LyricDocument; candidateId: string; version: number }>()
+const props = defineProps<{ document: LyricDocument; candidateId: string; version: number; extraChannel: LyricExtraChannel }>()
 const emit = defineEmits<{ displayed: [id: string, version: number] }>()
 const mode = ref<'reading' | 'raw'>('reading')
-const channelName = (channel: string) => ({ translation: '翻译', romanization: '罗马音', additional: '附加文本（归属未确认）' }[channel] ?? '')
+const rows = computed(() => lyricReadingRows(props.document.rows, props.extraChannel))
 watch(() => [props.candidateId, props.version, props.document] as const, async ([id, version, doc], _, onCleanup) => {
   let valid = true
   onCleanup(() => { valid = false })
@@ -23,13 +23,16 @@ watch(() => [props.candidateId, props.version, props.document] as const, async (
     </div>
     <p v-if="document.offsetMs" class="mb-3 text-xs text-muted-color">全局偏移：{{ document.offsetMs }} 毫秒；时间列与原始文本标签一致。</p>
     <template v-if="mode === 'reading'">
-      <div aria-label="可读歌词" class="space-y-1 text-sm leading-7">
-        <div v-for="(row, index) in document.rows" :key="index" class="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-3">
-          <span class="select-none text-xs tabular-nums text-muted-color">{{ lyricTime(row.timeMs) }}</span>
-          <div class="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
-            <span v-if="row.channel !== 'original'" class="mr-2 text-xs text-muted-color">{{ channelName(row.channel) }}{{ row.timeMs == null ? '（未同步）' : '' }}</span><span>{{ row.text || '\u00a0' }}</span>
-            <p v-for="(text, i) in row.translation" :key="`t${i}`" class="text-muted-color"><span class="mr-2 text-xs">翻译</span>{{ text }}</p>
-            <p v-for="(text, i) in row.romanization" :key="`r${i}`" class="text-muted-color"><span class="mr-2 text-xs">罗马音</span>{{ text }}</p>
+      <div aria-label="可读歌词" role="table" class="text-sm leading-7">
+        <div role="row" class="mb-2 grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b pb-2 text-xs text-muted-color">
+          <span role="columnheader">时间</span><span role="columnheader">歌词</span><span role="columnheader">{{ extraChannel === 'translation' ? '翻译' : '罗马音' }}</span>
+        </div>
+        <div v-for="(row, index) in rows" :key="index" role="row" class="grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-3 py-1">
+          <span role="cell" class="select-none whitespace-nowrap text-xs tabular-nums text-muted-color">{{ lyricTime(row.timeMs) }}</span>
+          <div role="cell" class="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{{ row.text || '\u00a0' }}</div>
+          <div role="cell" class="min-w-0 whitespace-pre-wrap text-muted-color [overflow-wrap:anywhere]">
+            <span v-if="row.note" class="block text-xs">{{ row.note }}</span>
+            <p v-for="(text, i) in row.extra" :key="i">{{ text || '\u00a0' }}</p>
           </div>
         </div>
       </div>

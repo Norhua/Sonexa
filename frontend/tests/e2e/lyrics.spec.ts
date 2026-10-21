@@ -51,14 +51,14 @@ test('local lyrics, independent lyric page, clear and resizable indented drawer'
   expect(await page.evaluate(() => (window as any).__lyricClear.id)).toBe(1)
 })
 
-test('two-column lyric search previews source, duration and format, handles source failure and applies to the song', async ({ page }, testInfo) => {
+test('compact lyric search keeps metadata on cards, hides diagnostics and applies the previewed document', async ({ page }, testInfo) => {
   await page.evaluate(() => {
     const w = window as any, api = w.go.app.App
     w.__lyricSearch = async (source: string) => {
       if (source === 'kuwo') throw new Error('酷我暂时限流')
       return [{ id: source, source, sortKey: source, title: `歌曲-${source}`, artist: '歌手', album: '专辑', durationMs: 123000, matchScore: 80, totalScore: 125, matchTerms: [{ code: 'title', label: '曲名', value: 55 }], scoreTerms: [{ code: 'translation', label: '翻译', value: 15 }], highConfidence: false, autoPreviewEligible: false, matchNotes: ['艺术家不同或缺失，需确认'] }]
     }
-    w.__lyricDocument = (id: string) => ({ text: id === 'qq' ? '[00:12.000]<00:12.100>Hello <00:12.600>world<00:13.000>\n[00:12.000]测试翻译\n<b>literal</b>' : '纯文本歌词', format: id === 'qq' ? 'enhanced_lrc' : 'text', offsetMs: 0, rows: [{ timeMs: 12000, text: 'Hello world', channel: 'original', translation: ['测试翻译'] }, { text: '<b>literal</b>', channel: 'original' }], translation: { status: 'available', origin: 'independent', syncStatus: 'synced' }, romanization: { status: 'unavailable', origin: 'independent', syncStatus: 'unknown' }, wordTiming: 'available' })
+    w.__lyricDocument = (id: string) => ({ text: id === 'qq' ? '[00:12.000]<00:12.100>Hello <00:12.600>world<00:13.000>\n[00:12.000]测试翻译\n<b>literal</b>' : '纯文本歌词', format: id === 'qq' ? 'enhanced_lrc' : 'text', offsetMs: 0, rows: [{ timeMs: 12000, text: 'Hello world', channel: 'original', translation: ['测试翻译'] }, { text: '<b>literal</b>', channel: 'original' }], translation: { status: 'available', origin: 'independent', syncStatus: 'synced' }, romanization: { status: 'unavailable', origin: 'independent', syncStatus: 'unknown' }, wordTiming: 'available', warnings: ['内部协议诊断不应显示'] })
     w.__lyricAcknowledge = () => new Promise<void>(resolve => { w.__finishLyricsPreview = resolve })
     const adopt = api.AdoptLyrics
     api.AdoptLyrics = async (session: string, id: string, revision: number) => {
@@ -70,7 +70,8 @@ test('two-column lyric search previews source, duration and format, handles sour
   await drawer.getByRole('button', { name: /查看歌词/ }).click({ button: 'right' })
   await page.getByRole('menuitem', { name: '从网络搜索歌词' }).click()
   const dialog = page.getByRole('dialog', { name: '从网络搜索歌词' })
-  await expect(dialog.getByText('仅修改当前歌曲的歌词', { exact: false })).toBeVisible()
+  await expect(dialog.getByText(/目标：|仅修改当前歌曲的歌词/)).toHaveCount(0)
+  await expect(dialog.getByRole('combobox', { name: '额外展示' })).toHaveText('歌词')
   await dialog.getByRole('button', { name: '搜索', exact: true }).click()
   const qq = dialog.getByRole('button', { name: /歌曲-qq/ })
   await expect(qq).toContainText('匹配：需确认')
@@ -85,9 +86,18 @@ test('two-column lyric search previews source, duration and format, handles sour
   await expect(dialog.getByLabel('可读歌词')).not.toContainText('<00:12.100>')
   await expect(dialog.getByLabel('可读歌词')).toContainText('<b>literal</b>')
   await expect(dialog.getByLabel('可读歌词').locator('b')).toHaveCount(0)
-  await expect(dialog.getByLabel('歌词通道状态')).toContainText('翻译：有')
-  await expect(dialog.getByLabel('歌词通道状态')).toContainText('罗马音：未提供')
-  await expect(dialog.getByLabel('歌词通道状态')).toContainText('逐字时间：已获取')
+  await expect(dialog.getByLabel('歌词通道状态')).toHaveCount(0)
+  await expect(dialog.getByLabel('歌词预览').getByRole('heading')).toHaveCount(0)
+  await expect(dialog.getByLabel('歌词预览')).not.toContainText('歌曲-qq')
+  await expect(dialog.getByLabel('歌词预览')).not.toContainText('增强型 LRC')
+  await expect(dialog).not.toContainText('内部协议诊断不应显示')
+  await expect(dialog.getByLabel('可读歌词').getByRole('columnheader')).toHaveText(['时间', '歌词', '翻译'])
+  const cells = dialog.getByLabel('可读歌词').getByRole('row').nth(1).getByRole('cell')
+  await expect(cells).toHaveText(['00:12.000', 'Hello world', '测试翻译'])
+  const positions = await cells.evaluateAll(els => els.map(el => { const box = el.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top } }))
+  expect(positions[0]!.right).toBeLessThan(positions[1]!.left)
+  expect(positions[1]!.right).toBeLessThan(positions[2]!.left)
+  expect(positions[0]!.top).toBe(positions[2]!.top)
   await expect(dialog.getByRole('button', { name: '应用到歌曲' })).toBeDisabled()
   await expect.poll(() => page.evaluate(() => typeof (window as any).__finishLyricsPreview)).toBe('function')
   await page.evaluate(() => (window as any).__finishLyricsPreview())
@@ -98,7 +108,12 @@ test('two-column lyric search previews source, duration and format, handles sour
   await expect(dialog.getByLabel('原始歌词文本')).toContainText('测试翻译')
   await dialog.getByRole('button', { name: '阅读', exact: true }).click()
   expect(await page.evaluate(() => (window as any).__lyricReads)).toBe(1)
-  await expect(dialog.getByText('酷我暂时限流', { exact: false })).toBeVisible()
+  await expect(dialog.getByText('酷我暂时限流', { exact: false })).toHaveCount(0)
+  await expect(dialog.getByLabel('歌词来源进度')).toHaveCount(0)
+  await dialog.getByRole('button', { name: '重试 酷我音乐', exact: true }).click()
+  await expect(qq).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.getByLabel('可读歌词')).toContainText('Hello world')
+  expect(await page.evaluate(() => (window as any).__lyricReads)).toBe(1)
   const left = (await dialog.getByLabel('歌词候选').boundingBox())!, right = (await dialog.getByLabel('歌词预览').boundingBox())!
   expect(left.x + left.width).toBeLessThanOrEqual(right.x + 1)
   await page.screenshot({ path: testInfo.outputPath('lyrics-search.png') })
@@ -110,6 +125,104 @@ test('two-column lyric search previews source, duration and format, handles sour
   await drawer.getByRole('button', { name: /查看歌词/ }).click()
   await expect(drawer.getByLabel('歌曲歌词')).toContainText('Hello world')
   await expect(drawer.getByLabel('歌曲歌词')).not.toContainText('<00:12.100>')
+})
+
+test('extra channel selector switches only the third column and preserves every channel for adoption', async ({ page }, testInfo) => {
+  await page.evaluate(() => {
+    const w = window as any, api = w.go.app.App
+    w.__lyricSearch = async (source: string) => source === 'qq' ? ['bilingual', 'plain'].map(id => ({ id, source, sortKey: id, title: `候选-${id}`, artist: 'Artist', album: 'Album', durationMs: 90000, matchScore: 80, totalScore: 130, highConfidence: false, autoPreviewEligible: false, matchNotes: [], matchTerms: [], scoreTerms: [] })) : []
+    w.__lyricDocument = (id: string) => id === 'plain'
+      ? { text: '纯文本原文', format: 'text', offsetMs: 0, rows: [{ text: '纯文本原文', channel: 'original' }] }
+      : { text: '[offset:100]\n[00:01.000]<00:01.000>Hello <00:01.500>world\n[00:01.000]译文首行\n[00:01.000]译文续行\n[00:01.000]hello roma\n[00:02.000]独立译文\n[00:03.000]solo roma\n未同步译文\nunsynced roma\n未分类谐音', format: 'enhanced_lrc', offsetMs: 100,
+          rows: [{ timeMs: 1000, text: 'Hello world', channel: 'original', translation: ['译文首行', '译文续行'], romanization: ['hello roma'] }, { timeMs: 2000, text: '独立译文', channel: 'translation' }, { timeMs: 3000, text: 'solo roma', channel: 'romanization' }, { text: '未同步译文', channel: 'translation' }, { text: 'unsynced roma', channel: 'romanization' }, { text: '未分类谐音', channel: 'additional' }, { text: '长行'.repeat(200), channel: 'original', translation: ['翻译'.repeat(200)], romanization: ['roma'.repeat(200)] }],
+          translation: { status: 'available', origin: 'independent', syncStatus: 'partial' }, romanization: { status: 'available', origin: 'independent', syncStatus: 'partial' } }
+    w.__previewAcks = 0
+    w.__lyricAcknowledge = async () => { w.__previewAcks++ }
+    const adopt = api.AdoptLyrics
+    api.AdoptLyrics = async (session: string, id: string, revision: number) => {
+      await adopt(session, id, revision); w.__adoptedText = w.__lyricDocument(id).text; return 1
+    }
+  })
+  const open = async () => {
+    await page.getByRole('button', { name: /查看歌词/ }).click({ button: 'right' })
+    await page.getByRole('menuitem', { name: '从网络搜索歌词' }).click()
+  }
+  await open()
+  const dialog = page.getByRole('dialog', { name: '从网络搜索歌词' }), reading = dialog.getByLabel('可读歌词')
+  const selector = dialog.getByRole('combobox', { name: '额外展示' })
+  await dialog.getByRole('button', { name: '搜索', exact: true }).click()
+  await dialog.getByRole('button', { name: /候选-bilingual/ }).click()
+  await expect(reading).toContainText('译文首行')
+  await expect(reading).not.toContainText('hello roma')
+  await expect(reading.getByRole('row').filter({ hasText: '独立译文' }).getByRole('cell')).toHaveText(['00:02.000', '', '翻译 · 独立行独立译文'])
+  await expect(reading.getByRole('row').filter({ hasText: '未同步译文' }).getByRole('cell').first()).toHaveText('—')
+  await expect(dialog.getByText('全局偏移：100 毫秒', { exact: false })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '应用到歌曲' })).toBeEnabled()
+  // Keyboard interaction with the Volt Select must not reset reading/approval.
+  await selector.focus(); await page.keyboard.press('ArrowDown'); await page.keyboard.press('End'); await page.keyboard.press('Enter')
+  await expect(selector).toHaveText('罗马音')
+  await expect(reading.getByRole('columnheader')).toHaveText(['时间', '歌词', '罗马音'])
+  await expect(reading).toContainText('Hello world')
+  await expect(reading).toContainText('hello roma')
+  await expect(reading).not.toContainText('译文首行')
+  await expect(reading).not.toContainText('独立译文')
+  await expect(reading.getByRole('row').filter({ hasText: 'solo roma' }).getByRole('cell')).toHaveText(['00:03.000', '', '罗马音 · 独立行solo roma'])
+  await expect(reading.getByRole('row').filter({ hasText: 'unsynced roma' }).getByRole('cell').first()).toHaveText('—')
+  await expect(reading).toContainText('附加文本（归属未确认）')
+  await expect(reading).toContainText('未分类谐音')
+  expect(await dialog.getByLabel('歌词预览').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('lyrics-three-columns.png') })
+  await dialog.getByRole('button', { name: '原始文本', exact: true }).click()
+  const raw = dialog.getByLabel('原始歌词文本'), text = await page.evaluate(() => (window as any).__lyricDocument('bilingual').text)
+  await expect(raw).toHaveText(text)
+  await selector.click(); await page.getByRole('option', { name: '歌词', exact: true }).click()
+  await expect(raw).toHaveText(text)
+  await dialog.getByRole('button', { name: '阅读', exact: true }).click()
+  await expect(reading).toContainText('译文首行')
+  expect(await page.evaluate(() => [(window as any).__lyricReads, (window as any).__previewAcks])).toEqual([1, 1])
+  await selector.click(); await page.getByRole('option', { name: '罗马音', exact: true }).click()
+  await dialog.getByRole('button', { name: '应用到歌曲' }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__adoptedText)).toBe(text)
+  await dialog.getByRole('button', { name: '关闭歌词提示' }).click()
+  await dialog.getByRole('button', { name: /候选-plain/ }).click()
+  await expect(selector).toHaveText('罗马音')
+  await expect(reading.getByRole('row').nth(1).getByRole('cell')).toHaveText(['—', '纯文本原文', ''])
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await open()
+  await expect(selector).toHaveText('歌词')
+})
+
+test('failed searches and operations remain recoverable without raw errors or layout expansion', async ({ page }) => {
+  await page.evaluate(() => {
+    const w = window as any
+    w.__lyricSearch = async () => { throw new Error('RAW_SOURCE_ERROR /private/internal') }
+  })
+  await page.getByRole('button', { name: /查看歌词/ }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '从网络搜索歌词' }).click()
+  const dialog = page.getByRole('dialog', { name: '从网络搜索歌词' })
+  await dialog.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect(dialog.getByLabel('歌词候选')).toContainText('本次搜索未完成，请重试或更换来源。')
+  await expect(dialog).not.toContainText('RAW_SOURCE_ERROR')
+  await expect(dialog).not.toContainText('无匹配歌曲')
+  await page.evaluate(() => {
+    const w = window as any
+    w.__lyricSearch = async (source: string) => [{ id: 'recovered', source, sortKey: '01', title: '重试成功候选', matchScore: 80, highConfidence: false, autoPreviewEligible: false }]
+    w.go.app.App.FetchLyrics = async () => { throw new Error('RAW_FETCH_ERROR') }
+  })
+  await dialog.getByRole('button', { name: '重试 QQ 音乐', exact: true }).click()
+  await dialog.getByRole('button', { name: /重试成功候选/ }).click()
+  await expect(dialog.getByLabel('歌词预览')).toContainText('歌词暂不可用，请重试或选择其他候选。')
+  await expect(dialog).not.toContainText('RAW_FETCH_ERROR')
+  await expect(dialog.getByRole('button', { name: '应用到歌曲' })).toBeDisabled()
+  const before = (await dialog.getByLabel('歌词预览').boundingBox())!
+  await dialog.getByRole('textbox', { name: '歌曲', exact: true }).fill('')
+  await dialog.getByRole('textbox', { name: '艺术家', exact: true }).fill('')
+  await dialog.getByRole('textbox', { name: '专辑（辅助匹配）', exact: true }).fill('')
+  await dialog.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toHaveText('请输入歌词搜索条件')
+  expect((await dialog.getByLabel('歌词预览').boundingBox())!).toEqual(before)
+  await dialog.getByRole('button', { name: '关闭歌词提示' }).click()
+  await expect(dialog.getByRole('alert')).toHaveCount(0)
 })
 
 test('cross-source content ranking and unselected badges stay versioned while focus survives reordering', async ({ page }) => {
