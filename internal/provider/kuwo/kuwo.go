@@ -62,7 +62,7 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 	body, err := p.request(ctx, "https://www.kuwo.cn", openapiLyricsPath, map[string]string{"musicId": c.Ref})
 	if err == nil {
 		var payload *lyricdoc.Input
-		payload, err = parseLyricsResponse(body, true)
+		payload, err = parseLyricsResponse(body, true, c)
 		if err == nil {
 			var doc *lyricdoc.Document
 			doc, err = lyricdoc.Build(payload)
@@ -78,15 +78,14 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 	if err != nil {
 		return nil, err
 	}
-	payload, err := parseLyrics(body)
+	payload, err := parseLyricsResponse(body, false, c)
 	if err != nil {
 		return nil, err
 	}
 	payload.Warnings = append(payload.Warnings, "openapi 未取得可用逐行歌词，已回退 HTTPS H5")
 	return lyricdoc.Build(payload)
 }
-func parseLyrics(body []byte) (*lyricdoc.Input, error) { return parseLyricsResponse(body, false) }
-func parseLyricsResponse(body []byte, openapi bool) (*lyricdoc.Input, error) {
+func parseLyricsResponse(body []byte, openapi bool, c lyrics.Candidate) (*lyricdoc.Input, error) {
 	var r struct {
 		Code   *int
 		Status *int
@@ -117,32 +116,18 @@ func parseLyricsResponse(body []byte, openapi bool) (*lyricdoc.Input, error) {
 	if len(r.Data.Lrclist) == 0 {
 		return nil, lyricdoc.ErrNoLyrics
 	}
-	timed := []lyricdoc.TimedLine{}
-	plain := []string{}
-	for _, l := range r.Data.Lrclist {
+	rows := make([]lyricRow, 0, len(r.Data.Lrclist))
+	validTimes := true
+	for i, l := range r.Data.Lrclist {
 		text := html.UnescapeString(l.LineLyric)
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
 		t, err := strconv.ParseFloat(strings.Trim(string(l.Time), `"`), 64)
 		if err != nil || math.IsNaN(t) || math.IsInf(t, 0) || t < 0 || t > 24*3600 {
-			plain = append(plain, text)
-			continue
+			validTimes = false
+			t = 0
 		}
-		timed = append(timed, lyricdoc.TimedLine{MS: int(math.Round(t * 1000)), Text: text})
+		rows = append(rows, lyricRow{position: i, timeMS: int64(math.Round(t * 1000)), text: text})
 	}
-	if len(plain) > 0 {
-		plain = nil
-		for _, l := range r.Data.Lrclist {
-			plain = append(plain, html.UnescapeString(l.LineLyric))
-		}
-		return &lyricdoc.Input{Text: strings.Join(plain, "\n"), WordTiming: "unsupported", Warnings: []string{"时间轴无效，按来源原序保留全部正文为普通文本"}}, nil
-	}
-	text, err := lyricdoc.RenderTimed(timed)
-	if err != nil {
-		return nil, err
-	}
-	return &lyricdoc.Input{Text: text, WordTiming: "unsupported"}, nil
+	return prepareRows(rows, validTimes, c)
 }
 
 var _ lyrics.Provider = (*Provider)(nil)

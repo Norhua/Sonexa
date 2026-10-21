@@ -115,6 +115,32 @@ func TestStructuredInputPreservesRealEndsAndOwnership(t *testing.T) {
 	}
 }
 
+func TestInferenceDiagnosticsAreBoundedAndOwned(t *testing.T) {
+	basis := &Inference{RuleVersion: "test-v1", Layer: 1, Count: 1, Associations: []LineAssociation{{SourcePosition: 1, OriginalPosition: 0, SourceTimeMS: 2000, AssociatedTimeMS: 1000}}}
+	input := &Input{Text: "[00:01]original", Translation: &Channel{Status: "available", Origin: "embedded", Text: "[00:01]译文", Diagnostics: []Diagnostic{{Code: "heuristic_translation", Inference: basis}}}}
+	d, err := Build(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	basis.Associations[0].SourceTimeMS = 9999
+	if err := Validate(d); err != nil {
+		t.Fatal("inference aliases input", err)
+	}
+	d.Translation.Diagnostics[0].Inference.Associations[0].SourceTimeMS++
+	if err := Validate(d); !errors.Is(err, ErrContract) {
+		t.Fatal("inference mutation accepted", err)
+	}
+	basis.Count = 2
+	if _, err := Build(input); !errors.Is(err, ErrContract) {
+		t.Fatal("invalid inference count", err)
+	}
+	basis.Associations = make([]LineAssociation, MaxProjectionBytes/64+1)
+	basis.Count = len(basis.Associations)
+	if _, err := Build(input); !errors.Is(err, ErrTooLarge) {
+		t.Fatal("unbounded inference", err)
+	}
+}
+
 func TestPackageHasNoProjectDependencies(t *testing.T) {
 	paths, err := filepath.Glob("*.go")
 	if err != nil {

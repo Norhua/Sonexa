@@ -26,7 +26,7 @@ func normalizeChannel(ch *Channel) *Channel {
 		return UnknownChannel()
 	}
 	copy := *ch
-	copy.Diagnostics = append([]Diagnostic(nil), ch.Diagnostics...)
+	copy.Diagnostics = cloneDiagnostics(ch.Diagnostics)
 	if copy.Origin == "" {
 		copy.Origin = "independent"
 	}
@@ -131,7 +131,7 @@ func buildDocument(original, translation, romanization *Channel, additional []*C
 	for _, extra := range []*Channel{translation, romanization} {
 		if AvailableContent(extra) && duplicateOriginal(original.Track, extra.Track) {
 			extra.Status, extra.Text, extra.Track, extra.SyncStatus = "unavailable", "", nil, "unknown"
-			extra.Diagnostics = append(extra.Diagnostics, Diagnostic{"duplicate_original", "仅为原文副本，不计作附加内容"})
+			extra.Diagnostics = append(extra.Diagnostics, Diagnostic{Code: "duplicate_original", Message: "仅为原文副本，不计作附加内容"})
 		}
 	}
 	doc := &Document{Original: original, Translation: translation, Romanization: romanization, Warnings: append([]string(nil), warnings...)}

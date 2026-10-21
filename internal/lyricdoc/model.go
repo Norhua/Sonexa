@@ -18,8 +18,25 @@ type Line struct {
 }
 
 type Diagnostic struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code      string     `json:"code"`
+	Message   string     `json:"message"`
+	Inference *Inference `json:"inference,omitempty"`
+}
+
+// Inference records a producer's bounded explanation, not a consumer rule.
+// Source positions are zero-based; times retain the source's millisecond axis.
+type Inference struct {
+	RuleVersion  string            `json:"ruleVersion"`
+	Layer        int               `json:"layer"`
+	Count        int               `json:"count"`
+	Associations []LineAssociation `json:"associations,omitempty"`
+}
+
+type LineAssociation struct {
+	SourcePosition   int   `json:"sourcePosition"`
+	OriginalPosition int   `json:"originalPosition"`
+	SourceTimeMS     int64 `json:"sourceTimeMs"`
+	AssociatedTimeMS int64 `json:"associatedTimeMs"`
 }
 
 // Track retains the selected normalized channel, including real line/word

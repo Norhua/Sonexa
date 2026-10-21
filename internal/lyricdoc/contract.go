@@ -9,10 +9,23 @@ import (
 	"unicode/utf8"
 )
 
+func cloneDiagnostics(ds []Diagnostic) []Diagnostic {
+	out := append([]Diagnostic(nil), ds...)
+	for i := range out {
+		if ds[i].Inference == nil {
+			continue
+		}
+		inference := *ds[i].Inference
+		inference.Associations = append([]LineAssociation(nil), inference.Associations...)
+		out[i].Inference = &inference
+	}
+	return out
+}
+
 func cloneTrack(t *Track) *Track {
 	out := *t
 	out.Metadata = append([]string(nil), t.Metadata...)
-	out.Diagnostics = append([]Diagnostic(nil), t.Diagnostics...)
+	out.Diagnostics = cloneDiagnostics(t.Diagnostics)
 	out.Lines = append([]Line(nil), t.Lines...)
 	copyTime := func(n *int64) *int64 {
 		if n == nil {
@@ -90,6 +103,9 @@ func RetainedBytes(d *Document) int {
 	addDiagnostics := func(ds []Diagnostic) {
 		for _, v := range ds {
 			n += 64 + len(v.Code) + len(v.Message)
+			if v.Inference != nil {
+				n += 64 + len(v.Inference.RuleVersion) + 64*len(v.Inference.Associations)
+			}
 		}
 	}
 	addDiagnostics(d.Diagnostics)
@@ -118,9 +134,37 @@ func RetainedBytes(d *Document) int {
 	return n
 }
 
+func validateDiagnostics(ds []Diagnostic) error {
+	used := 0
+	for _, d := range ds {
+		used += 64 + len(d.Code) + len(d.Message)
+		if !utf8.ValidString(d.Code+d.Message) || strings.ContainsRune(d.Code+d.Message, 0) {
+			return ErrContract
+		}
+		if basis := d.Inference; basis != nil {
+			used += 64 + len(basis.RuleVersion) + 64*len(basis.Associations)
+			if basis.RuleVersion == "" || !utf8.ValidString(basis.RuleVersion) || basis.Layer < 1 || basis.Count != len(basis.Associations) || basis.Count == 0 {
+				return ErrContract
+			}
+			for _, link := range basis.Associations {
+				if link.SourcePosition < 0 || link.OriginalPosition < 0 || link.SourceTimeMS < 0 || link.SourceTimeMS > MaxTimeMS || link.AssociatedTimeMS < 0 || link.AssociatedTimeMS > MaxTimeMS {
+					return ErrContract
+				}
+			}
+		}
+		if used > MaxProjectionBytes {
+			return ErrTooLarge
+		}
+	}
+	return nil
+}
+
 func checkDocument(d *Document) error {
 	if d == nil || !AvailableContent(d.Original) || d.Text == "" {
 		return fmt.Errorf("%w：缺少有效原文", ErrContract)
+	}
+	if err := validateDiagnostics(d.Diagnostics); err != nil {
+		return err
 	}
 	if len(d.Text) > MaxTextBytes || projectionBytes(d.Rows) > MaxProjectionBytes || RetainedBytes(d) > 32<<20 {
 		return ErrTooLarge
@@ -157,6 +201,9 @@ func checkDocument(d *Document) error {
 		default:
 			return ErrContract
 		}
+		if err := validateDiagnostics(ch.Diagnostics); err != nil {
+			return err
+		}
 		if ch.Track == nil {
 			if ch.SyncStatus != "unknown" || ch.Text != "" {
 				return ErrContract
@@ -165,6 +212,9 @@ func checkDocument(d *Document) error {
 		}
 		if ch.Text == "" || ch.SyncStatus != "synced" && ch.SyncStatus != "unsynced" && ch.SyncStatus != "partial" {
 			return ErrContract
+		}
+		if err := validateDiagnostics(ch.Track.Diagnostics); err != nil {
+			return err
 		}
 		if err := validateTrackSize(ch.Track); err != nil {
 			return err

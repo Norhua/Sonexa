@@ -41,7 +41,13 @@ func channelSummary(c *lyricdoc.Channel) string {
 	if c == nil {
 		return "unknown"
 	}
-	return fmt.Sprintf("%s origin=%s sync=%s bytes=%d", c.Status, c.Origin, c.SyncStatus, len(c.Text))
+	summary := fmt.Sprintf("%s origin=%s sync=%s bytes=%d", c.Status, c.Origin, c.SyncStatus, len(c.Text))
+	for _, diagnostic := range c.Diagnostics {
+		if basis := diagnostic.Inference; basis != nil {
+			summary += fmt.Sprintf(" inference=%s layer=%d count=%d", basis.RuleVersion, basis.Layer, basis.Count)
+		}
+	}
+	return summary
 }
 
 func TestTextFormatsAndInvalidInput(t *testing.T) {
@@ -210,6 +216,13 @@ func TestLiveSources(t *testing.T) {
 				if err != nil {
 					if audit.gate() != nil {
 						t.Fatal(errLiveStopped)
+					}
+					var failure *lyrics.FetchError
+					if errors.As(err, &failure) {
+						t.Logf("candidate=%s error_kind=%s stop_source=%t", candidate.Ref, failure.Kind, failure.StopSource)
+						if failure.StopSource {
+							t.Fatal(errLiveStopped)
+						}
 					}
 					t.Logf("candidate=%s unavailable no_lyrics=%t error_type=%T", candidate.Ref, errors.Is(err, lyricdoc.ErrNoLyrics), err)
 					continue
