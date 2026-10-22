@@ -68,8 +68,8 @@ func TestDocumentParsers(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte("[00:02.50]You &amp; me"))
 	for _, tt := range []struct{ source, body, want string }{
 		{"qq", `callback({"code":0,"retcode":0,"lyric":"` + encoded + `"});`, "[xlrc:0.1]\n[x-sonexa:1]\n[00:02.500]You & me"},
-		{"qq", `{"code":0,"lyric":"[00:01.00]原文","trans":"[00:01.00]翻译"}`, "[xlrc:0.1]\n[x-sonexa:1]\n[00:01.000]原文\n[>und]翻译"},
-		{"163", `{"code":200,"lrc":{"lyric":"[00:03.00]三\n[00:01.20][00:02.300]一"},"tlyric":{"lyric":"[00:02.30]译\n[00:03.0]三"}}`, "[xlrc:0.1]\n[x-sonexa:1]\n[00:01.200]一\n[00:02.300]一\n[>und]译\n[00:03.000]三\n[>und]三"},
+		{"qq", `{"code":0,"lyric":"[00:01.00]原文","trans":"[00:01.00]翻译"}`, "[xlrc:0.1]\n[x-sonexa:1]\n[00:01.000]原文\n[>zh]翻译"},
+		{"163", `{"code":200,"lrc":{"lyric":"[00:03.00]三\n[00:01.20][00:02.300]一"},"tlyric":{"lyric":"[00:02.30]译\n[00:03.0]三"}}`, "[xlrc:0.1]\n[x-sonexa:1]\n[00:01.200]一\n[00:02.300]一\n[>zh]译\n[00:03.000]三\n[>zh]三"},
 	} {
 		d, err := replayService(tt.body).Fetch(context.Background(), lyrics.Candidate{Source: tt.source, Ref: "native"})
 		if err != nil || d.Text != tt.want {

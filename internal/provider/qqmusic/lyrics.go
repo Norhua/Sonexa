@@ -211,7 +211,7 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 			provider.StopSendBudget(ctx, failure)
 		}
 	}
-	if doc, parseErr := lyricdoc.Build(channels); parseErr == nil {
+	if doc, parseErr := lyricdoc.BuildOnline(channels, "zh"); parseErr == nil {
 		return doc, nil
 	} else {
 		err = parseErr
@@ -241,7 +241,7 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 	channels.Romanization = lyricdoc.PreferredChannel(channels.Romanization, legacy.Romanization)
 	channels.WordTiming = "error"
 	channels.Warnings = append(channels.Warnings, "QQ 新歌词接口未取得可用原文，已回退普通歌词："+err.Error())
-	return lyricdoc.Build(channels)
+	return lyricdoc.BuildOnline(channels, "zh")
 }
 
 var _ lyrics.Provider = (*Provider)(nil)

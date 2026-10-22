@@ -39,7 +39,7 @@ func TestLocalQQProbe(t *testing.T) {
 		t.Log(channelSummary(ch))
 	}
 	t.Logf("wordTiming=%s warnings=%d", channels.WordTiming, len(channels.Warnings))
-	doc, err := lyricdoc.Build(channels)
+	doc, err := lyricdoc.BuildOnline(channels, "zh")
 	if err != nil {
 		t.Fatalf("document unavailable error_type=%T", lyricfetch.Normalize(err))
 	}

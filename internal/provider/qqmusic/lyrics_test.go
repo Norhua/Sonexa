@@ -139,7 +139,7 @@ func TestQQPlayPreservesChannelsAndUsesExplicitFlags(t *testing.T) {
 	if calls != 1 || doc.Format != "xlrc" || doc.WordTiming != "available" || doc.Translation.Status != "available" || doc.Romanization.Status != "available" || len(doc.Warnings) != 0 {
 		t.Fatalf("%+v", doc)
 	}
-	for _, part := range []string{"<00:01.000>原文", "[>und]翻译", "<00:01.000>roma"} {
+	for _, part := range []string{"<00:01.000>原文", "[>zh]翻译", "<00:01.000>roma"} {
 		if !strings.Contains(doc.Text, part) {
 			t.Fatal(doc.Text)
 		}

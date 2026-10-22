@@ -50,6 +50,17 @@ it('distinguishes timestamp precision alignment from heuristic channel identific
   expect(lyricChannelStatus(channel)).toBe('有（启发式识别、时间精度对齐）')
   expect(lyricChannelBasis(channel)).toContain('经验推断')
 })
+it('distinguishes heuristic alignment from channel identification and preserves backend associations', () => {
+  const channel: LyricChannel = { status: 'available', origin: 'independent', syncStatus: 'synced', diagnostics: [{ code: 'time_nearby_alignment', ruleVersion: 'time-nearby-v1', layer: 1, count: 2 }] }
+  expect(lyricChannelStatus(channel)).toBe('有（启发式对齐）')
+  expect(lyricChannelBasis(channel)).toContain('±2 秒内唯一最近')
+  expect(lyricChannelBasis(channel)).toContain('可能误判')
+  const rows: LyricDocument['rows'] = [{ timeMs: 42570, text: 'かなの歌', channel: 'original', translation: ['译文'], romanization: ['kana no uta'], annotations: [{ channel: 'translation', language: 'zh', text: '译文' }, { channel: 'romanization', language: 'ja-Latn', text: 'kana no uta' }] }]
+  const before = structuredClone(rows)
+  expect(lyricReadingRows(rows, 'translation')[0]).toMatchObject({ timeMs: 42570, extra: ['译文'], note: '', annotations: [{ language: 'zh' }] })
+  expect(lyricReadingRows(rows, 'romanization')[0]).toMatchObject({ timeMs: 42570, extra: ['kana no uta'], note: '', annotations: [{ language: 'ja-Latn' }] })
+  expect(rows).toEqual(before)
+})
 it('projects three columns using only existing associations and keeps independent extras separate', () => {
   const rows: LyricDocument['rows'] = [
     { timeMs: 0, text: '  Hello (world) <b>✨</b>  ', channel: 'original', translation: ['  你好  ', '第二行'], romanization: ['hello world'] },

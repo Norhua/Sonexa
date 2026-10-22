@@ -123,7 +123,7 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 	payload, err := p.download(ctx, candidate, "krc")
 	if err == nil {
 		var doc *lyricdoc.Document
-		doc, err = lyricdoc.Build(payload)
+		doc, err = lyricdoc.BuildOnline(payload, "zh")
 		if err == nil {
 			return doc, nil
 		}
@@ -143,7 +143,7 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 	if payload != nil {
 		fallback.Translation, fallback.Romanization, fallback.Additional = payload.Translation, payload.Romanization, payload.Additional
 	}
-	return lyricdoc.Build(fallback)
+	return lyricdoc.BuildOnline(fallback, "zh")
 }
 
 func (p *Provider) download(ctx context.Context, candidate lyricCandidate, format string) (*lyricdoc.Input, error) {

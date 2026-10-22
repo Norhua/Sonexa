@@ -39,8 +39,8 @@ type Diagnostic struct {
 
 // Inference records a producer's bounded explanation, not a consumer rule.
 // Positions are zero-based. Each rule documents its time axis: embedded
-// inference uses the source axis; time_precision_alignment records canonical
-// positions and the common serialized axis, including the document offset.
+// inference uses the source axis; time_precision_alignment/time_nearby_alignment
+// record canonical positions and the common serialized axis (including offset).
 type Inference struct {
 	RuleVersion  string            `json:"ruleVersion"`
 	Layer        int               `json:"layer"`

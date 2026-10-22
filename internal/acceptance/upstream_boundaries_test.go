@@ -61,7 +61,7 @@ func capabilityViolations(path string, file *ast.File) []string {
 		if selector, ok := n.(*ast.SelectorExpr); ok && business {
 			if pkg, ok := selector.X.(*ast.Ident); ok && imports[pkg.Name] == internalModule+"lyricdoc" {
 				switch selector.Sel.Name {
-				case "Build", "Input", "TextChannel", "TrackChannel", "AbsentChannel", "UnknownChannel", "FailedChannel", "PreferredChannel", "SerializeTrack", "SerializeXLRC", "ParseXLRC", "DecodeInline", "RenderTimed", "ParseText":
+				case "Build", "BuildOnline", "Input", "TextChannel", "TrackChannel", "AbsentChannel", "UnknownChannel", "FailedChannel", "PreferredChannel", "SerializeTrack", "SerializeXLRC", "ParseXLRC", "DecodeInline", "RenderTimed", "ParseText":
 					if path != "app/bindings_lyrics_input.go" || selector.Sel.Name != "ParseText" && selector.Sel.Name != "ParseXLRC" {
 						problems = append(problems, "业务不能构建或修复来源文档: "+selector.Sel.Name)
 					}
@@ -236,6 +236,7 @@ func TestCapabilityBoundaryCheckerRejectsRegressions(t *testing.T) {
 		{"lyricdoc/text.go", `import "github.com/norhua/sonexa/internal/lyrics"`, true},
 		{"lyricdoc/text.go", `import "net/http"`, true},
 		{"lyricdoc/text.go", `func f(source string) { if source == "kuwo" {} }`, true},
+		{"lyrics/service.go", `import d "github.com/norhua/sonexa/internal/lyricdoc"; var finish = d.BuildOnline`, true},
 		{"lyrics/service.go", `import d "github.com/norhua/sonexa/internal/lyricdoc"; var finish = d.Build`, true},
 		{"lyrics/service.go", `import . "github.com/norhua/sonexa/internal/lyricdoc"`, true},
 		{"app/bindings_lyrics.go", `import "github.com/norhua/sonexa/internal/lyricdoc"; var parse = lyricdoc.ParseText`, true},

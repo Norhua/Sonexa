@@ -74,7 +74,7 @@ func deduplicate(lines []taggedLine) ([]taggedLine, error) {
 	return filtered, nil
 }
 
-func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
+func assembleTracks(channels []channelTrack, options buildOptions) (*Track, []PreviewRow, error) {
 	originalChannels := channels
 	var offset int64
 	var err error
@@ -106,6 +106,12 @@ func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
 	_, err = alignPrecision(channels)
 	if err != nil {
 		return nil, nil, err
+	}
+	if options.infer {
+		if err := alignNearby(channels); err != nil {
+			return nil, nil, err
+		}
+		labelLanguages(channels, options.translationFallback)
 	}
 	// Every delivered channel uses the same axis as XLRC, not only channels
 	// whose millisecond precision happened to need correction.
@@ -205,8 +211,8 @@ func assembleTracks(channels []channelTrack) (*Track, []PreviewRow, error) {
 			result = append(result, row)
 		}
 	}
-	// Unassociated extras retain their times after bounded precision alignment.
-	// They never inherit an ambiguous or more distant line time.
+	// Extras left unassociated by the selected producer policy retain their
+	// own times; local input never opts into the online nearby heuristic.
 	for _, c := range channels[1:] {
 		if c.channel.Track == nil {
 			continue

@@ -139,6 +139,10 @@ func channelDocument(original, translation, romanization *Channel, timing string
 }
 
 func buildDocument(original, translation, romanization *Channel, additional []*Channel, timing string, warnings []string) (*Document, error) {
+	return buildDocumentWithOptions(original, translation, romanization, additional, timing, warnings, buildOptions{})
+}
+
+func buildDocumentWithOptions(original, translation, romanization *Channel, additional []*Channel, timing string, warnings []string, options buildOptions) (*Document, error) {
 	original, translation, romanization = normalizeChannel(original), normalizeChannel(translation), normalizeChannel(romanization)
 	if original.Status == "error" {
 		if original.Err != nil {
@@ -193,7 +197,7 @@ func buildDocument(original, translation, romanization *Channel, additional []*C
 		channels = append(channels, channelTrack{"additional", ch})
 	}
 	localText := original.Text
-	merged, rows, err := assembleTracks(channels)
+	merged, rows, err := assembleTracks(channels, options)
 	if err != nil {
 		return nil, err
 	}

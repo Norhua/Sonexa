@@ -19,6 +19,25 @@ type Input struct {
 }
 
 func Build(p *Input) (*Document, error) {
+	return build(p, buildOptions{})
+}
+
+// BuildOnline enables bounded timing/language inference for native online
+// adapters. The adapter, not the parser or business consumer, supplies its
+// translation-language fallback. Local imports continue to use Build/ParseText.
+func BuildOnline(p *Input, translationFallback string) (*Document, error) {
+	if translationFallback != "" && !languageTag.MatchString(translationFallback) {
+		return nil, ErrFormat
+	}
+	return build(p, buildOptions{infer: true, translationFallback: translationFallback})
+}
+
+type buildOptions struct {
+	infer               bool
+	translationFallback string
+}
+
+func build(p *Input, options buildOptions) (*Document, error) {
 	if p == nil {
 		return nil, fmt.Errorf("%w：来源未返回正文", ErrNoLyrics)
 	}
@@ -36,7 +55,7 @@ func Build(p *Input) (*Document, error) {
 			copy.Romanization = d.Romanization
 		}
 		copy.Additional = append(append([]*Channel(nil), d.Additional...), p.Additional...)
-		return Build(&copy)
+		return build(&copy, options)
 	}
 	original := p.Original
 	if original == nil && p.Text != "" {
@@ -58,7 +77,7 @@ func Build(p *Input) (*Document, error) {
 			original = word
 		}
 	}
-	d, err := buildDocument(original, p.Translation, p.Romanization, p.Additional, timing, warnings)
+	d, err := buildDocumentWithOptions(original, p.Translation, p.Romanization, p.Additional, timing, warnings, options)
 	if err != nil {
 		return nil, err
 	}

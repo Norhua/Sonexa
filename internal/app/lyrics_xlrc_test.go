@@ -52,6 +52,26 @@ func TestXLRCProviderPreviewScoreAdoptionAndReparse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertXLRCAdoption(t, d)
+}
+
+func TestOnlineXLRCInferencePreviewAndAdoption(t *testing.T) {
+	d, err := lyricdoc.BuildOnline(&lyricdoc.Input{
+		Text:         "[00:42.570]<00:42.570>かなの歌<00:45.000>",
+		Translation:  lyricdoc.TextChannel("[00:41.360]中文翻译", nil),
+		Romanization: lyricdoc.TextChannel("[00:42.800]kana no uta", nil),
+	}, "zh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Rows) != 1 || !strings.Contains(d.Text, "[>zh]中文翻译\n[>ja-Latn]kana no uta") {
+		t.Fatal("provider document not already associated", d.Text)
+	}
+	assertXLRCAdoption(t, d)
+}
+
+func assertXLRCAdoption(t *testing.T, d *lyricdoc.Document) {
+	t.Helper()
 	source := &prefetchSource{id: "xlrc-test", count: 1, fetch: func(context.Context, lyrics.Candidate) (*lyricdoc.Document, error) { return d, nil }}
 	a, _, done := prefetchApp(t, source)
 	defer done()

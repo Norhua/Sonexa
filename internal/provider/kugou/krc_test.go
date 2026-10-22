@@ -64,12 +64,16 @@ func TestKRCLanguageUsesNativeRowsIncludingEmpty(t *testing.T) {
 		sync                      bool
 	}{
 		{"aligned", `{"content":[{"type":1,"lyricContent":[["译一"],["空行译文"],["译三"]]},{"type":0,"lyricContent":[["ro","ma"],[""],["ji"]]}]}`, "available", "available", true},
+		{"aligned Japanese", `{"content":[{"type":1,"lyricContent":[["译一"],["空行译文"],["译三"]]},{"type":0,"lyricContent":[["ka","na"],[""],["uta"]]}]}`, "available", "available", true},
 		{"mismatch", `{"content":[{"type":1,"lyricContent":[["one"]]}]}`, "available", "unavailable", false},
 		{"phonetic Han", `{"content":[{"type":0,"lyricContent":[["中文谐音"]]}]}`, "unavailable", "unknown", false},
 		{"broken type", `{"content":[{"type":1,"lyricContent":"bad"},{"type":0,"lyricContent":[["roma"]]}]}`, "error", "available", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			text := "[language:" + base64.StdEncoding.EncodeToString([]byte(tt.language)) + "]\n[1000,1000]<0,500,0>A\n[2000,1000]<0,500,0>\n[3000,1000]<0,500,0>C"
+			if tt.name == "aligned Japanese" {
+				text = strings.ReplaceAll(strings.ReplaceAll(text, ">A", ">かな"), ">C", ">うた")
+			}
 			calls := 0
 			client := provider.NewClient(nil, nil, "test")
 			client.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
@@ -105,6 +109,15 @@ func TestKRCLanguageUsesNativeRowsIncludingEmpty(t *testing.T) {
 			}
 			if tt.sync && (len(d.Rows[1].Translation) != 1 || d.Rows[1].Translation[0] != "空行译文") {
 				t.Fatal(d.Text)
+			}
+			if tt.name == "aligned Japanese" {
+				if !strings.Contains(d.Text, "[>zh]译一") || !strings.Contains(d.Text, "[>ja-Latn]kana") || d.Romanization.Track.Lines[2].Language != "ja-Latn" {
+					t.Fatal("missing native language labels", d.Text)
+				}
+				round, err := lyricdoc.ParseXLRC(d.Text)
+				if err != nil || round.Rows[1].Translation[0] != "空行译文" || round.Rows[0].Romanization[0] != "kana" {
+					t.Fatal("native parent relation lost", err)
+				}
 			}
 			if tt.name == "mismatch" && (d.Translation.SyncStatus != "unsynced" || !strings.HasSuffix(d.Text, "one")) {
 				t.Fatal(d)

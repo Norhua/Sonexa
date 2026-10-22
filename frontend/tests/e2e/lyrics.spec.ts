@@ -315,6 +315,40 @@ test('normalized precision-aligned rows share the original time in reading and a
   expect(await page.evaluate(() => (window as any).__lyricReads)).toBe(1)
 })
 
+test('heuristically aligned XLRC keeps subordinate language labels through reading and adoption', async ({ page }) => {
+  await page.evaluate(() => {
+    const w = window as any, api = w.go.app.App
+    w.__lyricSearch = async (source: string) => source === '163' ? [{ id: 'nearby', source, sortKey: '01', title: '近邻对齐候选', matchScore: 80, totalScore: 130, highConfidence: false, autoPreviewEligible: false }] : []
+    const diagnostic = { code: 'time_nearby_alignment', inference: { ruleVersion: 'time-nearby-v1', layer: 1, count: 1, associations: [{ sourcePosition: 0, originalPosition: 0, sourceTimeMs: 41360, associatedTimeMs: 42570 }] } }
+    w.__lyricDocument = () => ({ text: '[xlrc:0.1]\n[x-sonexa:1]\n[00:42.570]かなの歌\n[>zh]中文翻译\n[>ja-Latn]kana no uta', format: 'xlrc', offsetMs: 0, wordTiming: 'unavailable', rows: [{ timeMs: 42570, text: 'かなの歌', channel: 'original', translation: ['中文翻译'], romanization: ['kana no uta'], annotations: [{ channel: 'translation', language: 'zh', text: '中文翻译' }, { channel: 'romanization', language: 'ja-Latn', text: 'kana no uta' }] }],
+      translation: { status: 'available', origin: 'independent', syncStatus: 'synced', diagnostics: [diagnostic] }, romanization: { status: 'available', origin: 'independent', syncStatus: 'synced', diagnostics: [] } })
+    const adopt = api.AdoptLyrics
+    api.AdoptLyrics = async (session: string, id: string, revision: number) => { await adopt(session, id, revision); w.__nearbySaved = w.__lyricDocument().text; return 1 }
+  })
+  await page.getByRole('button', { name: /查看歌词/ }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '从网络搜索歌词' }).click()
+  const dialog = page.getByRole('dialog', { name: '从网络搜索歌词' }), reading = dialog.getByLabel('可读歌词')
+  await dialog.getByRole('button', { name: '搜索', exact: true }).click()
+  const card = dialog.getByRole('button', { name: /近邻对齐候选/ })
+  await expect(card).toContainText('翻译：有（启发式对齐）')
+  await card.click()
+  await expect(reading.getByRole('row')).toHaveCount(2)
+  await expect(reading.getByRole('row').nth(1).getByRole('cell').first()).toHaveText('00:42.570')
+  await expect(reading.getByRole('row').nth(1).getByRole('cell').last()).toContainText('zh中文翻译')
+  await expect(reading).not.toContainText('独立行')
+  await dialog.getByRole('combobox', { name: '额外展示' }).click()
+  await page.getByRole('option', { name: '罗马音', exact: true }).click()
+  await expect(reading).toContainText('ja-Latnkana no uta')
+  await dialog.getByRole('button', { name: '原始文本', exact: true }).click()
+  const raw = dialog.getByLabel('原始歌词文本')
+  await expect(raw).toContainText('[>zh]中文翻译\n[>ja-Latn]kana no uta')
+  await expect(raw).not.toContainText('[00:41.360]')
+  const saved = await raw.textContent()
+  await dialog.getByRole('button', { name: '应用到歌曲' }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__nearbySaved)).toBe(saved)
+  expect(await page.evaluate(() => (window as any).__lyricReads)).toBe(1)
+})
+
 test('successful song search keeps its count with a failed candidate and hides only empty independent extras', async ({ page }, testInfo) => {
   await page.evaluate(() => {
     const w = window as any, api = w.go.app.App

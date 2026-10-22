@@ -39,7 +39,7 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 	ctx = provider.WithStopRestrictedRetries(ctx)
 	body, err := p.client.Get(ctx, provider.GetRequest{
 		Provider: provider.NetEaseQuota, BaseURL: baseURL, Endpoint: lyricV1Path,
-		Params:    map[string]string{"id": c.Ref, "lv": "-1", "tv": "-1", "rv": "-1", "yv": "-1"},
+		Params:    map[string]string{"id": c.Ref, "lv": "-1", "tv": "-1", "rv": "-1", "yv": "-1", "ytv": "-1", "yrv": "-1"},
 		CacheMode: provider.NoStore, MaxResponseBytes: 4 << 20,
 		Headers:   map[string]string{"Referer": baseURL + "/"},
 		Redirects: &provider.RedirectPolicy{Hosts: []string{"music.163.com"}, MaxRedirects: 4},
@@ -50,7 +50,7 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 	}
 	if err == nil {
 		var doc *lyricdoc.Document
-		doc, err = lyricdoc.Build(bundle)
+		doc, err = lyricdoc.BuildOnline(bundle, "zh")
 		if err == nil {
 			return doc, nil
 		}
@@ -58,7 +58,7 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 	if !lyricfetch.CanFallback(err) {
 		return nil, err
 	}
-	body, fallbackErr := p.request(ctx, "/weapi/song/lyric", map[string]any{"id": c.Ref, "lv": -1, "kv": -1, "tv": -1, "csrf_token": ""})
+	body, fallbackErr := p.request(ctx, "/weapi/song/lyric", map[string]any{"id": c.Ref, "lv": -1, "kv": -1, "tv": -1, "rv": -1, "csrf_token": ""})
 	if fallbackErr != nil {
 		return nil, fallbackErr
 	}
@@ -67,19 +67,29 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 		return nil, fallbackErr
 	}
 	if bundle != nil {
-		fallback.Translation = lyricdoc.PreferredChannel(bundle.Translation, fallback.Translation)
-		fallback.Romanization = lyricdoc.PreferredChannel(bundle.Romanization, fallback.Romanization)
+		fallback.Translation = lyricdoc.PreferredChannel(fallback.Translation, bundle.Translation)
+		fallback.Romanization = lyricdoc.PreferredChannel(fallback.Romanization, bundle.Romanization)
 		fallback.WordTiming = bundle.WordTiming
 		fallback.Warnings = append(fallback.Warnings, bundle.Warnings...)
 	}
 	fallback.Warnings = append(fallback.Warnings, "YRC 接口未取得可用原文，已回退普通歌词")
-	return lyricdoc.Build(fallback)
+	return lyricdoc.BuildOnline(fallback, "zh")
+}
+
+type lyricText struct {
+	Lyric string `json:"lyric"`
 }
 
 type lyricBundle struct {
-	Code                                         int
-	Nolyric, Uncollected                         bool
-	Lrc, Tlyric, Romalrc, Yrc, Ytlyric, Yromalrc struct{ Lyric string }
+	Code        int       `json:"code"`
+	Nolyric     bool      `json:"nolyric"`
+	Uncollected bool      `json:"uncollected"`
+	Lrc         lyricText `json:"lrc"`
+	Tlyric      lyricText `json:"tlyric"`
+	Romalrc     lyricText `json:"romalrc"`
+	Yrc         lyricText `json:"yrc"`
+	Ytlrc       lyricText `json:"ytlrc"`
+	Yromalrc    lyricText `json:"yromalrc"`
 }
 
 func parseLyrics(body []byte) (*lyricdoc.Input, error) {
@@ -97,9 +107,28 @@ func parseLyrics(body []byte) (*lyricdoc.Input, error) {
 	if original.Status == "unavailable" && word.Status == "unavailable" {
 		return nil, lyricdoc.ErrNoLyrics
 	}
+	// Select auxiliary tracks from the same native timeline as Build's actual
+	// original. A usable YRC without words does not displace a usable LRC.
+	useYRC := original.Status != "available"
+	if word.Status == "available" && word.Track != nil {
+		for _, l := range word.Track.Lines {
+			for _, w := range l.Parts {
+				if w.StartMS != nil && strings.TrimSpace(w.Text) != "" {
+					useYRC = true
+				}
+			}
+		}
+	}
+	paired := func(ordinary, yrc string) *lyricdoc.Channel {
+		a, b := lyricChannel(ordinary), lyricChannel(yrc)
+		if useYRC {
+			a, b = b, a
+		}
+		return lyricdoc.PreferredChannel(a, b)
+	}
 	out := &lyricdoc.Input{Original: original, WordOriginal: word,
-		Translation:  lyricdoc.PreferredChannel(lyricChannel(r.Ytlyric.Lyric), lyricChannel(r.Tlyric.Lyric)),
-		Romanization: lyricdoc.PreferredChannel(lyricChannel(r.Yromalrc.Lyric), lyricChannel(r.Romalrc.Lyric)), WordTiming: "unavailable"}
+		Translation:  paired(r.Tlyric.Lyric, r.Ytlrc.Lyric),
+		Romanization: paired(r.Romalrc.Lyric, r.Yromalrc.Lyric), WordTiming: "unavailable"}
 	if word.Status == "error" {
 		out.WordTiming = "error"
 	}

@@ -8,8 +8,8 @@ import (
 	"unicode"
 )
 
-// XLRC 0.1-draft plus the documented, lossless Sonexa extensions. Neither
-// language nor voice is inferred from lyric text or performer metadata.
+// XLRC 0.1-draft plus the documented, lossless Sonexa extensions. Parsing
+// never infers languages or voices; native online producers may label extras.
 var languageTag = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$`)
 var xlrcHeader = regexp.MustCompile(`^\[([A-Za-z][A-Za-z0-9_-]*):([^\]]*)\]$`)
 

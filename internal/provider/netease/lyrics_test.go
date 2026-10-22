@@ -55,7 +55,7 @@ func TestYRCBundleGETAndBoundedFallback(t *testing.T) {
 					if r.Method != "GET" || r.URL.Path != lyricV1Path || r.URL.Query().Get("id") != "123" || forms != 0 {
 						t.Fatal(r.URL)
 					}
-					for _, key := range []string{"lv", "tv", "rv", "yv"} {
+					for _, key := range []string{"lv", "tv", "rv", "yv", "ytv", "yrv"} {
 						if r.URL.Query().Get(key) != "-1" {
 							t.Fatal(key)
 						}
