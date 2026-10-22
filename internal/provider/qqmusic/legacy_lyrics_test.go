@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
+	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/provider/lyricfetch"
 )
 
 func TestLegacyLyricsDecodeAndPreserveMetadataRaw(t *testing.T) {
@@ -34,6 +38,53 @@ func TestLegacyLyricsDecodeAndPreserveMetadataRaw(t *testing.T) {
 	parsed, err := parseLegacyLyrics([]byte(`{"code":0,"lyric":"[00:01.00]ok","trans":"/w=="}`))
 	if err != nil || parsed.OriginalError != nil || parsed.TranslationError == nil {
 		t.Fatal("附加通道错误丢失", parsed, err)
+	}
+}
+
+func TestLegacyNoLyricsDoesNotStopOtherCandidates(t *testing.T) {
+	const noLyrics = `{"code":-1901,"retcode":-1901,"subcode":-1901}`
+	for _, body := range []string{noLyrics, "MusicJsonCallback(" + noLyrics + ");"} {
+		_, err := parseLegacyLyrics([]byte(body))
+		var failure *lyrics.FetchError
+		if !errors.Is(err, lyricdoc.ErrNoLyrics) || !errors.As(lyricfetch.Normalize(err), &failure) || failure.Kind != "no_lyrics" || failure.StopSource {
+			t.Fatal("no lyrics treated as source restriction", err)
+		}
+	}
+	for _, body := range []string{
+		`{"code":-1901}`, `{"code":-1901,"retcode":-1901,"subcode":0}`,
+		`{"code":-1901,"retcode":-1901,"subcode":-1901,"lyric":"content"}`,
+		`{"code":-1901,"retcode":-1901,"subcode":-1901,"trans":"content"}`,
+		`{"code":24001}`, `{"code":403}`, `{"code":0,"retcode":429}`,
+	} {
+		_, err := parseLegacyLyrics([]byte(body))
+		var business *provider.BusinessError
+		var failure *lyrics.FetchError
+		if !errors.As(err, &business) || !errors.As(lyricfetch.Normalize(err), &failure) || !failure.StopSource || errors.Is(err, lyricdoc.ErrNoLyrics) {
+			t.Fatal("ambiguous failure downgraded", body, err)
+		}
+	}
+	calls := 0
+	client := providerClientForTest(func(r *http.Request) string {
+		calls++
+		if r.URL.Path == lyricPath {
+			return noLyrics
+		}
+		if calls == 1 {
+			return playBody(t, qqLyricData{}, qqLyricData{})
+		}
+		return playBody(t, qqLyricData{Lyric: b64("[00:01]original"), Trans: b64("[00:01]translation"), Roma: encodedQRC(t, "[00:01]roma")}, qqLyricData{})
+	})
+	budget := provider.NewSendBudget(3)
+	ctx := provider.WithSendBudget(context.Background(), budget)
+	p := New(client, Config{}, nil)
+	_, err := p.FetchLyrics(ctx, lyrics.Candidate{Ref: "empty"})
+	var failure *lyrics.FetchError
+	if !errors.Is(err, lyricdoc.ErrNoLyrics) || !errors.As(err, &failure) || failure.StopSource || calls != 2 || budget.Err() != nil {
+		t.Fatal("empty candidate stopped source", err, calls, budget.Err())
+	}
+	doc, err := p.FetchLyrics(ctx, lyrics.Candidate{Ref: "available"})
+	if err != nil || calls != 3 || doc.Translation.Status != "available" || doc.Romanization.Status != "available" {
+		t.Fatal("next candidate not delivered", err, calls)
 	}
 }
 

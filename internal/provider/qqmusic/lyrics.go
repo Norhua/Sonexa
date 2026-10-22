@@ -17,16 +17,40 @@ import (
 )
 
 func (p *Provider) SearchLyrics(ctx context.Context, q lyrics.Query) ([]lyrics.Candidate, error) {
-	songs, err := p.searchSongs(ctx, lyrics.SearchTerm(q), lyrics.MaxResults, provider.NoStore)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	term := lyrics.SearchTerm(q)
+	reqs := map[string]any{"req": songSearchBlock(term, lyrics.MaxResults)}
+	names := []string{"req"}
+	// QQ 的歌曲署名可能是演唱者而非社团。曲名补充查询只扩大召回，
+	// 不替换候选身份；业务仍按原查询评分并取最多 20 条 / Top 3。
+	if title := strings.TrimSpace(q.Title); title != "" && title != term {
+		reqs["title"] = songSearchBlock(title, lyrics.MaxResults)
+		names = append(names, "title")
+	}
+	body, err := p.musicu(ctx, provider.NoStore, reqs)
+	if err != nil {
+		return nil, err
+	}
+	blocks, err := decodeBlocks(body, names...)
 	if err != nil {
 		return nil, err
 	}
 	out := []lyrics.Candidate{}
-	for _, s := range songs {
-		if !ValidMID(s.MID) {
-			continue
+	seen := map[string]bool{}
+	for _, name := range names {
+		songs, err := parseSongSearchData(blocks[name])
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, lyrics.Candidate{Ref: s.MID, Title: songTitle(s), Artist: creditOf(s.Singer), Album: albumName(s.Album), DurationMS: s.Interval * 1000})
+		for _, s := range songs[:min(len(songs), lyrics.MaxResults)] {
+			if !ValidMID(s.MID) || seen[s.MID] {
+				continue
+			}
+			seen[s.MID] = true
+			out = append(out, lyrics.Candidate{Ref: s.MID, Title: songTitle(s), Artist: creditOf(s.Singer), Album: albumName(s.Album), DurationMS: s.Interval * 1000})
+		}
 	}
 	return out, nil
 }
@@ -181,6 +205,10 @@ func (p *Provider) FetchLyrics(ctx context.Context, c lyrics.Candidate) (doc *ly
 	for name, qrc := range map[string]int{"req": 1, "plain": 0} {
 		blocks[name] = map[string]any{"module": "music.musichallSong.PlayLyricInfo", "method": "GetPlayLyricInfo", "param": map[string]any{
 			"songMid": c.Ref, "crypt": 0, "qrc": qrc, "qrc_t": 0, "trans": 1, "trans_t": 0, "roma": 1, "roma_t": 0, "lrc_t": 0, "type": 0,
+			// Some catalog entries cannot resolve by MID alone (24001).
+			// Send this candidate's facts, never the target query or another hit.
+			"songName": base64.StdEncoding.EncodeToString([]byte(c.Title)), "singerName": base64.StdEncoding.EncodeToString([]byte(c.Artist)),
+			"albumName": base64.StdEncoding.EncodeToString([]byte(c.Album)), "interval": c.DurationMS / 1000,
 		}}
 	}
 	body, err := p.musicu(ctx, provider.NoStore, blocks)

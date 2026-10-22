@@ -72,8 +72,12 @@ func parseSongs(body []byte) ([]song, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseSongSearchData(blocks["req"])
+}
+
+func parseSongSearchData(raw json.RawMessage) ([]song, error) {
 	var data searchData
-	if err := json.Unmarshal(blocks["req"], &data); err != nil {
+	if err := json.Unmarshal(raw, &data); err != nil {
 		return nil, fmt.Errorf("解析 QQ 音乐搜索响应失败: %w", err)
 	}
 	if data.Body == nil || data.Body.Song == nil || data.Body.Song.List == nil {

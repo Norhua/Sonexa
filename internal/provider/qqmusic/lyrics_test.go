@@ -129,10 +129,13 @@ func TestQQPlayPreservesChannelsAndUsesExplicitFlags(t *testing.T) {
 			if p.Module != "music.musichallSong.PlayLyricInfo" || p.Method != "GetPlayLyricInfo" || p.Param["songMid"] != "001wMai814HLgJ" || p.Param["qrc"] != flag || p.Param["trans"] != float64(1) || p.Param["roma"] != float64(1) || p.Param["crypt"] != float64(0) {
 				t.Fatalf("%+v", p)
 			}
+			if p.Param["songName"] != b64("夕立") || p.Param["singerName"] != b64("CROW'SCLAW") || p.Param["albumName"] != b64("アコースティック・エピソード") || p.Param["interval"] != float64(287) || p.Param["songID"] != nil {
+				t.Fatal("candidate metadata missing or numeric ID introduced", p.Param)
+			}
 		}
 		return playBody(t, qqLyricData{QRC: 1, Lyric: encodedQRC(t, "[1000,1000]原文(1000,1000)"), Trans: b64("[00:01.00]翻译"), Roma: encodedQRC(t, "[1000,1000]roma(1000,1000)")}, qqLyricData{Lyric: b64("[00:01.00]原文")})
 	})
-	doc, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "001wMai814HLgJ"})
+	doc, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "001wMai814HLgJ", Title: "夕立", Artist: "CROW'SCLAW", Album: "アコースティック・エピソード", DurationMS: 287999})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,15 +354,18 @@ func TestQQPartialBusinessFailureStopsBudgetButKeepsOrdinaryBlock(t *testing.T) 
 }
 
 func TestQQServiceFailureStopsFallback(t *testing.T) {
-	calls := 0
-	client := providerClientForTest(func(r *http.Request) string {
-		calls++
-		return `{"code":2001}`
-	})
-	_, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid"})
-	var business *provider.BusinessError
-	if !errors.As(err, &business) || calls != 1 {
-		t.Fatal(err, calls)
+	for _, body := range []string{`{"code":2001}`, `{"code":24001}`, `{"code":0,"req":{"code":24001},"plain":{"code":24001}}`} {
+		calls := 0
+		client := providerClientForTest(func(r *http.Request) string {
+			calls++
+			return body
+		})
+		_, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Source: "qq", Ref: "mid", Title: "夕立", Artist: "CROW'SCLAW", DurationMS: 287000})
+		var business *provider.BusinessError
+		var failure *lyrics.FetchError
+		if !errors.As(err, &business) || !errors.As(err, &failure) || !failure.StopSource || failure.Kind != "upstream" || calls != 1 {
+			t.Fatal(err, calls)
+		}
 	}
 }
 

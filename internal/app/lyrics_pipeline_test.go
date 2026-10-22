@@ -73,6 +73,9 @@ func TestLyricsThreeSourceArtistComparison(t *testing.T) {
 	}
 	for source, body := range responses {
 		t.Run(source, func(t *testing.T) {
+			if source == "qq" {
+				body = qqSearchBatchReplay(t, body)
+			}
 			client := provider.NewClient(nil, forbiddenLyricCache{t}, "test")
 			client.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
@@ -131,7 +134,8 @@ func TestLyricsThreeSourceAppPipeline(t *testing.T) {
 						for _, n := range []int{4, 3, 2, 1, 1} {
 							rows = append(rows, map[string]any{"mid": fmt.Sprintf("001wMai814HLg%d", n), "name": "Song", "singer": []any{map[string]any{"name": "Artist"}}, "interval": 90})
 						}
-						body = map[string]any{"code": 0, "req": map[string]any{"code": 0, "data": map[string]any{"body": map[string]any{"song": map[string]any{"list": rows}}}}}
+						block := map[string]any{"code": 0, "data": map[string]any{"body": map[string]any{"song": map[string]any{"list": rows}}}}
+						body = map[string]any{"code": 0, "req": block, "title": block}
 					} else if strings.Contains(string(request), "GetPlayLyricInfo") {
 						lyric := qrc
 						if source == "qq-legacy" {

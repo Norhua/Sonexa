@@ -12,6 +12,21 @@ import (
 	"github.com/norhua/sonexa/internal/provider"
 )
 
+// Search fixtures must answer both explicitly requested QQ query blocks.
+func qqSearchBatchReplay(t *testing.T, body string) string {
+	t.Helper()
+	var response map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &response); err != nil {
+		t.Fatal(err)
+	}
+	response["title"] = response["req"]
+	raw, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
 func TestAllLyricSourcesRankAndDeduplicate(t *testing.T) {
 	fixtures := map[string]string{
 		"qq":    `{"code":0,"req":{"code":0,"data":{"body":{"song":{"list":[{"mid":"0039MnYb0qxYhV","title":"Wrong","singer":[{"name":"Alice"}]},{"mid":"001wMai814HLgJ","title":"Song","singer":[{"name":"Alice"}]},{"mid":"001wMai814HLgJ","title":"Song","singer":[{"name":"Alice"}]}]}}}}}`,
@@ -20,6 +35,9 @@ func TestAllLyricSourcesRankAndDeduplicate(t *testing.T) {
 	}
 	for source, body := range fixtures {
 		t.Run(source, func(t *testing.T) {
+			if source == "qq" {
+				body = qqSearchBatchReplay(t, body)
+			}
 			got, err := replayService(body).Search(context.Background(), source, lyrics.Query{Title: "Song", Artist: "Alice"})
 			if err != nil || len(got) != 1 || !got[0].HighConfidence || got[0].Source != source {
 				t.Fatalf("%+v %v", got, err)
@@ -37,7 +55,7 @@ func TestLyricSearchUsesTargetDuration(t *testing.T) {
 			t.Fatalf("%+v %v", request, err)
 		}
 		body := `{"code":0,"req":{"code":0,"data":{"body":{"song":{"list":[{"mid":"001wMai814HLgJ","title":"Song","singer":[{"name":"Alice"}],"interval":321}]}}}}}`
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(qqSearchBatchReplay(t, body)))}, nil
 	})
 	got, err := sourceService(client).Search(context.Background(), "qq", lyrics.Query{Title: "Song", Artist: "Alice", DurationMS: 321000})
 	if err != nil || len(got) != 1 || got[0].MatchScore != 80 {

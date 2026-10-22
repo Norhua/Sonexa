@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/norhua/sonexa/internal/lyricdoc"
 	"github.com/norhua/sonexa/internal/provider"
 )
 
@@ -49,9 +50,14 @@ func parseLegacyLyrics(body []byte) (*legacyLyrics, error) {
 	if r.Code == nil {
 		return nil, fmt.Errorf("QQ 音乐歌词响应缺少状态码")
 	}
+	// Observed legacy no-lyric response. Require all three codes and no
+	// content; a conflicting/missing status remains an upstream failure.
+	if *r.Code == -1901 && r.Retcode != nil && *r.Retcode == -1901 && r.Subcode != nil && *r.Subcode == -1901 && strings.TrimSpace(r.Lyric) == "" && strings.TrimSpace(r.Trans) == "" {
+		return nil, lyricdoc.ErrNoLyrics
+	}
 	for _, code := range []*int{r.Code, r.Retcode, r.Subcode} {
 		if code != nil && *code != 0 {
-			return nil, fmt.Errorf("QQ 音乐歌词接口返回错误码 %d", *code)
+			return nil, &provider.BusinessError{Source: "QQ 音乐", Block: "legacy lyrics", Code: *code}
 		}
 	}
 	out := &legacyLyrics{RawOriginal: r.Lyric}
