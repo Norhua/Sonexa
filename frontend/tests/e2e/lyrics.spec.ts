@@ -99,7 +99,7 @@ test('compact lyric search keeps metadata on cards, hides diagnostics and applie
   expect(scoreBox.y - cardBox.y).toBeLessThan(20)
   expect(await page.evaluate(() => (window as any).__submittedLyricQuery.durationMs)).toBe(299123)
   await expect(dialog.getByRole('status', { name: 'QQ 音乐：共 1 个候选', exact: true })).toHaveText('1')
-  await expect(dialog.getByRole('status', { name: '酷狗音乐：获取异常，可重试', exact: true }).locator('svg')).toBeVisible()
+  await expect(dialog.getByRole('status', { name: '酷狗音乐：搜索失败，可重试', exact: true }).locator('svg')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '应用到歌曲' })).toBeDisabled()
   await expect(dialog.getByLabel('歌词预览', { exact: true }).locator('pre')).toHaveCount(0)
   await expect(qq).toContainText('翻译：有')
@@ -315,6 +315,61 @@ test('normalized precision-aligned rows share the original time in reading and a
   expect(await page.evaluate(() => (window as any).__lyricReads)).toBe(1)
 })
 
+test('successful song search keeps its count with a failed candidate and hides only empty independent extras', async ({ page }, testInfo) => {
+  await page.evaluate(() => {
+    const w = window as any, api = w.go.app.App
+    w.__lyricSearch = async (source: string) => source === 'qq' ? ['success', 'restricted'].map(id => ({ id, source, sortKey: id, title: `结果-${id}`, matchScore: 80, totalScore: id === 'success' ? 110 : null, highConfidence: false, autoPreviewEligible: false })) : []
+    w.__lyricDocument = () => ({ text: '[xlrc:0.1]\n[x-sonexa:1]\n[00:58.061]Original line\n[>und]译文正文\n[>und-Latn]roma text\n[x-channel:translation:und]\n[01:03.300]\n[01:14.120]\n[x-channel:romanization:und-Latn]\n[01:15.000]', format: 'xlrc', offsetMs: 0, wordTiming: 'unavailable', rows: [
+      { timeMs: 58061, text: 'Original line', channel: 'original', translation: ['译文正文'], romanization: ['roma text'], annotations: [{ channel: 'translation', language: 'und', text: '译文正文' }, { channel: 'romanization', language: 'und-Latn', text: 'roma text' }] },
+      { timeMs: 63300, text: '', channel: 'translation', language: 'und' },
+      { timeMs: 74120, text: '', channel: 'translation', language: 'und' },
+      { timeMs: 75000, text: '', channel: 'romanization', language: 'und-Latn' },
+    ], translation: { status: 'available', origin: 'independent', syncStatus: 'synced' }, romanization: { status: 'available', origin: 'independent', syncStatus: 'synced' } })
+    const start = api.StartLyricsPrefetch, snapshot = api.LyricsSearchSnapshot, adopt = api.AdoptLyrics
+    api.StartLyricsPrefetch = async (id: string) => {
+      const event = await start(id)
+      if (event.source === 'qq') {
+        Object.assign(event, { sequence: 5, phase: 'stopped', success: 1, failed: 1 })
+        Object.assign(event.candidates.find((c: any) => c.candidate.id === 'restricted'), { fetchState: 'error', errorKind: 'upstream', format: '', documentVersion: 0, wordTiming: 'error', translation: { status: 'error' }, romanization: { status: 'error' } })
+        w.__restrictedProgress = event
+        w.runtime.EventsEmit('lyrics:progress', event)
+      }
+      return event
+    }
+    api.LyricsSearchSnapshot = async (id: string) => w.__restrictedProgress?.sessionId === id ? w.__restrictedProgress : snapshot(id)
+    w.__previewAcks = 0; w.__lyricAcknowledge = async () => { w.__previewAcks++ }
+    api.AdoptLyrics = async (...args: any[]) => { const result = await adopt(...args); w.__adoptedText = w.__lyricDocument().text; return result }
+  })
+  await page.getByRole('button', { name: /查看歌词/ }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '从网络搜索歌词' }).click()
+  const dialog = page.getByRole('dialog', { name: '从网络搜索歌词' }), reading = dialog.getByLabel('可读歌词')
+  await dialog.getByRole('button', { name: '搜索', exact: true }).click()
+  const badge = dialog.getByRole('status', { name: 'QQ 音乐：共 2 个候选', exact: true })
+  await expect(badge).toHaveText('2'); await expect(badge.locator('svg')).toHaveCount(0)
+  const failed = dialog.getByRole('button', { name: /结果-restricted/ })
+  await expect(failed).toContainText('来源限制'); await expect(failed).toContainText('翻译：失败'); await expect(failed).toContainText('罗马音：失败')
+  await dialog.getByRole('button', { name: /结果-success/ }).click()
+  await expect(reading.getByRole('row')).toHaveCount(2)
+  await expect(reading.getByRole('row').nth(1).getByRole('cell')).toHaveText(['00:58.061', 'Original line', '译文正文'])
+  await expect(reading).not.toContainText('独立行')
+  await page.screenshot({ path: testInfo.outputPath('lyrics-search-count-and-empty-markers.png') })
+  await dialog.getByRole('combobox', { name: '额外展示' }).click()
+  await page.getByRole('option', { name: '罗马音', exact: true }).click()
+  await expect(reading.getByRole('row')).toHaveCount(2)
+  await expect(reading.getByRole('row').nth(1).getByRole('cell')).toHaveText(['00:58.061', 'Original line', 'roma text'])
+  await expect(reading).not.toContainText('独立行')
+  await dialog.getByRole('button', { name: '原始文本', exact: true }).click()
+  const text = await page.evaluate(() => (window as any).__lyricDocument().text)
+  await expect(dialog.getByLabel('原始歌词文本')).toHaveText(text)
+  await expect(dialog.getByLabel('原始歌词文本')).toContainText('[01:03.300]\n[01:14.120]')
+  await dialog.getByRole('button', { name: '应用到歌曲' }).click()
+  expect(await page.evaluate(() => [(window as any).__adoptedText, (window as any).__lyricReads, (window as any).__previewAcks])).toEqual([text, 1, 1])
+  await failed.click()
+  await expect(dialog.getByRole('button', { name: '应用到歌曲' })).toBeDisabled()
+  await expect(dialog.getByLabel('歌词预览', { exact: true })).toContainText('来源限制')
+  await expect(badge).toHaveText('2')
+})
+
 test('failed searches and operations remain recoverable without raw errors or layout expansion', async ({ page }) => {
   await page.evaluate(() => {
     const w = window as any
@@ -334,7 +389,7 @@ test('failed searches and operations remain recoverable without raw errors or la
   })
   await dialog.getByRole('button', { name: '重试 QQ 音乐', exact: true }).click()
   await expect(dialog.getByRole('status', { name: 'QQ 音乐：共 1 个候选', exact: true })).toHaveText('1')
-  await expect(dialog.getByRole('status', { name: '网易云音乐：获取异常，可重试', exact: true }).locator('svg')).toBeVisible()
+  await expect(dialog.getByRole('status', { name: '网易云音乐：搜索失败，可重试', exact: true }).locator('svg')).toBeVisible()
   await dialog.getByRole('button', { name: /重试成功候选/ }).click()
   await expect(dialog.getByLabel('歌词预览', { exact: true })).toContainText('歌词暂不可用，请重试或选择其他候选。')
   await expect(dialog).not.toContainText('RAW_FETCH_ERROR')
@@ -368,7 +423,7 @@ test('cross-source content ranking and unselected badges stay versioned while fo
   await expect(list.locator('h3')).toHaveCount(0)
   await expect(dialog.getByRole('status', { name: '网易云音乐：共 4 个候选', exact: true })).toHaveText('4')
   await expect(dialog.getByRole('status', { name: '酷狗音乐：共 0 个候选', exact: true })).toHaveText('0')
-  await expect(dialog.getByRole('status', { name: 'QQ 音乐：获取异常，共 1 个候选，可重试', exact: true }).locator('svg')).toBeVisible()
+  await expect(dialog.getByRole('status', { name: 'QQ 音乐：共 1 个候选', exact: true })).toHaveText('1')
   await expect(list.locator('[data-candidate-id="pending"]').getByRole('button', { name: '综合得分 —/150', exact: true })).toHaveText('—/150')
   await expect(list.locator('[data-candidate-id="pending"]')).toContainText('未预取，手动获取')
   await expect(list.locator('[data-candidate-id="pending"]')).toContainText('翻译：待检查')
@@ -434,7 +489,7 @@ test('channel badges distinguish pending and loading before any selection', asyn
     event.sequence++; event.phase = 'stopped'; event.candidates[0].fetchState = 'skipped'
     w.runtime.EventsEmit('lyrics:progress', event)
   })
-  await expect(dialog.getByRole('status', { name: 'QQ 音乐：获取异常，共 1 个候选，可重试', exact: true }).locator('svg')).toBeVisible()
+  await expect(dialog.getByRole('status', { name: 'QQ 音乐：共 1 个候选', exact: true })).toHaveText('1')
   await expect(dialog.getByRole('button', { name: '重试 QQ 音乐', exact: true })).toBeEnabled()
   await expect(card).toContainText('罗马音：待检查')
   await expect(card).toHaveAttribute('aria-pressed', 'false')

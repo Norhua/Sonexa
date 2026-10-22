@@ -180,6 +180,64 @@ func TestQQPrecisionAlignmentBeforeDelivery(t *testing.T) {
 	}
 }
 
+func TestQQEmptyTranslationMarkersSurviveXLRC(t *testing.T) {
+	body := playBody(t, qqLyricData{QRC: 1,
+		Lyric: encodedQRC(t, "[58061,4000]First (58061,500)line(59000,2000)\n[64490,4000]Second (64490,500)line(65500,2000)"),
+		Trans: b64("[00:58.06]第一句译文\n[01:03.30]\n[01:04.49]第二句译文\n[01:14.12]"),
+		Roma:  encodedQRC(t, "[58061,4000]first roma(58061,4000)\n[64490,4000]second roma(64490,4000)"),
+	}, qqLyricData{})
+	calls := 0
+	client := providerClientForTest(func(*http.Request) string { calls++; return body })
+	doc, err := New(client, Config{}, nil).FetchLyrics(context.Background(), lyrics.Candidate{Ref: "mid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(d *lyricdoc.Document) {
+		t.Helper()
+		if d.Format != "xlrc" || d.Translation.Status != "available" || d.Romanization.Status != "available" {
+			t.Fatal("lost available channels")
+		}
+		markers, originals := []int64{}, 0
+		for _, row := range d.Rows {
+			switch row.Channel {
+			case "original":
+				originals++
+				if len(row.Translation) != 1 || len(row.Romanization) != 1 {
+					t.Fatal("lost associated text")
+				}
+			case "translation":
+				if row.TimeMS == nil || row.Text != "" {
+					t.Fatal("expected an empty timed translation marker")
+				}
+				markers = append(markers, *row.TimeMS)
+			default:
+				t.Fatal("unexpected independent channel", row.Channel)
+			}
+		}
+		if originals != 2 || len(markers) != 2 || markers[0] != 63300 || markers[1] != 74120 {
+			t.Fatal("lost or moved timing markers", markers, originals)
+		}
+		for _, marker := range []string{"[01:03.300]", "[01:14.120]"} {
+			if !strings.Contains(d.Text, marker) {
+				t.Fatal("XLRC lost a timing marker")
+			}
+		}
+		if err := lyricdoc.Validate(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check(doc)
+	round, err := lyricdoc.ParseXLRC(doc.Text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(round)
+	text, err := lyricdoc.SerializeXLRC(round)
+	if err != nil || text != doc.Text || calls != 1 {
+		t.Fatal("roundtrip changed XLRC or added requests", err, calls)
+	}
+}
+
 func TestQQOptionalFailuresAndPlainFallback(t *testing.T) {
 	for _, tt := range []struct {
 		name                        string

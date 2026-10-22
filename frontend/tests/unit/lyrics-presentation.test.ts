@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { lyricChannelStatus, lyricChannelBasis, lyricReadingRows, lyricTime, lyricDurationInput, parseLyricDuration, lyricSourceStatus, lyricScoreDescription, pendingLyricCard, type LyricCandidate, type LyricChannel, type LyricDocument } from '../../src/lib/lyricsPresentation'
+import { lyricChannelStatus, lyricChannelBasis, lyricReadingRows, lyricTime, lyricDurationInput, parseLyricDuration, lyricSourceStatus, lyricScoreDescription, pendingLyricCard, type LyricCandidate, type LyricChannel, type LyricDocument, type LyricProgress } from '../../src/lib/lyricsPresentation'
 it('parses search durations without rounding away milliseconds or accepting malformed times', () => {
   for (const [input, expected] of [['', 0], ['  ', 0], ['4:59', 299000], ['299', 299000], ['4:59.123', 299123], ['299.1', 299100], ['1440:00', 86400000]] as const) {
     expect(parseLyricDuration(input)).toBe(expected)
@@ -8,21 +8,26 @@ it('parses search durations without rounding away milliseconds or accepting malf
   for (const input of ['0', '-1', 'NaN', 'Infinity', '1:60', '4:9', '1:01:00', '1e3', '2.1234', '86401', '9'.repeat(100)]) expect(parseLyricDuration(input)).toBeUndefined()
   expect(lyricDurationInput()).toBe(''); expect(lyricDurationInput(null)).toBe('')
 })
-it('shows total candidates rather than prefetch successes and distinguishes errors from no lyrics', () => {
+it('shows song-search counts regardless of later fetch or channel failures', () => {
   const candidate = { id: 'c', matchScore: 80, totalScore: 110, matchNotes: ['曲名相符', '艺术家不同或缺失，需确认'], highConfidence: false } as LyricCandidate
   const card = pendingLyricCard(candidate, true)
   const result = { state: 'ok', phase: 'done', cards: Array.from({ length: 7 }, () => card) }
   expect(lyricSourceStatus(result)).toEqual({ count: 7, failed: false, label: '共 7 个候选' })
   expect(lyricSourceStatus({ ...result, cards: [] })).toEqual({ count: 0, failed: false, label: '共 0 个候选' })
   expect(lyricSourceStatus({ ...result, state: 'loading', phase: 'searching', cards: [] })).toEqual({ count: undefined, failed: false, label: '正在搜索' })
-  expect(lyricSourceStatus({ ...result, state: 'error', phase: 'error', cards: [] })).toEqual({ count: undefined, failed: true, label: '获取异常，可重试' })
-  expect(lyricSourceStatus({ ...result, phase: 'stopped' }).failed).toBe(true)
-  expect(lyricSourceStatus({ ...result, phase: 'partial', cards: [{ ...card, fetchState: 'no_lyrics' }] }).failed).toBe(false)
-  expect(lyricSourceStatus({ ...result, phase: 'partial', cards: [{ ...card, fetchState: 'error' }] }).failed).toBe(true)
-  expect(lyricSourceStatus({ ...result, cards: [{ ...card, translation: { ...card.translation, status: 'error' } }] }).failed).toBe(true)
-  expect(lyricSourceStatus({ ...result, cards: [{ ...card, wordTiming: 'error' }] }).failed).toBe(true)
-  expect(lyricSourceStatus({ ...result, cards: [{ ...card, fetchState: 'ready', errorKind: 'format' }] }).failed).toBe(true)
-  expect(lyricSourceStatus({ ...result, state: 'error' }).label).toBe('获取异常，共 7 个候选，可重试')
+  expect(lyricSourceStatus({ ...result, state: 'error', phase: 'error', cards: [] })).toEqual({ count: undefined, failed: true, label: '搜索失败，可重试' })
+  for (const phase of ['ready', 'prefetching', 'partial', 'stopped', 'error']) {
+    expect(lyricSourceStatus({ ...result, phase })).toEqual({ count: 7, failed: false, label: '共 7 个候选' })
+  }
+  for (const fetchState of ['pending', 'loading', 'ready', 'no_lyrics', 'error', 'skipped']) {
+    expect(lyricSourceStatus({ ...result, cards: [{ ...card, fetchState }] }).failed).toBe(false)
+  }
+  for (const change of [{ translation: { ...card.translation, status: 'error' } }, { romanization: { ...card.romanization, status: 'error' } }, { wordTiming: 'error' }, { fetchState: 'ready', errorKind: 'format' }]) {
+    expect(lyricSourceStatus({ ...result, cards: [{ ...card, ...change }] }).failed).toBe(false)
+  }
+  const progress = { searched: 12, failed: 2, incomplete: 1 } as LyricProgress
+  expect(lyricSourceStatus({ ...result, phase: 'stopped', progress })).toEqual({ count: 12, failed: false, label: '共 12 个候选' })
+  expect(lyricSourceStatus({ ...result, state: 'error' }).label).toBe('搜索失败，可重试')
   expect(lyricScoreDescription(candidate)).toBe('歌曲匹配 80 分・歌词综合 110，曲名相符；艺术家不同或缺失，需确认（分数不是概率）')
   expect(lyricScoreDescription({ ...candidate, totalScore: null })).toContain('歌词综合 —')
   expect(lyricScoreDescription({ ...candidate, totalScore: -10 })).toContain('歌词综合 -10')
@@ -70,6 +75,33 @@ it('projects three columns using only existing associations and keeps independen
     { text: '', extra: ['谐音未知'], note: '附加文本（归属未确认） · 未同步' },
     { text: '', extra: [], note: '' },
   ])
+  expect(rows).toEqual(before)
+})
+it('hides only blank independent extras without mutating document rows or trimming real text', () => {
+  const rows: LyricDocument['rows'] = [
+    { timeMs: 58061, text: 'Original', channel: 'original', translation: ['译文'], romanization: ['roma'] },
+    { timeMs: 63300, text: '', channel: 'translation', language: 'und' },
+    { timeMs: 74120, text: ' \t\u3000', channel: 'translation', language: 'und' },
+    { timeMs: 63300, text: '', channel: 'romanization', language: 'und-Latn' },
+    { text: '\n', channel: 'translation' },
+    { text: '  ', channel: 'romanization' },
+    { text: '', channel: 'additional' },
+    { timeMs: 80000, text: '', channel: 'original' },
+    { text: '  ', channel: 'original' },
+    { timeMs: 81000, text: '  真正独立译文  ', channel: 'translation', language: 'zh' },
+    { timeMs: 81000, text: '  standalone roma  ', channel: 'romanization', language: 'ja-Latn' },
+    { text: ' 未分类文字 ', channel: 'additional' },
+  ]
+  const before = structuredClone(rows)
+  for (const channel of ['translation', 'romanization'] as const) {
+    const projected = lyricReadingRows(rows, channel)
+    expect(projected).toHaveLength(5)
+    expect(projected.map(row => row.timeMs)).toEqual([58061, 80000, undefined, 81000, undefined])
+    expect(projected[1]).toMatchObject({ text: '', note: '', extra: [] })
+    expect(projected[2]).toMatchObject({ text: '  ', note: '', extra: [] })
+    expect(projected[3]).toMatchObject({ extra: [channel === 'translation' ? '  真正独立译文  ' : '  standalone roma  '], note: `${channel === 'translation' ? '翻译' : '罗马音'} · 独立行` })
+    expect(projected[4]!.extra).toEqual([' 未分类文字 '])
+  }
   expect(rows).toEqual(before)
 })
 it('keeps plain lyrics and empty extra cells when the chosen channel is absent', () => {

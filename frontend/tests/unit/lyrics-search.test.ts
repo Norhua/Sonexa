@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { App, EventsOn, type Models } from '../../src/api'
 import { useLyricsSearchStore } from '../../src/stores/lyricsSearch'
-import type { LyricProgress } from '../../src/lib/lyricsPresentation'
+import { lyricSourceStatus, type LyricProgress } from '../../src/lib/lyricsPresentation'
 vi.mock('../../src/api', () => ({ App: {
   ListLyricsSources: vi.fn(), LyricsRevision: vi.fn(), CreateLyricsSearch: vi.fn(), CancelLyricsSearch: vi.fn(), SearchLyrics: vi.fn(), FetchLyrics: vi.fn(), AdoptLyrics: vi.fn(),
   StartLyricsPrefetch: vi.fn(), LyricsSearchSnapshot: vi.fn(), AcknowledgeLyricsPreview: vi.fn(), RefreshLyrics: vi.fn(),
@@ -136,6 +136,53 @@ it('source failure does not prevent a confident successful source from previewin
   })
   const store = useLyricsSearchStore(); await store.open(detail(1)); store.sources = ['qq', '163']; await store.search()
   expect(store.selected).toBe('163'); expect(store.results.qq?.state).toBe('error')
+})
+it('retains successful search counts through partial/stopped rounds and source retry', async () => {
+  const store = useLyricsSearchStore(); await store.open(detail(1)); await store.search(); await store.select('163'); await acknowledge(store)
+  for (const [i, phase] of ['partial', 'stopped'].entries()) {
+    const event = progress('session-2', 'qq', [card('qq')], 10 + i, phase)
+    event.failed = 1; event.success = 0
+    Object.assign(event.candidates[0]!, { fetchState: 'error', errorKind: 'upstream', translation: { status: 'error' }, romanization: { status: 'error' } })
+    emit(event)
+    expect(lyricSourceStatus(store.results.qq!)).toEqual({ count: 1, failed: false, label: '共 1 个候选' })
+    expect(store.cards.find(c => c.id === 'qq')?.errorKind).toBe('upstream')
+  }
+  vi.mocked(App.SearchLyrics).mockRejectedValueOnce(new Error('search failed'))
+  await store.search('qq')
+  expect(lyricSourceStatus(store.results.qq!).failed).toBe(true)
+  expect(store.selected).toBe('163'); expect(store.canAdopt).toBe(true)
+  await store.search('qq')
+  expect(lyricSourceStatus(store.results.qq!)).toEqual({ count: 1, failed: false, label: '共 1 个候选' })
+  expect(store.selected).toBe('163'); expect(store.canAdopt).toBe(true)
+})
+for (const operation of ['StartLyricsPrefetch', 'LyricsSearchSnapshot'] as const) {
+  for (const empty of [false, true]) {
+    it(`does not turn a successful ${empty ? 'empty' : 'nonempty'} search into failure when ${operation} rejects`, async () => {
+      if (empty) vi.mocked(App.SearchLyrics).mockImplementation(async (id, source) => { snapshots.set(id, progress(id, source, [])); return [] })
+      vi.mocked(App[operation]).mockRejectedValueOnce(new Error('later stage failed'))
+      const store = useLyricsSearchStore(); await store.open(detail(1)); await store.search('qq')
+      expect(store.results.qq?.state).toBe('ok'); expect(store.results.qq?.phase).toBe('error')
+      expect(store.results.qq?.settled).toBe(true)
+      expect(lyricSourceStatus(store.results.qq!)).toEqual({ count: empty ? 0 : 1, failed: false, label: `共 ${empty ? 0 : 1} 个候选` })
+      expect(App.CancelLyricsSearch).toHaveBeenCalledWith('session-1')
+      expect(store.canAdopt).toBe(false)
+      await store.search('qq')
+      expect(store.results.qq?.phase).toBe('done')
+    })
+  }
+}
+it('does not mistake a searching progress event for a successful empty search', async () => {
+  const pending = deferred<Models.lyrics.Candidate[]>()
+  vi.mocked(App.SearchLyrics).mockImplementation(async (id, source) => {
+    emit(progress(id, source, [], 1, 'searching'))
+    const rows = await pending.promise
+    snapshots.set(id, progress(id, source, rows, 2, 'done')); return rows
+  })
+  const store = useLyricsSearchStore(); await store.open(detail(1)); const work = store.search('qq')
+  await vi.waitFor(() => expect(store.results.qq?.sequence).toBe(1))
+  expect(lyricSourceStatus(store.results.qq!)).toEqual({ count: undefined, failed: false, label: '正在搜索' })
+  pending.resolve([]); await work
+  expect(lyricSourceStatus(store.results.qq!)).toEqual({ count: 0, failed: false, label: '共 0 个候选' })
 })
 it('late superseded search and events cannot trigger automatic selection', async () => {
   const old = deferred<Models.lyrics.Candidate[]>()

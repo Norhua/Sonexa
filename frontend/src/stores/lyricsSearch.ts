@@ -6,6 +6,7 @@ import { compareLyrics } from '@/lib/lyricsRanking'
 import { lyricRoundFinished, lyricDurationInput, parseLyricDuration, pendingLyricCard, type LyricCard, type LyricDocument, type LyricProgress } from '@/lib/lyricsPresentation'
 export { lyricFormat } from '@/lib/lyricsPresentation'
 
+// state is the song-search outcome; phase also tracks later prefetch work.
 type Result = { state: 'loading' | 'ok' | 'error'; phase: string; sequence: number; settled: boolean; cards: LyricCard[]; error: string; progress?: LyricProgress }
 
 export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
@@ -42,7 +43,8 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
       }
       return card
     })
-    results.value[event.source] = { ...old, phase: event.phase, sequence: event.sequence, state: event.phase === 'error' ? 'error' : 'ok', cards: next, progress: event }
+    const state = event.phase === 'error' ? 'error' : event.phase === 'searching' ? 'loading' : 'ok'
+    results.value[event.source] = { ...old, phase: event.phase, sequence: event.sequence, state: old.state === 'ok' ? 'ok' : state, cards: next, progress: event }
     const chosen = next.find(c => c.id === selected.value)
     if (chosen?.prefetch && ['queued', 'loading', 'ready'].includes(chosen.fetchState) && old.cards.find(c => c.id === chosen.id)?.fetchState !== chosen.fetchState) void fetchSelected()
     void maybeAutoPreview()
@@ -121,8 +123,9 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
         const found = await App.SearchLyrics(id, source, query)
         if (!valid()) return
         // An event can precede the search response. Keep its newer summaries.
-        if (results.value[source]!.sequence === 0) {
-          results.value[source] = { state: 'ok', phase: 'ready', sequence: 0, settled: false, cards: found.map((c, i) => pendingLyricCard(c, i < 3)), error: '' }
+        const result = results.value[source]!
+        if (result.state !== 'ok') {
+          results.value[source] = { state: 'ok', phase: 'ready', sequence: result.sequence, settled: false, cards: found.map((c, i) => pendingLyricCard(c, i < 3)), error: '' }
         }
         const started = await App.StartLyricsPrefetch(id)
         if (!valid()) return
@@ -134,7 +137,8 @@ export const useLyricsSearchStore = defineStore('lyricsSearch', () => {
         results.value[source]!.settled = true
       } catch (e) {
         if (!valid()) return
-        results.value[source] = { ...results.value[source]!, state: 'error', phase: 'error', settled: true, error: String(e) }
+        const result = results.value[source]!
+        results.value[source] = { ...result, state: result.state === 'ok' ? 'ok' : 'error', phase: 'error', settled: true, error: String(e) }
         if (id) { sessions.delete(source); await cancel([id]) }
       }
     }))

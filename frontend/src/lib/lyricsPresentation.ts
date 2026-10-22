@@ -37,8 +37,9 @@ export const lyricTime = (ms?: number) => ms == null ? '—' : `${String(Math.fl
 
 // Display only: preserve the provider's row associations and timestamps. Never
 // pair independent extras by index or change the document used for adoption.
+// Empty independent extras are timing markers, not text needing a row label.
 export function lyricReadingRows(rows: LyricDocument['rows'], channel: LyricExtraChannel): LyricReadingRow[] {
-  return rows.filter(row => row.channel !== (channel === 'translation' ? 'romanization' : 'translation')).map(row => {
+  return rows.filter(row => row.channel === 'original' || (row.channel !== (channel === 'translation' ? 'romanization' : 'translation') && row.text.trim() !== '')).map(row => {
     if (row.channel === 'original') return { timeMs: row.timeMs, text: row.text, extra: row[channel] ?? [], note: '', voice: row.voice, ruby: row.ruby, annotations: row.annotations?.filter(a => a.channel === channel || a.channel === 'additional') }
     const name = ({ translation: '翻译', romanization: '罗马音' }[row.channel] ?? '附加文本（归属未确认）')
     return { timeMs: row.timeMs, text: '', extra: [row.text], note: `${name} · ${row.timeMs == null ? '未同步' : '独立行'}`, voice: row.voice,
@@ -68,12 +69,11 @@ export function lyricScoreDescription(card: LyricCandidate) {
   return `歌曲匹配 ${card.matchScore} 分・歌词综合 ${card.totalScore ?? '—'}，${notes}${notes.includes(confidence) ? '' : `；${confidence}`}（分数不是概率）`
 }
 
+// This badge describes song search only, not later fetch/channel outcomes.
 export function lyricSourceStatus(result: { state: string; phase: string; cards: LyricCard[]; progress?: LyricProgress }) {
-  const count = result.progress?.searched ?? result.cards.length
-  const failed = result.state === 'error' || result.phase === 'stopped' || (result.progress?.failed ?? 0) > 0 || result.cards.some(card =>
-    ['error', 'skipped'].includes(card.fetchState) || (!!card.errorKind && card.errorKind !== 'no_lyrics') || card.translation.status === 'error' || card.romanization.status === 'error' || card.wordTiming === 'error')
-  const known = result.cards.length > 0 || (result.phase !== 'searching' && result.state !== 'error')
-  return { count: known ? count : undefined, failed, label: failed ? `获取异常${known ? `，共 ${count} 个候选` : ''}，可重试` : known ? `共 ${count} 个候选` : '正在搜索' }
+  const count = result.state === 'ok' ? result.progress?.searched ?? result.cards.length : undefined
+  const failed = result.state === 'error'
+  return { count, failed, label: failed ? '搜索失败，可重试' : count != null ? `共 ${count} 个候选` : '正在搜索' }
 }
 
 // Search input preserves milliseconds; blank means unknown, never a zero-length song.
