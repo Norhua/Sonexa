@@ -110,6 +110,9 @@ func CompareMetadataText(a, b TextProfile, ctx MetadataTextContext) FieldEvidenc
 			((a.Truncated && strings.HasPrefix(pb, pa)) || (b.Truncated && strings.HasPrefix(pa, pb))) {
 			return finish(EvidenceCompatibleTruncation, "compatible_truncation", a.Body, b.Body)
 		}
+		if len(a.Unknown) == 0 && len(b.Unknown) == 0 && a.Truncated != b.Truncated && pa != "" && pb != "" && DominantScript(a.Body) == DominantScript(b.Body) {
+			return finish(EvidenceConflict, "different_truncated_prefix", a.Body, b.Body)
+		}
 		return finish(EvidenceUnknown, "unresolved_truncation", a.Body, b.Body)
 	}
 	if !sameMetadataQualifiers(a, b) {

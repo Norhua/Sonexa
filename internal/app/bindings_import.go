@@ -192,7 +192,7 @@ func (a *App) SubmitImport(path, sheetName string, columnMap []string,
 		}
 		raw, _ := json.Marshal(r.Raw)
 		items = append(items, store.ImportItem{
-			RowIndex: r.Index, RawRow: string(raw),
+			RowIndex: r.Index, RawRow: string(raw), Profile: &r.Profile,
 			InTitle: &r.Title, InArtist: r.Artist, InAlbum: r.Album,
 			InYear: r.Year, InTrackNo: r.TrackNo, InDiscNo: r.DiscNo, InDurationMS: r.DurationMS,
 		})

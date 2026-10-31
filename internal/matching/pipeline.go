@@ -18,6 +18,8 @@ type Searcher interface {
 
 // Input 是一条待匹配条目的输入。
 type Input struct {
+	// Profile preserves metadata evidence; query variants never replace it.
+	Profile    *InputProfile
 	Title      string
 	Artist     string
 	Album      string

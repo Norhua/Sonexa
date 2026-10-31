@@ -139,7 +139,10 @@ func ptrField[T any](field domain.Field[T]) *T {
 }
 
 // SelectCandidate 只对当前候选中确实缺少决策事实的发行补摘要，不枚举原生组。
-func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredCandidate, itemID int64) (Selection, error) {
+func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredCandidate, itemID int64, profiles ...*matching.InputProfile) (Selection, error) {
+	if len(profiles) > 0 && profiles[0] != nil && profiles[0].RuleVersion != matching.MetadataRuleVersion {
+		return Selection{}, errors.New("输入证据版本已失效，需要重新解析")
+	}
 	prepared := []selectionCandidate{}
 	summaries := map[domain.Identity]domain.ReleaseSummary{}
 	seen := map[string]bool{}

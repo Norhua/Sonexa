@@ -229,12 +229,7 @@ func (r *Runner) loop(ctx context.Context, batchID int64) {
 
 // processItem 处理一个条目并返回其日志行。
 func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string {
-	in := matching.Input{
-		Title:      deref(item.InTitle),
-		Artist:     deref(item.InArtist),
-		Album:      deref(item.InAlbum),
-		DurationMS: item.InDurationMS,
-	}
+	in := inputFromItem(item)
 
 	// [1] 本地去重检查：疑似重复进复核，库中曲目作为一条候选
 	if dupID, err := r.engine.CheckLocalDuplicate(r.store, in); err == nil && dupID != 0 {
@@ -262,7 +257,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	variantsJSON, _ := json.Marshal(res.TriedVariants)
 
 	// [4] 同一用例执行按需摘要、自动选版和准入；成员变更始终进入复核。
-	selection, err := r.library.SelectCandidate(ctx, res.Scored, item.ID)
+	selection, err := r.library.SelectCandidate(ctx, res.Scored, item.ID, in.Profile)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ""

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/norhua/sonexa/internal/matching"
 )
 
 // ItemStatus 是待匹配条目的状态，取自固定集合。
@@ -88,21 +90,22 @@ type ImportItem struct {
 	RowIndex int   `json:"rowIndex"`
 	// RawRow 是原始整行 JSON，永不修改——
 	// 用户在复核队列改搜只影响查询，不动原值。
-	RawRow        string     `json:"rawRow"`
-	InTitle       *string    `json:"inTitle"`
-	InArtist      *string    `json:"inArtist"`
-	InAlbum       *string    `json:"inAlbum"`
-	InYear        *int       `json:"inYear"`
-	InTrackNo     *int       `json:"inTrackNo"`
-	InDiscNo      *int       `json:"inDiscNo"`
-	InDurationMS  *int       `json:"inDurationMs"`
-	Status        ItemStatus `json:"status"`
-	AttemptCount  int        `json:"attemptCount"`
-	LastError     *string    `json:"lastError"`
-	LastErrorAt   *time.Time `json:"lastErrorAt"`
-	NextRetryAt   *time.Time `json:"nextRetryAt"`
-	Candidates    *string    `json:"candidates"`
-	TriedVariants *string    `json:"triedVariants"`
+	Profile       *matching.InputProfile `json:"-"`
+	RawRow        string                 `json:"rawRow"`
+	InTitle       *string                `json:"inTitle"`
+	InArtist      *string                `json:"inArtist"`
+	InAlbum       *string                `json:"inAlbum"`
+	InYear        *int                   `json:"inYear"`
+	InTrackNo     *int                   `json:"inTrackNo"`
+	InDiscNo      *int                   `json:"inDiscNo"`
+	InDurationMS  *int                   `json:"inDurationMs"`
+	Status        ItemStatus             `json:"status"`
+	AttemptCount  int                    `json:"attemptCount"`
+	LastError     *string                `json:"lastError"`
+	LastErrorAt   *time.Time             `json:"lastErrorAt"`
+	NextRetryAt   *time.Time             `json:"nextRetryAt"`
+	Candidates    *string                `json:"candidates"`
+	TriedVariants *string                `json:"triedVariants"`
 	// ReviewReason 是进入复核的成因；非复核状态时为空。
 	ReviewReason   *string `json:"reviewReason"`
 	ReviewEvidence *string `json:"reviewEvidence"`
@@ -137,8 +140,8 @@ func (s *Store) EnqueueItems(batchID int64, items []ImportItem) error {
 		stmt, err := tx.Prepare(`
 			INSERT INTO import_item (
 				batch_id, row_index, raw_row, in_title, in_artist, in_album,
-				in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count, updated_at
-			) VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?)`)
+				in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count, updated_at, input_profile
+			) VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?,?)`)
 		if err != nil {
 			return err
 		}
@@ -146,10 +149,18 @@ func (s *Store) EnqueueItems(batchID int64, items []ImportItem) error {
 
 		now := time.Now().UTC()
 		for _, it := range items {
+			var profile any
+			if it.Profile != nil {
+				data, err := json.Marshal(it.Profile)
+				if err != nil {
+					return err
+				}
+				profile = string(data)
+			}
 			if _, err := stmt.Exec(batchID, it.RowIndex, it.RawRow,
 				it.InTitle, it.InArtist, it.InAlbum,
 				it.InYear, it.InTrackNo, it.InDiscNo, it.InDurationMS,
-				string(StatusQueued), now); err != nil {
+				string(StatusQueued), now, profile); err != nil {
 				return fmt.Errorf("写入第 %d 行失败: %w", it.RowIndex, err)
 			}
 		}
@@ -169,7 +180,7 @@ func (s *Store) ClaimNextItem(batchID int64) (*ImportItem, error) {
 			SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
 			       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
 			       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-			       review_reason, review_evidence, track_id, merged_into
+			       review_reason, review_evidence, track_id, merged_into, input_profile
 			FROM import_item
 			WHERE batch_id = ? AND status = ?
 			  AND (next_retry_at IS NULL OR next_retry_at <= ?)
@@ -199,15 +210,21 @@ func (s *Store) ClaimNextItem(batchID int64) (*ImportItem, error) {
 func scanItem(row interface{ Scan(...any) error }) (*ImportItem, error) {
 	var it ImportItem
 	var status string
+	var profile *string
 	err := row.Scan(&it.ID, &it.BatchID, &it.RowIndex, &it.RawRow,
 		&it.InTitle, &it.InArtist, &it.InAlbum,
 		&it.InYear, &it.InTrackNo, &it.InDiscNo, &it.InDurationMS, &status, &it.AttemptCount,
 		&it.LastError, &it.LastErrorAt, &it.NextRetryAt, &it.Candidates, &it.TriedVariants,
-		&it.ReviewReason, &it.ReviewEvidence, &it.TrackID, &it.MergedInto)
+		&it.ReviewReason, &it.ReviewEvidence, &it.TrackID, &it.MergedInto, &profile)
 	if err != nil {
 		return nil, err
 	}
 	it.Status = ItemStatus(status)
+	if profile != nil {
+		if err := json.Unmarshal([]byte(*profile), &it.Profile); err != nil {
+			return nil, fmt.Errorf("读取输入证据失败: %w", err)
+		}
+	}
 	return &it, nil
 }
 
@@ -437,7 +454,7 @@ func (s *Store) AllReviewItems() ([]ImportItem, error) {
 		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
 		       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
 		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       review_reason, review_evidence, track_id, merged_into
+		       review_reason, review_evidence, track_id, merged_into, input_profile
 		FROM import_item
 		WHERE status IN (?, ?)
 		ORDER BY batch_id, row_index`, string(StatusReview), string(StatusFailed))
@@ -453,7 +470,7 @@ func (s *Store) itemsByStatus(batchID int64, status ItemStatus) ([]ImportItem, e
 		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
 		       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
 		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       review_reason, review_evidence, track_id, merged_into
+		       review_reason, review_evidence, track_id, merged_into, input_profile
 		FROM import_item WHERE batch_id = ? AND status = ? ORDER BY row_index`,
 		batchID, string(status))
 	if err != nil {
@@ -481,7 +498,7 @@ func (s *Store) GetItem(itemID int64) (*ImportItem, error) {
 		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
 		       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
 		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       review_reason, review_evidence, track_id, merged_into
+		       review_reason, review_evidence, track_id, merged_into, input_profile
 		FROM import_item WHERE id = ?`, itemID)
 	it, err := scanItem(row)
 	if errors.Is(err, sql.ErrNoRows) {

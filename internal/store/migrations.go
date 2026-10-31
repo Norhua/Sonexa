@@ -3,7 +3,7 @@ package store
 // 新代际仅用于空库初始化；当前值与上游事实独立保存。
 const migration0001Init = `
 CREATE TABLE model_generation (id INTEGER PRIMARY KEY CHECK(id=1), generation TEXT NOT NULL);
-INSERT INTO model_generation VALUES(1,'upstream-snapshot-v1');
+INSERT INTO model_generation VALUES(1,'track-identity-v2');
 CREATE TABLE release_group (
  id INTEGER PRIMARY KEY, display_provider TEXT, display_group_ref TEXT, representative_id INTEGER,
  revision INTEGER NOT NULL DEFAULT 1, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL
@@ -255,6 +255,7 @@ CREATE TABLE import_item (
   batch_id       INTEGER NOT NULL REFERENCES import_batch(id) ON DELETE CASCADE,
   row_index      INTEGER NOT NULL,
   raw_row        TEXT NOT NULL,
+  input_profile  TEXT CHECK(input_profile IS NULL OR json_valid(input_profile)),
   in_title       TEXT,
   in_artist      TEXT,
   in_album       TEXT,

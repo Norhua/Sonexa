@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/norhua/sonexa/internal/matching"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -311,15 +312,16 @@ func hasField(mapping []Field, f Field) bool {
 
 // Row 是映射后的一行输入。
 type Row struct {
-	Index      int      `json:"index"`
-	Raw        []string `json:"raw"`
-	Title      string   `json:"title"`
-	Artist     *string  `json:"artist"`
-	Album      *string  `json:"album"`
-	Year       *int     `json:"year"`
-	TrackNo    *int     `json:"trackNo"`
-	DiscNo     *int     `json:"discNo"`
-	DurationMS *int     `json:"durationMs"`
+	Profile    matching.InputProfile `json:"-"`
+	Index      int                   `json:"index"`
+	Raw        []string              `json:"raw"`
+	Title      string                `json:"title"`
+	Artist     *string               `json:"artist"`
+	Album      *string               `json:"album"`
+	Year       *int                  `json:"year"`
+	TrackNo    *int                  `json:"trackNo"`
+	DiscNo     *int                  `json:"discNo"`
+	DurationMS *int                  `json:"durationMs"`
 	// SkipReason 非空时该行将被跳过。
 	SkipReason string `json:"skipReason"`
 }
@@ -352,7 +354,7 @@ func BuildPreview(res *ParseResult, previewRows int) Preview {
 	p := Preview{TotalRows: len(res.Rows)}
 
 	for i, raw := range res.Rows {
-		row := mapRow(i, raw, res.ColumnMap)
+		row := mapRow(i, raw, res.ColumnMap, res.Headers)
 		if row.SkipReason != "" {
 			p.SkippedRows++
 		} else {
@@ -383,38 +385,54 @@ func BuildPreview(res *ParseResult, previewRows int) Preview {
 }
 
 // mapRow 按列映射把原始行转为输入行。
-func mapRow(index int, raw []string, mapping []Field) Row {
-	row := Row{Index: index, Raw: raw}
+func mapRow(index int, raw []string, mapping []Field, headers ...[]string) Row {
+	row := Row{Index: index, Raw: append([]string(nil), raw...), Profile: matching.NewInputProfile("", "", "")}
+	mappedContent := false
 
 	for col, field := range mapping {
 		if col >= len(raw) {
 			break
 		}
 		value := strings.TrimSpace(raw[col])
-		if value == "" {
-			continue
+		if field != FieldIgnore && value != "" {
+			mappedContent = true
+		}
+		header := ""
+		if len(headers) > 0 && col < len(headers[0]) {
+			header = headers[0][col]
 		}
 		switch field {
 		case FieldTitle:
 			row.Title = value
+			row.Profile.Title = matching.ParseMetadataText(raw[col], matching.MetadataTitle)
 		case FieldArtist:
-			row.Artist = &value
+			if value != "" {
+				row.Artist = &value
+			}
+			row.Profile.Artist = matching.ParseMetadataCredit(raw[col])
 		case FieldAlbum:
-			row.Album = &value
+			if value != "" {
+				row.Album = &value
+			}
+			row.Profile.Album = matching.ParseMetadataText(raw[col], matching.MetadataAlbum)
 		case FieldYear:
-			row.Year = ParseYear(value)
+			row.Profile.Year = ParseYearEvidence(raw[col])
+			row.Year = numberPointer(row.Profile.Year)
 		case FieldTrackNo:
-			row.TrackNo = ParseInt(value)
+			row.Profile.Track = ParsePositionEvidence(raw[col], "track")
+			row.TrackNo = numberPointer(row.Profile.Track)
 		case FieldDiscNo:
-			row.DiscNo = ParseInt(value)
+			row.Profile.Disc = ParsePositionEvidence(raw[col], "disc")
+			row.DiscNo = numberPointer(row.Profile.Disc)
 		case FieldDuration:
-			row.DurationMS = ParseDuration(value)
+			row.Profile.Duration = ParseDurationEvidence(raw[col], header)
+			row.DurationMS = numberPointer(row.Profile.Duration)
 		}
 	}
 
 	if isBlankRow(raw) {
 		row.SkipReason = "空行"
-	} else if row.Title == "" && row.Artist == nil && row.Album == nil && row.Year == nil && row.TrackNo == nil && row.DiscNo == nil && row.DurationMS == nil {
+	} else if !mappedContent {
 		row.SkipReason = "没有有效映射内容"
 	}
 	return row
@@ -424,7 +442,7 @@ func mapRow(index int, raw []string, mapping []Field) Row {
 func AllRows(res *ParseResult) []Row {
 	out := make([]Row, 0, len(res.Rows))
 	for i, raw := range res.Rows {
-		out = append(out, mapRow(i, raw, res.ColumnMap))
+		out = append(out, mapRow(i, raw, res.ColumnMap, res.Headers))
 	}
 	return out
 }

@@ -105,3 +105,16 @@ type InputProfile struct {
 	Track       NumberInput    `json:"track"`
 	Duration    NumberInput    `json:"duration"`
 }
+
+func NewInputProfile(title, artist, album string) InputProfile {
+	return InputProfile{
+		RuleVersion: MetadataRuleVersion,
+		Title:       ParseMetadataText(title, MetadataTitle),
+		Artist:      ParseMetadataCredit(artist),
+		Album:       ParseMetadataText(album, MetadataAlbum),
+		Year:        MissingNumber("year", "unspecified_year"),
+		Disc:        MissingNumber("number", "disc"),
+		Track:       MissingNumber("number", "track"),
+		Duration:    MissingNumber("ms", "duration"),
+	}
+}
