@@ -64,14 +64,13 @@
 
 ## G17 — 独立歌词来源与回归边界
 
-- **现状**：网易云、QQ、酷狗、酷我歌词均使用非公开接口。2026-10-16 实现计划记录四来源均有成功实测，也观察到 QQ `2001` 与酷我 `301` 波动；QQ 新端点已实测原文、翻译、罗马音与增强型 LRC，但不承诺每首歌或任意时刻可用。手动 QQ 歌词、元数据和封面查询现已共用平台配额；该离线验证不代表非公开接口的最新在线复测完成。
-- **最新 Top 3 复测**：2026-10-21 授权单轮查询「君の知らない物語 / supercell」，未指定目标专辑/时长，总计 18/40 次实际发送。网易云 3/3 LRC 原文、翻译和罗马音成功，但无可用 YRC；QQ 3/3 普通原文与翻译可用，QRC/罗马音均解析失败；酷狗 3/3 KRC 逐字成功，language 翻译/罗马音按实际内容部分提供；酷我只准入 1 项，openapi/H5 后均无歌词。所有 HTTP/业务码成功，整体测试因酷我无歌词 FAIL，未追加查询。不能据此证明 YRC、QQ 逐字/罗马音或酷我启发式效果；详情见[当前变更验证记录](changes/improve-lyrics-normalization-and-ranking/validation.md)。
-- **历史复测**：2026-10-17「青花瓷 / 周杰伦」在酷狗完成搜索、歌词候选及下载，取得 1961 字节 LRC；日志通道状态为 unknown，不能宣称翻译/罗马音已通过。网易云该查询过滤后的 95 秒候选返回 `ErrNoLyrics`，不是解析异常；另以「君の知らない物語 / supercell」精确专辑/时长样例取得 4967 字节 LRC，原文/翻译 available，罗马音 unavailable。酷我正文 HTTP 200/status=301 后停止；QQ 因同轮回退查找的 -1901 未再运行手动歌词入口。缺失、业务错误及未执行分别保留，不把四来源记为已通过。
-- **依据**：`internal/app/lyrics_sources_test.go` 的 `TestLiveSources`、`internal/provider/qqmusic/lyrics_probe_test.go`、`internal/app/lyrics_test.go`；最新同步与历史验证区分见 [verification.md](verification.md)。
-- **格式范围**：本地只导入 UTF-8 TXT/LRC，不转码 GBK/UTF-16；在线支持 QQ QRC、网易云 YRC 和酷狗 KRC 转换（YRC 仍仅离线验证；KRC 有 2026-10-21 在线样例；QQ 当前样例逐字/罗马音失败待排查）；不导入本地二进制 QRC/KRC 或原始 YRC。没有播放器/播放同步高亮与独立歌词导出 UI，这些不作为当前已交付能力。
-- **酷我识别边界**：已实现 HTTPS openapi/H5 共用的两层受限内嵌译文识别及来源行关联诊断，门槛、歧义、拟声、尾行、标签和异常时间有合成回归；规则为经验推断，可能误判/漏判，不证明线上效果。未命中保持 unknown，不接入 LRCX 或翻译生成。新卡片、预取前端及阅读模式已通过浏览器替身回归；真实来源效果和原生验收仍待完成。
-- **回归限制**：第二次实现计划的全量 Playwright 为 241/242，编辑器“用户”徽标旧断言在基线也可复现；歌词定向回归通过不代表该失败已修复。歌词文件选择器只经过可注入 picker 与浏览器替身测试，没有新增原生人工验收。
-- **目标与验收**：按 `SONEXA_LYRICS_LIVE=1 go test ./internal/app -run '^TestLiveSources$' -count=1 -v` 定期复测，使用 `SONEXA_LYRICS_SOURCE/TITLE/ARTIST/ALBUM/DURATION_MS` 限定样例并记录缺失、错误与部分成功；真实网络、原生选择器和既有浏览器断言分别取证，不以离线或桩测试代替。新增逐字格式或播放器需另行定范围。
+- **现状**：当前仅网易云、QQ、酷狗三个歌词来源，均为非公开接口；酷我歌词能力、端点、配额及内嵌翻译规则已移除，不再作为待验收来源。已实现每源 Top 3、跨源内容排序、来源完整 XLRC 交付、三列阅读及同版本展示批准。接口样本成功不承诺所有歌曲或任意时刻可用。
+- **最新 QQ 补充证据**：后续 `e26c0d3f` 修复使用原查询“夕立 / CROW'SCLAW / アコースティック・エピソード / 287000 ms”，真实生产能力验证在 6 次授权上限内发送 5 次。无词 MID 经新接口空响应、legacy 三码一致 -1901 归为候选级 no_lyrics，不再阻断；曲名补充召回的 3L 记录取得原文、翻译、罗马音及逐字，XLRC 12888 字节、0 警告、往返一致，匹配 80 且仍需人工确认。第三项罗马音仍解析失败，未隐藏或扩大探测。不能把单样例通过视为所有 QQ 格式失败已消除，见[后续验证](changes/archive/2026-10-31-improve-lyrics-normalization-and-ranking/change_record/e26c0d3f-tasks.md)。
+- **先前 Top 3 证据**：2026-10-21“君の知らない物語 / supercell”授权轮次 18/40 次发送：网易云 3/3 普通 LRC 和附加通道成功但无有效 YRC，QQ 普通原文/翻译有效但 QRC/罗马音失败，酷狗 3/3 KRC 有效且语言部分提供，当时酷我无词导致整体 FAIL。这是后续修复前证据，不代表现行三来源已经完整重测，见[历史验证](changes/archive/2026-10-31-improve-lyrics-normalization-and-ranking/validation.md)；更早证据保留于 [verification.md](verification.md)。
+- **格式与推断限制**：本地支持 UTF-8 TXT/LRC/XLRC，不转码 GBK/UTF-16，不导入二进制 QRC/KRC 或原始 YRC。在线 QRC/YRC/KRC 均规范化为 XLRC；YRC 配套字段修复及三来源在线 ±2 秒关联/语言补全有合成与历史响应离线重放，尚无全面最新在线验收。时间近邻和有限文字判别可能误配/误判，未知翻译默认 zh 是策略；声部/ruby 只保留明确标签。Sonexa 保真扩展不保证第三方 XLRC 工具无损互通，没有播放器/同步高亮或独立歌词导出 UI。
+- **回归限制**：后续 Go/race、前端单测/构建及 Chromium/WebKit 歌词回归记录在归档 change_record；浏览器使用 Wails 替身，不能替代原生窗口、输入法或 TXT/LRC/XLRC 文件选择器人工验收。早期全量 Playwright 241/242 的编辑器徽标基线失败也不能由歌词定向通过推定已修复。
+- **归档保留的未完成项**：用户于 2026-10-31 确认带警告同步归档，原 tasks 9.3 完整真实来源验收、9.4 Wails 原生窗口人工验收保持未勾选，不把归档当作完成证据。酷我部分因能力移除不再要求补测，其余网络及原生缺口继续在本条跟踪。
+- **目标与验收**：另经显式授权按 `SONEXA_LYRICS_LIVE=1 go test ./internal/app -run '^TestLiveSources$' -count=1 -v` 有界复测当前三来源，用 `SONEXA_LYRICS_SOURCE/TITLE/ARTIST/ALBUM/DURATION_MS` 限定样例，记录缺失、错误和部分成功，遇限制停止；重点补 YRC 配套轴及现行 XLRC 全链路，另在原生窗口核对预取、徽标、排序、三列/原始切换、明确采用、回读和文件选择器。不以离线/历史响应或文档校验替代新网络/原生证据。
 
 ## 验证范围
 

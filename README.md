@@ -102,7 +102,7 @@ SONEXA_E2E_PREVIEW=1 npm run test:e2e
 歌词搜索的艺术家比较额外接受明确繁简字符等价（例如「周杰倫 / 周杰伦」），
 仅使用[官方 OpenCC 字典](internal/lyrics/data/opencc/README.md)的唯一映射，不改变上游查询、显示名称、元数据匹配或歌词正文。
 歧义映射、两种繁体归并、含假名/谚文的署名不新增此匹配证据；字典与许可证静态随附，无新增转换器运行时依赖。
-搜索时长可编辑并随查询冻结，来源旁显示候选总数/异常标志；卡片右上角显示综合得分/150，悬浮或键盘聚焦可查看匹配说明。
+搜索时长可编辑并随查询冻结，来源圆圈仅显示歌曲候选总数或搜索失败，不因后续取词/通道错误改写成功数量；卡片右上角显示综合得分/150，悬浮或键盘聚焦可查看匹配说明。
 本地 TXT/LRC/XLRC 由 `app/bindings_lyrics_input.go` 独立解析，在线采用不复用本地解析入口。
 在线统一输出 XLRC，支持从属多语言、罗马音、人声标签和假名注音；真实行/词结束、未同步及独立附加轨通过明确的保真扩展保存，详见 [XLRC 格式与扩展](internal/lyricdoc/README.md)。
 阅读模式消费后端关联并显示人声/ruby，不生成缺失信息；详情仅投影正文，不回写。
@@ -115,7 +115,9 @@ QQ QRC 转换和 MIT 许可的 DES 实现位于 `internal/provider/qqmusic/{qrc.
 不根据本地化错误文案推断可回退。自动预取与显式获取共用同一 QQ 协议，已预取预览不出网；
 本地 probe 有 4 MiB 读取上限，只输出格式、状态、字节数及警告数量，不输出错误消息原文或歌词。
 网易云新增 HTTPS `/api/song/lyric/v1` GET bundle，独立识别 YRC 绝对词时间、
-普通 LRC、翻译、罗马音；已识别署名结构只保留文字，无法同步时不猜时间。
+普通 LRC、翻译、罗马音；请求包含 ytv/yrv，读取 ytlrc/yromalrc，随选定原文优先配套附加轨，署名结构只保留文字。
+三来源返回前调用 `BuildOnline(input, "zh")`，先明确/精确/±10 ms，再按 ±2 秒有界近邻关联并记录可能误判；
+不能关联的文字和时间保留。本地解析不启用新推断；在线附加语言明确值优先、有限文字判别后翻译默认 zh，罗马音仍不明则 und-Latn。
 普通 WEAPI 仅在缺失、格式失败或端点不可用时单次回退。YRC 离线解析已覆盖，
 最新真实来源可用性待显式验证；没有翻译/音译生成兜底。
 酷狗 hash 子候选先验证标题/版本和下载标识，再按时长稳定选择；优先 KRC，
@@ -125,11 +127,15 @@ language 按原始计时行关联，数量不符保留非同步内容，中文�
 仅允许同候选 KRC→LRC 回退，候选搜索加下载最多三个协议阶段，限制类错误不回退。
 KRC 与附加轨已通过离线合成测试；2026-10-21 单轮样例也取得三份 KRC，language 翻译/罗马音部分可用。
 同轮网易云仅返回普通 LRC，QQ 逐字/罗马音解析失败、普通原文与翻译保留，酷我无歌词；
-不把部分成功宣称为四来源全部验通，详见[本轮验证记录](openspec/changes/improve-lyrics-normalization-and-ranking/validation.md)。
+不把部分成功宣称为四来源全部验通，详见[历史验证记录](openspec/changes/archive/2026-10-31-improve-lyrics-normalization-and-ranking/validation.md)。
+后续 QQ 同请求主关键词/曲名双查询（原生最多 40，业务 20/Top 3）和候选自身元信息补全已实测召回不同署名的有效记录；
+legacy 仅完整一致 -1901 且无正文归为候选无词，不再阻断其他项，24001 及真实限制仍停止。
+补充样例取得三通道及逐字 XLRC，但不证明所有候选都成功，详见[QQ 后续验证](openspec/changes/archive/2026-10-31-improve-lyrics-normalization-and-ranking/change_record/e26c0d3f-tasks.md)。
 
 酷我因可获得信息有限已移除，不再注册歌词能力、调用其接口或执行内嵌译文启发式。
 默认三来源每轮最多预取 9 份、48 次实际发送，每源 Top 3 / 16 次预算不变，通用获取池仍为全局 4 / 同源 1。
-XLRC 改动的离线验证与限制见 [后续修改记录](openspec/changes/improve-lyrics-normalization-and-ranking/change_record/4772dead-tasks.md)。
+XLRC 改动的离线验证与限制见 [后续修改记录](openspec/changes/archive/2026-10-31-improve-lyrics-normalization-and-ranking/change_record/4772dead-tasks.md)。
+此 change 已带验收警告同步归档，完整网络及原生验收仍见 [G17](openspec/known-gaps.md#g17--独立歌词来源与回归边界)。
 
 在线组合测试默认跳过；显式启用时只输出标题、通道状态和字节数，不转储歌词全文：
 

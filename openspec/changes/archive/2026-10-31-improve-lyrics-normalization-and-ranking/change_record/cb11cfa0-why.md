@@ -1,0 +1,40 @@
+# cb11cfa0 同步与归档缘由
+
+## 起点与范围
+
+- 起始提交：`cb11cfa02daf58b8167eaa0f3e61717ee3ab79d7`。
+- change：`improve-lyrics-normalization-and-ranking`；日期：2026-10-31。
+- 本轮只同步文档、归档和提交，不修改业务代码，不运行 openspec update，不追改历史实现计划或验收勾选。
+
+## 原始提示词
+
+```text
+关于change目录中的change_record目录:
+因为openspec update没有很好的办法记录更新前做了什么，所以在apply后我们不再使用openspec update，而是通过对应change中的change_record目录来记录后续修改，在change_record中有三类md文档，分别是:
+1. spec-diff.md 只有一份: 修改阶段可能通过多次ai会话完成，他们共同维护spec-diff.md，spec-diff.md记录代码实现与spec文档的差异。这个文档用于后续archive change时同步到主spec文档保持文档和代码实现的一致性
+2. <起始git commit的hash前8位>-why.md: 每次修改前创建，记录：原始提示词，你的追问和提供的选项(包括选项的解释)和我的选择，修改目的
+3. <起始git commit的hash前8位>-tasks.md: 和openspec 的tasks.md作用相同，用来记录并同步执行计划
+
+调用相关openspec skills归档并同步improve-lyrics-normalization-and-ranking，注意: 在apply improve-lyrics-normalization-and-ranking后，对于存在的问题我还进行了一系列修改，相关内容记录在change_record中，请记得将相关修改造成的差异也同步到主spec文档
+```
+
+## 追问、选项及用户选择
+
+检查发现规划产物齐全，CLI 统计原任务 44/46；9.3 完整真实来源验收和 9.4 Wails 原生窗口验收仍未勾选。后续记录虽补充 QQ 等证据，均明确不替代这两项验收。
+
+追问：**是否在保留这 2 项未完成验收警告的情况下，同步最终实现规则并归档？**
+
+1. **同步并带验收警告归档（推荐）**：同步原 delta 与 D01–D10 的最终规则，保留 9.3/9.4 未完成状态和验收缺口，然后归档并提交。
+2. **不做同步，仅归档**：仅归档历史材料，主 specs 不更新；不满足本次要求的文档与实现同步。
+3. **取消，保留当前 change**：暂不修改文档，也不移动 change，先补齐验收。
+
+用户选择：**1. 同步并带验收警告归档（推荐）**。
+
+## 修改目的与同步原则
+
+- 使用 openspec-archive-change 与 openspec-sync-specs，内联完成同步及核对后再移动目录。
+- 原 delta 的完整文档、Top 3、排序、协议与安全要求先纳入；D01–D10 明确替代的展示、格式、来源、时间、语言、QQ 搜索和无词规则以累计记录为准。不恢复四来源、酷我启发式、混排 LRC 或选中才获取。
+- 更新三份原 delta 对应主 specs，并按用户指定累计记录同步本地导入及存储两份主 specs；其余能力不变。
+- 保留既有主 spec 标题和 Purpose；歌词 Purpose 中历史“四个来源”的概述不作为现行名单，现行范围另作明确说明。保留未涉及的需求和场景。
+- 更新当前架构、已知缺口及外部归档链接。历史决策/验证内容不改写，归档引起的 Markdown 相对链接仅作机械修正。
+- 不把文档校验或离线回归当成新增网络/原生验收，不发起真实上游请求，不访问或更改用户收藏数据。
