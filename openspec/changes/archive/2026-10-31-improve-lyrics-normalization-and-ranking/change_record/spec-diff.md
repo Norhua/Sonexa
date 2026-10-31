@@ -22,7 +22,7 @@
 
 ### 原规格/设计
 
-- [主规格](../../../specs/upstream/lyrics-search/spec.md)和 [change delta](../specs/upstream/lyrics-search/spec.md)的「双栏搜索与分来源状态」要求各来源独立显示无结果、失败原因与重试。
+- [主规格](../../../../specs/upstream/lyrics-search/spec.md)和 [change delta](../specs/upstream/lyrics-search/spec.md)的「双栏搜索与分来源状态」要求各来源独立显示无结果、失败原因与重试。
 - delta 的「候选不再按来源聚合」场景仍要求分来源进度可见；[design.md](../design.md) §1.3、§4 约定单独来源状态区展示阶段、结果数和预取成功/失败/未完成计数。
 - 旧实现额外在搜索条件上方显示「目标：曲名 · 仅修改当前歌曲的歌词」，并把来源错误原文放在常驻诊断区。
 
@@ -160,7 +160,7 @@
 
 ### 当前实现与归档要求
 
-1. `lyricdoc.Build` / 在线适配器的 `BuildOnline` SHALL 交付 `Format=xlrc` 的完整文档，唯一采用文本是 `Document.Text`；不以 `.lrc` 混排原文/翻译替代带角色的单文件输出。公共工具独立 Go 实现，参考 XLRC 0.1-draft 的 CC0 规格（提交 `01569cc5`），具体语法、偏差和限制集中在 [格式说明](../../../../internal/lyricdoc/README.md)。业务仍只读验收，不新增 source 分发或第二次组装。
+1. `lyricdoc.Build` / 在线适配器的 `BuildOnline` SHALL 交付 `Format=xlrc` 的完整文档，唯一采用文本是 `Document.Text`；不以 `.lrc` 混排原文/翻译替代带角色的单文件输出。公共工具独立 Go 实现，参考 XLRC 0.1-draft 的 CC0 规格（提交 `01569cc5`），具体语法、偏差和限制集中在 [格式说明](../../../../../internal/lyricdoc/README.md)。业务仍只读验收，不新增 source 分发或第二次组装。
 2. 支持原文语言/多语言头、任意 BCP47 形状的从属语言标签、行首 `[v:label]`、汉字后假名 ruby、逐行/逐字混合、多时间戳、空计时/结束行。所有时间保持整数毫秒、输出三位小数；解析器未知语种仍为 `und`、罗马音 `und-Latn`、未分类附加 `und-x-additional`。在线附加语言按 D09 补全；仍不生成翻译/音译/人声/注音。
 3. 原文和附加行增加语言、人声、ruby（Unicode 码点范围）、内部 ID/ParentID 及独立轨标记。显式 XLRC 父关系和 KRC language 关系在排序前建立并校验；同刻多声部不去重或误挂译文。显式父行必须存在、时间/人声不得矛盾；无父关系先执行 D04 唯一时间/±10 ms 规则，在线生产端可继续执行 D08 已获用户允许的近邻规则，本地解析不启用 D08。
 4. `Rows.Annotations` 保留多语言文本的角色、语言及 ruby；搜索阅读视图显示人声和 ruby，第三列显示所选角色的全部语种，语言已知时附代码，未知附加内容仍明确说明。旧字符串投影保留；原始模式显示完整 XLRC，切换不重新获取/批准，不改变分数或保存对象。详情继续纯文字投影，不执行 HTML、不回写。
@@ -270,13 +270,35 @@ D06–D10 之外仍遵守此前边界。以下 D01–D05 的限定描述仅对�
 
 D01–D05 不改变后端来源协议、上游职责、通道类型识别、排名权重/公式、Top 3 预算、数据库、文件格式、修订/版本批准、详情页或其他搜索页面；D04 调整此前精确时间关联限制，D05 补歌词艺术家确定繁简字形比较并允许编辑既有时长条件。主规格中的固定目标、失败不得采用、内容保真和安全要求继续有效。不自动改写已保存歌词；重新获取并采用后才保存新的规范化结果。离线浏览器测试不代替真实上游与 Wails 原生窗口验收。
 
+## 2026-10-31 归档同步对照
+
+用户已确认保留原 tasks 9.3/9.4 的未完成警告后同步归档，追问及选择见 [284607d6-why.md](284607d6-why.md)，执行与验证见 [284607d6-tasks.md](284607d6-tasks.md)。本段是同步索引，不追改上面的历史差异或决策。
+
+| 输入 | 主规格落点及最终规则 |
+| --- | --- |
+| 原歌词 delta | `upstream/lyrics-search` 保留全部非酷我需求及场景：完整文档、准入/综合排序、Top 3、版本批准、传输、通道、QRC/YRC/KRC、正文保真与不生成内容；原三项酷我新增需求和异常时间场景按 D07 不纳入现行规范 |
+| 原能力 delta | `upstream/provider-registry` 的业务能力契约、能力注入、公共工具/只读检查边界；替身不依赖固定名单，来源规则示例不再承诺酷我 |
+| 原 QQ delta | `upstream/qqmusic` 的批量获取、实际格式识别、QRC 容器及有界回退；输出、呈现和元信息按后续规则更新 |
+| D01 | `lyrics-search` 双栏、紧凑来源反馈：只按歌曲查询显示数量/失败；取消顶部目标和常驻错误区 |
+| D02 | `lyrics-search` 卡片、预览：分数/150 与可访问提示，右侧不重复元信息/技术警告；QQ 回退引用同一呈现规则 |
+| D03 | `lyrics-search` 三列阅读、附加通道选择：独立有字行保留，只隐藏空白独立附加行；切换不影响全文采用 |
+| D04 | `lyrics-search` 精度对齐与时间诊断：共同 offset 轴、±10 ms、唯一/竞争/顺序及真实结束保护 |
+| D05 | `lyrics-search` 可编辑时长和确定繁简艺术家比较：冻结查询、默认权重、歧义拒绝、不改真实名称 |
+| D06 | `lyrics-search` XLRC 与保真扩展；`qqmusic` QRC 行词结束；`editing/track-editing` 本地 XLRC；`platform/data-store` .xlrc 哈希文件及全文/关系保真 |
+| D07 | `lyrics-search` 三默认源/最多 9 份和 48 次；`provider-registry` 移除酷我登记/配额，通用池 4/同源 1 不变 |
+| D08 | `lyrics-search` 网易配套轴与在线 ±2000 ms 近邻：明确/精确/精度优先、诊断、不猜本地独立轨；QQ 返回前同样完成 |
+| D09 | `lyrics-search` 在线附加语言：明确值优先、有限 ja/ko、翻译默认 zh、罗马音基础语言-Latn，不改原文或升级角色 |
+| D10 | `qqmusic` 双查询 20+20→40→业务20/Top3、候选元信息及严格三码 -1901 无词；`lyrics-search` 引用其召回范围并保留候选级缺失不阻断 |
+
+当前架构与 G17 同步更新，不把历史失败删成成功，也不把酷我作为现行待补验收来源。已有主规格标题、Purpose 和未涉及内容保留；歌词 Purpose 的历史“四个来源”在现行范围说明中明确不再生效。主规格不保留 delta 操作标题。历史证据随目录归档，跨目录 Markdown 链接仅因移动机械修正，不改变历史任务与用户选择。
+
 ## 代码与验证索引
 
-- [QQ 双查询适配](../../../../internal/provider/qqmusic/lyrics.go)、[查询回归](../../../../internal/provider/qqmusic/lyrics_search_test.go)、[legacy 无词处理](../../../../internal/provider/qqmusic/legacy_lyrics.go)、[错误分类回归](../../../../internal/provider/qqmusic/legacy_lyrics_test.go)、[不同署名 App 预取/采用](../../../../internal/app/lyrics_qq_recall_test.go)。
+- [QQ 双查询适配](../../../../../internal/provider/qqmusic/lyrics.go)、[查询回归](../../../../../internal/provider/qqmusic/lyrics_search_test.go)、[legacy 无词处理](../../../../../internal/provider/qqmusic/legacy_lyrics.go)、[错误分类回归](../../../../../internal/provider/qqmusic/legacy_lyrics_test.go)、[不同署名 App 预取/采用](../../../../../internal/app/lyrics_qq_recall_test.go)。
 
-- [alignment.go](../../../../internal/lyricdoc/alignment.go)、[merge.go](../../../../internal/lyricdoc/merge.go)：后端精度对齐与完整投影构建；[alignment_test.go](../../../../internal/lyricdoc/alignment_test.go) 覆盖边界、歧义、offset、不可变及预算。
-- [QQ 适配测试](../../../../internal/provider/qqmusic/lyrics_test.go)、[App 管线测试](../../../../internal/app/lyrics_pipeline_test.go)、[业务只读测试](../../../../internal/lyrics/service_test.go)：直接交付与采用链保持一致。
-- [LyricsSearchView.vue](../../../../frontend/src/views/LyricsSearchView.vue)：顶部精简、紧凑重试、预览工具栏下拉与悬浮反馈。
-- [LyricsPreview.vue](../../../../frontend/src/components/LyricsPreview.vue)、[lyricsPresentation.ts](../../../../frontend/src/lib/lyricsPresentation.ts)：三列显示投影，不改写文档。
-- [lyricsSearch.ts](../../../../frontend/src/stores/lyricsSearch.ts)：操作失败使用简短反馈，保留原有会话守卫。
-- [歌词 E2E](../../../../frontend/tests/e2e/lyrics.spec.ts)、[显示单测](../../../../frontend/tests/unit/lyrics-presentation.test.ts)、[会话单测](../../../../frontend/tests/unit/lyrics-search.test.ts)、[来源单测](../../../../frontend/tests/unit/search-sources.test.ts)。
+- [alignment.go](../../../../../internal/lyricdoc/alignment.go)、[merge.go](../../../../../internal/lyricdoc/merge.go)：后端精度对齐与完整投影构建；[alignment_test.go](../../../../../internal/lyricdoc/alignment_test.go) 覆盖边界、歧义、offset、不可变及预算。
+- [QQ 适配测试](../../../../../internal/provider/qqmusic/lyrics_test.go)、[App 管线测试](../../../../../internal/app/lyrics_pipeline_test.go)、[业务只读测试](../../../../../internal/lyrics/service_test.go)：直接交付与采用链保持一致。
+- [LyricsSearchView.vue](../../../../../frontend/src/views/LyricsSearchView.vue)：顶部精简、紧凑重试、预览工具栏下拉与悬浮反馈。
+- [LyricsPreview.vue](../../../../../frontend/src/components/LyricsPreview.vue)、[lyricsPresentation.ts](../../../../../frontend/src/lib/lyricsPresentation.ts)：三列显示投影，不改写文档。
+- [lyricsSearch.ts](../../../../../frontend/src/stores/lyricsSearch.ts)：操作失败使用简短反馈，保留原有会话守卫。
+- [歌词 E2E](../../../../../frontend/tests/e2e/lyrics.spec.ts)、[显示单测](../../../../../frontend/tests/unit/lyrics-presentation.test.ts)、[会话单测](../../../../../frontend/tests/unit/lyrics-search.test.ts)、[来源单测](../../../../../frontend/tests/unit/search-sources.test.ts)。
