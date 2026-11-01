@@ -1,11 +1,33 @@
-# 实施交接：4.2 完成，从 4.3 继续
+# 实施交接：4.2 完成，4.3 首轮测试编译阻塞
 
 ## 当前状态
 
 - 变更：`fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
-- `tasks.md` 已完成 1.1–1.7、2.1–2.5、3.1–3.6、4.1–4.2，共 **20/48**；CLI 已确认 4.2 完成，下一项 4.3。
+- `tasks.md` 已完成 1.1–1.7、2.1–2.5、3.1–3.6、4.1–4.2，共 **20/48**；CLI 已确认 4.2 完成。4.3 有未验证代码，保持未勾选。
 - 本文件只记录实施与验证事实，不替代规划文件、10 个增量规格或 CLI 任务完成标准。
 - 未同步主规格、未归档、未访问真实来源，未修改或清理用户应用数据。测试使用临时 SQLite、fixture 和浏览器替身。
+
+## 4.3 当前阻塞（未完成）
+
+4.2 已提交 `1eaaaf9`，继续了 4.3：
+
+- `internal/library/local_existing.go` 新增 `PrepareLocalExisting`，尝试完整本地事实的精确 skip；资料不足返回 nil 让 Runner 查询上游。检查输入专辑、候选证据、清单竞争位置及当前所有权；复用既有组/内容选版函数，不出网。
+- `internal/importer/runner.go` 移除无绑定文本直接复核的调用及描述 helper，先尝试本地 skip；skip 不触发 library/enrichment，并有明确日志。
+- 旧 Runner 文本重复测试改为验证仍请求上游，不制造 owned/skip。
+- `internal/importer/local_existing_test.go` 新增完整本地跳过、稀疏/无专辑/不同专辑/重复位置继续检索、明确位置消歧及删除历史批次后相同结果的初始测试。
+
+首轮执行 `go test ./internal/importer ./internal/library -count=1`：**library 通过，importer 测试编译失败**。
+
+```text
+internal/importer/local_existing_test.go:75:186: invalid operation:
+reason != store.ResolutionExistingTrack (mismatched types string and store.ResolutionReason)
+```
+
+测试将 SQL 的终态原因读为 string，却与具名类型常量直接比较。尚未修正；Runner 新行为测试没有执行。按工作流遇错暂停，不标完成。
+
+下一步先修类型，再核验纯本地分支不能按某个合格视图替换为另一份不合格候选、明确输入限定/位置竞争不被偏好覆盖、清单中未知竞争者/非传递组关系保守处理、稀疏与未绑定仍出网、错误/CAS/取消无错误终态。后续还须接入本地与远程合一的完整决策路径（4.4–4.6），当前远程分支仍旧 SelectCandidate，不能描述成完整新流水线。4.3 局部说明与最终回归尚未完成，4.4 未开始。
+
+下述通过结果仅针对 4.2 提交，不是当前 4.3 检查点全绿。
 
 ## 4.2 已完成
 
@@ -138,4 +160,4 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 - Wails 绑定、dist、node_modules、测试产物均被忽略。
 - 旧编辑器测试基线位于 `tmp/harness/identity-35-baseline-YM4EZk`（忽略目录，不是工作树），没有切换或重置当前仓库。
 
-阶段提交：`5ba0b3c`（3.1）、`981ba20`（3.2）、`8cea84e`（3.3）、`ecff4cb`（3.4）、`4e912d5`（3.5）、`7f7a5c6`（3.6 未完成检查点）、`ca32fcf`（3.6 完成）、`6e09c02`（4.1 未完成检查点）、`47ed362`（4.1 完成）、`da0cea4`（4.2 未完成检查点）。4.2 完成提交以 `git log` 为准。
+阶段提交：`5ba0b3c`（3.1）、`981ba20`（3.2）、`8cea84e`（3.3）、`ecff4cb`（3.4）、`4e912d5`（3.5）、`7f7a5c6`（3.6 未完成检查点）、`ca32fcf`（3.6 完成）、`6e09c02`（4.1 未完成检查点）、`47ed362`（4.1 完成）、`da0cea4`（4.2 未完成检查点）、`1eaaaf9`（4.2 完成）。4.3 未完成检查点以 `git log` 为准。

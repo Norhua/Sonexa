@@ -231,18 +231,22 @@ func (r *Runner) loop(ctx context.Context, batchID int64) {
 func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string {
 	in := inputFromItem(item)
 
-	// [1] 旧文本重复短路暂留：仅保存相关提示，不生成可接受/跳过的假候选。
-	if dupID, err := r.engine.CheckLocalDuplicate(r.store, in); err == nil && dupID != 0 {
-		existing := r.describeTrack(dupID)
-		evidence, _ := json.Marshal(struct {
-			Code           string `json:"code"`
-			RelatedTrackID int64  `json:"relatedTrackId"`
-			Detail         string `json:"detail"`
-		}{"unbound_related_track", dupID, existing})
-		if err := r.store.MarkReviewAtRevision(item.ID, item.Revision, store.ReviewDuplicate, "[]", "[]", string(evidence)); err != nil {
+	// [1] 本地充分事实可直接精确跳过；文本相关、稀疏快照不能短路上游。
+	local, err := r.library.PrepareLocalExisting(ctx, *in.Profile, item.ID, item.Revision)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ""
+		}
+		r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts, item.Revision)
+		return matching.ErrorLogLine(err)
+	}
+	if local != nil {
+		result, err := r.library.CommitAdmission(ctx, local.Plan.ID, local.Plan.Hash, domain.AdmissionApproval{})
+		if err != nil {
+			r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts, item.Revision)
 			return matching.ErrorLogLine(err)
 		}
-		return matching.DuplicateLogLine(in, existing)
+		return fmt.Sprintf("[已存在跳过] %s · %s · %s；精确目标 %s:%s（曲目 #%d）", in.Title, in.Artist, in.Album, local.Candidate.Provider, local.Candidate.MatchRef, result.TrackID)
 	}
 
 	// [2][3] 上游查询与评分
@@ -371,15 +375,6 @@ func (r *Runner) emitProgress(batchID int64, line string, done, paused bool) {
 		Done:      done,
 		Paused:    paused,
 	})
-}
-
-// describeTrack 返回库中曲目的可读描述，供疑似重复提示使用。
-func (r *Runner) describeTrack(trackID int64) string {
-	t, err := r.store.GetTrack(trackID)
-	if err != nil || t == nil {
-		return fmt.Sprintf("曲目 #%d", trackID)
-	}
-	return fmt.Sprintf("%s · %s · %s", t.Title, orDash(t.Credit), orDash(t.Album))
 }
 
 func findScored(scored []matching.ScoredCandidate, ref string) *matching.ScoredCandidate {

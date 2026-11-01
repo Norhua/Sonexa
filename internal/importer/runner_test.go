@@ -217,13 +217,13 @@ func TestRunnerSendsToReview(t *testing.T) {
 	}
 }
 
-// TestRunnerLocalDuplicateGoesToReview 覆盖 11.3：
-// 旧短路暂留到本地召回替换；文本相关只作提示，不生成可合并/跳过的假候选。
-func TestRunnerLocalDuplicateGoesToReview(t *testing.T) {
+// TestRunnerUnboundTextStillQueries verifies text similarity cannot grant
+// ownership or force review before the upstream has been consulted.
+func TestRunnerUnboundTextStillQueries(t *testing.T) {
 	st := openStore(t)
 
 	// 库中已有一首无溯源的曲目（「无需匹配」入库的那种）
-	existing, err := st.CreateTrackWithProvenance(store.NewTrackInput{
+	_, err := st.CreateTrackWithProvenance(store.NewTrackInput{
 		Title: "God knows...", Credit: sptr("平野綾"),
 	})
 	if err != nil {
@@ -247,31 +247,18 @@ func TestRunnerLocalDuplicateGoesToReview(t *testing.T) {
 		t.Errorf("曲目数 = %d, 期望仍为 1（疑似重复不新建）", count)
 	}
 
-	// 相关提示独立于候选，不可凭这个本地 ID 绕过来源精确身份校验。
-	items, _ := st.AllReviewItems()
-	if len(items) != 1 || items[0].Candidates == nil || *items[0].Candidates != "[]" || items[0].ReviewEvidence == nil {
-		t.Fatal("相关文本不得生成收藏动作候选")
+	// No upstream result means review, not an automatic skip of similar text.
+	items, err := st.AllReviewItems()
+	if err != nil || len(items) != 1 || items[0].ReviewReason == nil || *items[0].ReviewReason != "no_match" {
+		t.Fatal(items, err)
 	}
-	var evidence struct {
-		Code           string `json:"code"`
-		RelatedTrackID int64  `json:"relatedTrackId"`
+	if searcher.queryCount() == 0 {
+		t.Fatal("unbound text short-circuited upstream search")
 	}
-	if err := json.Unmarshal([]byte(*items[0].ReviewEvidence), &evidence); err != nil {
-		t.Fatal(err)
-	}
-	if evidence.Code != "unbound_related_track" || evidence.RelatedTrackID != existing {
-		t.Fatalf("相关提示丢失：%+v", evidence)
-	}
-
-	// 疑似重复的提示同时输出两边信息
-	var sawDup bool
-	for _, e := range events {
-		if containsStr(e.Line, "[疑似重复]") && containsStr(e.Line, "当前曲目库信息") {
-			sawDup = true
+	for _, event := range events {
+		if containsStr(event.Line, "[疑似重复]") || containsStr(event.Line, "[已存在跳过]") {
+			t.Fatal("text-only duplicate became a decision", event.Line)
 		}
-	}
-	if !sawDup {
-		t.Error("应输出疑似重复的提示并含库中曲目信息")
 	}
 }
 
