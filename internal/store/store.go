@@ -18,6 +18,8 @@ import (
 
 // Store 持有数据库连接。
 type Store struct {
+	reviewWakeMu      sync.RWMutex
+	reviewWake        func()
 	leaseClockMu      sync.RWMutex
 	leaseClock        func() time.Time // configured before use; real time by default
 	planMu            sync.RWMutex

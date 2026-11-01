@@ -203,7 +203,12 @@ func (s *Store) RenewProblemLease(lease domain.ProblemLease) (*domain.ProblemLea
 	})
 	return &lease, err
 }
-func (s *Store) ReleaseProblemLease(lease domain.ProblemLease) error {
+func (s *Store) ReleaseProblemLease(lease domain.ProblemLease) (err error) {
+	defer func() {
+		if err == nil {
+			s.signalReviewWork()
+		}
+	}()
 	return s.withTx(func(tx *sql.Tx) error {
 		var released bool
 		err := tx.QueryRow("SELECT released FROM review_problem_lease WHERE token=? AND problem_id=?", lease.Token, lease.ProblemID).Scan(&released)
@@ -253,7 +258,12 @@ func (s *Store) CheckProblemOperation(op ProblemOperation) error {
 	}
 	return s.withTx(func(tx *sql.Tx) error { return s.checkProblemOperationTx(tx, op) })
 }
-func (s *Store) EndProblemOperation(op ProblemOperation) error {
+func (s *Store) EndProblemOperation(op ProblemOperation) (err error) {
+	defer func() {
+		if err == nil && op.Token != "" {
+			s.signalReviewWork()
+		}
+	}()
 	if op.Token == "" {
 		return nil
 	}
@@ -272,7 +282,13 @@ func (s *Store) EndProblemOperation(op ProblemOperation) error {
 
 // ReapProblemLeases is bounded and clock-injectable. Dead processes cannot
 // retain pins forever; expiry enqueues a current-evidence recheck, not a target.
-func (s *Store) ReapProblemLeases(limit int) error {
+func (s *Store) ReapProblemLeases(limit int) (err error) {
+	changed := false
+	defer func() {
+		if err == nil && changed {
+			s.signalReviewWork()
+		}
+	}()
 	if limit < 1 || limit > 1000 {
 		limit = 100
 	}
@@ -298,6 +314,7 @@ func (s *Store) ReapProblemLeases(limit int) error {
 		if err != nil {
 			return err
 		}
+		changed = len(ids) > 0
 		for _, id := range ids {
 			if err := queueProblemRecheckTx(tx, id); err != nil {
 				return err

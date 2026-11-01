@@ -48,7 +48,7 @@ func (s *Service) RecheckPending(ctx context.Context, limit int) (int, error) {
 			if queueErr := s.store.QueueProblemRecheck(work.ProblemID); queueErr != nil {
 				return processed, queueErr
 			}
-			return processed, nil
+			return processed, store.ErrPlanStale
 		}
 		if err := s.store.FinishProblemRecheck(*work, err); err != nil {
 			return processed, err
@@ -95,10 +95,13 @@ func (s *Service) recheckInput(ctx context.Context, work store.ProblemRecheck) e
 		selection, err = &selected, selectErr
 	}
 	if errors.Is(err, errRecheckNeedsFacts) {
-		return nil
+		return s.store.QueueRecheckNetwork(work)
 	}
 	if err != nil {
 		return err
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 	if selection == nil || selection.Plan == nil || selection.Reason != "" {
 		return nil

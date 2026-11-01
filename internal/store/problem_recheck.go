@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/norhua/sonexa/internal/domain"
@@ -15,6 +16,36 @@ type ProblemRecheck struct {
 	Scope           *domain.InputScope
 	Proof           string
 	Item            *ImportItem
+}
+
+func (s *Store) RestoreProblemRechecks(ctx context.Context) error {
+	return s.withTx(func(tx *sql.Tx) error {
+		// A persisted cursor may have skipped members while they were retrying.
+		// Rewind on startup; do not resurrect terminal rows or reset their errors.
+		_, err := tx.ExecContext(ctx, `INSERT INTO review_problem_recheck(problem_id)
+ SELECT id FROM review_problem WHERE status='active'
+ ON CONFLICT(problem_id) DO UPDATE SET revision=revision+1,after_item=0,retry_at=0`)
+		return err
+	})
+}
+
+func (s *Store) NextRecheckDelay(ctx context.Context) (time.Duration, error) {
+	var deadline sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `SELECT min(deadline) FROM (
+ SELECT retry_at AS deadline FROM review_problem_recheck WHERE retry_at>?
+ UNION ALL SELECT expires_at FROM review_problem_lease WHERE released=0 AND expires_at>?
+ UNION ALL SELECT expires_at FROM review_problem_operation WHERE expires_at>?)`, s.problemNow(), s.problemNow(), s.problemNow()).Scan(&deadline)
+	if err != nil {
+		return 0, err
+	}
+	if !deadline.Valid {
+		return 0, nil
+	}
+	delay := time.Duration(deadline.Int64-s.problemNow()) * time.Millisecond
+	if delay < time.Millisecond {
+		delay = time.Millisecond
+	}
+	return delay, nil
 }
 
 // NextProblemRecheck reads one member at a time to bound even very large
@@ -58,8 +89,69 @@ func (s *Store) NextProblemRecheck(ctx context.Context) (*ProblemRecheck, error)
 	return &out, nil
 }
 
+func (s *Store) QueueRecheckNetwork(work ProblemRecheck) error {
+	return s.withTx(func(tx *sql.Tx) error {
+		if err := checkInputScopeTx(tx, work.Scope); err != nil {
+			return err
+		}
+		if err := s.checkBackgroundItemTx(tx, work.Item.ID); err != nil {
+			return err
+		}
+		var revision int64
+		if err := tx.QueryRow("SELECT revision FROM review_library_state WHERE id=1").Scan(&revision); err != nil {
+			return err
+		}
+		if revision != work.LibraryRevision {
+			return ErrPlanStale
+		}
+		// Failed rows retain their explicit manual-retry policy. A paused batch
+		// also stays paused; this hint never restarts another batch implicitly.
+		var batchState BatchStatus
+		if err := tx.QueryRow("SELECT status FROM import_batch WHERE id=?", work.Item.BatchID).Scan(&batchState); err != nil {
+			return err
+		}
+		if work.Item.Status != StatusReview || batchState == BatchPaused {
+			return nil
+		}
+		if _, err := tx.Exec("UPDATE import_item SET status='queued',revision=revision+1,next_retry_at=NULL,updated_at=? WHERE id=?", time.Now().UTC(), work.Item.ID); err != nil {
+			return err
+		}
+		if err := syncProblemItemTx(tx, work.Item.ID, nil); err != nil {
+			return err
+		}
+		if _, err := tx.Exec("INSERT INTO review_problem_network SELECT ? WHERE NOT EXISTS(SELECT 1 FROM review_problem_network WHERE batch_id=?)", work.Item.BatchID, work.Item.BatchID); err != nil {
+			return err
+		}
+		_, err := tx.Exec("UPDATE import_batch SET status='running',finished_at=NULL WHERE id=?", work.Item.BatchID)
+		return err
+	})
+}
+
 func (s *Store) FinishProblemRecheck(work ProblemRecheck, failure error) error {
 	return s.withTx(func(tx *sql.Tx) error {
+		if failure == nil {
+			var revision int64
+			if err := tx.QueryRow("SELECT revision FROM review_library_state WHERE id=1").Scan(&revision); err != nil {
+				return err
+			}
+			// Even a no-op decision is stale if membership, candidate evidence or
+			// library competitors changed while evaluating it.
+			var status ItemStatus
+			if err := tx.QueryRow("SELECT status FROM import_item WHERE id=?", work.Item.ID).Scan(&status); err != nil {
+				return err
+			}
+			if revision != work.LibraryRevision {
+				return queueProblemRecheckTx(tx, work.ProblemID)
+			}
+			if status == StatusReview || status == StatusFailed {
+				if err := checkInputScopeTx(tx, work.Scope); err != nil {
+					if errors.Is(err, ErrPlanStale) {
+						return queueProblemRecheckTx(tx, work.ProblemID)
+					}
+					return err
+				}
+			}
+		}
 		if failure != nil {
 			_, err := tx.Exec("UPDATE review_problem_recheck SET last_error=?,retry_at=? WHERE problem_id=? AND revision=?", failure.Error(), s.problemNow()+time.Minute.Milliseconds(), work.ProblemID, work.Revision)
 			return err

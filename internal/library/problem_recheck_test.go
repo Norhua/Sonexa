@@ -89,7 +89,11 @@ func TestRecheckCurrentEvidenceNeverCopiesManualChoice(t *testing.T) {
 	}
 	for _, item := range []*store.ImportItem{ambiguous, explicit, incomplete} {
 		got, err := st.GetItem(item.ID)
-		if err != nil || got.Status != store.StatusReview || got.RawRow != item.RawRow {
+		want := store.StatusReview
+		if item.ID == incomplete.ID {
+			want = store.StatusQueued
+		} // missing facts go through Runner, never guessed locally
+		if err != nil || got.Status != want || got.RawRow != item.RawRow {
 			t.Fatal("manual choice propagated", got, err)
 		}
 	}

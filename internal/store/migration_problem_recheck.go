@@ -11,6 +11,7 @@ INSERT INTO review_library_state VALUES(1,1);
 CREATE TABLE review_library_dirty(track_id INTEGER PRIMARY KEY,revision INTEGER NOT NULL DEFAULT 1,after_problem INTEGER NOT NULL DEFAULT 0);
 -- Prior facts survive deletion/rebinding and repeated events are coalesced.
 CREATE TABLE review_library_before(track_id INTEGER NOT NULL,body TEXT NOT NULL,PRIMARY KEY(track_id,body));
+CREATE TABLE review_problem_network(batch_id INTEGER PRIMARY KEY REFERENCES import_batch(id) ON DELETE CASCADE);
 CREATE TABLE review_problem_key(
  problem_id INTEGER NOT NULL REFERENCES review_problem(id) ON DELETE CASCADE,
  kind TEXT NOT NULL,value TEXT NOT NULL,prefix INTEGER NOT NULL DEFAULT 0,

@@ -93,9 +93,6 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 
-	if err := a.startReviewWorker(ctx); err != nil {
-		log.Printf("启动问题重评失败: %v", err)
-	}
 	leaseCtx, cancel := context.WithCancel(ctx)
 	a.reviewLeaseCancel, a.reviewLeaseDone = cancel, make(chan struct{})
 	go func() {
@@ -108,6 +105,12 @@ func (a *App) startup(ctx context.Context) {
 		if err := a.runner.ResumeAll(ctx); err != nil {
 			log.Printf("恢复导入任务失败: %v", err)
 		}
+	}
+
+	// Resume queue claims before reading active problems: reset-stale and
+	// re-evaluation must not race to change the same startup input scope.
+	if err := a.startReviewWorker(ctx); err != nil {
+		log.Printf("启动问题重评失败: %v", err)
 	}
 
 	// 上次退出时没补完的曲目在这里接着补。空闲判断在任务内部做：
@@ -309,6 +312,7 @@ func (a *App) emitProgress(p importer.Progress) {
 	a.emitEvent(EventImportProgress, p)
 	// 导入跑完就该轮到补全：这一批入库的曲目全都还等着补详情
 	if p.Done {
+		a.wakeReviewWorker()
 		a.autoStartEnrich()
 	}
 }

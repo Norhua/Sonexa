@@ -131,6 +131,7 @@ func (a *App) SaveSettings(next config.Settings) error {
 	a.rebuildRunner(next)
 	a.store.SetLadderConfig(a.ladderConfig())
 	a.mu.Unlock()
+	a.wakeReviewWorker()
 	a.emitEvent(EventSettingsSaved, next)
 	return nil
 }
