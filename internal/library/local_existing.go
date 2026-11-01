@@ -75,7 +75,7 @@ func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.Input
 		commonGroup = groupID
 		groups[groupID] = true
 		ownerships[target.Identity.Track] = target.Ownership
-		prepared = append(prepared, selectionCandidate{candidate: chosen.Metadata.Candidate, summary: chosen.Release.Summary(), groups: groups, existing: true})
+		prepared = append(prepared, selectionCandidate{candidate: chosen.Metadata.Candidate, summary: chosen.Release.Summary(), groups: groups, existing: true, owned: true})
 	}
 	if len(prepared) == 0 {
 		return nil, nil

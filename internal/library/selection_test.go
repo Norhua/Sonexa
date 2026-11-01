@@ -8,11 +8,13 @@ import (
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/store"
 )
 
 type summaryProvider struct {
 	provider.MetadataProvider
 	calls  int
+	refs   []string
 	totals map[string]int
 }
 
@@ -22,6 +24,7 @@ func (p *summaryProvider) SnapshotFromCandidate(c provider.Candidate) (*domain.S
 }
 func (p *summaryProvider) LoadReleaseSummary(ctx context.Context, id domain.Identity) (*domain.ReleaseSummary, error) {
 	p.calls++
+	p.refs = append(p.refs, id.Ref)
 	total := domain.Missing[int]()
 	if n := p.totals[id.Ref]; n > 0 {
 		total = domain.Known(n)
@@ -98,6 +101,120 @@ func TestAutomaticSelectionAmbiguityUnknownTotalAndWorldTie(t *testing.T) {
 	if err != nil || selected.Reason != ReasonAmbiguous {
 		t.Fatal("different content accepted", selected, err)
 	}
+}
+
+func TestSelectionCompatibleOwnedTrackPreference(t *testing.T) {
+	for _, scenario := range []string{"owned_track", "explicit_deluxe", "multiple_owned", "unknown_owned_total", "repeated_position", "cross_group", "different_recording", "country_tie", "stable_tie"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, st, _ := newTestService(t)
+			p := &summaryProvider{totals: map[string]int{"a": 14, "b": 15}}
+			s.registry.Register(p)
+			a, b := candidate("a", "a-track", nil), candidate("b", "b-track", nil)
+			profile := selectionProfile()
+			if scenario == "explicit_deluxe" {
+				b.AlbumTitle = ptr("Album (Deluxe Edition)")
+				profile = func() *matching.InputProfile { p := matching.ProfileFromCandidate(b); return &p }()
+			}
+			if scenario == "cross_group" {
+				b.AlbumTitle, b.ReleaseGroupRef = ptr("Different Album"), ptr("different-group")
+				profile.Album = matching.ParseMetadataText("", matching.MetadataAlbum)
+			}
+			if scenario == "different_recording" {
+				b.RecordingRef = ptr("different-recording")
+			}
+			if scenario == "repeated_position" {
+				b.ReleaseRef, b.TrackNumber = a.ReleaseRef, ptr(2)
+			}
+			if scenario == "country_tie" || scenario == "stable_tie" {
+				p.totals["a"], p.totals["b"] = 15, 15
+				if scenario == "country_tie" {
+					a.Country, b.Country = ptr("XW"), ptr("JP")
+				}
+			}
+			owned := commit(t, s, mustCandidatePlan(t, s, a), false)
+			multiple := scenario == "multiple_owned" || scenario == "unknown_owned_total" || scenario == "country_tie" || scenario == "stable_tie"
+			if multiple {
+				commit(t, s, mustCandidatePlan(t, s, b), true)
+			} else if scenario == "owned_track" {
+				// B's release exists and is larger, but its matching track does not.
+				other := b
+				other.MatchRef, other.Title = "other-song", ptr("Other Song")
+				commit(t, s, mustCandidatePlan(t, s, other), true)
+			}
+			if scenario == "unknown_owned_total" {
+				delete(p.totals, "b")
+			}
+			countBefore, err := st.CountTracks(store.TrackFilter{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Unknown total on a third, unowned compatible release must not
+			// trigger I/O or block the owned subset's default preference.
+			unowned := candidate("unowned", "unowned-track", nil)
+			rows := high(b, unowned, a)
+			if scenario == "explicit_deluxe" {
+				rows = high(a, b)
+			}
+			selected, err := s.SelectCandidate(context.Background(), rows, 0, profile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "repeated_position", "different_recording", "cross_group", "unknown_owned_total":
+				if selected.Candidate != nil || selected.Reason == "" {
+					t.Fatal("preference erased ambiguity", selected)
+				}
+			case "explicit_deluxe":
+				if selected.Candidate == nil || selected.Candidate.MatchRef != b.MatchRef || selected.Reason != ReasonNewRelease {
+					t.Fatal("owned track overrode explicit edition", selected)
+				}
+			default:
+				want := a.MatchRef
+				if scenario == "multiple_owned" || scenario == "country_tie" {
+					want = b.MatchRef
+				}
+				if selected.Candidate == nil || selected.Candidate.MatchRef != want || selected.Reason != "" {
+					t.Fatal("wrong owned preference", selected, want)
+				}
+				result := commit(t, s, selected.Plan, false)
+				if !result.Existing || (want == a.MatchRef && result.TrackID != owned.TrackID) {
+					t.Fatal("owned preference created track", result)
+				}
+				found := false
+				for _, reason := range selected.Reasons {
+					found = found || reason.Code == "prefer_owned_compatible_track"
+				}
+				if !found {
+					t.Fatal("default preference was not explained", selected.Reasons)
+				}
+			}
+			wantCalls := 0
+			if multiple {
+				wantCalls = 2
+			}
+			if p.calls != wantCalls {
+				t.Fatal("unnecessary/missing summary requests", p.calls, p.refs)
+			}
+			for _, ref := range p.refs {
+				if ref == "unowned" {
+					t.Fatal("loaded outside preferred subset", p.refs)
+				}
+			}
+			countAfter, err := st.CountTracks(store.TrackFilter{})
+			if err != nil || countAfter != countBefore {
+				t.Fatal("selection created collection", countBefore, countAfter, err)
+			}
+		})
+	}
+}
+
+func mustCandidatePlan(t *testing.T, s *Service, c provider.Candidate) *domain.AdmissionPlan {
+	t.Helper()
+	plan, err := s.PrepareCandidate(context.Background(), c, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan
 }
 
 func TestDisplayPreferencesDoNotChangeSelectionOrBindings(t *testing.T) {

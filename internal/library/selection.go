@@ -32,13 +32,15 @@ type selectionCandidate struct {
 	candidate provider.Candidate
 	summary   domain.ReleaseSummary
 	groups    map[int64]bool
-	existing  bool
+	existing  bool // concrete release already in the library
+	owned     bool // this exact track is currently collected
 }
 
-// selectCandidate 是无网络的纯决策；已有发行优先，总数未知不会被当作零。
-func selectCandidate(candidates []selectionCandidate) Selection {
+// selectionCompatibility runs before preferences or total-count I/O. Owning
+// one candidate cannot resolve a different group, content or repeated position.
+func selectionCompatibility(candidates []selectionCandidate) string {
 	if len(candidates) == 0 {
-		return Selection{Reason: ReasonNoMatch}
+		return ReasonNoMatch
 	}
 	connected := map[int]bool{0: true}
 	for changed := true; changed; {
@@ -65,17 +67,23 @@ func selectCandidate(candidates []selectionCandidate) Selection {
 		}
 	}
 	if len(connected) != len(candidates) {
-		return Selection{Reason: ReasonGroupConflict}
+		return ReasonGroupConflict
 	}
 	first := candidates[0]
 	for i := 1; i < len(candidates); i++ {
 		next := candidates[i]
 		a, b := first.candidate, next.candidate
 		if a.Provider != b.Provider || a.RecordingRef == nil || b.RecordingRef == nil || *a.RecordingRef == "" || *a.RecordingRef != *b.RecordingRef {
-			return Selection{Reason: ReasonAmbiguous}
+			return ReasonAmbiguous
 		}
-		if matching.DefaultWeights().CompareTitle(value(a.Title), value(b.Title)) == matching.MatchNone {
-			return Selection{Reason: ReasonAmbiguous}
+		if e := matching.CompareMetadataText(matching.ParseMetadataText(value(a.Title), matching.MetadataTitle), matching.ParseMetadataText(value(b.Title), matching.MetadataTitle), matching.MetadataTextContext{Field: matching.MetadataTitle, IndependentSupport: true}); !e.Reliable() {
+			return ReasonAmbiguous
+		}
+		if value(a.ArtistName) != "" && value(b.ArtistName) != "" {
+			e := matching.CompareMetadataCredit(matching.ParseMetadataCredit(*a.ArtistName), matching.ParseMetadataCredit(*b.ArtistName), matching.MetadataCreditContext{Text: matching.MetadataTextContext{IndependentSupport: true}})
+			if !e.Reliable() {
+				return ReasonAmbiguous
+			}
 		}
 	}
 	positions := map[domain.Identity]string{}
@@ -83,23 +91,44 @@ func selectCandidate(candidates []selectionCandidate) Selection {
 	for _, c := range candidates {
 		trackIdentity := domain.Identity{Provider: c.candidate.Provider, Ref: c.candidate.MatchRef}
 		if prior, ok := trackReleases[trackIdentity]; ok && prior != c.summary.Identity {
-			return Selection{Reason: ReasonAmbiguous}
+			return ReasonAmbiguous
 		}
 		trackReleases[trackIdentity] = c.summary.Identity
 		if ref, ok := positions[c.summary.Identity]; ok && ref != c.candidate.MatchRef {
-			return Selection{Reason: ReasonAmbiguous}
+			return ReasonAmbiguous
 		}
 		positions[c.summary.Identity] = c.candidate.MatchRef
 	}
-	owned := []selectionCandidate{}
-	for _, c := range candidates {
-		if c.existing {
-			owned = append(owned, c)
+	return ""
+}
+
+func preferredCandidates(candidates []selectionCandidate) ([]selectionCandidate, string) {
+	for _, preference := range []struct {
+		code string
+		keep func(selectionCandidate) bool
+	}{
+		{"prefer_owned_compatible_track", func(c selectionCandidate) bool { return c.owned }},
+		{"prefer_existing_compatible_release", func(c selectionCandidate) bool { return c.existing }},
+	} {
+		subset := []selectionCandidate{}
+		for _, c := range candidates {
+			if preference.keep(c) {
+				subset = append(subset, c)
+			}
+		}
+		if len(subset) > 0 {
+			return subset, preference.code
 		}
 	}
-	if len(owned) > 0 {
-		candidates = owned
+	return append([]selectionCandidate(nil), candidates...), ""
+}
+
+// selectCandidate is a pure default preference, not proof of identity.
+func selectCandidate(candidates []selectionCandidate) Selection {
+	if reason := selectionCompatibility(candidates); reason != "" {
+		return Selection{Reason: reason}
 	}
+	candidates, preference := preferredCandidates(candidates)
 	if len(candidates) > 1 {
 		for _, c := range candidates {
 			if c.summary.ReleaseTrackTotal.State != domain.Value || c.summary.ReleaseTrackTotal.Value <= 0 {
@@ -112,7 +141,7 @@ func selectCandidate(candidates []selectionCandidate) Selection {
 				return a.summary.ReleaseTrackTotal.Value > b.summary.ReleaseTrackTotal.Value
 			}
 			nonWorld := func(r domain.ReleaseSummary) bool {
-				return r.Country.State == domain.Value && strings.TrimSpace(r.Country.Value) != "" && strings.ToUpper(r.Country.Value) != "XW"
+				return r.Country.State == domain.Value && strings.TrimSpace(r.Country.Value) != "" && strings.ToUpper(strings.TrimSpace(r.Country.Value)) != "XW"
 			}
 			if nonWorld(a.summary) != nonWorld(b.summary) {
 				return nonWorld(a.summary)
@@ -121,7 +150,11 @@ func selectCandidate(candidates []selectionCandidate) Selection {
 		})
 	}
 	selected := candidates[0].candidate
-	return Selection{Candidate: &selected}
+	selection := Selection{Candidate: &selected}
+	if preference != "" {
+		selection.Reasons = []matching.DecisionReason{{Code: preference, Detail: "相容候选内的默认选版偏好，不构成身份等价"}}
+	}
+	return selection
 }
 func value(s *string) string {
 	if s == nil {
@@ -160,6 +193,10 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 
 func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matching.ScoredCandidate, itemID int64, summaries map[domain.Identity]domain.ReleaseSummary, input matching.InputProfile) (Selection, error) {
 	prepared := []selectionCandidate{}
+	sources, err := s.identitySources()
+	if err != nil {
+		return Selection{}, err
+	}
 	seen := map[string]bool{}
 	for _, sc := range scored {
 		if seen[candidateKey(sc.Candidate)] {
@@ -185,7 +222,11 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 			}
 			existing = release != nil
 		}
-		prepared = append(prepared, selectionCandidate{candidate: sc.Candidate, summary: summary, existing: existing})
+		ownership, err := matching.ResolveLocal(s.store, sources, sc.Candidate)
+		if err != nil {
+			return Selection{}, err
+		}
+		prepared = append(prepared, selectionCandidate{candidate: sc.Candidate, summary: summary, existing: existing, owned: ownership.State == matching.OwnershipOwned})
 	}
 	load := func(c *selectionCandidate) error {
 		identity := c.summary.Identity
@@ -222,22 +263,7 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 		}
 		return nil
 	}
-	ownedCount := 0
-	for _, c := range prepared {
-		if c.existing {
-			ownedCount++
-		}
-	}
-	for i := range prepared {
-		c := &prepared[i]
-		title, _ := domain.NameEvidence(c.summary.Title, c.summary.Credit)
-		groupingMissing := c.summary.Group == nil && title == ""
-		comparing := (ownedCount == 0 && len(prepared) > 1) || (ownedCount > 1 && c.existing)
-		if groupingMissing || (comparing && c.summary.ReleaseTrackTotal.State != domain.Value) {
-			if err := load(c); err != nil {
-				return Selection{}, err
-			}
-		}
+	refresh := func(c *selectionCandidate) (Selection, error) {
 		// A summary is a new source view, not permission to silently replace
 		// the facts that passed input filtering. Recheck its candidate view.
 		original := c.candidate
@@ -278,6 +304,41 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 		c.groups = map[int64]bool{}
 		for _, group := range resolution.Groups {
 			c.groups[group.ID] = true
+		}
+		return Selection{}, nil
+	}
+	for i := range prepared {
+		c := &prepared[i]
+		title, _ := domain.NameEvidence(c.summary.Title, c.summary.Credit)
+		if c.summary.Group == nil && title == "" {
+			if err := load(c); err != nil {
+				return Selection{}, err
+			}
+		}
+		if check, err := refresh(c); err != nil || check.Reason != "" {
+			return check, err
+		}
+	}
+	if reason := selectionCompatibility(prepared); reason != "" {
+		return Selection{Reason: reason}, nil
+	}
+	preferred, _ := preferredCandidates(prepared)
+	needsTotal := map[string]bool{}
+	if len(preferred) > 1 {
+		for _, c := range preferred {
+			needsTotal[candidateKey(c.candidate)] = true
+		}
+	}
+	for i := range prepared {
+		c := &prepared[i]
+		if !needsTotal[candidateKey(c.candidate)] || (c.summary.ReleaseTrackTotal.State == domain.Value && c.summary.ReleaseTrackTotal.Value > 0) {
+			continue
+		}
+		if err := load(c); err != nil {
+			return Selection{}, err
+		}
+		if check, err := refresh(c); err != nil || check.Reason != "" {
+			return check, err
 		}
 	}
 	selection := selectCandidate(prepared)
