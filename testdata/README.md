@@ -8,9 +8,12 @@
 testdata/golden/encoding/   编码与表头样例（GB18030 / Shift_JIS / Big5 / UTF-16 等）
 testdata/golden/delimiter/  XLSX 单/多工作表样例
 testdata/golden/responses/  精简的上游原始响应，供解析器离线重放
+testdata/track-identity/    成对 CSV/TSV 异写、等值时长及未匹配原始行
 ```
 
 文本标准化、括号/CV、评分等输入与期望直接维护在 `internal/matching/*_test.go` 的表驱动用例中；不另列尚不存在的 text/scoring 夹具目录。
+
+`internal/app/paired_import_test.go` 经真实 SubmitImport→Runner→Store 提交 `original.csv` 和 `aliases.tsv`；固定候选事实离线返回，身份检查仍由 MusicBrainz 适配器提供。断言精确 track/release、新增 1、已存在跳过 1、无结果两行共享 1 问题及原文不变；第二次提交前删除首个终态输入，证明不依赖该历史行。搜索请求计数 7 来自当前查询变体，不包含真实网络。此前代码内 Runner fixture 不冒充成对文件的入口验收。
 
 ## 测试分层
 
