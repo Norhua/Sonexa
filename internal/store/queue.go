@@ -213,8 +213,11 @@ func (s *Store) ClaimNextItem(batchID int64) (*ImportItem, error) {
 			FROM import_item
 			WHERE batch_id = ? AND status = ?
 			  AND (next_retry_at IS NULL OR next_retry_at <= ?)
+			  AND NOT EXISTS(SELECT 1 FROM review_problem_item m WHERE m.item_id=import_item.id AND m.active=1 AND (
+			    EXISTS(SELECT 1 FROM review_problem_lease l WHERE l.problem_id=m.problem_id AND l.released=0 AND l.expires_at>?) OR
+			    EXISTS(SELECT 1 FROM review_problem_operation o WHERE o.problem_id=m.problem_id AND o.expires_at>?)))
 			ORDER BY next_retry_at IS NOT NULL, row_index
-			LIMIT 1`, batchID, string(StatusQueued), now)
+			LIMIT 1`, batchID, string(StatusQueued), now, s.problemNow(), s.problemNow())
 
 		it, err := scanItem(row)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -331,6 +334,9 @@ func (s *Store) setStatusWithProblem(itemID, revision int64, status ItemStatus, 
 		if err := checkActiveItemTx(tx, itemID, revision); err != nil {
 			return err
 		}
+		if err := s.checkBackgroundItemTx(tx, itemID); err != nil {
+			return err
+		}
 		if status.IsTerminal() {
 			if err := finishProblemItemTx(tx, itemID); err != nil {
 				return err
@@ -392,6 +398,9 @@ func (s *Store) RecordFailure(itemID int64, errMsg string, backoff time.Duration
 		if err := checkActiveItemTx(tx, itemID, revision); err != nil {
 			return err
 		}
+		if err := s.checkBackgroundItemTx(tx, itemID); err != nil {
+			return err
+		}
 		var attempts int
 		if err := tx.QueryRow(
 			`SELECT attempt_count FROM import_item WHERE id = ?`, itemID).Scan(&attempts); err != nil {
@@ -436,6 +445,9 @@ func (s *Store) RetryItem(itemID int64, expectedRevision ...int64) error {
 			revision = expectedRevision[0]
 		}
 		if err := checkActiveItemTx(tx, itemID, revision); err != nil {
+			return err
+		}
+		if err := s.checkBackgroundItemTx(tx, itemID); err != nil {
 			return err
 		}
 		_, err := tx.Exec(`

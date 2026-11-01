@@ -53,7 +53,7 @@ func TestProblemQueryCASRejectsLateResultsAndScopeChanges(t *testing.T) {
 					}
 				}
 			case "terminal":
-				if err := s.MarkDiscarded(a.ID); err != nil {
+				if err := s.DiscardProblemMembers(token, []int64{a.ID}); err != nil {
 					t.Fatal(err)
 				}
 			case "none_matched":

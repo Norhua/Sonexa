@@ -293,7 +293,7 @@ func TestTrackIdentifiersDoNotImposeRecordingOrISRCUniqueness(t *testing.T) {
 }
 
 func TestPriorGenerationsRejectedWithoutChanges(t *testing.T) {
-	for _, generation := range []string{"upstream-snapshot-v1", "track-identity-v2", "track-identity-v3", "track-identity-v4"} {
+	for _, generation := range []string{"upstream-snapshot-v1", "track-identity-v2", "track-identity-v3", "track-identity-v4", "track-identity-v5"} {
 		t.Run(generation, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "old.db")
 			db, err := sql.Open("sqlite", path)
@@ -322,7 +322,7 @@ func TestPriorGenerationsRejectedWithoutChanges(t *testing.T) {
 				t.Fatalf("old input changed: %q %v", raw, err)
 			}
 			var count int
-			if err := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name IN ('review_problem','local_match_key','local_match_dirty','local_match_state')").Scan(&count); err != nil || count != 0 {
+			if err := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name IN ('review_problem','local_match_key','local_match_dirty','local_match_state','review_problem_lease','review_problem_operation','review_problem_recheck')").Scan(&count); err != nil || count != 0 {
 				t.Fatalf("old model migrated: %d %v", count, err)
 			}
 		})

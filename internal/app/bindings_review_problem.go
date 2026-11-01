@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
@@ -20,6 +21,35 @@ func (a *App) singleReviewProblemScope(itemID int64) (store.ProblemScope, error)
 		return scope, fmt.Errorf("该问题涉及多行，请先拆出来源行或使用明确问题范围")
 	}
 	return scope, nil
+}
+
+func (a *App) AcquireReviewProblemLease(scope store.ProblemScope) (*store.ProblemInteraction, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	if err := a.store.ReapProblemLeases(100); err != nil {
+		return nil, err
+	}
+	return a.store.AcquireProblemLease(scope)
+}
+func (a *App) RenewReviewProblemLease(lease domain.ProblemLease) (*domain.ProblemLease, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.store.RenewProblemLease(lease)
+}
+func (a *App) ReleaseReviewProblemLease(lease domain.ProblemLease) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	return a.store.ReleaseProblemLease(lease)
+}
+
+func (a *App) UpdateReviewProblemDraft(scope store.ProblemScope, query store.ReviewQuery) (store.ProblemScope, error) {
+	if err := a.ready(); err != nil {
+		return store.ProblemScope{}, err
+	}
+	return a.store.UpdateProblemDraft(scope, query)
 }
 
 func (a *App) GetReviewProblemScope(problemID int64) (store.ProblemScope, error) {
@@ -46,6 +76,7 @@ func (a *App) ResearchReviewProblem(scope store.ProblemScope, query store.Review
 	if err != nil {
 		return nil, err
 	}
+	defer a.store.EndProblemOperation(store.ProblemOperation{Token: token.OperationToken, ProblemID: scope.ProblemID})
 	done := a.beginInteractive()
 	defer done()
 	ctx := provider.WithPriority(context.Background(), provider.PriorityInteractive)
@@ -91,10 +122,5 @@ func (a *App) SplitReviewProblemItem(scope store.ProblemScope, itemID int64) (in
 	if err := a.ready(); err != nil {
 		return 0, err
 	}
-	for _, member := range scope.Members {
-		if member.ItemID == itemID {
-			return a.store.SplitProblemItem(scope.ProblemID, scope.Revision, itemID, member.InputRevision)
-		}
-	}
-	return 0, store.ErrPlanStale
+	return a.store.SplitProblemMember(scope, itemID)
 }

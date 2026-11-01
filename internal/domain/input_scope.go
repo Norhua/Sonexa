@@ -13,10 +13,11 @@ const (
 // operation can retain its enclosing problem as a guard without adopting its
 // other members. Problem operations must list the complete active membership.
 type InputScope struct {
-	Version int                `json:"version"`
-	Kind    InputScopeKind     `json:"kind"`
-	Problem *InputProblemScope `json:"problem,omitempty"`
-	Members []InputScopeMember `json:"members"`
+	LeaseToken string             `json:"leaseToken,omitempty"`
+	Version    int                `json:"version"`
+	Kind       InputScopeKind     `json:"kind"`
+	Problem    *InputProblemScope `json:"problem,omitempty"`
+	Members    []InputScopeMember `json:"members"`
 }
 
 type InputProblemScope struct {

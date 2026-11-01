@@ -117,11 +117,21 @@ func (s *Service) PrepareAdmission(ctx context.Context, seed domain.AdmissionSee
 	if err != nil {
 		return nil, err
 	}
+	seed.Automatic = seed.Automatic || isAutomaticAdmission(ctx)
 	if seed.Operation == "" {
 		seed.Operation = domain.AdmissionCreate
 	}
 	if seed.Operation != domain.AdmissionCreate && seed.Operation != domain.AdmissionSkipExisting {
 		return nil, store.ErrPlanStale
+	}
+	if isAutomaticAdmission(ctx) {
+		scope, err := s.checkedAutomaticScope(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if scope != nil {
+			seed.InputScope = scope
+		}
 	}
 	if err := s.prepareInputScope(&seed); err != nil {
 		return nil, err
@@ -265,8 +275,20 @@ func (s *Service) prepareScopedCandidate(ctx context.Context, candidate provider
 			return nil, err
 		}
 	}
+	var op store.ProblemOperation
+	var err error
+	if !isAutomaticAdmission(ctx) {
+		op, err = s.store.BeginInputOperation(scope)
+		if err != nil {
+			return nil, err
+		}
+		defer s.store.EndProblemOperation(op)
+	}
 	resolved, err := s.resolveScopedAdmissionCandidate(ctx, candidate, scope)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.store.CheckProblemOperation(op); err != nil {
 		return nil, err
 	}
 	seed, err := s.CandidateSeed(resolved, 0)

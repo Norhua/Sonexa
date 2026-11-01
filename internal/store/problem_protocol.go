@@ -19,6 +19,8 @@ type ProblemMemberRevision struct {
 	InputRevision int64 `json:"inputRevision"`
 }
 type ProblemScope struct {
+	LeaseToken        string                  `json:"leaseToken,omitempty"`
+	OperationToken    string                  `json:"operationToken,omitempty"`
 	Version           int                     `json:"version"`
 	ProblemID         int64                   `json:"problemId"`
 	Revision          int64                   `json:"revision"`
@@ -121,6 +123,7 @@ func checkProblemScopeTx(tx *sql.Tx, scope ProblemScope) error {
 	if err != nil {
 		return err
 	}
+	scope.LeaseToken, scope.OperationToken = "", ""
 	if !reflect.DeepEqual(current, scope) {
 		return ErrPlanStale
 	}
@@ -150,6 +153,39 @@ func (s *Store) ItemProblemScope(itemID int64) (ProblemScope, error) {
 	return readProblemScopeTx(tx, id)
 }
 
+// UpdateProblemDraft invalidates old searches/plans without publishing new
+// candidates or modifying source rows. Only the active lease holder may edit.
+func (s *Store) UpdateProblemDraft(scope ProblemScope, query ReviewQuery) (ProblemScope, error) {
+	var out ProblemScope
+	if query.Version != ReviewProtocolVersion || scope.LeaseToken == "" {
+		return out, ErrPlanStale
+	}
+	err := s.withTx(func(tx *sql.Tx) error {
+		if err := checkProblemScopeTx(tx, scope); err != nil {
+			return err
+		}
+		if err := checkProblemLeaseTx(tx, scope.ProblemID, scope.LeaseToken, s.problemNow()); err != nil {
+			return err
+		}
+		body, err := json.Marshal(query)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec("UPDATE review_problem SET query_json=?,query_revision=query_revision+1,revision=revision+1,updated_at=? WHERE id=?", string(body), time.Now().UTC(), scope.ProblemID); err != nil {
+			return err
+		}
+		out, err = readProblemScopeTx(tx, scope.ProblemID)
+		out.LeaseToken = scope.LeaseToken
+		return err
+	})
+	return out, err
+}
+
+func problemQueryScopeHash(scope ProblemScope) (string, error) {
+	scope.OperationToken = ""
+	return inputEvidenceHash(scope)
+}
+
 // BeginProblemQuery reserves a query revision before I/O. A later query,
 // membership change or terminal row makes the returned token unusable.
 func (s *Store) BeginProblemQuery(scope ProblemScope, query ReviewQuery) (ProblemScope, error) {
@@ -168,18 +204,47 @@ func (s *Store) BeginProblemQuery(scope ProblemScope, query ReviewQuery) (Proble
 		if _, err := tx.Exec("UPDATE review_problem SET query_json=?,query_revision=query_revision+1,revision=revision+1,updated_at=? WHERE id=?", string(body), time.Now().UTC(), scope.ProblemID); err != nil {
 			return err
 		}
+		op, err := s.beginProblemOperationTx(tx, scope.ProblemID, scope.LeaseToken)
+		if err != nil {
+			return err
+		}
+		if err := retireProblemClaimsTx(tx, scope); err != nil {
+			return err
+		}
 		out, err = readProblemScopeTx(tx, scope.ProblemID)
+		out.LeaseToken, out.OperationToken = scope.LeaseToken, op.Token
+		hash, err := problemQueryScopeHash(out)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec("UPDATE review_problem_operation SET scope_hash=? WHERE token=?", hash, op.Token)
 		return err
 	})
 	return out, err
 }
 func (s *Store) CompleteProblemQuery(scope ProblemScope, facts ReviewCandidateFacts) error {
+	op := ProblemOperation{Token: scope.OperationToken, ProblemID: scope.ProblemID}
+	defer s.EndProblemOperation(op)
 	if facts.Version != ReviewProtocolVersion {
 		return ErrPlanStale
 	}
 	return s.withTx(func(tx *sql.Tx) error {
 		if err := checkProblemScopeTx(tx, scope); err != nil {
 			return err
+		}
+		if err := s.checkProblemOperationTx(tx, op); err != nil {
+			return err
+		}
+		hash, err := problemQueryScopeHash(scope)
+		if err != nil {
+			return err
+		}
+		var saved string
+		if err := tx.QueryRow("SELECT scope_hash FROM review_problem_operation WHERE token=?", op.Token).Scan(&saved); err != nil {
+			return err
+		}
+		if saved != hash {
+			return ErrPlanStale
 		}
 		body, err := EncodeReviewCandidates(facts.Candidates, facts.TriedVariants)
 		if err != nil {
@@ -206,6 +271,9 @@ func (s *Store) CompleteProblemQuery(scope ProblemScope, facts ReviewCandidateFa
 func (s *Store) NoneMatchedProblem(scope ProblemScope) error {
 	return s.withTx(func(tx *sql.Tx) error {
 		if err := checkProblemScopeTx(tx, scope); err != nil {
+			return err
+		}
+		if err := s.checkProblemAccessTx(tx, scope.ProblemID, scope.LeaseToken); err != nil {
 			return err
 		}
 		body, err := EncodeReviewCandidates(nil, nil)
@@ -259,6 +327,9 @@ func (s *Store) RetryProblemMembers(scope ProblemScope, ids []int64) ([]int64, e
 		if err := checkProblemScopeTx(tx, scope); err != nil {
 			return err
 		}
+		if err := s.checkProblemAccessTx(tx, scope.ProblemID, scope.LeaseToken); err != nil {
+			return err
+		}
 		seen := map[int64]bool{}
 		for _, m := range members {
 			var batch int64
@@ -294,6 +365,9 @@ func (s *Store) DiscardProblemMembers(scope ProblemScope, ids []int64) error {
 	}
 	return s.withTx(func(tx *sql.Tx) error {
 		if err := checkProblemScopeTx(tx, scope); err != nil {
+			return err
+		}
+		if err := s.checkProblemAccessTx(tx, scope.ProblemID, scope.LeaseToken); err != nil {
 			return err
 		}
 		for _, m := range members {

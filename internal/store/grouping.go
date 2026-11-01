@@ -304,6 +304,9 @@ func (s *Store) PreviewAdmission(seed domain.AdmissionSeed) (domain.AdmissionBas
 		return domain.AdmissionBaseline{}, err
 	}
 	defer tx.Rollback()
+	if err := s.checkAdmissionInteractionTx(tx, seed); err != nil {
+		return domain.AdmissionBaseline{}, err
+	}
 	return admissionBaselineTx(tx, seed)
 }
 func sameAdmissionBaseline(a, b domain.AdmissionBaseline) bool {

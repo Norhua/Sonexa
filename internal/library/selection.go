@@ -191,6 +191,11 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 		}
 		revision = item.Revision
 	}
+	var scopeErr error
+	ctx, scopeErr = s.automaticScope(ctx, itemID, revision)
+	if scopeErr != nil {
+		return Selection{}, scopeErr
+	}
 	constrained, err := s.constrainSelection(ctx, scored, *profile)
 	if err != nil {
 		return Selection{}, err
@@ -374,6 +379,10 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 // boundary. It consumes evidence revisions, never refreshes a stale decision
 // into permission to recreate a deleted/rebound collection.
 func (s *Service) prepareAutomaticTarget(ctx context.Context, selection Selection, itemID, revision int64, expected matching.LocalMatch) (Selection, error) {
+	ctx = automaticAdmissionContext(ctx)
+	if _, err := s.checkedAutomaticScope(ctx); err != nil {
+		return Selection{}, err
+	}
 	var plan *domain.AdmissionPlan
 	var err error
 	if itemID > 0 && expected.State == matching.OwnershipOwned {

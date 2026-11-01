@@ -162,6 +162,9 @@ func (s *Store) ReadProblemInputScope(scope ProblemScope) (*domain.InputScope, e
 	if err := checkProblemScopeTx(tx, scope); err != nil {
 		return nil, err
 	}
+	if err := s.checkProblemLeaseTxOptional(tx, scope.ProblemID, scope.LeaseToken); err != nil {
+		return nil, err
+	}
 	problem, members, proof, err := readInputProblemTx(tx, scope.ProblemID)
 	if err != nil {
 		return nil, err
@@ -169,7 +172,7 @@ func (s *Store) ReadProblemInputScope(scope ProblemScope) (*domain.InputScope, e
 	if len(members) > 1 && proof.Kind == matching.ProblemIndependent {
 		return nil, ErrPlanStale
 	}
-	return &domain.InputScope{Version: domain.InputScopeVersion, Kind: domain.InputScopeProblem, Problem: problem, Members: members}, nil
+	return &domain.InputScope{Version: domain.InputScopeVersion, Kind: domain.InputScopeProblem, Problem: problem, Members: members, LeaseToken: scope.LeaseToken}, nil
 }
 
 func checkInputScopeTx(tx *sql.Tx, scope *domain.InputScope) error {
@@ -200,6 +203,7 @@ func checkInputScopeTx(tx *sql.Tx, scope *domain.InputScope) error {
 	if err != nil {
 		return err
 	}
+	current.LeaseToken = scope.LeaseToken
 	if !reflect.DeepEqual(scope, current) {
 		return ErrPlanStale
 	}

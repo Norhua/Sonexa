@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
@@ -17,6 +18,8 @@ import (
 
 // Store 持有数据库连接。
 type Store struct {
+	leaseClockMu      sync.RWMutex
+	leaseClock        func() time.Time // configured before use; real time by default
 	planMu            sync.RWMutex
 	admissionVerifier func(domain.AdmissionPlan, domain.AdmissionApproval) bool
 	lyricsRoot        string

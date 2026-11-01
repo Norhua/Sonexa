@@ -229,10 +229,22 @@ func (r *Runner) loop(ctx context.Context, batchID int64) {
 
 // processItem 处理一个条目并返回其日志行。
 func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string {
+	if deferred, err := r.store.DeferProtectedInput(item.ID, item.Revision); err != nil {
+		return matching.ErrorLogLine(err)
+	} else if deferred {
+		return "[暂缓] 当前问题正在交互，结束后按当前证据重评"
+	}
 	in := inputFromItem(item)
 
 	// [1] 本地充分事实可直接精确跳过；文本相关、稀疏快照不能短路上游。
 	local, err := r.library.PrepareLocalExisting(ctx, *in.Profile, item.ID, item.Revision)
+	if errors.Is(err, store.ErrProblemBusy) {
+		_, deferErr := r.store.DeferProtectedInput(item.ID, item.Revision)
+		if deferErr != nil {
+			return matching.ErrorLogLine(deferErr)
+		}
+		return "[暂缓] 当前问题正在交互，结束后按当前证据重评"
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return ""
@@ -250,6 +262,11 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		if err == nil {
 			selection, err = r.library.SelectCandidate(ctx, res.Scored, item.ID, in.Profile)
 		}
+	}
+	if deferred, deferErr := r.store.DeferProtectedInput(item.ID, item.Revision); deferErr != nil {
+		return matching.ErrorLogLine(deferErr)
+	} else if deferred {
+		return "[暂缓] 当前问题正在交互，结束后按当前证据重评"
 	}
 	if err != nil {
 		if ctx.Err() != nil {
@@ -283,6 +300,13 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 			}
 			return matching.LogLine(matching.OutcomeImportUnique, in, findScored(res.Scored, selection.Candidate.MatchRef))
 		}
+		if errors.Is(err, store.ErrProblemBusy) {
+			_, deferErr := r.store.DeferProtectedInput(item.ID, item.Revision)
+			if deferErr != nil {
+				return matching.ErrorLogLine(deferErr)
+			}
+			return "[暂缓] 当前问题正在交互，结束后按当前证据重评"
+		}
 		if errors.Is(err, store.ErrPlanStale) || errors.Is(err, store.ErrConfirmationRequired) {
 			selection.Reason = library.ReasonNewRelease
 		} else {
@@ -314,6 +338,12 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		evidence = string(raw)
 	}
 	if err := r.store.MarkReviewWithProblem(item.ID, item.Revision, reason, candidatesJSON, string(variantsJSON), evidence, matching.ProblemInput{Profile: *in.Profile, Pool: selection.ProblemFacts}); err != nil {
+		if errors.Is(err, store.ErrProblemBusy) {
+			_, err = r.store.DeferProtectedInput(item.ID, item.Revision)
+			if err == nil {
+				return "[暂缓] 当前问题正在交互，结束后按当前证据重评"
+			}
+		}
 		return matching.ErrorLogLine(err)
 	}
 

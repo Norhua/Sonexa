@@ -94,6 +94,9 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		if !s.validApproval(plan, domain.AdmissionApproval{}) {
 			return ErrPlanStale
 		}
+		if err := s.checkAdmissionInteractionTx(tx, plan.Seed); err != nil {
+			return err
+		}
 		baseline, err := admissionBaselineTx(tx, plan.Seed)
 		if err != nil {
 			return err

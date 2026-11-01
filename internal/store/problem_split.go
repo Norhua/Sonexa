@@ -12,11 +12,32 @@ import (
 // come from the displayed scope; no row or candidate from another scope moves.
 // The isolated problem cannot automatically absorb new equivalent inputs.
 func (s *Store) SplitProblemItem(problemID, problemRevision, itemID, inputRevision int64) (int64, error) {
+	return s.splitProblemItem(problemID, problemRevision, itemID, inputRevision, nil)
+}
+func (s *Store) SplitProblemMember(scope ProblemScope, itemID int64) (int64, error) {
+	for _, member := range scope.Members {
+		if member.ItemID == itemID {
+			return s.splitProblemItem(scope.ProblemID, scope.Revision, itemID, member.InputRevision, &scope)
+		}
+	}
+	return 0, ErrPlanStale
+}
+func (s *Store) splitProblemItem(problemID, problemRevision, itemID, inputRevision int64, scope *ProblemScope) (int64, error) {
 	var created int64
 	if problemID <= 0 || problemRevision <= 0 || itemID <= 0 || inputRevision <= 0 {
 		return 0, ErrPlanStale
 	}
 	err := s.withTx(func(tx *sql.Tx) error {
+		lease := ""
+		if scope != nil {
+			if err := checkProblemScopeTx(tx, *scope); err != nil {
+				return err
+			}
+			lease = scope.LeaseToken
+		}
+		if err := s.checkProblemAccessTx(tx, problemID, lease); err != nil {
+			return err
+		}
 		if err := checkActiveItemTx(tx, itemID, inputRevision); err != nil {
 			return err
 		}

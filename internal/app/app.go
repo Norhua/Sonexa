@@ -51,6 +51,9 @@ type App struct {
 	countries       []CountryOption
 	countryHint     func(string) CountryHint
 	runner          *importer.Runner
+
+	reviewLeaseCancel context.CancelFunc
+	reviewLeaseDone   chan struct{}
 	// enricher 是后台的「补全信息匹配」任务：入库不再同步补详情，
 	// 详情由它在空闲时按条补上（见 enrichWorker）。
 	enricher *enrichWorker
@@ -88,6 +91,13 @@ func (a *App) startup(ctx context.Context) {
 		a.mu.Unlock()
 		return
 	}
+
+	leaseCtx, cancel := context.WithCancel(ctx)
+	a.reviewLeaseCancel, a.reviewLeaseDone = cancel, make(chan struct{})
+	go func() {
+		defer close(a.reviewLeaseDone)
+		a.store.RunProblemLeaseReaper(leaseCtx, func(err error) { log.Printf("回收问题租约失败: %v", err) })
+	}()
 
 	// 恢复上次未完成的导入：中断的条目退回排队，已完成的不重复处理
 	if a.runner != nil {
@@ -340,6 +350,10 @@ func (a *App) shutdown(ctx context.Context) {
 	}
 	if a.coverSvc != nil {
 		_ = a.coverSvc.Close()
+	}
+	if a.reviewLeaseCancel != nil {
+		a.reviewLeaseCancel()
+		<-a.reviewLeaseDone
 	}
 	if a.store != nil {
 		if err := a.store.Close(); err != nil {

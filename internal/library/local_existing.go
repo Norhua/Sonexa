@@ -17,6 +17,11 @@ func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.Input
 	if input.RuleVersion != matching.MetadataRuleVersion {
 		return nil, errors.New("输入证据版本已失效，需要重新解析")
 	}
+	var scopeErr error
+	ctx, scopeErr = s.automaticScope(ctx, itemID, revision)
+	if scopeErr != nil {
+		return nil, scopeErr
+	}
 	pool, err := s.CandidateFacts(ctx, input, nil)
 	if err != nil {
 		return nil, err
