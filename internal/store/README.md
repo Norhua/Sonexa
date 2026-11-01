@@ -33,7 +33,15 @@
 
 **来源行拆出：** `SplitProblemItem(problemID, problemRevision, itemID, inputRevision)` 在事务内校验当前范围，将该行移入 `anchor.isolated` 的独立活跃问题。原问题 revision 和被拆行 revision 递增，其他行原文、候选和输入修订不变。旧单行准入批准因此失效；独立问题重试也不自动合回，不吸纳后续等价输入。隔离仅保存于活跃工作锚点，不作为未来输入的历史身份规则。
 
-**阶段边界：** 5.1–5.3 已交付证明、检索、创建/加入/关闭、拆出及生产 Runner 接线。问题查询版本化 DTO、全部交互入口的范围 CAS、多行批准和租约仍待后续任务。前端暂时仍逐行读取，不能把后台成员归并称为已交付多来源问题 UI。候选合并 API、旧本地候选快照与 merged 终态已移除，状态 CHECK 拒绝旧写法。
+**阶段边界：** 5.1–5.4 已交付证明、检索、创建/加入/关闭、拆出、版本化问题操作和生产 Runner 接线。多行准入批准、租约和问题前端仍待后续任务。前端暂时仍逐行读取，不能把后台成员归并称为已交付多来源问题 UI。候选合并 API、旧本地候选快照与 merged 终态已移除，状态 CHECK 拒绝旧写法。
+
+## 问题查询与范围协议（5.4）
+
+`ProblemScope(version=1)` 携带问题 ID/revision、查询/候选修订以及稳定排序的全部活跃成员 ID、成员修订和输入修订。`BeginProblemQuery` 在出网前校验并递增查询修订、保存 `ReviewQuery(version=1)`，完成时校验完整 token；成员新增/拆出、其他查询、终态或无一匹配使迟到结果失效。查询只影响当前显式范围，不改原文。
+
+`ReviewCandidateFacts(version=1)` 统一保存 `ScoredCandidate` 来源事实及变体，不保存 CandidateRow 的所有权、动作或本地封面 ID。问题的 `ProblemCandidateFacts(version=1)` 按成员分别保存事实，不能拼接不同来源行。Runner 与人工问题改搜使用同一形状；旧内部 scored fixture 可投影到来源形状，旧 UI 候选快照只在 App 兼容读取，不成为问题身份证明。
+
+`NoneMatchedProblem` 清候选但保留活跃成员，失效在途查询；`RetryProblemMembers` 只处理范围中明确列出的 failed 成员；`DiscardProblemMembers` 仅原子结束列明成员。空/重复/非成员 ID、旧问题/成员/输入修订均拒绝。App 提供对应显式问题接口及拆出入口；旧单行改搜/无一匹配遇多行问题时要求先拆出，不能静默扩大范围。完整问题 UI 将在 8.x 接线。
 
 ## 单行接受与精确跳过
 

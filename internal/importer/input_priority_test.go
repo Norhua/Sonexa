@@ -1,11 +1,10 @@
 package importer
 
 import (
-	"encoding/json"
 	"testing"
 
-	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/store"
 )
 
 func inputPriorityCandidates() (provider.Candidate, provider.Candidate) {
@@ -84,9 +83,9 @@ func TestRunnerInputAlbumConstrainsBeforeCrossGroupGuard(t *testing.T) {
 				if err != nil || len(items) != 1 || items[0].Candidates == nil {
 					t.Fatal(items, err)
 				}
-				var candidates []matching.ScoredCandidate
-				if err := json.Unmarshal([]byte(*items[0].Candidates), &candidates); err != nil || len(candidates) != len(rows) {
-					t.Fatal("manual candidates lost", candidates, err)
+				facts, err := store.DecodeReviewCandidates(*items[0].Candidates)
+				if err != nil || len(facts.Candidates) != len(rows) {
+					t.Fatal("manual candidates lost", facts, err)
 				}
 				return
 			}

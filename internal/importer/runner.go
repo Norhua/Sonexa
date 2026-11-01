@@ -294,7 +294,10 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	if reason == "" {
 		reason = store.ReviewAmbiguous
 	}
-	candidatesJSON, _ := json.Marshal(res.Scored)
+	candidatesJSON, err := store.EncodeReviewCandidates(res.Scored, res.TriedVariants)
+	if err != nil {
+		return matching.ErrorLogLine(err)
+	}
 	evidence := ""
 	if len(selection.Reasons) > 0 {
 		raw, _ := json.Marshal(struct {
@@ -310,7 +313,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		}{selection.Plan.Baseline, selection.Plan.Seed.Snapshot.Release, selection.Reasons})
 		evidence = string(raw)
 	}
-	if err := r.store.MarkReviewWithProblem(item.ID, item.Revision, reason, string(candidatesJSON), string(variantsJSON), evidence, matching.ProblemInput{Profile: *in.Profile, Pool: selection.ProblemFacts}); err != nil {
+	if err := r.store.MarkReviewWithProblem(item.ID, item.Revision, reason, candidatesJSON, string(variantsJSON), evidence, matching.ProblemInput{Profile: *in.Profile, Pool: selection.ProblemFacts}); err != nil {
 		return matching.ErrorLogLine(err)
 	}
 

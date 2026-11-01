@@ -126,6 +126,9 @@ func TestLateReviewSearchCannotRestoreSkippedInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	itemID := enqueueOneItem(t, a, *row.Title, *row.Artist, *row.Album)
+	if err := a.store.MarkReview(itemID, store.ReviewAmbiguous, "[]", "[]"); err != nil {
+		t.Fatal(err)
+	}
 	item, err := a.store.GetItem(itemID)
 	if err != nil {
 		t.Fatal(err)

@@ -2,7 +2,6 @@ package importer
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -112,8 +111,11 @@ func TestRunnerDecisionFactsReplayAndRevisionBoundary(t *testing.T) {
 				t.Fatal("late decision overwrote current revision", got)
 			}
 			if scenario == "repeated_position" {
-				var rows []matching.ScoredCandidate
-				if got.Candidates == nil || json.Unmarshal([]byte(*got.Candidates), &rows) != nil || len(rows) != 3 {
+				if got.Candidates == nil {
+					t.Fatal("missing candidates", got)
+				}
+				facts, err := store.DecodeReviewCandidates(*got.Candidates)
+				if err != nil || len(facts.Candidates) != 3 {
 					t.Fatal("must retain two exact positions and excluded manual candidate", got)
 				}
 			}

@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
@@ -94,6 +93,9 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 
 // parseCandidateSnapshot 只读取来源候选事实；本地关联和旧动作不能赋予收藏权限。
 func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
+	if facts, err := store.DecodeReviewCandidates(raw); err == nil {
+		return a.rowsFrom(facts.Candidates, matching.CandidateAccept)
+	}
 	// 先按管线的评分候选解析
 	var scored []matching.ScoredCandidate
 	if err := json.Unmarshal([]byte(raw), &scored); err == nil && len(scored) > 0 && scored[0].Candidate.MatchRef != "" {
@@ -135,41 +137,11 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 	if item == nil || item.Status.IsTerminal() {
 		return nil, store.ErrPlanStale
 	}
-	p, err := a.metadataRegistry().Get(provider.ProviderID(providerID))
+	scope, err := a.singleReviewProblemScope(itemID)
 	if err != nil {
 		return nil, err
 	}
-	if err := p.IsConfigured(); err != nil {
-		return nil, err
-	}
-
-	// 用户在等这次结果：交互式优先级，插到后台补全的队列之前
-	done := a.beginInteractive()
-	defer done()
-	ctx := provider.WithPriority(context.Background(), provider.PriorityInteractive)
-
-	// 与导入匹配、搜索页同一条检索路径（见 matchUpstream）
-	scored, variants, err := a.matchUpstream(ctx, p, matching.Input{
-		Title: title, Artist: artist, Album: album, Country: country,
-	})
-	if err != nil {
-		return nil, err
-	}
-	rows := a.rowsFrom(scored, matching.CandidateAccept)
-
-	// 把本次候选写入快照，但不动原始导入值
-	snapshot, err := json.Marshal(rows)
-	if err != nil {
-		return nil, err
-	}
-	tried, err := json.Marshal(variants)
-	if err != nil {
-		return nil, err
-	}
-	if err := a.store.MarkReviewAtRevision(itemID, item.Revision, store.ReviewReasonUnchanged, string(snapshot), string(tried)); err != nil {
-		return nil, err
-	}
-	return rows, nil
+	return a.ResearchReviewProblem(scope, store.ReviewQuery{Version: store.ReviewProtocolVersion, Title: title, Artist: artist, Album: album, Provider: providerID, Country: country})
 }
 
 // applyLocalMatch 只按来源验证的精确 track 和当前发行关系查询所有权。
@@ -242,7 +214,11 @@ func (a *App) DiscardReviewItem(itemID int64) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	return a.store.MarkDiscarded(itemID)
+	scope, err := a.store.ItemProblemScope(itemID)
+	if err != nil {
+		return err
+	}
+	return a.store.DiscardProblemMembers(scope, []int64{itemID})
 }
 
 // NoneMatched 不接受当前结果但把条目保留在队列中。
@@ -252,12 +228,11 @@ func (a *App) NoneMatched(itemID int64) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	item, err := a.store.GetItem(itemID)
-	if err != nil || item == nil {
+	scope, err := a.singleReviewProblemScope(itemID)
+	if err != nil {
 		return err
 	}
-	// 保持 review 状态，仅清空候选快照
-	return a.store.MarkReview(itemID, store.ReviewReasonUnchanged, "", derefOr(item.TriedVariants, ""))
+	return a.store.NoneMatchedProblem(scope)
 }
 
 // RetryReviewItem 让失败条目重新进入匹配。
@@ -265,18 +240,11 @@ func (a *App) RetryReviewItem(itemID int64) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	if err := a.store.RetryItem(itemID); err != nil {
+	scope, err := a.store.ItemProblemScope(itemID)
+	if err != nil {
 		return err
 	}
-	// 重新排队后由对应批次的驱动器继续处理
-	item, err := a.store.GetItem(itemID)
-	if err != nil || item == nil {
-		return err
-	}
-	if a.runner != nil && !a.runner.IsRunning(item.BatchID) {
-		return a.runner.Start(context.Background(), item.BatchID)
-	}
-	return nil
+	return a.RetryReviewProblemMembers(scope, []int64{itemID})
 }
 
 func derefOr(s *string, fallback string) string {

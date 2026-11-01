@@ -253,7 +253,10 @@ func rebuildProblemTx(tx *sql.Tx, problemID int64) error {
 		return err
 	}
 	_, err = tx.Exec("UPDATE review_problem SET anchor_json=?,proof_json=?,revision=revision+1,updated_at=? WHERE id=? AND status='active'", string(body), string(proof), time.Now().UTC(), problemID)
-	return err
+	if err != nil {
+		return err
+	}
+	return rebuildProblemCandidatesTx(tx, problemID)
 }
 
 func finishProblemItemTx(tx *sql.Tx, itemID int64) error {

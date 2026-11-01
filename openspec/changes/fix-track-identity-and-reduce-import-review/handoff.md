@@ -1,10 +1,19 @@
-# 实施交接：5.3 已完成
+# 实施交接：第五组已完成
 
 ## 当前状态
 
 - 变更 `fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
-- 已完成 1.1–5.3，**28/48**；CLI 已确认 5.3 完成。下一任务 5.4：问题查询/候选事实版本化与范围 CAS。
+- 已完成 1.1–5.4，**29/48**；CLI 已确认 5.4 完成。下一任务 6.1：多行 InputScope 与计划 Hash。
 - 未同步主规格、未归档、未修改或清理用户应用数据。测试使用临时 SQLite、fixture 和 httptest；本轮未执行真实网络/原生验收或前端测试。
+
+## 5.4 已完成
+
+- 问题 scope/version 包含问题、查询、候选及全部成员/输入修订；改搜出网前保留 query revision，提交校验完整范围，成员变化/拆出/其他查询/终态拒绝迟到结果。
+- Runner 与人工问题改搜统一来源候选 envelope（含显式 version、ScoredCandidate、变体），问题候选按成员保存，不持久化 UI 的所有权/动作。App 仍兼容旧单行候选读取。
+- 新 App 接口提供问题范围读取、改搜、无一匹配、列明 failed 成员重试、列明成员移出及拆出。旧单行改搜/无一匹配对多行问题明确要求拆出，不静默扩大范围。
+- Store/App 测试验证查询竞态、终态不恢复、成员变化、草稿保留、空候选仍活跃、只重试失败成员、范围错误拒绝、协议版本必需。旧迟到搜索测试改为真实 review 状态（不是仅 matching 桩）。
+- `go test ./...`、五包 race（matching/store/importer/library/app）通过；生成 Wails 绑定，frontend typecheck 通过。最后协议解码强化后重跑 store/importer/app 定向通过。
+- 5.3 提交 `5d95738`。未执行前端单测/浏览/原生/真实网络验收；完整问题 UI 在 8.x，接受/跳过多行计划在 6.x。
 
 ## 5.3 已完成
 
@@ -208,8 +217,8 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 
 ### 未完成范围
 
-- 4.1–5.3 已完成；当前从 5.4 开始。
-- 5.x 问题等价证明、归并/拆出/关闭业务生命周期与版本化候选持久化。
+- 4.1–5.4 已完成；当前从 6.1 开始。
+- 5.x 已交付后端证明、生命周期、拆出和问题范围协议；完整前端和多行准入依然待后续。
 - 6.x 多行 scope/hash、原子结果和租约；当前准备入口仍主要支持单行。
 - 7.x 有界重评、独立问题统计、review/task 事件。
 - 8.x 多来源问题 UI、成员范围、拆出和租约；当前复核仍逐行。
