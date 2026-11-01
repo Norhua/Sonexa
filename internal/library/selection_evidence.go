@@ -163,7 +163,7 @@ func (s *Service) constrainSelection(ctx context.Context, scored []matching.Scor
 		// from a complete release list (including positions not collected).
 		positionUnresolved := false
 		for _, fact := range target.Facts {
-			if fact.Release != nil && fact.Release.TracklistCompleteness == domain.Complete && !localPositionUnique(input, target, fact.Release) {
+			if fact.Release != nil && fact.Release.TracklistCompleteness == domain.Complete && !matching.PositionUnique(input, target, fact.Release) {
 				positionUnresolved = true
 			}
 		}

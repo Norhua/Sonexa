@@ -50,7 +50,7 @@ func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.Input
 					supported = true
 				}
 			}
-			if supported && localPositionUnique(input, target, fact.Release) {
+			if supported && matching.PositionUnique(input, target, fact.Release) {
 				chosen = fact
 				break
 			}
@@ -89,61 +89,4 @@ func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.Input
 		return nil, err
 	}
 	return &selected, nil
-}
-
-// Inspect every position that might be the input, not merely the collected
-// position. The same recording elsewhere remains ambiguous even if unowned.
-func localPositionUnique(input matching.InputProfile, target matching.CandidateTarget, release *domain.ReleaseSnapshot) bool {
-	if release.TracklistCompleteness != domain.Complete || release.Tracklist.State != domain.Value || len(release.Tracklist.Value) == 0 {
-		return false
-	}
-	found := false
-	positions := map[[2]int]bool{}
-	identities := map[domain.Identity]bool{}
-	for _, entry := range release.Tracklist.Value {
-		if entry.Track.State != domain.Value || entry.Track.Value.Provider != release.Identity.Provider || entry.Track.Value.Ref == "" || entry.DiscNumber <= 0 || entry.TrackNumber <= 0 {
-			return false
-		}
-		position := [2]int{entry.DiscNumber, entry.TrackNumber}
-		if positions[position] || identities[entry.Track.Value] {
-			return false
-		}
-		positions[position], identities[entry.Track.Value] = true, true
-		if entry.Track.Value == target.Identity.Track {
-			if found {
-				return false
-			}
-			found = true
-			continue
-		}
-		track := &domain.TrackSnapshot{Identity: entry.Track.Value, Release: &release.Identity, Title: entry.Title, Credit: entry.Credit,
-			DiscNumber: domain.Known(entry.DiscNumber), TrackNumber: domain.Known(entry.TrackNumber), DurationMS: entry.DurationMS, Recording: entry.Recording}
-		candidate := matching.SnapshotCandidate(track, release)
-		// Album correspondence was established for this exact release, possibly
-		// by its current user name. Reusing the old source album name here could
-		// incorrectly exclude every other position in the same release.
-		positionInput := input
-		positionInput.Album = matching.ParseMetadataText("", matching.MetadataAlbum)
-		// Equal recording is not track identity, but it is enough to keep a
-		// repeated position in contention even if one source title is an alias.
-		sameRecording := false
-		for _, fact := range target.Facts {
-			ref := fact.Metadata.Candidate.RecordingRef
-			if ref != nil && *ref != "" && candidate.RecordingRef != nil && *ref == *candidate.RecordingRef {
-				sameRecording = true
-			}
-		}
-		if sameRecording {
-			if input.Disc.State == matching.ValueKnown && input.Disc.Value != int64(entry.DiscNumber) ||
-				input.Track.State == matching.ValueKnown && input.Track.Value != int64(entry.TrackNumber) {
-				continue
-			}
-			return false
-		}
-		evidence := matching.CheckMetadataEvidence(positionInput, matching.MetadataFacts{Candidate: candidate, Source: "local:competing_position", AlbumComplete: release.Title.State == domain.Value, PositionVerified: true})
-		if evidence.Eligibility != matching.MetadataExcluded {
-			return false
-		}
-	}
-	return found
 }
