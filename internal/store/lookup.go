@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/norhua/sonexa/internal/domain"
 	"time"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
 )
 
@@ -22,18 +22,39 @@ func (s *Store) FindByMatchRef(source, ref string) (int64, error) {
 	return id, err
 }
 
-// FindByISRC 按 ISRC 查找曲目（跨上游桥接）；未命中返回 0。
-func (s *Store) FindByISRC(isrc string) (int64, error) {
-	if isrc == "" {
-		return 0, nil
+// FindExactBinding 在同一读取中返回当前 track 与发行关系；没有绑定时返回 nil。
+// 只读当前绑定列，不用历史快照、导入记录、ISRC 或文本填补缺失关系。
+func (s *Store) FindExactBinding(track domain.Identity) (*matching.LocalBinding, error) {
+	return findExactBinding(s.db, track)
+}
+
+func findExactBinding(q interface{ QueryRow(string, ...any) *sql.Row }, track domain.Identity) (*matching.LocalBinding, error) {
+	if track.Provider == "" || track.Ref == "" {
+		return nil, matching.ErrIdentityConflict
 	}
-	var id int64
-	err := s.db.QueryRow(
-		`SELECT track_id FROM track_identifier WHERE kind='ISRC' AND value=? ORDER BY track_id LIMIT 1`, isrc).Scan(&id)
+	binding := matching.LocalBinding{Track: track}
+	var source, ref *string
+	var revision *int64
+	err := q.QueryRow(`SELECT t.id,t.revision,r.provider,r.provider_ref,r.revision
+	 FROM track t LEFT JOIN release r ON r.id=t.release_id
+	 WHERE t.match_source=? AND t.match_ref=?`, track.Provider, track.Ref).Scan(
+		&binding.TrackID, &binding.Revision, &source, &ref, &revision)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, nil
+		return nil, nil
 	}
-	return id, err
+	if err != nil {
+		return nil, err
+	}
+	if source != nil {
+		binding.Release.Provider = domain.ProviderID(*source)
+	}
+	if ref != nil {
+		binding.Release.Ref = *ref
+	}
+	if revision != nil {
+		binding.ReleaseRevision = *revision
+	}
+	return &binding, nil
 }
 
 // FindUnmatchedByText 在没有匹配来源的曲目中做标准化文本比对。
@@ -79,7 +100,7 @@ func (s *Store) FindUnmatchedByText(normTitle, normArtist string, durationMS *in
 	return 0, rows.Err()
 }
 
-// 编译期断言：Store 必须满足候选合并判定所需的查询能力。
+// 编译期断言：Store 提供当前精确绑定，不把相关性结果用作所有权。
 var _ matching.LocalLookup = (*Store)(nil)
 
 // TracklistPosition 是清单中一个位置的呈现状态。
@@ -148,7 +169,7 @@ func (s *Store) SetProvenance(trackID int64, source, ref string) error {
 	return s.withTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`
 			UPDATE track SET
-				match_source = ?, match_ref = ?, matched_at = ?, updated_at = ?
+				match_source = ?, match_ref = ?, matched_at = ?, revision=revision+1, updated_at = ?
 			WHERE id = ?`, source, ref, now, now, trackID)
 		return err
 	})

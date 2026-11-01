@@ -33,11 +33,13 @@ type CandidateRow struct {
 	HasCover           bool                    `json:"hasCover"`
 	Provider           string                  `json:"provider"`
 	MatchRef           string                  `json:"matchRef"`
-	// Badges 可叠加，如 [本地][MB]；疑似命中时为 [本地?]。
+	// Ownership 是精确身份结论，不能按相关 ID 或展示文案推导。
+	Ownership matching.LocalMatch `json:"ownership"`
+	// Badges 仅精确拥有时叠加 [本地][MB]。
 	Badges []string `json:"badges"`
-	// Note 给出附加说明，如「经 ISRC 匹配」。
+	// Note 给出身份冲突或查询错误说明。
 	Note string `json:"note"`
-	// Action 为 加入曲库 | 已在库中 | 接受 | 合并。
+	// Action 是过渡展示文案，后续共享表格按结构化状态分流。
 	Action string `json:"action"`
 	// LocalTrackID 非零时表示库中已有对应曲目，可跳转。
 	LocalTrackID int64 `json:"localTrackId"`
@@ -249,7 +251,7 @@ func (a *App) matchUpstream(ctx context.Context, p provider.MetadataProvider, in
 
 // rowsFrom 把评分后的候选转为表格行，并预查本地决定动作按钮。
 //
-// 已存在则显示为禁用的「已在库中」（或复核队列里的「合并」）且点击可跳转；
+// 已存在则显示为「已在库中」（或复核队列里的「跳过」）；
 // 不存在则显示 defaultAction。
 func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction string) []CandidateRow {
 	rows := make([]CandidateRow, 0, len(scored))
@@ -261,9 +263,9 @@ func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction string) 
 		}
 		row := rowFrom(sc)
 		a.applyLocalMatch(&row, sc.Candidate)
-		if row.LocalTrackID == 0 {
+		if row.Ownership.State == matching.OwnershipUnowned {
 			row.Action = defaultAction
-		} else if defaultAction == "加入曲库" {
+		} else if row.Ownership.State == matching.OwnershipOwned && defaultAction == "加入曲库" {
 			row.Action = "已在库中"
 		}
 		rows = append(rows, row)
@@ -281,8 +283,9 @@ func (a *App) RefreshSearchCandidates(rows []CandidateRow) ([]CandidateRow, erro
 		// 删除/解除绑定后旧的具体发行不能继续用于封面。
 		row.ReleaseID, row.CoverRevision = 0, 0
 		a.applyLocalMatch(&row, row.toCandidate())
-		row.Action = "加入曲库"
-		if row.LocalTrackID != 0 {
+		if row.Ownership.State == matching.OwnershipUnowned {
+			row.Action = "加入曲库"
+		} else if row.Ownership.State == matching.OwnershipOwned {
 			row.Action = "已在库中"
 		}
 		out[i] = row

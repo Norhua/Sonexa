@@ -4,7 +4,100 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/norhua/sonexa/internal/domain"
+	"github.com/norhua/sonexa/internal/matching"
+	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/provider/musicbrainz"
 )
+
+func TestExactCandidateOwnershipFromCurrentBinding(t *testing.T) {
+	s := openTestStore(t)
+	sources, err := matching.NewCandidateSources(musicbrainz.New(nil, musicbrainz.Config{}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const trackA = "f0a33d1a-628a-4a53-bc4e-6af077505956"
+	const trackB = "f4458acc-aa40-40b0-a0b7-aaa27df24b04"
+	const releaseA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	const releaseB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	const recording = "2283ceda-78b1-4d20-8f52-bdf73bd53686"
+	owned, err := s.CreateTrackWithProvenance(NewTrackInput{
+		Title: "用户改名", Credit: ptr("用户署名"), MatchSource: ptr("musicbrainz"), MatchRef: ptr(trackA),
+		Release:  &ReleaseInput{Provider: ptr("musicbrainz"), ProviderRef: ptr(releaseA)},
+		Metadata: &MetadataInput{ISRC: ptr("JPE301500361"), RecordingRef: ptr(recording)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateTrackWithProvenance(NewTrackInput{Title: "you", Credit: ptr("歌手"), Album: ptr("合集")}); err != nil {
+		t.Fatal(err)
+	}
+	candidate := provider.Candidate{Provider: provider.MusicBrainz, MatchRef: trackA, ReleaseRef: ptr(releaseA),
+		Title: ptr("you"), ArtistName: ptr("歌手"), AlbumTitle: ptr("合集"), ISRC: ptr("JPE301500361"), RecordingRef: ptr(recording)}
+	got, err := matching.ResolveLocal(s, sources, candidate)
+	if err != nil || got.State != matching.OwnershipOwned || got.TrackID != owned || got.Revision < 1 || got.ReleaseRevision < 1 {
+		t.Fatalf("exact owned: %+v %v", got, err)
+	}
+	candidate.MatchRef, candidate.ReleaseRef = trackB, ptr(releaseB)
+	got, err = matching.ResolveLocal(s, sources, candidate)
+	if err != nil || got.State != matching.OwnershipUnowned || got.TrackID != 0 {
+		t.Fatalf("ISRC/recording/text became owned: %+v %v", got, err)
+	}
+	candidate.MatchRef = trackA
+	got, err = matching.ResolveLocal(s, sources, candidate)
+	if !errors.Is(err, matching.ErrIdentityConflict) || got.State != matching.OwnershipConflict || got.TrackID != 0 {
+		t.Fatalf("release conflict hidden: %+v %v", got, err)
+	}
+	// 同字符串的另一来源不是同一绑定。
+	binding, err := s.FindExactBinding(domain.Identity{Provider: "itunes", Ref: trackA})
+	if err != nil || binding != nil {
+		t.Fatalf("cross-source owned: %+v %v", binding, err)
+	}
+	// 未解析的合成标识即使被底层旧写入口存过也不能成为精确拥有。
+	candidate.MatchRef, candidate.ReleaseRef = recording+"@"+releaseA, ptr(releaseA)
+	if _, err := s.CreateTrackWithProvenance(NewTrackInput{Title: "旧合成", MatchSource: ptr("musicbrainz"), MatchRef: &candidate.MatchRef,
+		Release: &ReleaseInput{Provider: ptr("musicbrainz"), ProviderRef: ptr(releaseA)}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = matching.ResolveLocal(s, sources, candidate)
+	if err != nil || got.State != matching.OwnershipUnowned || got.Identity.State != matching.IdentityUnresolved || got.TrackID != 0 {
+		t.Fatalf("synthetic owned: %+v %v", got, err)
+	}
+	// 换绑提升修订，不再命中旧 track；不使用旧快照恢复旧绑定。
+	before, err := s.FindExactBinding(domain.Identity{Provider: "musicbrainz", Ref: trackA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetProvenance(owned, "musicbrainz", trackB); err != nil {
+		t.Fatal(err)
+	}
+	candidate.MatchRef = trackA
+	got, err = matching.ResolveLocal(s, sources, candidate)
+	if err != nil || got.State != matching.OwnershipUnowned {
+		t.Fatalf("stale binding owned: %+v %v", got, err)
+	}
+	after, err := s.FindExactBinding(domain.Identity{Provider: "musicbrainz", Ref: trackB})
+	if err != nil || after.Revision <= before.Revision {
+		t.Fatalf("binding revision did not advance: %+v %v", after, err)
+	}
+	// 已绑定 track 但发行身份丢失不能伪报 owned。
+	if _, err := s.db.Exec("UPDATE track SET release_id=NULL WHERE id=?", owned); err != nil {
+		t.Fatal(err)
+	}
+	candidate.MatchRef = trackB
+	got, err = matching.ResolveLocal(s, sources, candidate)
+	if !errors.Is(err, matching.ErrIdentityConflict) || got.State != matching.OwnershipConflict {
+		t.Fatalf("missing release owned: %+v %v", got, err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got, err = matching.ResolveLocal(s, sources, candidate)
+	if err == nil || got.State != matching.OwnershipError || got.TrackID != 0 {
+		t.Fatalf("database failure became unowned: %+v %v", got, err)
+	}
+}
 
 // TestFuzzyScopeExcludesMatchedTracks 覆盖 8.3：
 // 文本模糊比对的作用域仅限没有匹配来源的曲目。

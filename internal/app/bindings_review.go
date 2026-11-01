@@ -187,14 +187,8 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 	return rows, nil
 }
 
-// applyLocalMatch 按一次本地判定填好某行的徽章、动作与附注。
-//
-// 三者本来是三个各自调用 ResolveLocal 的函数——同一条候选要查三遍库，
-// 而 ResolveLocal 每次最多查三张表。一个 200 条的复核队列因此会打出
-// 上千次本来只需三分之一的查询。
-//
-// 库中已有且上游也存在时同时标注两个徽章；经 ISRC 桥接命中的标注
-// 「经 ISRC 匹配」；文本模糊比对的疑似命中带问号。
+// applyLocalMatch 只按来源验证的精确 track 和当前发行关系查询所有权。
+// 错误保留独立结果，不能伪装为未收藏；不请求上游。
 func (a *App) applyLocalMatch(row *CandidateRow, c provider.Candidate) {
 	if c.ReleaseRef != nil {
 		if release, err := a.store.GetReleaseByRef(string(c.Provider), *c.ReleaseRef); err == nil && release != nil {
@@ -202,14 +196,11 @@ func (a *App) applyLocalMatch(row *CandidateRow, c provider.Candidate) {
 			row.CoverRevision = a.CoverRevision(release.ID)
 		}
 	}
-	local, err := matching.ResolveLocal(a.store, c)
-	if err != nil || local.Kind == matching.LocalNone {
-		row.Badges = []string{string(c.Provider)}
-		row.Action = "接受"
-		row.Note = ""
-		row.LocalTrackID = 0
-		return
-	}
+	a.mu.Lock()
+	sources := a.identitySources
+	a.mu.Unlock()
+	local, _ := matching.ResolveLocal(a.store, sources, c)
+	row.Ownership = local
 	row.Badges = local.Badges(c.Provider)
 	row.Action = local.Action()
 	row.Note = local.Note()

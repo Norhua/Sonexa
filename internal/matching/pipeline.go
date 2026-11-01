@@ -157,11 +157,17 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 	return res, nil
 }
 
+// LocalDuplicateLookup 仅供旧文本重复检查使用，不提供精确所有权结论。
+// 与候选 LocalLookup 分离，待输入优先本地召回替换旧前置短路。
+type LocalDuplicateLookup interface {
+	FindUnmatchedByText(normTitle, normArtist string, durationMS *int) (int64, error)
+}
+
 // CheckLocalDuplicate 执行本地去重前置检查。
 //
 // 判定为疑似重复时该条目进复核队列，且库中那首曲目作为一条候选
 // 出现在同一列表里——不新建曲目。
-func (e *Engine) CheckLocalDuplicate(lookup LocalLookup, in Input) (int64, error) {
+func (e *Engine) CheckLocalDuplicate(lookup LocalDuplicateLookup, in Input) (int64, error) {
 	if lookup == nil {
 		return 0, nil
 	}

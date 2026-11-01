@@ -20,7 +20,13 @@
 - iTunes 在来源内检查小写 storefront 与曲目/发行一致性；QQ 在来源内检查 MID。已有精确候选不额外出网，未实现的决策清单补取明确 unsupported。
 - `library.PrepareCandidate` 先解析再创建 seed；`CandidateSeed` 和直接 `PrepareAdmission` 均重新检查精确身份及一致的发行关系，不允许合成 seed 绕过。完整身份不要求展示字段齐全，缺失名称/署名仍保持未提供，不能借输入填充。
 - `App.PrepareAdmission` 返回正常计划，或者仅带 `resolution` 的候选展开结果。后者没有可提交的计划 ID/hash，前端不调用 commit，而是回到列表选择真实位置；展开说明显示碟号与轨号。直接接受/加入兼容入口不能提交展开结果。
-- 自动解析得到的真实候选再执行输入证据核验；仍有未解析目标时保留复核，Runner 保存展开候选而不是错误的合成收藏。精确所有权徽章、重复终态、问题修订和多行事务仍属于后续任务，不能由身份解析测试推定已完成。
+- 自动解析得到的真实候选再执行输入证据核验；仍有未解析目标时保留复核，Runner 保存展开候选而不是错误的合成收藏。重复终态、问题修订和多行事务仍属于后续任务，不能由身份解析测试推定已完成。
+
+## 精确所有权
+
+`ResolveLocal` 先经注入的来源能力验证身份，再通过 `LocalLookup.FindExactBinding` 一次读取当前 track 和发行绑定及修订。仅来源、真实 track、发行关系均一致时返回 `owned` 和本地 ID；ISRC、Recording、相似文本及旧绑定快照不参与拥有判定。结果区分 `unowned / owned / identity_conflict / lookup_error`，错误和冲突不携带可跳过的本地目标。
+
+未解析候选保留 `identity.state=unresolved`，不查询本地精确拥有、不妨碍后续目标解析；不支持身份检查及数据库失败明确返回错误。当前候选 DTO 已传递结构化结果，完整的前端动作协议与跳过提交由后续任务接入。旧文本重复检查使用独立 `LocalDuplicateLookup`，仍待本地召回任务替换，不能把它的相关 ID 当作精确拥有。
 
 ## 名称、版本与署名
 
