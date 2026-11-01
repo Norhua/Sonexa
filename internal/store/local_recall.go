@@ -18,6 +18,9 @@ var _ matching.LocalRecall = (*Store)(nil)
 // UI's ListTracks cap. Keys are only a blocking index; full facts stay separate.
 // Dirty-key refresh and fact reads share a transaction, with no network or files.
 func (s *Store) RecallLocal(ctx context.Context, inputs []matching.InputProfile, limit int) ([]matching.LocalRecallResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(inputs) > 128 {
 		return nil, fmt.Errorf("本地召回一次最多 128 个输入")
 	}
@@ -27,6 +30,10 @@ func (s *Store) RecallLocal(ctx context.Context, inputs []matching.InputProfile,
 	if limit > 1000 {
 		limit = 1000
 	}
+	out := make([]matching.LocalRecallResult, len(inputs))
+	if len(inputs) == 0 {
+		return out, nil
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -35,34 +42,40 @@ func (s *Store) RecallLocal(ctx context.Context, inputs []matching.InputProfile,
 	if err := refreshLocalMatchTx(ctx, tx, false); err != nil {
 		return nil, err
 	}
-	out := make([]matching.LocalRecallResult, len(inputs))
 	cache := map[int64]matching.LocalRecord{}
 	for i, input := range inputs {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		var clauses []string
-		var args []any
+		// JSON table parameters avoid SQLite's expression-depth/variable limits
+		// when a profile carries many explicit aliases; no key is silently lost.
+		keys := []localRecallQueryKey{}
 		for _, field := range []struct {
 			name string
 			text matching.TextProfile
 		}{{"title", input.Title}, {"artist", input.Artist.Text}, {"album", input.Album}} {
 			for _, key := range matching.RecallTextForms(field.text) {
-				if field.text.Truncated {
-					clauses = append(clauses, "(field=? AND name_key>=? AND name_key<?)")
-					args = append(args, field.name, key, key+"\U0010FFFF")
-				} else {
-					clauses = append(clauses, "(field=? AND name_key=?)")
-					args = append(args, field.name, key)
-				}
+				keys = append(keys, localRecallQueryKey{Field: field.name, Name: key, Prefix: field.text.Truncated})
 			}
 		}
 		out[i].Records = []matching.LocalRecord{}
-		if len(clauses) == 0 {
+		if len(keys) == 0 {
 			continue
 		}
-		args = append(args, limit+1)
-		rows, err := tx.QueryContext(ctx, `SELECT DISTINCT track_id FROM local_match_key WHERE `+strings.Join(clauses, " OR ")+` ORDER BY track_id LIMIT ?`, args...)
+		encoded, err := json.Marshal(keys)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := tx.QueryContext(ctx, `
+ WITH query_keys AS (
+  SELECT json_extract(value,'$.field') AS field,json_extract(value,'$.name') AS name,
+         json_extract(value,'$.prefix') AS prefix FROM json_each(?)
+ )
+ SELECT track_id FROM (
+  SELECT m.track_id FROM query_keys q JOIN local_match_key m ON m.field=q.field AND m.name_key=q.name WHERE NOT q.prefix
+  UNION
+  SELECT m.track_id FROM query_keys q JOIN local_match_key m ON m.field=q.field AND m.name_key>=q.name AND m.name_key<q.name||char(1114111) WHERE q.prefix
+ ) ORDER BY track_id LIMIT ?`, string(encoded), limit+1)
 		if err != nil {
 			return nil, err
 		}
@@ -90,6 +103,12 @@ func (s *Store) RecallLocal(ctx context.Context, inputs []matching.InputProfile,
 		return nil, err
 	}
 	return out, nil
+}
+
+type localRecallQueryKey struct {
+	Field  string `json:"field"`
+	Name   string `json:"name"`
+	Prefix bool   `json:"prefix"`
 }
 
 // RebuildLocalMatch discards all derived keys. No historical import or selection
@@ -377,7 +396,8 @@ func readLocalRelationsTx(ctx context.Context, tx *sql.Tx, r *matching.LocalReco
 		}
 		// A stale followed relation is not current evidence for a new binding.
 		origin := r.Current.Origins["track.roles."+role.Role]
-		if origin.Mode == domain.Follow && deref(source) != CVCreditSource && r.TrackSnapshot == nil {
+		if origin.Mode == domain.Follow && deref(source) != CVCreditSource &&
+			(r.TrackSnapshot == nil || deref(source) != string(r.TrackSnapshot.Identity.Provider)) {
 			continue
 		}
 		if err := json.Unmarshal([]byte(attributes), &role.Attributes); err != nil {

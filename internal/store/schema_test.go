@@ -15,7 +15,7 @@ func TestSchemaTablesExist(t *testing.T) {
 		"artist", "artist_link", "track_artist", "track_credit", "release_credit",
 		"collection", "collection_item",
 		"import_batch", "import_item", "review_problem", "review_problem_item",
-		"provider_cache", "track_fts", "track_fts_shadow",
+		"provider_cache", "track_fts", "track_fts_shadow", "local_match_key", "local_match_dirty", "local_match_state",
 		"cover_catalog", "cover_image", "cover_variant", "cover_file",
 		"release_cover_selection", "track_current", "track_snapshot",
 		"schema_version",

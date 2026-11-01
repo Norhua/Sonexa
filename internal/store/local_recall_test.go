@@ -3,10 +3,12 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/norhua/sonexa/internal/domain"
@@ -33,6 +35,32 @@ func requireRecallIDs(t *testing.T, result matching.LocalRecallResult, truncated
 	if len(got) != len(ids) || (len(ids) > 0 && !reflect.DeepEqual(got, ids)) || result.Truncated != truncated {
 		t.Fatalf("recall IDs %v truncated=%v, want %v truncated=%v", got, result.Truncated, ids, truncated)
 	}
+}
+
+func TestLocalRecallDirtyMarkersSurviveOuterUpserts(t *testing.T) {
+	s := openTestStore(t)
+	id, snapshot := snapshotTrack(t, s)
+	// The row is already dirty; nested snapshot/credit UPSERTs must not turn
+	// repeated invalidation into a unique violation or suppress the fact write.
+	applyTestSnapshot(t, s, id, snapshot)
+	applyTestSnapshot(t, s, id, snapshot)
+	for _, statement := range []string{
+		`UPDATE OR ABORT track_current SET title='updated' WHERE track_id=?`,
+		`INSERT INTO track_current(track_id,title) VALUES(?,'upserted') ON CONFLICT(track_id) DO UPDATE SET title=excluded.title`,
+	} {
+		if _, err := s.db.Exec(statement, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var title string
+	var count int
+	if err := s.db.QueryRow("SELECT title FROM track_current WHERE track_id=?", id).Scan(&title); err != nil || title != "upserted" {
+		t.Fatal(title, err)
+	}
+	if err := s.db.QueryRow("SELECT count(*) FROM local_match_dirty WHERE track_id=?", id).Scan(&count); err != nil || count != 1 {
+		t.Fatal(count, err)
+	}
+	requireRecallIDs(t, recallForTest(t, s, []matching.InputProfile{matching.NewInputProfile("upserted", "", "")}, 10)[0], false, id)
 }
 
 func TestLocalRecallKeepsCurrentAndBoundFactsSeparate(t *testing.T) {
@@ -80,6 +108,10 @@ func TestLocalRecallKeepsCurrentAndBoundFactsSeparate(t *testing.T) {
 	var profile string
 	if err := s.db.QueryRow("SELECT profile_json FROM local_match_key WHERE track_id=? AND field='title' AND source='track_snapshot' LIMIT 1", id).Scan(&profile); err != nil || profile == "" {
 		t.Fatal(profile, err)
+	}
+	var textProfile matching.TextProfile
+	if err := json.Unmarshal([]byte(profile), &textProfile); err != nil || textProfile.Raw != "夕立（译名：骤雨）" || len(textProfile.Aliases) != 1 {
+		t.Fatal("indexed profile lost original/alias", textProfile, err)
 	}
 	meta, err = s.GetMetadata(id)
 	if err != nil || meta.Title != "用户曲名" || deref(meta.Album) != "用户专辑" {
@@ -174,6 +206,16 @@ func TestLocalRecallRejectsStaleTrackAndReleaseSnapshots(t *testing.T) {
 	if out[2].Records[0].ReleaseSnapshot != nil {
 		t.Fatal("stale release snapshot used", out[2])
 	}
+	// Restore only the track binding: its snapshot still asserts the old
+	// release, so a matching track ID alone cannot make it valid again.
+	if err := s.SetProvenance(id, "test", "track"); err != nil {
+		t.Fatal(err)
+	}
+	out = recallForTest(t, s, inputs, 10)
+	requireRecallIDs(t, out[0], false)
+	if out[2].Records[0].TrackSnapshot != nil || len(out[2].Records[0].Issues) != 2 {
+		t.Fatal("track/release relation conflict lost", out[2])
+	}
 }
 
 func TestLocalRecallBeyondBrowseLimitAndExplicitTruncation(t *testing.T) {
@@ -199,6 +241,200 @@ func TestLocalRecallBeyondBrowseLimitAndExplicitTruncation(t *testing.T) {
 	requireRecallIDs(t, recallForTest(t, s, []matching.InputProfile{input}, 2)[0], true, 2003, 2004)
 	requireRecallIDs(t, recallForTest(t, s, []matching.InputProfile{input}, 3)[0], false, 2003, 2004, 2005)
 	requireRecallIDs(t, recallForTest(t, s, []matching.InputProfile{matching.NewInputProfile("", "", "")}, 10)[0], false)
+}
+
+func TestLocalRecallRelationsMoveAcrossOwners(t *testing.T) {
+	for _, table := range []string{"track_credit", "track_artist", "release_credit"} {
+		t.Run(table, func(t *testing.T) {
+			s := openTestStore(t)
+			one, err := s.CreateTrack(&Track{Title: "one", Album: ptr("album one")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			two, err := s.CreateTrack(&Track{Title: "two", Album: ptr("album two")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			artist, err := s.UpsertArtist(&Artist{Name: "独立关系名字"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			key, from, to := "track_id", one, two
+			if table == "release_credit" {
+				key = "release_id"
+				for _, target := range []struct {
+					track   int64
+					release *int64
+				}{{one, &from}, {two, &to}} {
+					if err := s.db.QueryRow("SELECT release_id FROM track WHERE id=?", target.track).Scan(target.release); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			columns, values := key+",artist_id", "?,?"
+			if table == "track_artist" {
+				columns += ",role"
+				values += ",'vocal'"
+			}
+			if _, err := s.db.Exec("INSERT INTO "+table+"("+columns+") VALUES("+values+")", from, artist); err != nil {
+				t.Fatal(err)
+			}
+			input := []matching.InputProfile{matching.NewInputProfile("", "独立关系名字", "")}
+			requireRecallIDs(t, recallForTest(t, s, input, 10)[0], false, one)
+			if _, err := s.db.Exec("UPDATE "+table+" SET "+key+"=? WHERE "+key+"=? AND artist_id=?", to, from, artist); err != nil {
+				t.Fatal(err)
+			}
+			requireRecallIDs(t, recallForTest(t, s, input, 10)[0], false, two)
+		})
+	}
+}
+
+func TestLocalRecallLinkUpdateAndArtistCascade(t *testing.T) {
+	s := openTestStore(t)
+	one, err := s.CreateTrack(&Track{Title: "one"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := s.CreateTrack(&Track{Title: "two"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var artists []int64
+	for _, name := range []string{"成员一", "成员二", "团体名"} {
+		id, err := s.UpsertArtist(&Artist{Name: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		artists = append(artists, id)
+	}
+	for i, id := range []int64{one, two} {
+		if err := s.AddTrackArtist(id, TrackArtist{ArtistID: artists[i], Role: RoleVocal}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.LinkArtists(artists[0], artists[2], LinkMemberOf); err != nil {
+		t.Fatal(err)
+	}
+	input := []matching.InputProfile{matching.NewInputProfile("", "团体名", "")}
+	requireRecallIDs(t, recallForTest(t, s, input, 10)[0], false, one)
+	if _, err := s.db.Exec("UPDATE artist_link SET from_artist_id=? WHERE from_artist_id=?", artists[1], artists[0]); err != nil {
+		t.Fatal(err)
+	}
+	requireRecallIDs(t, recallForTest(t, s, input, 10)[0], false, two)
+	if _, err := s.db.Exec("DELETE FROM artist WHERE id=?", artists[2]); err != nil {
+		t.Fatal(err)
+	}
+	requireRecallIDs(t, recallForTest(t, s, input, 10)[0], false)
+}
+
+func TestLocalRecallRollbackPreservesFactsAndInvalidation(t *testing.T) {
+	s := openTestStore(t)
+	id, err := s.CreateTrack(&Track{Title: "旧名"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := []matching.InputProfile{matching.NewInputProfile("旧名", "", ""), matching.NewInputProfile("新名", "", "")}
+	requireRecallIDs(t, recallForTest(t, s, input, 10)[0], false, id)
+	s.beforeCommit = func(*sql.Tx) error { return errors.New("forced rollback") }
+	if err := s.UpdateTrackFields(id, ptr("新名"), nil, true); err == nil {
+		t.Fatal("write should roll back")
+	}
+	s.beforeCommit = nil
+	out := recallForTest(t, s, input, 10)
+	requireRecallIDs(t, out[0], false, id)
+	requireRecallIDs(t, out[1], false)
+	if err := s.UpdateTrackFields(id, ptr("新名"), nil, true); err != nil {
+		t.Fatal(err)
+	}
+	// Abort midway through reindexing; old keys and dirty markers must survive
+	// together, so the next read can retry instead of claiming an empty pool.
+	if _, err := s.db.Exec(`CREATE TRIGGER reject_match_key BEFORE INSERT ON local_match_key BEGIN SELECT RAISE(ABORT,'forced index failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RecallLocal(context.Background(), input, 10); err == nil {
+		t.Fatal("index failure swallowed")
+	}
+	var key string
+	var dirty int
+	if err := s.db.QueryRow("SELECT name_key FROM local_match_key WHERE track_id=? AND field='title' LIMIT 1", id).Scan(&key); err != nil || key != matching.Normalize("旧名") {
+		t.Fatal(key, err)
+	}
+	if err := s.db.QueryRow("SELECT count(*) FROM local_match_dirty WHERE track_id=?", id).Scan(&dirty); err != nil || dirty != 1 {
+		t.Fatal(dirty, err)
+	}
+	if _, err := s.db.Exec("DROP TRIGGER reject_match_key"); err != nil {
+		t.Fatal(err)
+	}
+	out = recallForTest(t, s, input, 10)
+	requireRecallIDs(t, out[0], false)
+	requireRecallIDs(t, out[1], false, id)
+}
+
+func TestLocalRecallBatchKeysAndConcurrentSnapshots(t *testing.T) {
+	s := openTestStore(t)
+	id, err := s.CreateTrackWithProvenance(NewTrackInput{Title: "唯一名字", Credit: ptr("并发召回"), MatchSource: ptr("test"), MatchRef: ptr("0")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := matching.NewInputProfile("不存在", "", "")
+	for i := 0; i < 1200; i++ {
+		profile.Title.Aliases = append(profile.Title.Aliases, matching.NameForm{Text: fmt.Sprintf("alias-%d", i)})
+	}
+	profile.Title.Aliases = append(profile.Title.Aliases, matching.NameForm{Text: "唯一名字"})
+	requireRecallIDs(t, recallForTest(t, s, []matching.InputProfile{profile}, 10)[0], false, id)
+	if _, err := s.RecallLocal(context.Background(), make([]matching.InputProfile, 129), 10); err == nil {
+		t.Fatal("oversized batch accepted")
+	}
+	if out, err := s.RecallLocal(context.Background(), nil, 10); err != nil || len(out) != 0 {
+		t.Fatal(out, err)
+	}
+	input := []matching.InputProfile{matching.NewInputProfile("", "并发召回", "")}
+	var wg sync.WaitGroup
+	errors := make(chan error, 4)
+	start := make(chan struct{})
+	for worker := 0; worker < 4; worker++ {
+		wg.Add(1)
+		go func(writer bool) {
+			defer wg.Done()
+			<-start
+			for i := 0; i < 12; i++ {
+				if writer {
+					err := s.withTx(func(tx *sql.Tx) error {
+						if _, err := tx.Exec("UPDATE track SET match_ref=?,revision=revision+1 WHERE id=?", fmt.Sprint(i), id); err != nil {
+							return err
+						}
+						_, err := tx.Exec("UPDATE track_current SET title=? WHERE track_id=?", "版本"+fmt.Sprint(i), id)
+						return err
+					})
+					if err != nil {
+						errors <- err
+						return
+					}
+				} else {
+					out, err := s.RecallLocal(context.Background(), input, 10)
+					if err != nil {
+						errors <- err
+						return
+					}
+					if len(out[0].Records) != 1 || out[0].Truncated {
+						errors <- fmt.Errorf("lost concurrent record: %+v", out)
+						return
+					}
+					r := out[0].Records[0]
+					if r.Current.Profile.Title.Raw != "唯一名字" && r.Current.Profile.Title.Raw != "版本"+r.TrackIdentity.Ref {
+						errors <- fmt.Errorf("mixed transaction facts: %+v", r)
+						return
+					}
+				}
+			}
+		}(worker == 0)
+	}
+	close(start)
+	wg.Wait()
+	close(errors)
+	for err := range errors {
+		t.Error(err)
+	}
 }
 
 func TestLocalRecallRebuildVersionRestartAndCancelledRead(t *testing.T) {

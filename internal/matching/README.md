@@ -56,7 +56,9 @@
 
 ## 存储边界与验证
 
-`import_item.input_profile` 保存完整 JSON，文件导入经 App → Store → Runner 传递；无 profile 的内部调用由已明确单位的映射值构造，不猜原始列。3.6 已验证的新库代际为 `track-identity-v4`；4.1 未完成检查点代码已推进到 v5，本地索引触发器测试仍失败，不能视为已交付（见 `handoff.md`）。旧代际拒绝打开，不自动迁移或删除数据。整数修订、问题及成员约束见 [store 结构说明](../store/README.md)；语义归并与问题生命周期仍由后续任务实现。
+`import_item.input_profile` 保存完整 JSON，文件导入经 App → Store → Runner 传递；无 profile 的内部调用由已明确单位的映射值构造，不猜原始列。当前新库代际为 `track-identity-v5`；v4 及更早代际拒绝打开，不自动迁移或删除数据。整数修订、问题及成员约束见 [store 结构说明](../store/README.md)；语义归并与问题生命周期仍由后续任务实现。
+
+`LocalRecall` 是 matching 消费侧的批量事实契约；store 的独立派生索引覆盖当前值、有效绑定快照、角色和一跳关系，返回各层事实与修订、显式截断状态，不授权拥有或自动跳过。`RecallTextForms` 仅提供召回键，不能替代完整 profile 的限定/冲突检查。索引重建与召回不读取历史输入选择；完整流水线接入仍待 4.2–4.6。
 
 定向验证：
 
