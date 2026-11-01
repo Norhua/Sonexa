@@ -15,7 +15,13 @@ test.beforeEach(async ({ page }) => {
       rawRow: JSON.stringify([title, 'Artist', album, '10:20', '保留未映射列']),
       candidates: [], triedVariants: [], attemptCount: id === 12 ? 5 : 0,
       lastError: id === 12 ? '来源暂不可用' : null, lastErrorAt: id === 12 ? '2026-10-01T01:00:00Z' : null,
-      reviewReason: 'ambiguous', reviewEvidence: JSON.stringify({ reasons: [{ code: 'position_ambiguous', field: 'track', detail: '同发行存在多个位置，不能自动确定' }] }),
+      decisionReasons: [
+        { code: 'position_ambiguous', field: 'track', message: '同一发行存在多个可能位置，需要明确选择' },
+        { code: 'duration_conflict', field: 'duration', message: '时长相差超过 10 秒，不能自动处理' },
+        { code: 'target_album_unresolved', field: 'album', message: '目标专辑资料不足，尚不能确定' },
+        { code: 'prefer_owned_compatible_track', field: '', message: '未指定细发行，优先已收藏的兼容版本' },
+      ],
+      reviewReason: 'ambiguous', reviewEvidence: JSON.stringify({ reasons: [{ code: 'position_ambiguous', field: 'track', detail: 'internal diagnostic' }] }),
     })
     // Membership is the backend fixture result, never browser-side text dedup.
     w.__problemRows = [row(11, 101, 1, 'Song', 'Album'), row(12, 101, 2, 'Song（译名：歌曲）', 'Album'), row(13, 202, 2, 'Song', 'Other Album')]
@@ -37,7 +43,11 @@ test('two alias sources appear as one problem with complete originals, failures 
   await expect(first).toContainText('未知年份（无法解析） / 2 / 3 / 10:20')
   await expect(second).toContainText('Song（译名：歌曲）')
   await expect(second).toContainText('已重试 5 次 · 最后错误：来源暂不可用')
-  await expect(first.getByTestId('review-reasons')).toContainText('同发行存在多个位置，不能自动确定')
+  await expect(first.getByTestId('review-reasons')).toContainText('同一发行存在多个可能位置，需要明确选择')
+  await expect(first.getByTestId('review-reasons')).toContainText('时长相差超过 10 秒，不能自动处理')
+  await expect(first.getByTestId('review-reasons')).toContainText('目标专辑资料不足，尚不能确定')
+  await expect(first.getByTestId('review-reasons')).toContainText('未指定细发行，优先已收藏的兼容版本')
+  await expect(first.getByTestId('review-reasons')).not.toContainText('internal diagnostic')
   await first.locator('summary').click()
   await expect(first.locator('pre')).toHaveText('["Song","Artist","Album","10:20","保留未映射列"]')
   await second.locator('summary').click()

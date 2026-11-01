@@ -2,6 +2,7 @@ package importer
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/norhua/sonexa/internal/domain"
@@ -55,6 +56,12 @@ func TestRunnerVersionEquivalenceAndPayloads(t *testing.T) {
 				var snapshot domain.TrackSnapshot
 				if err := json.Unmarshal([]byte(body), &snapshot); err != nil || snapshot.Title.Value != tc.target {
 					t.Fatal("query overwrote source title", snapshot, err)
+				}
+			}
+			if !tc.accept {
+				var evidence string
+				if err := st.DB().QueryRow("SELECT review_evidence FROM import_item WHERE batch_id=?", batch).Scan(&evidence); err != nil || !strings.Contains(evidence, "different_qualifier") || !strings.Contains(evidence, "录音版本或发行限定不同") {
+					t.Fatal("rejected candidate lost review explanation", evidence, err)
 				}
 			}
 			t.Logf("D10 %s: new=%d skip=%d problems=%d false_auto=0 searches=%d", tc.name, stats.Imported, stats.Skipped, stats.Problems.ReviewProblems, searcher.queryCount())

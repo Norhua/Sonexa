@@ -1,5 +1,7 @@
 package matching
 
+import "github.com/norhua/sonexa/internal/domain"
+
 // MetadataRuleVersion versions persisted input evidence, not search scores or
 // lyrics rules. Derived evidence must be rebuilt when this version changes.
 const MetadataRuleVersion = 1
@@ -29,11 +31,7 @@ func (e FieldEvidence) Reliable() bool {
 	return e.Level == EvidenceExact || e.Level == EvidenceVerifiedAlias
 }
 
-type DecisionReason struct {
-	Code   string `json:"code"`
-	Field  string `json:"field"`
-	Detail string `json:"detail,omitempty"`
-}
+type DecisionReason = domain.DecisionReason
 
 type ValueState string
 

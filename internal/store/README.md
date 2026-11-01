@@ -11,7 +11,7 @@
 `import_item` 保留批次、行号、完整 `raw_row` 和解析列。数据库触发器拒绝改写这些原始字段；复核查询必须另外保存。`input_profile` 保存版本化 `matching.InputProfile`，含原文、限定、解析精度与失败状态；派生 profile 可重建，不取代原始行。
 
 - `revision`：从 1 开始的正整数，队列状态、失败/重试、候选更新和准入结束时递增。`updated_at` 仅供展示，不作修订令牌。准入 baseline 读取该整数。
-- `review_reason / review_evidence`：当前行的待处理原因与证据，仍保留既有逐行读取协议。
+- `review_reason / review_evidence`：待处理原因与证据；自动成功时 `review_evidence` 保存当次 `DecisionEvidence` 终态诊断（规则版本、字段/默认偏好原因及中文短句），不作为未来输入匹配事实。无需新增列或改变数据代际。
 - `resolution_reason`：与状态分离，区分新建、无需匹配、精确已有、用户跳过及移出。
 - `track_id / resolution_target`：本地 ID 与当次核验的来源 track/release 身份。
 - `resolution_problem_id / resolution_problem_revision`：成对保存当次问题范围的诊断修订，不引用未来的活跃问题。
@@ -63,7 +63,7 @@
 
 `CommitAdmission` 在任何实体写入及已有目标快速返回前，重验整个 seed/baseline 输入范围。新目标只新增一个 track，按最小成员 ID 稳定指定唯一 `imported` 行，其他成员记 `skipped/existing_track`；目标已存在则全范围跳过。`AdmissionResult` 返回来源 track/release、实际目标及逐行/批次结果，`operation_result` 保存同一完整结果用于幂等，不能用于未来输入的身份判断。
 
-多行结果、成员移除、问题关闭及归组决策均在同一事务，任一成员/结果写入失败整体回滚。未按既有文件暂存协议准备的文件字段仍拒绝，不留下暂建实体或终态。新增发行的确认规则不变；另一请求已收藏同一精确目标时只跳过、不修改旧收藏、不要求已无必要的新增确认。
+多行结果、成员移除、问题关闭及归组决策均在同一事务，任一成员/结果写入失败整体回滚。自动决策说明通过 `AdmissionSeed.Decision` 纳入 Hash/签名，随 `AdmissionResult.Decision` 和输入 `review_evidence` 原子保存；说明写失败同样整体回滚，同计划重试返回相同说明。它只诊断本次选择，不被本地召回、问题证明或后台重评读取作为历史选择依据。未按既有文件暂存协议准备的文件字段仍拒绝，不留下暂建实体或终态。新增发行的确认规则不变；另一请求已收藏同一精确目标时只跳过、不修改旧收藏、不要求已无必要的新增确认。
 
 App 提供 `GetReviewAdmissionScope`、`PrepareProblemAdmission` 和 `PrepareProblemSkipExisting`。`PrepareNoMatchNeeded` 先记录所选行范围，再读取原始解析值，不借问题查询草稿替换原文，不给其他行自动创建或跳过。多行无绑定 seed 被拒绝。移出支持单行/显式成员列表，失败重试仅列明 failed 成员；不将单行操作推广到其他成员。任务/问题事件与界面范围展示遵循下文的事件、只读队列协议。
 

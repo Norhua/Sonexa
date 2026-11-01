@@ -18,15 +18,16 @@ const evidence = computed(() => {
     }) | null
   } catch { return null }
 })
+const decisionReasons = computed(() => props.source.decisionReasons ?? [])
 const fields: Record<string, string> = { title: '曲名', credit: '署名', artist: '艺术家', album: '专辑', disc: '碟号', track: '轨号', duration: '时长', year: '年份' }
 </script>
 
 <template>
   <div v-if="reason || evidence" class="space-y-2 rounded border p-3 text-xs" data-testid="review-reasons">
     <p v-if="reason" class="font-medium">{{ reason }}</p>
-    <p v-for="(item, i) in evidence?.reasons ?? []" :key="i">
-      <span v-if="item.field">{{ fields[item.field] || item.field }}： </span>{{ item.detail || item.code }}
-      <span v-if="item.detail" class="text-muted-color">（{{ item.code }}）</span>
+    <p v-for="(item, i) in decisionReasons" :key="i">
+      <span v-if="item.field">{{ fields[item.field] || item.field }}： </span>{{ item.message || '匹配证据需要进一步核验' }}
+      <span class="text-muted-color">（{{ item.code }}）</span>
     </p>
     <p v-if="evidence?.relatedTrackId">相关收藏（不是精确拥有）：{{ evidence.detail }}。可改搜选择上游 track，或在编辑器处理原收藏。</p>
     <div v-for="group in evidence?.resolution?.groups ?? []" :key="group.id">

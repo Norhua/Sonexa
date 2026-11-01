@@ -14,12 +14,13 @@ import (
 // 待选、匹配中、失败只是状态标签，界面结构保持一致——
 // 不按进入原因分成结构不同的多种界面。
 type ReviewItem struct {
-	ReviewReason   *string `json:"reviewReason"`
-	ReviewEvidence *string `json:"reviewEvidence"`
-	Revision       int64   `json:"revision"`
-	ID             int64   `json:"id"`
-	BatchID        int64   `json:"batchId"`
-	Status         string  `json:"status"`
+	DecisionReasons []matching.DecisionReason `json:"decisionReasons"`
+	ReviewReason    *string                   `json:"reviewReason"`
+	ReviewEvidence  *string                   `json:"reviewEvidence"`
+	Revision        int64                     `json:"revision"`
+	ID              int64                     `json:"id"`
+	BatchID         int64                     `json:"batchId"`
+	Status          string                    `json:"status"`
 	// 原始导入文本，上半区展示；改搜不改动它
 	InTitle      *string               `json:"inTitle"`
 	InArtist     *string               `json:"inArtist"`
@@ -92,6 +93,14 @@ func (a *App) reviewSource(it store.ImportItem) ReviewItem {
 		InYear: it.InYear, InTrackNo: it.InTrackNo, InDiscNo: it.InDiscNo, InDurationMS: it.InDurationMS,
 		AttemptCount: it.AttemptCount, LastError: it.LastError, LastErrorAt: formatTime(it.LastErrorAt),
 		Candidates: []CandidateRow{}, TriedVariants: []string{},
+	}
+	if it.ReviewEvidence != nil {
+		var evidence struct {
+			Reasons []matching.DecisionReason `json:"reasons"`
+		}
+		if json.Unmarshal([]byte(*it.ReviewEvidence), &evidence) == nil {
+			r.DecisionReasons = matching.ExplainReasons(evidence.Reasons)
+		}
 	}
 	if it.TriedVariants != nil {
 		json.Unmarshal([]byte(*it.TriedVariants), &r.TriedVariants)

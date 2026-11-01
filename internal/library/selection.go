@@ -131,6 +131,10 @@ func selectCandidate(candidates []selectionCandidate) Selection {
 		return Selection{Reason: reason}
 	}
 	candidates, preference := preferredCandidates(candidates)
+	reasons := []matching.DecisionReason{}
+	if preference != "" {
+		reasons = append(reasons, matching.DecisionReason{Code: preference})
+	}
 	if len(candidates) > 1 {
 		for _, c := range candidates {
 			if c.summary.ReleaseTrackTotal.State != domain.Value || c.summary.ReleaseTrackTotal.Value <= 0 {
@@ -142,21 +146,26 @@ func selectCandidate(candidates []selectionCandidate) Selection {
 			if a.summary.ReleaseTrackTotal.Value != b.summary.ReleaseTrackTotal.Value {
 				return a.summary.ReleaseTrackTotal.Value > b.summary.ReleaseTrackTotal.Value
 			}
-			nonWorld := func(r domain.ReleaseSummary) bool {
-				return r.Country.State == domain.Value && strings.TrimSpace(r.Country.Value) != "" && strings.ToUpper(strings.TrimSpace(r.Country.Value)) != "XW"
-			}
-			if nonWorld(a.summary) != nonWorld(b.summary) {
-				return nonWorld(a.summary)
+			if knownNonWorld(a.summary) != knownNonWorld(b.summary) {
+				return knownNonWorld(a.summary)
 			}
 			return candidateKey(a.candidate) < candidateKey(b.candidate)
 		})
+		winner, runnerUp := candidates[0], candidates[1]
+		code := "prefer_stable_identity"
+		if winner.summary.ReleaseTrackTotal.Value != runnerUp.summary.ReleaseTrackTotal.Value {
+			code = "prefer_release_track_total"
+		} else if knownNonWorld(winner.summary) != knownNonWorld(runnerUp.summary) {
+			code = "prefer_non_world_country"
+		}
+		reasons = append(reasons, matching.DecisionReason{Code: code})
 	}
 	selected := candidates[0].candidate
-	selection := Selection{Candidate: &selected}
-	if preference != "" {
-		selection.Reasons = []matching.DecisionReason{{Code: preference, Detail: "相容候选内的默认选版偏好，不构成身份等价"}}
-	}
-	return selection
+	return Selection{Candidate: &selected, Reasons: matching.ExplainReasons(reasons)}
+}
+
+func knownNonWorld(r domain.ReleaseSummary) bool {
+	return r.Country.State == domain.Value && strings.TrimSpace(r.Country.Value) != "" && strings.ToUpper(strings.TrimSpace(r.Country.Value)) != "XW"
 }
 func value(s *string) string {
 	if s == nil {
@@ -203,17 +212,25 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 	if constrained.pending {
 		return Selection{Reason: ReasonAmbiguous, ResolvedCandidates: constrained.display, Reasons: constrained.reasons, ProblemFacts: &constrained.pool}, nil
 	}
-	selection, err := s.selectResolvedCandidates(ctx, constrained.eligible, itemID, revision, constrained.summaries, *profile)
+	reasonsByTarget := map[string][]matching.DecisionReason{}
+	for _, target := range constrained.pool.Targets {
+		key := string(target.Identity.Track.Provider) + "\x00" + target.Identity.Release.Ref + "\x00" + target.Identity.Track.Ref
+		reasonsByTarget[key] = matching.SuccessfulTargetReasons(target, *profile)
+	}
+	selection, err := s.selectResolvedCandidates(ctx, constrained.eligible, itemID, revision, constrained.summaries, *profile, reasonsByTarget)
 	selection.ResolvedCandidates = constrained.display
 	selection.ProblemFacts = &constrained.pool
 	if selection.Candidate == nil && selection.Reason != ReasonNoMatch {
 		selection.ProblemFacts.Truncated = true // no exact proof from unresolved later grouping/summary facts
 	}
-	selection.Reasons = append(constrained.reasons, selection.Reasons...)
+	if selection.Plan == nil {
+		selection.Reasons = append(constrained.reasons, selection.Reasons...)
+	}
+	selection.Reasons = matching.ExplainReasons(selection.Reasons)
 	return selection, err
 }
 
-func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matching.ScoredCandidate, itemID, revision int64, summaries map[domain.Identity]domain.ReleaseSummary, input matching.InputProfile) (Selection, error) {
+func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matching.ScoredCandidate, itemID, revision int64, summaries map[domain.Identity]domain.ReleaseSummary, input matching.InputProfile, reasonsByTarget map[string][]matching.DecisionReason) (Selection, error) {
 	prepared := []selectionCandidate{}
 	sources, err := s.identitySources()
 	if err != nil {
@@ -372,6 +389,7 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 	}
 	for _, candidate := range prepared {
 		if candidateKey(candidate.candidate) == candidateKey(*selection.Candidate) {
+			selection.Reasons = append(reasonsByTarget[candidateKey(candidate.candidate)], selection.Reasons...)
 			return s.prepareAutomaticTarget(ctx, selection, itemID, revision, candidate.ownership)
 		}
 	}
@@ -385,7 +403,12 @@ func (s *Service) prepareAutomaticTarget(ctx context.Context, selection Selectio
 	if !recheckOwned(ctx, expected) {
 		return Selection{Reason: ReasonAmbiguous}, nil
 	}
-	ctx = automaticAdmissionContext(ctx)
+	selection.Reasons = append(selection.Reasons, matching.DecisionReason{Code: "automatic_target"})
+	if expected.State == matching.OwnershipOwned {
+		selection.Reasons = append(selection.Reasons, matching.DecisionReason{Code: "exact_existing_track"})
+	}
+	selection.Reasons = matching.ExplainReasons(selection.Reasons)
+	ctx = automaticDecisionContext(automaticAdmissionContext(ctx), selection.Reasons)
 	if _, err := s.checkedAutomaticScope(ctx); err != nil {
 		return Selection{}, err
 	}

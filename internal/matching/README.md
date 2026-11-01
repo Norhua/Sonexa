@@ -4,7 +4,8 @@
 
 ## 入口与隔离
 
-- `Weights.ScoreCandidate`、`CompareTitle`、`CompareCredit`：既有检索展示与歌词比较入口，默认权重及旧语义不变。
+- `Weights.ScoreCandidate`、`CompareTitle`、`CompareCredit`：歌词仍复用的旧展示比较入口，默认权重及旧语义不变。
+- `ScoreMetadataCandidate`、`CompareMetadataSearchTitle`：元数据共用检索入口，先检查已识别版本的完整负载，再做宽松展示比较；Instrumental/off vocal 等已支持异写可通过，不同 Remix 作者、Live 场次、重录年份不能因相似度放行。辅助字段和数值权重不变，不改写候选快照。
 - `NewInputProfile`、`ParseMetadataText`、`ParseMetadataCredit`：本次元数据输入的证据模型，保留原文、规则版本、未知注释和完整限定。
 - `CheckMetadataEvidence`：只检查一个候选是否满足本次输入，不检查收藏、不选择发行、不授权写入。
 - `CheckMetadataPool`：保留 eligible / excluded / unresolved 三类；有未排除的未知竞争者时不得进行自动选版。
@@ -73,6 +74,12 @@ Runner 传递持久化 profile，`library.SelectCandidate` 先按完整输入筛
 本地充分证据和远程选版共用 `prepareAutomaticTarget`：已收藏目标按决策中读取的绑定修订准备轻量 skip 计划；未收藏目标沿用既有准入和发行成员确认。`SelectCandidate` 在补资料前读取输入修订，旧修订不能在计划准备时被刷新为新的授权。Runner 共用一个提交/日志/通知分支，结果为 Existing 时记录已存在跳过，不发 library 通知、不触发补全。
 
 人工 `PrepareCandidate`/App 接受不使用默认选版：用户明确选择同组另一发行时仍保留该 track，要求新增发行确认，不被自动的已收藏优先替换。多来源问题按已展示范围统一准入；收藏变更后的重评重新使用每行当前证据，不复制其他问题的人工选择。
+
+## 当次决策说明
+
+`domain.DecisionEvidence` 保存规则版本及结构化原因，由 matching 的 `ExplainReasons` 统一生成中文 `message`，`code/field/detail` 只作为诊断。成功说明只采用最终目标中真正通过检查的完整事实视图，不把被排除竞争者的冲突描述成选中目标的属性。默认偏好与同分选择分别说明，不称为身份等价。
+
+本地/远程自动成功及后台重评共用此链路：说明纳入 seed 的 Hash/签名，随准入结果与输入终态同事务保存，Runner 日志输出同一中文摘要。复核读取通过 `DecisionReasons` 投影中文说明，内部码辅助显示；未知未来码使用可读回退，不把任意内部 detail 当用户短句。展示过滤的版本冲突也保留复核原因。诊断不用于未来输入、问题等价或历史选版复用；表结构及数据代际不变。
 
 ## 名称、版本与署名
 

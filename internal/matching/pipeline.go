@@ -30,6 +30,9 @@ type Input struct {
 
 // Result 是一条目的匹配结果。
 type Result struct {
+	// Reasons retains recognized version rejections even when the display pool
+	// is empty; the Runner can explain why this input still needs review.
+	Reasons  []DecisionReason
 	Decision Decision
 	// Scored 是候选池，按分值降序。
 	Scored []ScoredCandidate
@@ -111,6 +114,9 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 				Title: in.Title, Artist: in.Artist, Album: in.Album, DurationMS: in.DurationMS,
 			}, c)
 			if score.Rejected {
+				if Normalize(in.Title) != "" && !sameMetadataQualifiers(ParseMetadataText(in.Title, MetadataTitle), ParseMetadataText(deref(c.Title), MetadataTitle)) {
+					res.Reasons = append(res.Reasons, DecisionReason{Code: "different_qualifier", Field: "title"})
+				}
 				continue // 曲名不匹配即丢弃，不进候选池
 			}
 			// 曲名过闸还不够：可比的旁证里一处都对不上的候选不进池子。
@@ -151,6 +157,7 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 		}
 	}
 
+	res.Reasons = ExplainReasons(res.Reasons)
 	res.Scored = sortedPool(pool)
 	res.Decision = e.Ladder.Decide(res.Scored)
 	return res, nil

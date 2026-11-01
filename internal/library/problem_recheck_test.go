@@ -2,6 +2,8 @@ package library
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/norhua/sonexa/internal/domain"
@@ -87,6 +89,18 @@ func TestRecheckCurrentEvidenceNeverCopiesManualChoice(t *testing.T) {
 	if err != nil || got.Status != store.StatusSkipped || got.TrackID == nil || *got.TrackID != saved.TrackID {
 		t.Fatal("exact input not skipped", got, err)
 	}
+	if got.ReviewEvidence == nil {
+		t.Fatal("background skip lost decision evidence")
+	}
+	var explanation domain.DecisionEvidence
+	if err := json.Unmarshal([]byte(*got.ReviewEvidence), &explanation); err != nil || !strings.Contains(matching.DecisionSummary(&explanation), "优先已收藏的兼容版本") {
+		t.Fatal(explanation, err)
+	}
+	for _, reason := range explanation.Reasons {
+		if reason.Code == "different_text" || reason.Code == "different_qualifier" {
+			t.Fatal("excluded competitor described as successful target", explanation)
+		}
+	}
 	for _, item := range []*store.ImportItem{ambiguous, explicit, incomplete} {
 		got, err := st.GetItem(item.ID)
 		want := store.StatusReview
@@ -128,6 +142,9 @@ func TestRecheckNoResultUsesSufficientCurrentFactsOnly(t *testing.T) {
 	got, err = st.GetItem(item.ID)
 	if err != nil || got.Status != store.StatusSkipped {
 		t.Fatal(got, err)
+	}
+	if got.ReviewEvidence == nil || !strings.Contains(*got.ReviewEvidence, "shared_complete_name") || !strings.Contains(*got.ReviewEvidence, "prefer_owned_compatible_track") {
+		t.Fatal("local background skip lost alias/preference evidence", got)
 	}
 }
 func TestRecheckRetainsDecisionCompletenessAndPositionFacts(t *testing.T) {

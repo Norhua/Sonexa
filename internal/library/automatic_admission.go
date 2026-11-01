@@ -2,8 +2,18 @@ package library
 
 import (
 	"context"
+
 	"github.com/norhua/sonexa/internal/domain"
+	"github.com/norhua/sonexa/internal/matching"
 )
+
+type automaticDecisionKey struct{}
+
+func automaticDecisionContext(ctx context.Context, reasons []matching.DecisionReason) context.Context {
+	return context.WithValue(ctx, automaticDecisionKey{}, &domain.DecisionEvidence{
+		RuleVersion: matching.MetadataRuleVersion, Reasons: matching.ExplainReasons(reasons),
+	})
+}
 
 type automaticAdmissionKey struct{}
 type automaticScopeKey struct{}

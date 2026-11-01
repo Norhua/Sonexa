@@ -30,6 +30,7 @@ func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.Input
 		return nil, nil
 	}
 	prepared := []selectionCandidate{}
+	reasonsByTarget := map[domain.Identity][]matching.DecisionReason{}
 	ownerships := map[domain.Identity]matching.LocalMatch{}
 	var commonGroup int64
 	for _, target := range pool.Targets {
@@ -78,6 +79,7 @@ func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.Input
 		}
 		commonGroup = groupID
 		groups[groupID] = true
+		reasonsByTarget[target.Identity.Track] = matching.SuccessfulTargetReasons(target, input)
 		ownerships[target.Identity.Track] = target.Ownership
 		prepared = append(prepared, selectionCandidate{candidate: chosen.Metadata.Candidate, summary: chosen.Release.Summary(), groups: groups, existing: true, owned: true})
 	}
@@ -88,7 +90,9 @@ func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.Input
 	if selected.Candidate == nil || selected.Reason != "" {
 		return nil, nil
 	}
-	expected := ownerships[domain.Identity{Provider: selected.Candidate.Provider, Ref: selected.Candidate.MatchRef}]
+	identity := domain.Identity{Provider: selected.Candidate.Provider, Ref: selected.Candidate.MatchRef}
+	selected.Reasons = append(reasonsByTarget[identity], selected.Reasons...)
+	expected := ownerships[identity]
 	selected, err = s.prepareAutomaticTarget(ctx, selected, itemID, revision, expected)
 	if err != nil {
 		return nil, err

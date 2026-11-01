@@ -41,6 +41,7 @@ const (
 // AdmissionSeed 同时承载已归一化的上游事实和本地当前值；空身份层仅用于本地创建。
 // 保存本地层时不将它伪装成上游快照。
 type AdmissionSeed struct {
+	Decision         *DecisionEvidence  `json:"decision,omitempty"`
 	EvidenceRevision int64              `json:"evidenceRevision,omitempty"`
 	Automatic        bool               `json:"automatic,omitempty"`
 	Operation        AdmissionOperation `json:"operation"`
@@ -95,6 +96,7 @@ type AdmissionTarget struct {
 }
 
 type AdmissionResult struct {
+	Decision  *DecisionEvidence      `json:"decision,omitempty"`
 	Target    *AdmissionTarget       `json:"target,omitempty"`
 	Inputs    []AdmissionInputResult `json:"inputs,omitempty"`
 	TrackID   int64                  `json:"trackId"`

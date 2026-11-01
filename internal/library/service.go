@@ -117,6 +117,12 @@ func (s *Service) PrepareAdmission(ctx context.Context, seed domain.AdmissionSee
 	if err != nil {
 		return nil, err
 	}
+	if decision, ok := ctx.Value(automaticDecisionKey{}).(*domain.DecisionEvidence); ok {
+		seed.Decision, err = clone(decision)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if recheck := currentRecheck(ctx); recheck != nil {
 		seed.EvidenceRevision = recheck.revision
 	}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/norhua/sonexa/internal/domain"
+	"github.com/norhua/sonexa/internal/matching"
 )
 
 var ErrPlanStale = errors.New("plan_stale: 计划已失效，请重新预览")
@@ -174,6 +175,21 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 	return result, nil
 }
 func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result *domain.AdmissionResult) error {
+	var decisionJSON any
+	if decision := plan.Seed.Decision; decision != nil {
+		copy := *decision
+		copy.Reasons = append([]domain.DecisionReason(nil), decision.Reasons...)
+		if result.Existing {
+			copy.Reasons = append(copy.Reasons, domain.DecisionReason{Code: "exact_existing_track"})
+		}
+		copy.Reasons = matching.ExplainReasons(copy.Reasons)
+		result.Decision = &copy
+		body, err := json.Marshal(copy)
+		if err != nil {
+			return err
+		}
+		decisionJSON = string(body)
+	}
 	if t := plan.Seed.Snapshot.Track; t != nil && t.Identity.Ref != "" && t.Release != nil {
 		result.Target = &domain.AdmissionTarget{Track: t.Identity, Release: *t.Release}
 	}
@@ -223,6 +239,13 @@ func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result *domain.Adm
 			}
 			if problem := plan.Seed.InputScope.Problem; problem != nil {
 				if _, err := tx.Exec("UPDATE import_item SET resolution_problem_id=?,resolution_problem_revision=? WHERE id=?", problem.ID, problem.Revision, member.ItemID); err != nil {
+					return err
+				}
+			}
+			// Reuse the evidence envelope for terminal diagnostics. It is never
+			// read as a future selection mapping. This write shares the result tx.
+			if decisionJSON != nil {
+				if _, err := tx.Exec("UPDATE import_item SET review_evidence=? WHERE id=?", decisionJSON, member.ItemID); err != nil {
 					return err
 				}
 			}

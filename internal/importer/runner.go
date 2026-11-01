@@ -289,8 +289,12 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		}
 		result, err := r.library.CommitAdmission(ctx, selection.Plan.ID, selection.Plan.Hash, domain.AdmissionApproval{})
 		if err == nil {
+			explanation := matching.DecisionSummary(result.Decision)
+			if explanation != "" {
+				explanation = "；" + explanation
+			}
 			if result.Existing {
-				return fmt.Sprintf("[已存在跳过] %s · %s · %s；精确目标 %s:%s（曲目 #%d）", in.Title, in.Artist, in.Album, selection.Candidate.Provider, selection.Candidate.MatchRef, result.TrackID)
+				return fmt.Sprintf("[已存在跳过] %s · %s · %s；精确目标 %s:%s（曲目 #%d）%s", in.Title, in.Artist, in.Album, selection.Candidate.Provider, selection.Candidate.MatchRef, result.TrackID, explanation)
 			}
 			if r.onLibraryChanged != nil {
 				r.onLibraryChanged()
@@ -298,7 +302,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 			if r.fetchOnMatch && r.enricher != nil {
 				r.enricher(result.TrackID, string(selection.Candidate.Provider), deref(selection.Candidate.ReleaseRef))
 			}
-			return matching.LogLine(matching.OutcomeImportUnique, in, findScored(res.Scored, selection.Candidate.MatchRef))
+			return matching.LogLine(matching.OutcomeImportUnique, in, findScored(res.Scored, selection.Candidate.MatchRef)) + explanation
 		}
 		if errors.Is(err, store.ErrProblemBusy) {
 			_, deferErr := r.store.DeferProtectedInput(item.ID, item.Revision)
@@ -322,6 +326,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	if err != nil {
 		return matching.ErrorLogLine(err)
 	}
+	selection.Reasons = matching.ExplainReasons(append(selection.Reasons, res.Reasons...))
 	evidence := ""
 	if len(selection.Reasons) > 0 {
 		raw, _ := json.Marshal(struct {
@@ -347,7 +352,11 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		return matching.ErrorLogLine(err)
 	}
 
-	return fmt.Sprintf("%s · %s：%s", in.Title, in.Artist, reviewReasonText(reason))
+	line := fmt.Sprintf("%s · %s：%s", in.Title, in.Artist, reviewReasonText(reason))
+	if explanation := matching.DecisionSummary(&domain.DecisionEvidence{Reasons: selection.Reasons}); explanation != "" {
+		line += "；" + explanation
+	}
+	return line
 }
 func reviewReasonText(reason store.ReviewReason) string {
 	switch string(reason) {

@@ -60,11 +60,17 @@ func TestAutomaticSelectionPrioritizesOwnedReleaseAndKnownTotal(t *testing.T) {
 	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "b1" || p.calls != 2 {
 		t.Fatalf("total selection: %+v %v calls %d", selection, err, p.calls)
 	}
+	if !decisionHasReason(selection.Plan.Seed.Decision, "prefer_release_track_total") {
+		t.Fatal("total preference missing from sealed decision", selection.Plan)
+	}
 	commit(t, s, prepare(t, s, seed("a", "owned", "group", "Album", "Artist")), false)
 	p.calls = 0
 	selection, err = s.SelectCandidate(context.Background(), high(a, b), 0, selectionProfile())
 	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "a1" || p.calls != 0 || selection.Plan.Baseline.RequiresConfirmation {
 		t.Fatalf("owned subset: %+v %v calls %d", selection, err, p.calls)
+	}
+	if !decisionHasReason(selection.Plan.Seed.Decision, "prefer_existing_compatible_release") {
+		t.Fatal("existing release preference missing", selection.Plan)
 	}
 	selection, err = s.SelectCandidate(context.Background(), high(b), 0, selectionProfile())
 	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "b1" || selection.Reason != ReasonNewRelease || p.calls != 0 {
@@ -187,6 +193,12 @@ func TestSelectionCompatibleOwnedTrackPreference(t *testing.T) {
 				}
 				if !found {
 					t.Fatal("default preference was not explained", selected.Reasons)
+				}
+				if !decisionHasReason(result.Decision, "prefer_owned_compatible_track") || !decisionHasReason(result.Decision, "exact_existing_track") {
+					t.Fatal("result lost decision", result)
+				}
+				if scenario == "country_tie" && !decisionHasReason(result.Decision, "prefer_non_world_country") || scenario == "stable_tie" && !decisionHasReason(result.Decision, "prefer_stable_identity") {
+					t.Fatal("tie break was not explained", result)
 				}
 			}
 			wantCalls := 0
