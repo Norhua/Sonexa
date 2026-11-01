@@ -73,9 +73,9 @@
 - [x] 9.1 运行各阶段已建立的成对 CSV/TSV 集成 fixture，经过 SubmitImport→Runner→Store 验证原名/译名/格式差异在无历史选择记录时解析到同一 track；断言新增数、自动跳过、问题数和逐项目标，而非仅断言总分或候选数量。
 - [x] 9.2 用 you 的两个真实身份 fixture 覆盖复核和搜索添加第二专辑版本、特典截断自动跳过、合集显式导入及无专辑歧义；验证同 ISRC/Recording 两份收藏可并存且旧字段/封面/歌单不被覆盖。
 - [x] 9.3 执行设计 D10 的正反例矩阵，记录独立复核数、错误自动接受/跳过数、新增收藏数及必要请求次数；固定反例误操作为零，等价样例不重复新增，输出本变更 validation.md 记录实际结果与限制。
-- [ ] 9.4 执行 `go test ./...` 及 `go test -race ./internal/matching ./internal/importer ./internal/library ./internal/store ./internal/app`，确认事务、重试、并发和歌词隔离；失败逐项记录，不以定向通过代替全量通过。
-- [ ] 9.5 执行 `npm --prefix frontend run typecheck`、`npm --prefix frontend test`、`npm --prefix frontend run build`、`npm --prefix frontend run test:e2e`，记录浏览器替身和真实 Go 入口各自验证边界，不宣称已完成未执行的原生或真实网络验收。
-- [ ] 9.6 核对代码、局部说明和增量规格的一致性，运行 `openspec validate fix-track-identity-and-reduce-import-review --strict` 及 `git diff --check`；确认无残留候选合并/ISRC 已拥有行为、无历史选版查询、无无关歌词改动，并按阶段形成中文约定式提交。
+- [x] 9.4 执行 `go test ./...` 及 `go test -race ./internal/matching ./internal/importer ./internal/library ./internal/store ./internal/app`，确认事务、重试、并发和歌词隔离；失败逐项记录，不以定向通过代替全量通过。
+- [x] 9.5 执行 `npm --prefix frontend run typecheck`、`npm --prefix frontend test`、`npm --prefix frontend run build`、`npm --prefix frontend run test:e2e`，记录浏览器替身和真实 Go 入口各自验证边界，不宣称已完成未执行的原生或真实网络验收。
+- [x] 9.6 核对代码、局部说明和增量规格的一致性，运行 `openspec validate fix-track-identity-and-reduce-import-review --strict` 及 `git diff --check`；确认无残留候选合并/ISRC 已拥有行为、无历史选版查询、无无关歌词改动，并按阶段形成中文约定式提交。
 
 ## Workflow follow-up
 

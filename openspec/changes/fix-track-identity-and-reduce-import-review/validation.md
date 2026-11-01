@@ -1,6 +1,6 @@
-# 验证记录（进行中）
+# 验证记录
 
-变更：fix-track-identity-and-reduce-import-review。当前完成 **44/48**（1.1–9.2）。9.3–9.6 未完成，禁止用下列局部通过代替最终全量通过。
+变更：fix-track-identity-and-reduce-import-review。实施与自动化验收已完成；完整结果、历史失败及验证边界如下。未执行原生 Wails 人工或真实来源网络验收，不将自动化通过等同于这些验收。
 
 ## 本轮入口矩阵实际结果
 
@@ -60,15 +60,49 @@
 
 MusicBrainz replay 五项均为一次必要本地 HTTP：second_disc 新增1；repeated_position、partial_list、failed_request、stale_input 各新增0/跳过0/问题1。failed_request 为失败问题，其余为待选；精简清单不冒充完整真实网络响应。
 
-## 已通过的阶段验证
+## 最终全量验证
 
-- 8.1：Wails 生成、typecheck、117 前端单测、build、store/app/importer/library 回归、store/app race。
-- 8.2–8.4：新增问题/租约/动作双浏览器测试 20 项、候选/准入/封面/实时事件等合计 82 项；旧复核动作 38 项全部通过。修复本地刷新失败被队列覆盖及租约重开事件竞态。
-- 8.5：计数、截图、控件与实时更新双浏览器 30 项通过，保存跨批问题截图。日志回归恢复失败手动重试说明后，全量 Go 与五包 race 当时通过（最慢约 223 秒）。
-- 最终前端 typecheck、**24 文件 / 120 单测**、build 通过。主 chunk 约 **1,065 kB**，仍有 >500 kB 警告。
-- strict 规格与 diff 检查通过；9.6 的全代码一致性核对尚未完成。
+以下在当前实现上实际执行，Go 使用 `-count=1` 禁用测试缓存：
 
-## 最终全量运行失败（未掩盖）
+```sh
+go test -json ./... -count=1
+go test -json -race ./internal/matching ./internal/importer ./internal/library ./internal/store ./internal/app -count=1
+/Users/amadeus/.go/bin/wails generate module
+npm --prefix frontend run typecheck
+npm --prefix frontend test
+npm --prefix frontend run build
+SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e
+openspec validate fix-track-identity-and-reduce-import-review --strict
+git diff --check
+```
+
+| 检查 | 实际结果 |
+|---|---|
+| 全量 Go | 21 个有测试包通过，**864 个顶层测试 / 1812 个测试及子测试通过，0 失败**；根包与 qrcdes 无测试 |
+| 五包 race | 5 包通过，**525 个顶层测试 / 1107 个测试及子测试通过，0 失败** |
+| Wails 绑定 | 重新生成通过；生成目录按项目约定忽略 |
+| 前端 typecheck | 通过 |
+| Vitest | **24 文件 / 120 测试通过** |
+| 前端 build | 通过；主 chunk **1,064.87 kB**，gzip 271.35 kB，保留 >500 kB 既有警告 |
+| 全量 Playwright | Chromium/WebKit **320/320 通过**，约 1.8 分钟，使用构建预览与 Wails 替身 |
+| 严格规格 / diff | 通过 |
+
+最后一致性扫描发现自动新增日志仍含“置信率 xx%”，已改为“检索分”，不改变评分/选择；删除未被生产调用的旧四项 SummaryLine 后再次完整运行 Go/race。最终测试计数因此比上一轮各少 1。前端产物未因该后端日志文案调整变化。
+
+真实网络 probe/live 用例保持默认跳过（NetEase/QQ probe、live covers/lyrics/QQ 等）；另有验证默认跳过门禁的三个子用例主动 skip。这些不计入上述通过数，不宣称真实来源连通性已验证。完整本次自动化结果已汇总在本文件；`/tmp/sonexa-{go,race}-release.json` 与 `/tmp/sonexa-e2e-final-fixed.log` 仅为临时诊断，不是持久交付依赖。
+
+## 一致性核对
+
+- `ResolveLocal` 的消费接口只有 `FindExactBinding`，不提供 ISRC/文本查询；检查了来源精确身份、发行关系及有效修订才返回 owned。
+- `MergeCandidate`、`MarkMerged`、`merged_into`、`StatusMerged`、`CheckLocalDuplicate` 的生产引用为零；剩余测试字符串用于断言旧协议/列不存在，说明文档中的名称为删除记录。
+- 自动流水线检查完整 profile→当前候选事实→输入筛选→相容版本偏好→精确所有权。保留人工候选，不按全人工列表中存在跨组候选就否决自动目标；仍相容的跨组/不同内容/位置冲突继续复核。
+- 读取 `operation_result` 仅按成功计划 ID/hash 用于同请求幂等；本地召回和所有权不查历史输入/选版，活跃问题查询约束 active 状态。事务重验完整 InputScope/ProblemScope，不以历史批准扩大未来范围。
+- 来源身份解释在 provider 的 CandidateResolver 实现中；matching/library/importer 无新增 MusicBrainz/iTunes/QQ 来源 switch 分发，App 集中装配注入。
+- 以本变更实现前 `d5c60dd` 为差异基线，`internal/lyrics`、`internal/lyricdoc`、前端歌词业务代码及旧 CompareTitle/CompareCredit/ScoreCandidate 行为无改动；歌词全量 Go 与前端回归通过。App 上游装配仅额外发布身份能力，不修改歌词协议。
+- 保留编辑器归组/成员合并及专辑合并展示，它们不是候选所有权合并。兼容逐行读取入口仍存在但 UI 已使用问题队列，旧单行修改不能绕过范围或租约。
+- 更新 matching/store 局部 README 中过时的阶段状态；README 标明本版本未做原生验收。主规格 delta 同步及归档不在本次执行范围，尚未进行。
+
+## 历史失败与修复（不掩盖）
 
 ### Go
 
@@ -78,21 +112,20 @@ MusicBrainz replay 五项均为一次必要本地 HTTP：second_disc 新增1；r
 TempDir RemoveAll cleanup: unlinkat .../TestCancelOutOfView.../001/tmp: directory not empty
 ```
 
-检查发现该测试启动 `go pool.Fetch(...)`，测试退出前释放 HTTP handler，但没有等待 visible Fetch 写盘结束。尚未修改/复验该封面测试；不声称已排除生产问题。
-
-后续 `&& go test -json -race ...` **未执行**。第八组末的 race 通过不能代替加入 9.1/9.2 后的最终运行。日志在 `/tmp/sonexa-go-final.json`（临时诊断，不作为持久交付依赖）。
+当时测试退出前释放 HTTP handler，但没有等待 visible Fetch 写盘结束，后续 `&& race` 被阻断。用户确认后仅修改测试：用启动信号和实际在途登记替代固定等待，退出前等待可见任务完成并调用 Pool.Close；断言取消原因、未发出的排队请求及保留任务成功。普通测试重复50次、race重复20次通过，随后最终全量 Go/race 均通过。生产下载池未修改。
 
 ### Playwright
 
-执行构建预览模式的全量 Playwright：**314/320 通过，6 失败**。
+此前一次构建预览模式的全量 Playwright：**314/320 通过，6 失败**。
 
-- 本次新增来源 Select 导致旧 `list-edges` 与 `provider-capabilities` 各双浏览器定位不唯一。已改按“上游/地区”可访问名称定位，相关两文件 **14/14** 重跑通过；尚未重跑完整 320 项，不报告全量已绿。
-- `cover-grid` 双浏览器失败：原断言 `/variantId=32$/`（另有 11/12）不允许 URL 后带 `&searchId=...`，而当前 CoverPreview 为搜索会话携带该参数。本轮未改该封面模块/测试；须确认是否纳入修复。不能删掉 searchId 掩盖断言。
+- 新增来源 Select 导致旧 `list-edges` 与 `provider-capabilities` 各双浏览器定位不唯一。已按“上游/地区”可访问名称定位，相关两文件14/14通过。
+- `cover-grid` 双浏览器原断言 `/variantId=32$/`（另有11/12）不允许 URL 后带 `searchId`。用户确认后改为解析参数，同时核对各来源自己的 searchId，保留最小规格/请求数量/显式采用断言。首版测试错误使用全局最后会话 ID，随后核实 store 的逐来源会话约定并修正。双浏览器重复三轮12/12通过，最终完整320/320通过。未修改封面生产行为或移除 searchId。
+- 实施期间发现并修复的相关问题还包括：队列快照覆盖本地身份刷新失败后的不可操作状态、租约重新获取事件引起假 stale、来源 Select 无可访问名称。均有对应浏览回归通过。
 
-日志在 `/tmp/sonexa-e2e-final.log`；trace/截图在忽略目录 `frontend/test-results/`，后续重跑可能覆盖。
+截图/trace 产物位于忽略目录 `frontend/test-results/`，后续运行可能覆盖；完整通过与历史失败分别记录，不用局部通过替代全量。
 
 ## 验证边界与后续
 
 - 不运行原生 Wails 人工验收或真实网络；浏览器用 Wails 替身，Go 用临时 SQLite/httptest/固定事实。未清理、迁移或读取用户应用数据。
 - 数据代际仍 `track-identity-v9`；未同步主规格、未归档。
-- 下一步需用户确认是否修复两处封面测试基础设施/断言，再执行 D10 汇总、全量 Go、五包 race、完整浏览套件及一致性核对。9.3–9.6 保持未完成。
+- 自动化任务完成后可独立执行规格核验、主规格同步及归档；本次未归档，不以构建/浏览器替身通过宣称原生或真实网络验收完成。

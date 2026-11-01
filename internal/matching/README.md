@@ -20,7 +20,7 @@ Runner 传递持久化 profile，`library.SelectCandidate` 先按完整输入筛
 - iTunes 在来源内检查小写 storefront 与曲目/发行一致性；QQ 在来源内检查 MID。已有精确候选不额外出网，未实现的决策清单补取明确 unsupported。
 - `library.PrepareCandidate` 先解析再创建 seed；`CandidateSeed` 和直接 `PrepareAdmission` 均重新检查精确身份及一致的发行关系，不允许合成 seed 绕过。完整身份不要求展示字段齐全，缺失名称/署名仍保持未提供，不能借输入填充。
 - `App.PrepareAdmission` 返回正常计划，或者仅带 `resolution` 的候选展开结果。后者没有可提交的计划 ID/hash，前端不调用 commit，而是回到列表选择真实位置；展开说明显示碟号与轨号。直接接受/加入兼容入口不能提交展开结果。
-- 自动解析得到的真实候选再执行输入证据核验；仍有未解析目标时保留复核，Runner 保存展开候选而不是错误的合成收藏。问题修订和多行事务仍属于后续任务，不能由身份解析测试推定已完成。
+- 自动解析得到的真实候选再执行输入证据核验；仍有未解析目标时保留复核，Runner 保存展开候选而不是错误的合成收藏。问题修订和多行原子事务由 InputScope/ProblemScope 约束，身份解析本身不授予扩大范围的权限。
 
 ## 精确所有权
 
@@ -72,7 +72,7 @@ Runner 传递持久化 profile，`library.SelectCandidate` 先按完整输入筛
 
 本地充分证据和远程选版共用 `prepareAutomaticTarget`：已收藏目标按决策中读取的绑定修订准备轻量 skip 计划；未收藏目标沿用既有准入和发行成员确认。`SelectCandidate` 在补资料前读取输入修订，旧修订不能在计划准备时被刷新为新的授权。Runner 共用一个提交/日志/通知分支，结果为 Existing 时记录已存在跳过，不发 library 通知、不触发补全。
 
-人工 `PrepareCandidate`/App 接受不使用默认选版：用户明确选择同组另一发行时仍保留该 track，要求新增发行确认，不被自动的已收藏优先替换。任务 5–8 的多来源问题和重评仍未实现。
+人工 `PrepareCandidate`/App 接受不使用默认选版：用户明确选择同组另一发行时仍保留该 track，要求新增发行确认，不被自动的已收藏优先替换。多来源问题按已展示范围统一准入；收藏变更后的重评重新使用每行当前证据，不复制其他问题的人工选择。
 
 ## 名称、版本与署名
 
@@ -98,13 +98,13 @@ Runner 传递持久化 profile，`library.SelectCandidate` 先按完整输入筛
 
 `ProblemAnchor` 保存当前成员的完整证据；新成员加入时重证整个集合并取所有成员共同名称证据，不对别名集合做传递闭包。身份路径重新检查每行的完整当前候选范围，禁止以已收藏/总数默认偏好或候选集合重叠当作唯一身份；不同输入提供的同一 ID 事实互相冲突也拒绝。
 
-`store.FindProblemCandidates` 只在活跃、当前规则问题中按名称/已证明身份召回，支持游标分页并明确截断。检索命中不是归并许可，仍须在写事务重新证明。5.2 已将证明接入复核/失败事务，自动建立/加入问题；重试保持成员修订，单行终态解除自身成员，最后成员结束才关闭。原始行和独立失败/候选不合并删除，前端问题展示、多行操作仍待后续任务。
+`store.FindProblemCandidates` 只在活跃、当前规则问题中按名称/已证明身份召回，支持游标分页并明确截断。检索命中不是归并许可，仍须在写事务重新证明。复核/失败事务自动建立或加入问题；重试保持成员修订，单行终态解除自身成员，最后成员结束才关闭。原始行和独立失败/候选不合并删除；前端按问题浏览并可展开来源，所有问题动作都携带明确成员范围。
 
 ## 存储边界与验证
 
-`import_item.input_profile` 保存完整 JSON，文件导入经 App → Store → Runner 传递；无 profile 的内部调用由已明确单位的映射值构造，不猜原始列。当前新库代际为 `track-identity-v9`；v8 及更早代际拒绝打开，不自动迁移或删除数据。整数修订、问题、成员与交互租约约束见 [store 结构说明](../store/README.md)；语义归并及问题生命周期已接入，后台重评和完整问题界面仍待后续。
+`import_item.input_profile` 保存完整 JSON，文件导入经 App → Store → Runner 传递；无 profile 的内部调用由已明确单位的映射值构造，不猜原始列。当前新库代际为 `track-identity-v9`；v8 及更早代际拒绝打开，不自动迁移或删除数据。整数修订、问题、成员、交互租约、有界重评及前端读取协议见 [store 结构说明](../store/README.md)，界面操作见 [导入与复核问题](../../frontend/docs/import-review.md)。
 
-`LocalRecall` 是 matching 消费侧的批量事实契约；store 的独立派生索引覆盖当前值、有效绑定快照、角色和一跳关系，返回各层事实与修订、显式截断状态，不授权拥有或自动跳过。`RecallTextForms` 仅提供召回键，不能替代完整 profile 的限定/冲突检查。索引重建与召回不读取历史输入选择；4.4 已连接输入优先筛选，后续偏好/问题生命周期单独验证。
+`LocalRecall` 是 matching 消费侧的批量事实契约；store 的独立派生索引覆盖当前值、有效绑定快照、角色和一跳关系，返回各层事实与修订、显式截断状态，不授权拥有或自动跳过。`RecallTextForms` 仅提供召回键，不能替代完整 profile 的限定/冲突检查。索引重建与召回不读取历史输入选择；输入优先筛选、相容候选偏好和问题生命周期分别通过真实业务入口验证。
 
 定向验证：
 
@@ -112,4 +112,4 @@ Runner 传递持久化 profile，`library.SelectCandidate` 先按完整输入筛
 go test ./internal/matching ./internal/importer ./internal/lyrics
 ```
 
-测试包括 unknown/conflict/truncation 的区分、可靠异写与反例、完整版本负载、角色/合作保护、原始行及解析状态持久化、relevance 与时长独立、未知竞争者保留。`internal/app/identity_admission_test.go` 验证真实准备入口的身份展开、已有目标及 seed 拒绝；自动目标由 Runner/library 真实入口测试验证。历史十行 `TestCSVSearchDisplayRegression` 仅保留展示基线，不代表导入新增统计；`Engine.Decision` 的旧分类也不能代替真实终态验收。多行问题事务仍需后续集成验证。
+测试包括 unknown/conflict/truncation 的区分、可靠异写与反例、完整版本负载、角色/合作保护、原始行及解析状态持久化、relevance 与时长独立、未知竞争者保留。`internal/app/identity_admission_test.go` 验证真实准备入口的身份展开、已有目标及 seed 拒绝；自动目标由 Runner/library 真实入口测试验证。历史十行 `TestCSVSearchDisplayRegression` 仅保留展示基线，不代表导入新增统计；`Engine.Decision` 的旧分类也不能代替真实终态验收。多行问题事务、成对 CSV/TSV、you 两个真实 track 跨入口及 D10 正反例矩阵见本变更 `validation.md`，其中分别注明离线事实、临时数据库与浏览器替身的验证边界。

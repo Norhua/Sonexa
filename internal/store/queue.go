@@ -42,18 +42,16 @@ type ResolutionTarget struct {
 	Release domain.Identity `json:"release"`
 }
 
-// ReviewReason 是条目进入复核队列的成因。
-//
-// 三种成因在导入统计里落到两个互不重叠的数上：疑似重复与多义计入「进入复核」，
-// 无结果计入「未匹配」。仅凭 status='review' 分不出来，因此单独记一列。
+// ReviewReason 是条目进入复核队列的成因；Review 包含所有复核行，
+// Unmatched 只统计其中 no_match 子集，不能作为另一个互斥状态相加。
 type ReviewReason string
 
 const (
-	// ReviewDuplicate 本地疑似重复（分流规则 1）。
+	// ReviewDuplicate 兼容诊断原因，不再由文本重复前置分流产生。
 	ReviewDuplicate ReviewReason = "duplicate"
-	// ReviewAmbiguous 多条高置信无法唯一裁决（分流规则 3 同组多份发行、规则 4 跨发行组）。
+	// ReviewAmbiguous 输入目标、版本、位置或事实不足以自动确定。
 	ReviewAmbiguous ReviewReason = "ambiguous"
-	// ReviewNoMatch 无结果或全部低置信（分流规则 5）。
+	// ReviewNoMatch 没有可用自动目标；展示高置信不单独授权准入。
 	ReviewNoMatch ReviewReason = "no_match"
 	// ReviewReasonUnchanged 表示沿用条目已有的成因，不改写它。
 	//

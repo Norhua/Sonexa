@@ -291,11 +291,13 @@ func TestLogLinesAreDistinguishable(t *testing.T) {
 	if unique == ladder {
 		t.Error("唯一高置信与经优选阶梯入库的提示应可区分")
 	}
-	if !containsSub(ladder, "实体release") {
-		t.Errorf("经阶梯入库的提示应标出它是优选出的发行: %q", ladder)
+	if !containsSub(ladder, "默认选版") {
+		t.Errorf("经默认偏好选版的提示应可区分: %q", ladder)
 	}
-	if !containsSub(unique, "置信率") {
-		t.Errorf("入库提示应含置信率: %q", unique)
+	for _, line := range []string{unique, ladder} {
+		if !containsSub(line, "检索分: 95") || containsSub(line, "%") || containsSub(line, "置信率") {
+			t.Errorf("检索分不能描述为身份概率: %q", line)
+		}
 	}
 	if !containsSub(crossGroup, "[进入复核]") {
 		t.Errorf("跨组提示 = %q", crossGroup)
@@ -313,19 +315,6 @@ func TestLogLinesAreDistinguishable(t *testing.T) {
 	errLine := ErrorLogLine(errors.New("503"))
 	if !containsSub(errLine, "[发生错误]") || !containsSub(errLine, "返回队列") {
 		t.Errorf("错误提示 = %q", errLine)
-	}
-}
-
-// TestSummaryLine 覆盖 11.10 的完成统计文案。
-func TestSummaryLine(t *testing.T) {
-	got := SummaryLine(180, 20, 10, 4, 5)
-	for _, want := range []string{"本次导入 180 条", "进入复核 20 条", "未匹配 10 条", "失败 4 条"} {
-		if !containsSub(got, want) {
-			t.Errorf("统计文案缺少 %q: %q", want, got)
-		}
-	}
-	if !containsSub(got, "不再返回队列") {
-		t.Errorf("应说明失败条目不再自动返回队列: %q", got)
 	}
 }
 

@@ -33,7 +33,7 @@
 
 **来源行拆出：** `SplitProblemItem(problemID, problemRevision, itemID, inputRevision)` 在事务内校验当前范围，将该行移入 `anchor.isolated` 的独立活跃问题。原问题 revision 和被拆行 revision 递增，其他行原文、候选和输入修订不变。旧单行准入批准因此失效；独立问题重试也不自动合回，不吸纳后续等价输入。隔离仅保存于活跃工作锚点，不作为未来输入的历史身份规则。
 
-**阶段边界：** 5.1–5.4 已交付证明、检索、创建/加入/关闭、拆出、版本化问题操作和生产 Runner 接线。6.1–6.4 已加入单行/多行计划、原子结果、显式 API 和后端交互保护；自动重评和问题前端仍待后续任务。前端暂时仍逐行读取，不能把后台成员归并称为已交付多来源问题 UI。候选合并 API、旧本地候选快照与 merged 终态已移除，状态 CHECK 拒绝旧写法。
+**当前接线：** 证明、检索、创建/加入/关闭、拆出、版本化问题操作与生产 Runner 共用存储协议。单行/多行计划和原子结果结合交互租约保护；收藏变更触发有界重评，前端按独立问题展示来源与操作范围。候选合并 API、旧本地候选快照与 merged 终态已移除，状态 CHECK 拒绝旧写法。
 
 ## 问题查询与范围协议（5.4）
 
@@ -41,7 +41,7 @@
 
 `ReviewCandidateFacts(version=1)` 统一保存 `ScoredCandidate` 来源事实及变体，不保存 CandidateRow 的所有权、动作或本地封面 ID。问题的 `ProblemCandidateFacts(version=1)` 按成员分别保存事实，不能拼接不同来源行。Runner 与人工问题改搜使用同一形状；旧内部 scored fixture 可投影到来源形状，旧 UI 候选快照只在 App 兼容读取，不成为问题身份证明。
 
-`NoneMatchedProblem` 清候选但保留活跃成员，失效在途查询；`RetryProblemMembers` 只处理范围中明确列出的 failed 成员；`DiscardProblemMembers` 仅原子结束列明成员。空/重复/非成员 ID、旧问题/成员/输入修订均拒绝。App 提供对应显式问题接口及拆出入口；旧单行改搜/无一匹配遇多行问题时要求先拆出，不能静默扩大范围。完整问题 UI 将在 8.x 接线。
+`NoneMatchedProblem` 清候选但保留活跃成员，失效在途查询；`RetryProblemMembers` 只处理范围中明确列出的 failed 成员；`DiscardProblemMembers` 仅原子结束列明成员。空/重复/非成员 ID、旧问题/成员/输入修订均拒绝。App 提供对应显式问题接口及拆出入口；旧单行改搜/无一匹配遇多行问题时要求先拆出，不能静默扩大范围。前端使用显式问题 API，兼容单行入口不静默扩大范围。
 
 ## 准入输入范围（6.1）
 
@@ -57,7 +57,7 @@
 - `PrepareSkipExisting` 只接受来源已验证的精确候选、输入 ID/revision。准备与提交都不出网，不做成员新增确认；计划绑定本地 ID、track 与 release 修订，目标删除、换绑（含换回）或发行关系变化时拒绝。
 - `CommitAdmission` 统一按实际结果记终态：新建为 imported，已存在为 `skipped/existing_track`。不接受客户端指定终态，不以同 ISRC/Recording 复用其他 track。已有目标只写输入结果及 `operation_result`，不修改任何收藏表、封面、歌词或补全状态。
 - 同一成功 plan ID/hash 重试返回原结果；另一旧计划、旧改搜/失败响应不能恢复终态。Runner 与在途改搜使用起始整数修订 CAS，旧同步队列写接口也始终拒绝终态。
-- App 与 Runner 对纯已有结果不发收藏变更通知、不启动补全；前端单行跳过已接入计划，独立任务/问题通知仍待后续任务，不把这一步称为完整事件交付。
+- App 与 Runner 对纯已有结果不发收藏变更通知、不启动补全；独立任务/问题通知在成功事务后发送，前端按事件刷新而不是按计数是否改变判断。
 
 ## 原子结果与单行辅助操作（6.2–6.3）
 
@@ -65,7 +65,7 @@
 
 多行结果、成员移除、问题关闭及归组决策均在同一事务，任一成员/结果写入失败整体回滚。未按既有文件暂存协议准备的文件字段仍拒绝，不留下暂建实体或终态。新增发行的确认规则不变；另一请求已收藏同一精确目标时只跳过、不修改旧收藏、不要求已无必要的新增确认。
 
-App 提供 `GetReviewAdmissionScope`、`PrepareProblemAdmission` 和 `PrepareProblemSkipExisting`。`PrepareNoMatchNeeded` 先记录所选行范围，再读取原始解析值，不借问题查询草稿替换原文，不给其他行自动创建或跳过。多行无绑定 seed 被拒绝。移出支持单行/显式成员列表，失败重试仅列明 failed 成员；不将单行操作推广到其他成员。任务/问题事件及完整问题 UI 仍由 7.x/8.x 交付。
+App 提供 `GetReviewAdmissionScope`、`PrepareProblemAdmission` 和 `PrepareProblemSkipExisting`。`PrepareNoMatchNeeded` 先记录所选行范围，再读取原始解析值，不借问题查询草稿替换原文，不给其他行自动创建或跳过。多行无绑定 seed 被拒绝。移出支持单行/显式成员列表，失败重试仅列明 failed 成员；不将单行操作推广到其他成员。任务/问题事件与界面范围展示遵循下文的事件、只读队列协议。
 
 ## 问题交互租约（6.4）
 
@@ -75,9 +75,9 @@ App 提供 `GetReviewAdmissionScope`、`PrepareProblemAdmission` 和 `PreparePro
 - 改搜及候选解析在出网前创建独立在途 pin，网络期间不持有数据库事务或全局锁。pin 最长 10 分钟，慢请求超过 90 秒仍保护问题；明确释放会立即拒绝旧响应，但 pin 在请求返回或硬截止前继续阻止后台处理。正常完成、出错及超时均可清理。
 - 自动计划的 `Automatic` 随计划签名保存；事务内在任何写入/已有目标快速返回前检查保护。当前 lease 或 pin 存在则返回 `problem_busy`，不新增、不结束问题、不改变补全。人工 lease 持有人仍可确认/提交，释放或过期后的旧批准拒绝；同一已成功计划仍返回原幂等结果。
 - Runner 不领取受保护成员；已有后台工作遇保护则暂缓，不增加网络失败次数、不覆盖人工候选。自动决策在 I/O 前固定 InputScope，不能在交互结束后给旧证据刷新授权。底层旧队列状态写也拒绝受保护问题；显式问题移出、重试、拆出校验完整范围和持有人。
-- 释放、在途结束和回收只向 `review_problem_recheck` 合并写入问题 ID/revision，不保存目标选择。App 生命周期启动每 15 秒、每次最多 100 个问题的本地回收；关闭前取消并等待。重启后剩余租约按原期限过期，迟到请求无权复用。实际消费提示并进行当前证据重评由 7.1–7.2 接入，不把此提示表称为已实现后台自动跳过。
+- 释放、在途结束和回收只向 `review_problem_recheck` 合并写入问题 ID/revision，不保存目标选择。App 生命周期启动每 15 秒、每次最多 100 个问题的本地回收；关闭前取消并等待。重启后剩余租约按原期限过期，迟到请求无权复用。提示由有界 worker 消费，使用最新证据重评；提示本身不保存或授权目标选择。
 
-前端使用 `Acquire/Renew/ReleaseReviewProblemLease`、`UpdateReviewProblemDraft`，从返回 scope 获取准入范围；完整聚焦/卸载/确认交互在 8.4 接线。本阶段不宣称 UI 租约已交付。假时钟与并发/真实 App、Runner 测试覆盖编辑/批准保护、续约不改事实、释放在途、硬截止、重启、CAS/回滚、旧响应及释放后新决策。
+前端使用 `Acquire/Renew/ReleaseReviewProblemLease`、`UpdateReviewProblemDraft`，从返回 scope 获取准入范围；打开、切换/卸载和确认生命周期已接线。假时钟与并发/真实 App、Runner 测试覆盖编辑/批准保护、续约不改事实、释放在途、硬截止、重启、CAS/回滚、旧响应及释放后新决策。
 
 ## 收藏变更驱动重评（7.1）
 
@@ -87,7 +87,7 @@ App 提供 `GetReviewAdmissionScope`、`PrepareProblemAdmission` 和 `PreparePro
 
 每次最多处理 32 个变更 track、每 track 100 个问题（游标续页），重评每次最多 16 个成员。成员始终单独使用原始 profile 与当前收藏事实；已保存的来源决策事实、完整性不足与位置歧义不得被展示候选代替。复用既有 `CandidateFacts`、输入筛选、同组同内容偏好与精确所有权逻辑，重评本身不联网、不新增收藏，只对重新确定的已有目标准备 skip。无结果但本地完整资料充分的输入可跳过；跨组、显式其他版本、未知竞争者及部分清单保留待处理。
 
-输入 scope、租约和收藏事实代次在提交事务内重验；不仅删除目标，新增或修改竞争者也使旧计划失效。纯 skip 不发 library 通知，不写收藏事实，从而不自激循环。提示消费使用 revision CAS；即使重评无操作，成员/候选或竞争事实在途变化也不会误消费提示。错误保存于提示并延后一分钟，不改来源行错误。任务/问题 UI 事件仍在 7.4。
+输入 scope、租约和收藏事实代次在提交事务内重验；不仅删除目标，新增或修改竞争者也使旧计划失效。纯 skip 不发 library 通知，不写收藏事实，从而不自激循环。提示消费使用 revision CAS；即使重评无操作，成员/候选或竞争事实在途变化也不会误消费提示。错误保存于提示并延后一分钟，不改来源行错误。任务/问题 UI 事件在同一提交之后发送。
 
 ### 重评恢复与必要网络工作（7.2）
 
@@ -103,11 +103,11 @@ App 提供 `GetReviewAdmissionScope`、`PrepareProblemAdmission` 和 `PreparePro
 
 `ProblemStats` 分别返回 ReviewProblems/PendingProblems/FailedProblems/SourceRows。活跃成员全部 failed 才归失败问题，含 review/queued/matching 成员的归待选；SourceRows 是活跃来源行数。批次统计只计与该批有关的问题和来源行，但问题分项按完整跨批范围判定，因此全局问题数不能由各批相加。行数、子集和批次关联问题在同一只读事务读取。
 
-TaskSummary.ReviewPending 现在为全局独立问题数，并返回完整 Problems；`GetReviewProblemStats` 提供无候选加载的本地统计。旧 GetReviewQueue 仍返回逐行列表和行计数，8.x 将替换界面，不能将其旧 Total 混作问题数。
+TaskSummary.ReviewPending 为全局独立问题数，并返回完整 Problems；`GetReviewProblemStats` 提供无候选加载的本地统计。前端读取 `GetReviewProblemQueue` 的独立问题和完整来源；兼容 `GetReviewQueue` 仍为逐行列表，不能将其 Total 混作问题数。
 
 ## 任务与问题事件（7.4）
 
-`task_change_state.revision` 在批次、输入、问题及成员关系更新的同一事务递增。Store.withTx 仅在成功提交且修订实际变化后调用通知；App 发出 `review:changed` 与 `tasks:changed`，载荷含 revision。不要求计数变化：改搜、草稿、拆出、成员变化、失败重试及纯跳过都可刷新；回滚、只读、同一成功计划重试不伪报变更。新修订供 8.x 前端丢弃迟到响应，不把问题行数混为收藏变更。
+`task_change_state.revision` 在批次、输入、问题及成员关系更新的同一事务递增。Store.withTx 仅在成功提交且修订实际变化后调用通知；App 发出 `review:changed` 与 `tasks:changed`，载荷含 revision。不要求计数变化：改搜、草稿、拆出、成员变化、失败重试及纯跳过都可刷新；回滚、只读、同一成功计划重试不伪报变更。新修订供前端丢弃迟到响应，不把问题行数混为收藏变更。
 
 `library:changed` 继续只由真实收藏操作发送；纯 skip 和后台已有目标重评只发 review/tasks，不启动补全、不反馈成新的收藏变更事件。App 初始化装配唯一回调，Runner 和所有事务准入路径共用。通知发生在数据库提交后，回调可立即读取完整终态。既有 import:progress 继续反映运行集合及批次进度，不由数据库提前宣称 Runner 已结束。
 
@@ -131,10 +131,10 @@ TaskSummary.ReviewPending 现在为全局独立问题数，并返回完整 Probl
 
 `ReadLocalFacts(ctx, identities)` 另按已给出的精确来源 track 读取完整本地事实，匹配业务通过 `LocalFactLookup` 消费。它不依赖名称召回，去重输入身份、跨来源不合并；同事务读绑定及事实，仍不授予 owned。用于远程候选完全改名时补读当前收藏的证据，避免文本池漏掉事实冲突。
 
-未绑定收藏仍可召回，但不会得到虚构的来源身份或 owned。即使未截断且只有一个本地候选，也不说明上游目标唯一；事实合一和纯本地充分事实跳过已由 4.2–4.3 接入；远程输入优先自动选择与统一生产接线仍由 4.4–4.6 完成。
+未绑定收藏仍可召回，但不会得到虚构的来源身份或 owned。即使未截断且只有一个本地候选，也不说明上游目标唯一；事实合一、纯本地充分事实跳过、远程输入优先自动选择均已连接统一生产路径。
 
 `local_recall_test.go` 覆盖真实快照写入的嵌套 UPSERT、当前/来源事实分离、异写与限定保留、角色/关系及两端失效、删除/换绑、2000 条之后的目标、截断、大量异写键、规则重建、重启、错误回滚、取消与并发同一事务读。新库拒绝测试包含 v4，不修改旧数据。
 
 ## 验证
 
-`queue_schema_test.go` 使用临时文件 SQLite 验证整数修订、原始行不变、JSON/正整数约束、跨批成员重启保留、并发单活跃归属、终态/旧修订拒绝归入、历史目标保留、同 ISRC/Recording 多 track 共存及旧代际无改写拒绝。`problems_test.go` 和 importer 的真实 Runner 用例验证跨批等价归并、独立失败/原文保留、单行结束/最终关闭、重启/重试修订、非传递别名拒绝与事务回滚；`library/input_scope_test.go`、`library/multi_input_test.go`、`store/input_scope_test.go` 及 `app/multi_input_test.go` 覆盖范围 Hash/签名、当前证明失效、跨批原子结果、并发一次新建、整体回滚及单行辅助操作；UI 验收仍待后续。`queue_cas_test.go`、`library/single_input_test.go`、`app/single_input_test.go` 验证单行跳过、并发一次新建、重复计划幂等、删除/换绑/错误回滚、迟到响应拒绝和真实 App 离线跳过。无写入测试读取全部收藏表（包括 FTS 与封面目录）并在 Go 中排序比较，不依赖所有表都有 `rowid`。
+`queue_schema_test.go` 使用临时文件 SQLite 验证整数修订、原始行不变、JSON/正整数约束、跨批成员重启保留、并发单活跃归属、终态/旧修订拒绝归入、历史目标保留、同 ISRC/Recording 多 track 共存及旧代际无改写拒绝。`problems_test.go` 和 importer 的真实 Runner 用例验证跨批等价归并、独立失败/原文保留、单行结束/最终关闭、重启/重试修订、非传递别名拒绝与事务回滚；`library/input_scope_test.go`、`library/multi_input_test.go`、`store/input_scope_test.go` 及 `app/multi_input_test.go` 覆盖范围 Hash/签名、当前证明失效、跨批原子结果、并发一次新建、整体回滚及单行辅助操作；UI 范围、动作、租约、计数和竞态由前端单测及双浏览器替身回归验证，不替代真实后端事务断言。`queue_cas_test.go`、`library/single_input_test.go`、`app/single_input_test.go` 验证单行跳过、并发一次新建、重复计划幂等、删除/换绑/错误回滚、迟到响应拒绝和真实 App 离线跳过。无写入测试读取全部收藏表（包括 FTS 与封面目录）并在 Go 中排序比较，不依赖所有表都有 `rowid`。

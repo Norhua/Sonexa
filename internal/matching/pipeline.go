@@ -179,14 +179,14 @@ func sortedPool(pool map[string]ScoredCandidate) []ScoredCandidate {
 func LogLine(outcome Outcome, in Input, sc *ScoredCandidate) string {
 	switch outcome {
 	case OutcomeImportUnique:
-		return fmt.Sprintf("[直接入库] %s %s %s 置信率: %.0f%%",
+		return fmt.Sprintf("[直接入库] %s %s %s 检索分: %.0f",
 			describe(sc.Candidate.Title, in.Title),
 			describe(sc.Candidate.ArtistName, in.Artist),
 			describe(sc.Candidate.AlbumTitle, in.Album),
 			sc.Score.Total)
 	case OutcomeImportLadder:
-		// 与唯一高置信的情形可区分：明确标出它是优选出的发行
-		return fmt.Sprintf("[直接入库] %s %s %s 实体release 置信率: %.0f%%",
+		// 旧展示分类的格式化，不替代生产选版证据。
+		return fmt.Sprintf("[直接入库] %s %s %s 默认选版 检索分: %.0f",
 			describe(sc.Candidate.Title, in.Title),
 			describe(sc.Candidate.ArtistName, in.Artist),
 			describe(sc.Candidate.AlbumTitle, in.Album),
@@ -212,24 +212,6 @@ func ErrorLogLine(err error) string {
 func ExhaustedLogLine(in Input, attempts int, err error) string {
 	return fmt.Sprintf("[发生错误]: 已连续 %d 次出错，不再返回队列，%s，%v",
 		attempts, inputSummary(in), err)
-}
-
-// SummaryLine 返回完成或暂停时的统计文案。
-//
-// 四个数互不重叠，相加即本批总数——只有这样用户才对得上账：
-//
-//	导入      规则 2、3 直接入库
-//	进入复核  规则 1 疑似重复 + 规则 4 跨发行组 + 规则 3 同组多义
-//	未匹配    规则 5 无结果 / 全部低置信
-//	失败      规则 6 连续出错达上限，不再返回队列
-//
-// 「进入复核」与「未匹配」的条目都停在复核队列里，但成因不同，
-// 因此在统计行里必须分开计数。
-func SummaryLine(imported, review, unmatched, failed, maxAttempts int) string {
-	return fmt.Sprintf(
-		"[导入完成/暂停]: 本次导入 %d 条，进入复核 %d 条，未匹配 %d 条，失败 %d 条\n"+
-			"（连续 %d 次匹配均发生错误的条目不再返回队列）",
-		imported, review, unmatched, failed, maxAttempts)
 }
 
 func inputSummary(in Input) string {
