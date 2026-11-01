@@ -99,7 +99,7 @@ func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 	if err := json.Unmarshal([]byte(raw), &scored); err == nil && len(scored) > 0 && scored[0].Candidate.MatchRef != "" {
 		// 复核队列的候选必须与上游搜索一样做本地判定，
 		// 否则库里已有的那首不会显示双徽章、动作也不会变成「跳过」。
-		return a.rowsFrom(scored, "接受")
+		return a.rowsFrom(scored, matching.CandidateAccept)
 	}
 
 	// 改搜保存 CandidateRow；仅还原事实，绝不沿用存储时的所有权和动作。
@@ -155,7 +155,7 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 	if err != nil {
 		return nil, err
 	}
-	rows := a.rowsFrom(scored, "接受")
+	rows := a.rowsFrom(scored, matching.CandidateAccept)
 
 	// 把本次候选写入快照，但不动原始导入值
 	snapshot, err := json.Marshal(rows)

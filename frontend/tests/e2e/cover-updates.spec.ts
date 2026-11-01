@@ -72,7 +72,7 @@ test('review candidates prefetch, follow only matching release events and cancel
     const api = (window as any).go.app.App, queue = api.GetReviewQueue
     api.GetReviewQueue = async () => {
       const q = await queue()
-      q.items[0].candidates = [1, 2].map(id => ({ provider: 'musicbrainz', releaseRef: `release-${id}`, matchRef: `track-${id}`, title: `候选${id}`, badges: [], action: '接受', confidence: 80 }))
+      q.items[0].candidates = [1, 2].map(id => ({ provider: 'musicbrainz', releaseRef: `release-${id}`, matchRef: `track-${id}`, title: `候选${id}`, badges: [], action: 'accept', ownership: { state: 'unowned', trackId: 0 }, confidence: 80 }))
       return q
     }
     api.BuildCoverRefs = async (rows: any[]) => rows.map(row => ({ key: row.releaseRef, target: { provider: row.provider, ref: row.releaseRef }, usage: 'thumbnail' }))

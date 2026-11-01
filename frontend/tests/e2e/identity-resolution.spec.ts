@@ -8,8 +8,8 @@ for (const scope of ['review', 'search'] as const) {
     await page.evaluate((scope) => {
       const w = window as any, api = w.go.app.App
       w.__identityPrepared = []; w.__identityCommitted = []; w.__identityDone = false
-      const action = scope === 'review' ? '接受' : '加入曲库'
-      const candidate = { provider: 'musicbrainz', matchRef: 'recording@release', releaseRef: 'release', title: 'you', album: '特典CD', badges: ['MB'], action, confidence: 90, localTrackId: 0 }
+      const action = scope === 'review' ? 'accept' : 'add'
+      const candidate = { provider: 'musicbrainz', matchRef: 'recording@release', releaseRef: 'release', title: 'you', album: '特典CD', badges: ['MB'], action, ownership: { state: 'unowned', trackId: 0 }, confidence: 90, localTrackId: 0 }
       const positions = [1, 2].map(disc => ({ ...candidate, matchRef: `real-track-${disc}`, discNumber: disc, trackNumber: 1, trackTotal: 2, note: `第 ${disc} 碟 · 第 1 轨` }))
       api.SearchUpstream = async () => ({ byProvider: [{ capabilities: [], rows: [candidate] }] })
       api.GetReviewQueue = async () => w.__identityDone

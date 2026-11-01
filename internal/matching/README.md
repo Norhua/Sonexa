@@ -26,7 +26,7 @@
 
 `ResolveLocal` 先经注入的来源能力验证身份，再通过 `LocalLookup.FindExactBinding` 一次读取当前 track 和发行绑定及修订。仅来源、真实 track、发行关系均一致时返回 `owned` 和本地 ID；ISRC、Recording、相似文本及旧绑定快照不参与拥有判定。结果区分 `unowned / owned / identity_conflict / lookup_error`，错误和冲突不携带可跳过的本地目标。
 
-未解析候选保留 `identity.state=unresolved`，不查询本地精确拥有、不妨碍后续目标解析；不支持身份检查及数据库失败明确返回错误。当前候选 DTO 已传递结构化结果，单行 `PrepareSkipExisting` / `CommitAdmission` 已支持精确跳过和输入修订重验，见 [store 事务说明](../store/README.md#单行接受与精确跳过)；完整的前端动作协议仍由后续任务接入。旧文本重复检查使用独立 `LocalDuplicateLookup`，只保存相关提示，不再产生简化本地候选或合并动作；仍待本地召回任务替换，不能把它的相关 ID 当作精确拥有。
+未解析候选保留 `identity.state=unresolved`，不查询本地精确拥有、不妨碍后续目标解析；不支持身份检查及数据库失败明确返回错误。当前候选 DTO 已传递结构化结果，单行 `PrepareSkipExisting` / `CommitAdmission` 已支持精确跳过和输入修订重验，见 [store 事务说明](../store/README.md#单行接受与精确跳过)；共享候选表格已按 `accept / skip / add / owned / unavailable` 枚举及结构化所有权分流，中文文案只用于显示。同 ISRC 的不同 track 独立呈现，错误与冲突禁止动作；搜索加入后由服务端重新读取所有权，不用返回 ID 在浏览器伪造绑定修订。旧文本重复检查使用独立 `LocalDuplicateLookup`，只保存相关提示，不再产生简化本地候选或合并动作；仍待本地召回任务替换，不能把它的相关 ID 当作精确拥有。
 
 ## 名称、版本与署名
 

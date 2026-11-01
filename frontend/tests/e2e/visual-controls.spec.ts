@@ -64,7 +64,7 @@ test('already-owned candidate jumps to library without admitting again', async (
   await page.evaluate(() => {
     ;(window as any).go.app.App.SearchUpstream = async () => ({ byProvider: [{
       capabilities: [], rows: [{ provider: 'musicbrainz', matchRef: 'test', badges: ['本地', 'MB'],
-        title: '已有曲目', action: '已在库中', localTrackId: 1, confidence: 90 }],
+        title: '已有曲目', action: 'owned', ownership: { state: 'owned', trackId: 1 }, localTrackId: 1, confidence: 90 }],
     }] })
     ;(window as any).go.app.App.AddToLibrary = async () => { throw new Error('must not admit twice') }
   })

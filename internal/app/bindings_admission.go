@@ -59,9 +59,9 @@ func (a *App) PrepareAdmission(row CandidateRow, itemID int64) (*AdmissionPlanVi
 		for _, c := range unresolved.Resolution.Candidates {
 			scored = append(scored, matching.ScoredCandidate{Candidate: c, Score: matching.Score{Total: row.Confidence}})
 		}
-		action := "接受"
+		action := matching.CandidateAccept
 		if itemID == 0 {
-			action = "加入曲库"
+			action = matching.CandidateAdd
 		}
 		rows := a.rowsFrom(scored, action)
 		for i := range rows {

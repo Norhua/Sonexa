@@ -16,6 +16,7 @@ import { Search as SearchIcon } from 'lucide-vue-next'
 import { App, type Models } from '@/api'
 import AdvancedSearchPanel from '@/components/AdvancedSearchPanel.vue'
 import PaneHeader from '@/components/PaneHeader.vue'
+import { candidateActionEnabled } from '@/lib/candidateActions'
 import CandidateTable from '@/components/CandidateTable.vue'
 import TrackTable, { type Row } from '@/components/TrackTable.vue'
 import Button from '@/volt/Button.vue'
@@ -124,6 +125,7 @@ async function run() {
 }
 
 async function addToLibrary(row: Models.app.CandidateRow) {
+  if (row.action !== 'add' || !candidateActionEnabled(row)) return
   try {
     const result = await admission.run(() => App.PrepareAdmission(row, 0))
     if (admission.resolution) {
@@ -132,10 +134,7 @@ async function addToLibrary(row: Models.app.CandidateRow) {
       return
     }
     if (!result) return
-    const id = result.trackId
-    row.localTrackId = id
-    row.action = '已在库中'
-    if (!row.badges.includes('本地')) row.badges = ['本地', ...row.badges]
+    // 重新读取精确绑定；不能在浏览器里用返回 ID 伪造所有权或绑定修订。
     await search.refreshResults()
   } catch (e) {
     search.error = String(e)

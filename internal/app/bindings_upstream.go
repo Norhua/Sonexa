@@ -39,8 +39,8 @@ type CandidateRow struct {
 	Badges []string `json:"badges"`
 	// Note 给出身份冲突或查询错误说明。
 	Note string `json:"note"`
-	// Action 是过渡展示文案，后续共享表格按结构化状态分流。
-	Action string `json:"action"`
+	// Action 是机器动作枚举，文案由前端显示层提供。
+	Action matching.CandidateAction `json:"action"`
 	// LocalTrackID 非零时表示库中已有对应曲目，可跳转。
 	LocalTrackID int64 `json:"localTrackId"`
 
@@ -185,7 +185,7 @@ func (a *App) SearchUpstream(title, artist, album string, providerIDs []string, 
 				t.err = err
 				return
 			}
-			t.rows = a.rowsFrom(scored, "加入曲库")
+			t.rows = a.rowsFrom(scored, matching.CandidateAdd)
 
 			// 该上游一完成就推给前端：先返回的先显示，不被慢的上游阻塞。
 			// 仍等到 wg.Wait() 是为了让本次调用的返回值完整，
@@ -253,7 +253,7 @@ func (a *App) matchUpstream(ctx context.Context, p provider.MetadataProvider, in
 //
 // 已存在则显示为「已在库中」（或复核队列里的「跳过」）；
 // 不存在则显示 defaultAction。
-func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction string) []CandidateRow {
+func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction matching.CandidateAction) []CandidateRow {
 	rows := make([]CandidateRow, 0, len(scored))
 	for _, sc := range scored {
 		// 搜索已给出 artwork，无需为预览每个候选再发一次 Lookup。
@@ -263,11 +263,7 @@ func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction string) 
 		}
 		row := rowFrom(sc)
 		a.applyLocalMatch(&row, sc.Candidate)
-		if row.Ownership.State == matching.OwnershipUnowned {
-			row.Action = defaultAction
-		} else if row.Ownership.State == matching.OwnershipOwned && defaultAction == "加入曲库" {
-			row.Action = "已在库中"
-		}
+		row.Action = row.Ownership.ActionFor(defaultAction)
 		rows = append(rows, row)
 	}
 	return rows
@@ -283,11 +279,7 @@ func (a *App) RefreshSearchCandidates(rows []CandidateRow) ([]CandidateRow, erro
 		// 删除/解除绑定后旧的具体发行不能继续用于封面。
 		row.ReleaseID, row.CoverRevision = 0, 0
 		a.applyLocalMatch(&row, row.toCandidate())
-		if row.Ownership.State == matching.OwnershipUnowned {
-			row.Action = "加入曲库"
-		} else if row.Ownership.State == matching.OwnershipOwned {
-			row.Action = "已在库中"
-		}
+		row.Action = row.Ownership.ActionFor(matching.CandidateAdd)
 		out[i] = row
 	}
 	return out, nil

@@ -9,6 +9,7 @@ const admission = useAdmissionStore()
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { App, display, Events, EventsOn, type Models } from '@/api'
+import { candidateActionEnabled } from '@/lib/candidateActions'
 import CandidateTable from '@/components/CandidateTable.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import Button from '@/volt/Button.vue'
@@ -236,12 +237,12 @@ async function act(fn: () => Promise<void | boolean>) {
 function accept(row: Models.app.CandidateRow) {
   const item = current.value
   if (!item) return
-  if (row.ownership?.state === 'identity_conflict' || row.ownership?.state === 'lookup_error') {
+  if (!candidateActionEnabled(row) || !['accept', 'skip'].includes(row.action)) {
     error.value = row.note || '候选身份尚不可用，请刷新'
     return
   }
   const itemId = item.id
-  if (row.ownership?.state === 'owned') {
+  if (row.action === 'skip') {
     void act(async () => {
       const plan = await App.PrepareSkipExisting(row, itemId, item.revision)
       await App.CommitAdmission(plan.id, plan.hash, {} as Models.domain.AdmissionApproval)

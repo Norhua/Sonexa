@@ -60,16 +60,40 @@ func (m LocalMatch) Note() string {
 	}
 }
 
-// Action is a transitional display label; ownership is the business result.
-func (m LocalMatch) Action() string {
+type CandidateAction string
+
+const (
+	CandidateAccept      CandidateAction = "accept"
+	CandidateSkip        CandidateAction = "skip"
+	CandidateAdd         CandidateAction = "add"
+	CandidateOwned       CandidateAction = "owned"
+	CandidateUnavailable CandidateAction = "unavailable"
+)
+
+// Action returns a review action, not a translated display label.
+func (m LocalMatch) Action() CandidateAction {
 	switch m.State {
 	case OwnershipOwned:
-		return "跳过"
-	case OwnershipConflict, OwnershipError:
-		return "不可操作"
+		return CandidateSkip
+	case OwnershipUnowned:
+		return CandidateAccept
 	default:
-		return "接受"
+		return CandidateUnavailable
 	}
+}
+
+func (m LocalMatch) ActionFor(defaultAction CandidateAction) CandidateAction {
+	if defaultAction == CandidateAdd {
+		switch m.State {
+		case OwnershipOwned:
+			return CandidateOwned
+		case OwnershipUnowned:
+			return CandidateAdd
+		default:
+			return CandidateUnavailable
+		}
+	}
+	return m.Action()
 }
 
 // LocalLookup is intentionally unable to query ISRC or text. Source-specific

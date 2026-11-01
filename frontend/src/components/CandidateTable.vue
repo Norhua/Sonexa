@@ -16,6 +16,7 @@ import Tag from '@/volt/Tag.vue'
 import { display, duration, trackPosition, DASH } from '@/api'
 import CoverArt from '@/components/CoverArt.vue'
 import { useCandidateCovers } from '@/lib/useCandidateCovers'
+import { candidateActionEnabled, candidateActionLabel, candidateLocalTarget } from '@/lib/candidateActions'
 import type { Models } from '@/api'
 
 /**
@@ -92,10 +93,9 @@ useCandidateCovers(visibleRows)
 const truncated = computed(() => props.limit > 0 && !expanded.value && props.rows.length > props.limit)
 
 function onAct(row: Models.app.CandidateRow) {
-  if (row.ownership?.state === 'identity_conflict' || row.ownership?.state === 'lookup_error') return
-  // 「已在库中」为禁用态，但点击可跳转到该曲目
-  if (row.action === '已在库中') {
-    if (row.localTrackId) emit('jumpLocal', row.localTrackId)
+  if (!candidateActionEnabled(row)) return
+  if (row.action === 'owned') {
+    emit('jumpLocal', candidateLocalTarget(row))
     return
   }
   emit('act', row)
@@ -194,12 +194,12 @@ function onAct(row: Models.app.CandidateRow) {
           <SecondaryButton
             variant="outlined"
             size="small"
-            :disabled="data.ownership?.state === 'identity_conflict' || data.ownership?.state === 'lookup_error' || (data.action === '已在库中' && !data.localTrackId)"
-            :aria-label="data.action === '已在库中' ? `查看库中曲目：${data.title}` : undefined"
-            :title="data.action === '已在库中' ? '点击跳转到该曲目' : ''"
+            :disabled="!candidateActionEnabled(data)"
+            :aria-label="data.action === 'owned' ? `查看库中曲目：${data.title}` : undefined"
+            :title="data.action === 'owned' ? '点击跳转到该曲目' : data.note || ''"
             @click="onAct(data)"
           >
-            {{ data.action }}
+            {{ candidateActionLabel(data) }}
           </SecondaryButton>
         </template>
       </Column>

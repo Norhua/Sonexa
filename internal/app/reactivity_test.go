@@ -22,7 +22,7 @@ func TestRefreshSearchCandidatesUsesOnlyCurrentLocalState(t *testing.T) {
 	row := candidateRow()
 	row.Confidence, row.MatchedVariant = 87, "原搜索"
 	rows, err := a.RefreshSearchCandidates([]CandidateRow{row})
-	if err != nil || len(rows) != 1 || rows[0].Action != "加入曲库" {
+	if err != nil || len(rows) != 1 || rows[0].Action != "add" {
 		t.Fatalf("initial: %+v %v", rows, err)
 	}
 	id, err := a.AddToLibrary(row)
@@ -34,7 +34,7 @@ func TestRefreshSearchCandidatesUsesOnlyCurrentLocalState(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, got := range rows {
-		if got.LocalTrackID != id || got.Action != "已在库中" || got.ReleaseID == 0 || got.Confidence != 87 || got.MatchedVariant != "原搜索" || !reflect.DeepEqual(got.toCandidate(), row.toCandidate()) {
+		if got.LocalTrackID != id || got.Action != "owned" || got.ReleaseID == 0 || got.Confidence != 87 || got.MatchedVariant != "原搜索" || !reflect.DeepEqual(got.toCandidate(), row.toCandidate()) {
 			t.Fatalf("local refresh lost facts or identity: %+v", got)
 		}
 	}
@@ -46,7 +46,7 @@ func TestRefreshSearchCandidatesUsesOnlyCurrentLocalState(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, got := range rows {
-		if got.LocalTrackID != 0 || got.ReleaseID != 0 || got.CoverRevision != 0 || got.Action != "加入曲库" || !reflect.DeepEqual(got.Badges, []string{"musicbrainz"}) {
+		if got.LocalTrackID != 0 || got.ReleaseID != 0 || got.CoverRevision != 0 || got.Action != "add" || !reflect.DeepEqual(got.Badges, []string{"musicbrainz"}) {
 			t.Fatalf("deleted identity retained: %+v", got)
 		}
 	}

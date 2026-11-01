@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
     queue.items[0].revision = 3
     queue.items[0].candidates = [{
       provider: 'qq', matchRef: 'candidate-11', title: '复核候选', artist: '候选艺术家',
-      album: '候选专辑', badges: ['qq'], action: '接受', confidence: 90, localTrackId: 0,
+      album: '候选专辑', badges: ['qq'], action: 'accept', ownership: { state: 'unowned', trackId: 0 }, confidence: 90, localTrackId: 0,
     }]
     const state = w.__review = {
       items: queue.items, queueReads: 0, taskReads: 0, actions: [], commits: [], prepares: [],
@@ -131,7 +131,7 @@ test('none matched returning null clears candidates but keeps the item and count
 
 test('exact skip advances the queue without admitting another track', async ({ page }) => {
   await page.evaluate(() => {
-    Object.assign((window as any).__review.items[0].candidates[0], { localTrackId: 7, ownership: { state: 'owned', trackId: 7 }, action: '跳过', badges: ['本地', 'qq'] })
+    Object.assign((window as any).__review.items[0].candidates[0], { localTrackId: 7, ownership: { state: 'owned', trackId: 7 }, action: 'skip', badges: ['本地', 'qq'] })
   })
   await openReview(page)
   await page.getByRole('button', { name: '跳过', exact: true }).click()
@@ -386,7 +386,7 @@ test('late queue and search replies cannot restore a previous selection or an un
   await page.evaluate(() => {
     const w = window as any, api = w.go.app.App, get = api.GetReviewQueue
     api.ResearchReviewItem = async () => new Promise(resolve => {
-      w.__finishResearch = () => resolve([{ title: '已离开条目的旧搜索结果', badges: [], action: '接受' }])
+      w.__finishResearch = () => resolve([{ title: '已离开条目的旧搜索结果', badges: [], action: 'accept', ownership: { state: 'unowned', trackId: 0 } }])
     })
     api.GetReviewQueue = async () => {
       const snapshot = await get()

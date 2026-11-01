@@ -60,7 +60,7 @@ func TestResolveLocalExactOwnershipOnly(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got.State == OwnershipOwned {
-				if got.TrackID != 42 || got.Revision != 3 || got.ReleaseRevision != 5 || got.Action() != "跳过" || len(got.Badges(tt.source)) != 2 {
+				if got.TrackID != 42 || got.Revision != 3 || got.ReleaseRevision != 5 || got.Action() != CandidateSkip || len(got.Badges(tt.source)) != 2 {
 					t.Fatal(got)
 				}
 			} else if got.TrackID != 0 || got.Revision != 0 || len(got.Badges(tt.source)) != 1 {
@@ -99,7 +99,7 @@ func TestResolveLocalIdentityStatesAndLookupFailure(t *testing.T) {
 	}
 	failure := errors.New("database unavailable")
 	got, err := ResolveLocal(&fakeLookup{err: failure}, sources, provider.Candidate{Provider: "one", MatchRef: "track", ReleaseRef: sptr("release")})
-	if !errors.Is(err, failure) || got.State != OwnershipError || got.TrackID != 0 || got.Note() == "" || got.Action() != "不可操作" {
+	if !errors.Is(err, failure) || got.State != OwnershipError || got.TrackID != 0 || got.Note() == "" || got.Action() != CandidateUnavailable {
 		t.Fatalf("lookup failure hidden: %+v %v", got, err)
 	}
 }

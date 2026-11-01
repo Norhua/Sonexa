@@ -26,7 +26,7 @@
 - [x] 3.2 替换 `ResolveLocal` 的所有权判定，只有有效来源+track+发行关系可返回 owned，错误和冲突独立返回；在 `matching/provenance_test.go` 与 `store/lookup_test.go` 覆盖同 ISRC/Recording 不同 track、不同来源、无绑定文本、查询失败及精确已有。
 - [x] 3.3 为单行接受和跳过实现服务端计划/事务重验，重复接受记 `skipped/existing_track`，精确 skip 不修改收藏；通过 `library`、`store` 测试验证删除/换绑后拒绝、并发一次新增、重复计划幂等、旧队列修订不能恢复终态。
 - [x] 3.4 移除 `MergeCandidate`/`MarkMerged`、简化本地候选快照和 `merged` 新写路径，保留无关的编辑器归组功能；以代码引用检查和后端定向测试验证旧候选协议不可绕过精确校验，并更新相关接口注释。
-- [ ] 3.5 更新 CandidateRow/Wails 类型及共享候选表格、ReviewView、SearchView 的结构化所有权和动作分流；补前端单元/Playwright 测试验证同 ISRC 两候选分别为跳过/接受、搜索分别为已在库中/加入，点击第二版确实请求其 track。
+- [x] 3.5 更新 CandidateRow/Wails 类型及共享候选表格、ReviewView、SearchView 的结构化所有权和动作分流；补前端单元/Playwright 测试验证同 ISRC 两候选分别为跳过/接受、搜索分别为已在库中/加入，点击第二版确实请求其 track。
 - [ ] 3.6 修复候选刷新和封面目标保留，按当前精确身份重算动作，错误不伪装未收藏；通过应用及浏览测试验证删除/换绑/收藏后按钮更新、不重新上游搜索、不借相关曲目的封面，并更新候选操作说明。
 
 ## 4. 本地召回与输入优先的自动选版

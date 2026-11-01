@@ -195,13 +195,13 @@
         GetReviewQueue: async () => ({
           items: [
             {
-              id: 11, batchId: 1, status: 'review',
+              id: 11, batchId: 1, revision: 1, status: 'review',
               inTitle: 'ツバサ（羽翼）', inArtist: '4円（ヨエン）', inAlbum: 'side-c',
               batchTag: 'music_extracted.csv', triedVariants: ['ツバサ', '羽翼'],
               candidates: [], attemptCount: 0, lastError: null, lastErrorAt: null,
             },
             {
-              id: 12, batchId: 1, status: 'review',
+              id: 12, batchId: 1, revision: 1, status: 'review',
               inTitle: 'you', inArtist: '茅野愛衣（かやの あい）', inAlbum: '冴えない彼女の育てかた 第4巻 特典C...',
               batchTag: 'music_extracted.csv', triedVariants: ['you'],
               candidates: [], attemptCount: 0, lastError: null, lastErrorAt: null,
@@ -214,7 +214,7 @@
           return [
             {
               provider: providerID, matchRef: 'trk-' + providerID, badges: [providerID],
-              note: '', action: '接受', localTrackId: 0, thumbKey: '',
+              note: '', action: 'accept', ownership: { state: 'unowned', trackId: 0 }, localTrackId: 0, thumbKey: '',
               title: title || '候选', artist: artist || null, album: album || null,
               primaryType: 'Album', durationMs: 200000, trackNumber: 1, trackTotal: 10,
               year: 2011, mediumFormat: 'CD', country: 'JP', label: null, catalogNumber: null,

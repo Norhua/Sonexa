@@ -62,11 +62,11 @@ test('all upstream candidate badges refresh locally after additions and deletion
     w.__search = { owned: false, queries: 0, refreshes: 0 }
     api.SearchUpstream = async () => {
       w.__search.queries++
-      return { byProvider: [{ rows: [1, 2].map(id => ({ title: `上游候选 ${id}`, provider: 'qq', matchRef: `ref-${id}`, action: '加入曲库', badges: ['qq'], localTrackId: 0 })), capabilities: [] }] }
+      return { byProvider: [{ rows: [1, 2].map(id => ({ title: `上游候选 ${id}`, provider: 'qq', matchRef: `ref-${id}`, action: 'add', ownership: { state: 'unowned', trackId: 0 }, badges: ['qq'], localTrackId: 0 })), capabilities: [] }] }
     }
     api.RefreshSearchCandidates = async (rows: any[]) => {
       w.__search.refreshes++
-      return rows.map(row => ({ ...row, localTrackId: w.__search.owned ? 42 : 0, action: w.__search.owned ? '已在库中' : '加入曲库', badges: w.__search.owned ? ['本地', 'qq'] : ['qq'] }))
+      return rows.map(row => ({ ...row, localTrackId: w.__search.owned ? 42 : 0, action: w.__search.owned ? 'owned' : 'add', ownership: { state: w.__search.owned ? 'owned' : 'unowned', trackId: w.__search.owned ? 42 : 0 }, badges: w.__search.owned ? ['本地', 'qq'] : ['qq'] }))
     }
   })
   await page.locator('nav').getByRole('button', { name: '搜索', exact: true }).click()

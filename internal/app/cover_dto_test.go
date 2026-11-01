@@ -60,7 +60,7 @@ func TestCoverDTOsShareReleaseAndRevisionWithoutChangingCandidateIdentity(t *tes
 		t.Fatal(albums, err)
 	}
 	candidate := provider.Candidate{Provider: provider.ITunes, MatchRef: "jp:2", Title: &title, AlbumTitle: &album, ReleaseRef: &ref}
-	rows := a.rowsFrom([]matching.ScoredCandidate{{Candidate: candidate}}, "加入曲库")
+	rows := a.rowsFrom([]matching.ScoredCandidate{{Candidate: candidate}}, matching.CandidateAdd)
 	if len(rows) != 1 || rows[0].ReleaseID != releaseID || rows[0].CoverRevision != 1 || rows[0].MatchRef != "jp:2" {
 		t.Fatal(rows)
 	}
@@ -70,7 +70,7 @@ func TestCoverDTOsShareReleaseAndRevisionWithoutChangingCandidateIdentity(t *tes
 	}
 	otherRef := "jp:13"
 	candidate.ReleaseRef = &otherRef
-	other := a.rowsFrom([]matching.ScoredCandidate{{Candidate: candidate}}, "加入曲库")
+	other := a.rowsFrom([]matching.ScoredCandidate{{Candidate: candidate}}, matching.CandidateAdd)
 	if other[0].ReleaseID != 0 || other[0].CoverRevision != 0 {
 		t.Fatal("文本相同的另一发行借用了封面", other)
 	}

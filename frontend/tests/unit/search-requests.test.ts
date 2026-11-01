@@ -10,7 +10,7 @@ function deferred<T>() {
   return { promise, resolve }
 }
 const page = (title: string) => ({ tracks: [{ id: 1, title }], total: 1 }) as Models.app.TrackPage
-const upstream = (title: string) => ({ byProvider: [{ rows: [{ title, provider: 'qq', matchRef: title, badges: ['qq'], action: '加入曲库' }], capabilities: ['Lyrics'] }] }) as Models.app.SearchResponse
+const upstream = (title: string) => ({ byProvider: [{ rows: [{ title, provider: 'qq', matchRef: title, badges: ['qq'], action: 'add', ownership: { state: 'unowned', trackId: 0 } }], capabilities: ['Lyrics'] }] }) as Models.app.SearchResponse
 beforeEach(() => { setActivePinia(createPinia()); vi.resetAllMocks() })
 
 describe('search refresh ownership', () => {
@@ -38,7 +38,7 @@ describe('search refresh ownership', () => {
     vi.mocked(App.RefreshSearchCandidates).mockRejectedValueOnce(new Error('db unavailable'))
     await store.refreshResults()
     expect(store.upstreamRows[0].title).toBe('candidate')
-    vi.mocked(App.RefreshSearchCandidates).mockResolvedValue([{ ...store.upstreamRows[0], localTrackId: 42, action: '已在库中', badges: ['本地', 'qq'] }])
+    vi.mocked(App.RefreshSearchCandidates).mockResolvedValue([{ ...store.upstreamRows[0], localTrackId: 42, action: 'owned', ownership: { ...store.upstreamRows[0].ownership, state: 'owned', trackId: 42 }, badges: ['本地', 'qq'] }])
     await store.refreshResults()
     expect(store.upstreamRows[0].localTrackId).toBe(42)
     expect(App.SearchUpstream).toHaveBeenCalledTimes(1)

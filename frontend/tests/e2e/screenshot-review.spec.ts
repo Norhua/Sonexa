@@ -104,8 +104,13 @@ test('drawer shows one complete vocal group, single-column release data and no f
   expect(new Set(coords.map(p => p.y)).size).toBe(await labels.count())
   await page.screenshot({ path: testInfo.outputPath('compact-detail.png') })
   await drawer.getByRole('button', { name: '编辑', exact: true }).click()
-  await expect(page.getByRole('dialog').getByText('用户', { exact: true })).toHaveCount(0)
-  await expect(page.getByRole('region', { name: '编辑专辑信息', exact: true }).getByRole('heading', { name: '专辑信息', exact: true })).toBeVisible()
+  const editor = page.getByRole('dialog', { name: '编辑曲目', exact: true })
+  // 编辑器异步加载；不能以尚未渲染的空集合证明没有用户值徽标。
+  // 抽屉不展示字段来源，编辑器则明确区分当前用户值与上游值。
+  await expect(editor.getByRole('textbox', { name: '曲名', exact: true })).toHaveValue('夕立')
+  await expect(editor.getByText('用户', { exact: true })).toHaveCount(11)
+  await expect(editor.locator('.compare-field').filter({ has: page.getByRole('textbox', { name: '曲名', exact: true }) }).getByText('用户', { exact: true })).toBeVisible()
+  await expect(editor.getByRole('region', { name: '编辑专辑信息', exact: true }).getByRole('heading', { name: '专辑信息', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await drawer.getByRole('button', { name: 'Kitsui Akira', exact: true }).click()
   await expect(page.getByRole('heading', { name: '艺术家', exact: true })).toBeVisible()
@@ -120,7 +125,7 @@ test('review removes marked text, moves actions below inputs and restores only t
       const queue = await original()
       queue.items[0].candidates = [{
         title: 'candidate', provider: 'musicbrainz', badges: ['musicbrainz'],
-        action: '接受', confidence: 90, trackNumber: 2, trackTotal: 12,
+        action: 'accept', ownership: { state: 'unowned', trackId: 0 }, confidence: 90, trackNumber: 2, trackTotal: 12,
         label: 'should not display', catalogNumber: 'TEST-001',
       }]
       return queue
@@ -164,7 +169,7 @@ test('review removes marked text, moves actions below inputs and restores only t
 test('late review research cannot overwrite the next item', async ({ page }) => {
   await page.evaluate(() => {
     ;(window as any).go.app.App.ResearchReviewItem = () => new Promise(resolve => {
-      ;(window as any).__resolveResearch = () => resolve([{ title: 'STALE', badges: [], action: '接受', confidence: 1 }])
+      ;(window as any).__resolveResearch = () => resolve([{ title: 'STALE', badges: [], action: 'accept', ownership: { state: 'unowned', trackId: 0 }, confidence: 1 }])
     })
   })
   await page.getByRole('button', { name: /复核队列/ }).click()

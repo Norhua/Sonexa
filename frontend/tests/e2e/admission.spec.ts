@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
     api.GetReviewQueue = async () => {
       const q = await queue(); q.items[0].inTitle = ''; q.items[0].reviewReason = 'new_release'
       q.items[0].reviewEvidence = JSON.stringify({ ...w.__makePlan().baseline, proposed: w.__makePlan().seed.snapshot.release })
-      q.items[0].candidates = [{ provider: 'qq', matchRef: 'candidate', title: '候选歌曲', album: '拟加入版本', badges: ['QQ'], action: '接受', confidence: 100 }]
+      q.items[0].candidates = [{ provider: 'qq', matchRef: 'candidate', title: '候选歌曲', album: '拟加入版本', badges: ['QQ'], action: 'accept', ownership: { state: 'unowned', trackId: 0 }, confidence: 100 }]
       return q
     }
   })
@@ -84,7 +84,9 @@ test('proposal conflict previews all members and requires separate final confirm
 
 test('search cancellation preserves selected candidate and successful confirmation updates it', async ({ page }) => {
   await page.evaluate(() => {
-    ;(window as any).go.app.App.SearchUpstream = async () => ({ byProvider: [{ capabilities: [], rows: [{ provider: 'musicbrainz', matchRef: 'explicit-version', releaseRef: 'new-release', title: '明确选择的候选', badges: ['MB'], action: '加入曲库' }] }] })
+    const w = window as any, api = w.go.app.App
+    api.SearchUpstream = async () => ({ byProvider: [{ capabilities: [], rows: [{ provider: 'musicbrainz', matchRef: 'explicit-version', releaseRef: 'new-release', title: '明确选择的候选', badges: ['MB'], action: 'add', ownership: { state: 'unowned', trackId: 0 } }] }] })
+    api.RefreshSearchCandidates = async (rows: any[]) => rows.map(row => w.__commits.length ? { ...row, action: 'owned', ownership: { state: 'owned', trackId: 90 }, localTrackId: 90, badges: ['本地', 'MB'] } : row)
   })
   await page.locator('nav').getByRole('button', { name: '搜索', exact: true }).click()
   await page.getByRole('combobox').click()
