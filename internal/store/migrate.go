@@ -22,11 +22,11 @@ var ErrDatabaseNewer = errors.New("数据库版本高于当前程序支持的版
 //
 // 本代际从空库创建；不执行旧模型的数据或封面转换。
 var migrations = []Migration{
-	{Version: 1, Name: "snapshot_model", SQL: migration0001Init},
+	{Version: 1, Name: "snapshot_model", SQL: migration0001Init + localRecallSchema()},
 	{Version: 2, Name: "cover_catalog", SQL: migration0002CoverCatalog},
 }
 
-const ModelGeneration = "track-identity-v4"
+const ModelGeneration = "track-identity-v5"
 
 var ErrIncompatibleModel = errors.New("数据库模型不兼容，请先备份并清理旧版应用数据；程序不会自动删除数据")
 

@@ -1,11 +1,42 @@
-# 实施交接：1–3 组完成，从 4.1 继续
+# 实施交接：3.6 完成，4.1 首轮测试阻塞
 
 ## 当前状态
 
 - 变更：`fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
-- `tasks.md` 已完成 1.1–1.7、2.1–2.5、3.1–3.6，共 **18/48**；CLI 已确认 3.6 完成，下一项为 4.1。
+- `tasks.md` 已完成 1.1–1.7、2.1–2.5、3.1–3.6，共 **18/48**；CLI 已确认 3.6 完成。**4.1 已有未验证代码，首轮测试失败，保持未勾选。**
 - 本文件只记录实施与验证事实，不替代规划文件、10 个增量规格或 CLI 任务完成标准。
 - 未同步主规格、未归档、未访问真实来源，未修改或清理用户应用数据。测试使用临时 SQLite、fixture 和浏览器替身。
+
+## 4.1 当前阻塞（未完成）
+
+3.6 完成后按工作流继续了 4.1。当前新增：
+
+- `internal/matching/local_recall.go`：消费侧 `LocalRecall` 批量契约，分离当前值、有效 track/release 快照、关系、修订与问题诊断，显式返回 Truncated。
+- `internal/store/migration_local_recall.go`：独立文本匹配键、规则版本与 dirty 标记；对当前值、快照、绑定和艺术家关系设置失效触发器。
+- `internal/store/local_recall.go`：读取前更新失效键、按输入批量召回，独立读取当前事实与绑定快照，不使用浏览上限或历史导入；提供 `RebuildLocalMatch`。
+- `internal/store/local_recall_test.go`：当前/快照分离、异写、未绑定关系、换绑失效、超过 2000 条的目标、截断、规则重建、重启、取消和查询失败测试。
+- 新表并入空库初始化，**当前 WIP 代码代际已改为 `track-identity-v5`**，未迁移旧库。完整代际拒绝测试和说明仍须随任务完成。
+
+实际执行：
+
+```sh
+gofmt -w internal/matching/local_recall.go internal/store/local_recall.go \
+  internal/store/local_recall_test.go internal/store/migration_local_recall.go \
+  internal/store/migrate.go internal/store/migrations.go
+go test ./internal/store -run 'TestLocalRecall|TestMigrate|TestSchemaTablesExist' -count=1
+```
+
+**失败**：
+
+- `TestLocalRecallKeepsCurrentAndBoundFactsSeparate`（调用 `applyTestSnapshot`）。
+- `TestLocalRecallRejectsStaleTrackAndReleaseSnapshots`（调用 `applyTestSnapshot`）。
+- 同一错误：`constraint failed: UNIQUE constraint failed: local_match_dirty.track_id (1555)`。
+
+不是之前的浏览器桩问题；新 dirty 触发器会导致真实快照写入失败，4.1 代码尚不可视为可用。可能是外层 SQLite 写入冲突策略影响触发器的 `INSERT OR IGNORE`，尚未做隔离复现。按 apply 工作流遇错暂停，等待用户确认继续修复；没有静默放松测试或勾选任务。
+
+下一步应先隔离并修复触发器冲突处理，再继续检查完整性：更新关系主键时 OLD/NEW 两端的失效、旧绑定事实不被混入当前来源、索引读写/取消事务与重建、批量输入/键边界、并发一致性、代际拒绝测试。现有新增测试不等于已完成覆盖，不以返回了候选代替自动决策验证。4.2 及后续任务未开始。
+
+**3.6 的以下验证仅针对 `ca32fcf`，不能当作当前 4.1 WIP 全绿。**
 
 ## 3.6 竞态测试已修复并验证
 
@@ -64,7 +95,7 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 
 - `import_item` 有正整数 revision、终态原因、当次精确目标/问题修订诊断；原始行和解析列由触发器保护。
 - `review_problem` / `review_problem_item` 基础表保留规则/锚点/证明/查询/候选修订，一行最多一个活跃归属；语义归并和生命周期业务仍待 5.x。
-- **新库代际为 `track-identity-v4`**，旧结构拒绝打开，不迁移、不自动删库。source+track 唯一；同 ISRC/Recording 不同 track 可共存。
+- **3.6 已验证新库代际为 `track-identity-v4`**；当前 4.1 WIP 已推进到 v5，仍待验证。旧结构拒绝打开，不迁移、不自动删库。source+track 唯一；同 ISRC/Recording 不同 track 可共存。
 - `ResolveLocal` 仅来源精确身份与 `FindExactBinding` 当前绑定可以返回 owned，核验发行关系、绑定修订；错误/冲突独立表达。
 - 旧文本重复检查拆为独立 `LocalDuplicateLookup`，仍待 4.3 替换；相关 ID 不生成拥有目标。
 - `AdmissionSeed.Operation` 区分 admit / skip_existing；写实体前重验输入整数修订。`PrepareSkipExisting` 不出网，提交检查目标及 track/release 修订，不需要新增发行批准。
@@ -93,4 +124,4 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 - Wails 绑定、dist、node_modules、测试产物均被忽略。
 - 旧编辑器测试基线位于 `tmp/harness/identity-35-baseline-YM4EZk`（忽略目录，不是工作树），没有切换或重置当前仓库。
 
-阶段提交：`5ba0b3c`（3.1）、`981ba20`（3.2）、`8cea84e`（3.3）、`ecff4cb`（3.4）、`4e912d5`（3.5）、`7f7a5c6`（3.6 未完成检查点）。本轮 3.6 完成提交以 `git log` 为准。
+阶段提交：`5ba0b3c`（3.1）、`981ba20`（3.2）、`8cea84e`（3.3）、`ecff4cb`（3.4）、`4e912d5`（3.5）、`7f7a5c6`（3.6 未完成检查点）、`ca32fcf`（3.6 完成）。4.1 未完成检查点以 `git log` 为准。

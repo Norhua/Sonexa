@@ -56,7 +56,7 @@
 
 ## 存储边界与验证
 
-`import_item.input_profile` 保存完整 JSON，文件导入经 App → Store → Runner 传递；无 profile 的内部调用由已明确单位的映射值构造，不猜原始列。本次新库代际为 `track-identity-v4`，旧代际（含仍有合并终态的 v3、仅有 profile 的 v2）拒绝打开，不自动迁移或删除数据。整数修订、问题及成员约束见 [store 结构说明](../store/README.md)；语义归并与问题生命周期仍由后续任务实现。
+`import_item.input_profile` 保存完整 JSON，文件导入经 App → Store → Runner 传递；无 profile 的内部调用由已明确单位的映射值构造，不猜原始列。3.6 已验证的新库代际为 `track-identity-v4`；4.1 未完成检查点代码已推进到 v5，本地索引触发器测试仍失败，不能视为已交付（见 `handoff.md`）。旧代际拒绝打开，不自动迁移或删除数据。整数修订、问题及成员约束见 [store 结构说明](../store/README.md)；语义归并与问题生命周期仍由后续任务实现。
 
 定向验证：
 
