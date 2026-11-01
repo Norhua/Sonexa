@@ -129,6 +129,13 @@ func (s *Store) withTx(fn func(*sql.Tx) error) error {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
+	callback := s.taskCallback()
+	var before, after int64
+	if callback != nil {
+		if err := tx.QueryRow("SELECT revision FROM task_change_state WHERE id=1").Scan(&before); err != nil {
+			return err
+		}
+	}
 	if err := fn(tx); err != nil {
 		return err
 	}
@@ -137,5 +144,16 @@ func (s *Store) withTx(fn func(*sql.Tx) error) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	if callback != nil {
+		if err := tx.QueryRow("SELECT revision FROM task_change_state WHERE id=1").Scan(&after); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if callback != nil && after != before {
+		callback(after)
+	}
+	return nil
 }

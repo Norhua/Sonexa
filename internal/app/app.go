@@ -206,6 +206,7 @@ func (a *App) initialize() error {
 		return err
 	}
 	a.store = st
+	a.attachTaskNotifications()
 	// 专辑视图选代表 release 与匹配阶段共用同一份阶梯配置——
 	// 函数共用了而配置各走一套，漂移照样发生。
 	a.store.SetLadderConfig(a.ladderConfig())
@@ -319,6 +320,8 @@ func (a *App) emitProgress(p importer.Progress) {
 
 // 前端订阅的事件名。
 const (
+	EventReviewChanged  = "review:changed"
+	EventTasksChanged   = "tasks:changed"
 	EventImportProgress = "import:progress"
 	EventSettingsSaved  = "settings:saved"
 	EventLibraryChanged = "library:changed"

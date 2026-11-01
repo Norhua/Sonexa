@@ -3,7 +3,7 @@ package store
 // 新代际仅用于空库初始化；当前值与上游事实独立保存。
 const migration0001Init = `
 CREATE TABLE model_generation (id INTEGER PRIMARY KEY CHECK(id=1), generation TEXT NOT NULL);
-INSERT INTO model_generation VALUES(1,'track-identity-v8');
+INSERT INTO model_generation VALUES(1,'track-identity-v9');
 CREATE TABLE release_group (
  id INTEGER PRIMARY KEY, display_provider TEXT, display_group_ref TEXT, representative_id INTEGER,
  revision INTEGER NOT NULL DEFAULT 1, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL

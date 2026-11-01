@@ -6,7 +6,8 @@ import "context"
 // It does not turn every paused/manual failed batch into background work.
 func (s *Store) RecheckNetworkBatches(ctx context.Context) ([]int64, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT n.batch_id FROM review_problem_network n JOIN import_batch b ON b.id=n.batch_id
- WHERE b.status='running' ORDER BY n.batch_id LIMIT 32`)
+ WHERE b.status<>'paused' AND EXISTS(SELECT 1 FROM import_item i WHERE i.batch_id=b.id AND i.status IN ('queued','matching'))
+ ORDER BY n.batch_id LIMIT 32`)
 	if err != nil {
 		return nil, err
 	}

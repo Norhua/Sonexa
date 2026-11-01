@@ -18,6 +18,8 @@ import (
 
 // Store 持有数据库连接。
 type Store struct {
+	taskChangedMu     sync.RWMutex
+	taskChanged       func(int64)
 	reviewWakeMu      sync.RWMutex
 	reviewWake        func()
 	leaseClockMu      sync.RWMutex

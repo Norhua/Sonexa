@@ -64,7 +64,7 @@ func libraryTables(t *testing.T, st *store.Store) string {
 		if err := rows.Scan(&name); err != nil {
 			t.Fatal(err)
 		}
-		if strings.HasPrefix(name, "import_") || strings.HasPrefix(name, "review_problem") || name == "operation_result" {
+		if strings.HasPrefix(name, "import_") || strings.HasPrefix(name, "review_problem") || name == "operation_result" || name == "task_change_state" {
 			continue
 		}
 		tables = append(tables, name)

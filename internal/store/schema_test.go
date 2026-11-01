@@ -20,7 +20,7 @@ func TestSchemaTablesExist(t *testing.T) {
 		"release_cover_selection", "track_current", "track_snapshot",
 		"review_problem_lease", "review_problem_operation", "review_problem_recheck", "review_problem_key",
 		"review_problem_network", "review_library_state", "review_library_dirty", "review_library_before",
-		"schema_version",
+		"task_change_state", "schema_version",
 	}
 	for _, table := range want {
 		var name string

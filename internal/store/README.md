@@ -2,7 +2,7 @@
 
 ## 新库边界
 
-当前空库初始化代际为 `track-identity-v8`，新增持久化网络队列衔接提示。此前 `track-identity-v7` 没有网络待启动提示，v6 没有问题影响索引，v5 没有问题租约和在途保护，v4 没有本地匹配索引，v3 仍允许旧合并终态，v2 只有输入 profile；这些代际、`upstream-snapshot-v1` 及没有代际标记的旧业务库均明确拒绝。程序不转换历史输入、不修复旧收藏身份、不自动删除用户数据。同代际重开不重复初始化，高于本程序支持的 schema 版本仍拒绝。
+当前空库初始化代际为 `track-identity-v9`，新增任务变更修订。此前 `track-identity-v8` 没有任务事件修订表，v7 没有网络待启动提示，v6 没有问题影响索引，v5 没有问题租约和在途保护，v4 没有本地匹配索引，v3 仍允许旧合并终态，v2 只有输入 profile；这些代际、`upstream-snapshot-v1` 及没有代际标记的旧业务库均明确拒绝。程序不转换历史输入、不修复旧收藏身份、不自动删除用户数据。同代际重开不重复初始化，高于本程序支持的 schema 版本仍拒绝。
 
 收藏继续由 `track(match_source, match_ref)` 的部分唯一索引约束；Recording、ISRC 不是唯一键。终态的本地目标 ID 和来源身份属于当次处理诊断，没有指向收藏的外键，不会因删除/换绑抹掉历史结果，也不能作为新输入的选版映射。
 
@@ -104,6 +104,12 @@ App 提供 `GetReviewAdmissionScope`、`PrepareProblemAdmission` 和 `PreparePro
 `ProblemStats` 分别返回 ReviewProblems/PendingProblems/FailedProblems/SourceRows。活跃成员全部 failed 才归失败问题，含 review/queued/matching 成员的归待选；SourceRows 是活跃来源行数。批次统计只计与该批有关的问题和来源行，但问题分项按完整跨批范围判定，因此全局问题数不能由各批相加。行数、子集和批次关联问题在同一只读事务读取。
 
 TaskSummary.ReviewPending 现在为全局独立问题数，并返回完整 Problems；`GetReviewProblemStats` 提供无候选加载的本地统计。旧 GetReviewQueue 仍返回逐行列表和行计数，8.x 将替换界面，不能将其旧 Total 混作问题数。
+
+## 任务与问题事件（7.4）
+
+`task_change_state.revision` 在批次、输入、问题及成员关系更新的同一事务递增。Store.withTx 仅在成功提交且修订实际变化后调用通知；App 发出 `review:changed` 与 `tasks:changed`，载荷含 revision。不要求计数变化：改搜、草稿、拆出、成员变化、失败重试及纯跳过都可刷新；回滚、只读、同一成功计划重试不伪报变更。新修订供 8.x 前端丢弃迟到响应，不把问题行数混为收藏变更。
+
+`library:changed` 继续只由真实收藏操作发送；纯 skip 和后台已有目标重评只发 review/tasks，不启动补全、不反馈成新的收藏变更事件。App 初始化装配唯一回调，Runner 和所有事务准入路径共用。通知发生在数据库提交后，回调可立即读取完整终态。既有 import:progress 继续反映运行集合及批次进度，不由数据库提前宣称 Runner 已结束。
 
 ## 本地匹配召回
 
