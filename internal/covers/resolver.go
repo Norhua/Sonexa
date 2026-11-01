@@ -58,6 +58,11 @@ func (s *Service) resolveTarget(target Target) (Target, error) {
 		if release == nil {
 			return target, fmt.Errorf("歌集不存在")
 		}
+		if target.Provider != "" || target.Ref != "" {
+			if release.Provider == nil || release.ProviderRef == nil || target.Provider != *release.Provider || target.Ref != *release.ProviderRef {
+				return target, fmt.Errorf("候选封面发行身份已改变，请刷新")
+			}
+		}
 		target.Provider, target.Ref, target.GroupRef = "", "", ""
 		if release.Provider != nil {
 			target.Provider = *release.Provider

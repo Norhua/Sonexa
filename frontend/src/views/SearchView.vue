@@ -182,6 +182,7 @@ async function addToLibrary(row: Models.app.CandidateRow) {
           </template>
         </Select>
 
+        <SecondaryButton v-if="!search.isLibrary && search.searched" size="small" :disabled="search.loading" @click="search.refreshResults">刷新本地状态</SecondaryButton>
         <Button
           size="small"
           class="shrink-0"

@@ -69,6 +69,7 @@
     app: {
       App: {
         RefreshSearchCandidates: async rows => JSON.parse(JSON.stringify(rows)),
+        RefreshReviewCandidates: async rows => JSON.parse(JSON.stringify(rows)),
         GetSettings: async () => settings,
         DefaultSettings: async () => ({ ...JSON.parse(JSON.stringify(settings)), qqmusic: { ratePerMin: 45 } }),
         SaveSettings: async next => {

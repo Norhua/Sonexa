@@ -175,10 +175,14 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 // applyLocalMatch 只按来源验证的精确 track 和当前发行关系查询所有权。
 // 错误保留独立结果，不能伪装为未收藏；不请求上游。
 func (a *App) applyLocalMatch(row *CandidateRow, c provider.Candidate) {
-	if c.ReleaseRef != nil {
-		if release, err := a.store.GetReleaseByRef(string(c.Provider), *c.ReleaseRef); err == nil && release != nil {
-			row.ReleaseID = release.ID
-			row.CoverRevision = a.CoverRevision(release.ID)
+	// 从来源发行重新计算，绝不信任旧快照或客户端提供的本地封面 ID。
+	row.ReleaseID, row.CoverRevision, row.CoverError = 0, 0, ""
+	if c.ReleaseRef != nil && *c.ReleaseRef != "" {
+		releaseID, revision, err := a.store.CandidateCoverTarget(string(c.Provider), *c.ReleaseRef)
+		if err != nil {
+			row.CoverError = "候选封面归属查询失败，请重试"
+		} else {
+			row.ReleaseID, row.CoverRevision = releaseID, revision
 		}
 	}
 	a.mu.Lock()

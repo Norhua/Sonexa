@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { App, Events, EventsOn, type Models } from '@/api'
+import { invalidateCandidateOwnership } from '@/lib/candidateActions'
 import { createRefreshQueue } from '@/lib/refreshQueue'
 
 /** 搜索范围：资料库，或某一个上游。 */
@@ -186,7 +187,10 @@ export const useSearchStore = defineStore('search', () => {
         }
         if (current() && token === request) refreshError.value = ''
       } catch (e) {
-        if (current() && token === request) refreshError.value = String(e)
+        if (current() && token === request) {
+          refreshError.value = String(e)
+          if (!isLibrary.value) upstreamRows.value = invalidateCandidateOwnership(upstreamRows.value, '本地身份刷新失败，请重试')
+        }
       }
     })
   }

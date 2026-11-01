@@ -51,9 +51,10 @@ export function coverUrl(
   if (!source?.releaseId && (!source?.provider || !source.ref)) return ''
   const q = new URLSearchParams({ usage })
   if (source.releaseId) q.set('releaseId', String(source.releaseId))
-  else {
-    q.set('provider', source.provider ?? '')
-    q.set('ref', source.ref ?? '')
+  // 本地 ID 只是定位提示；同时携带已知来源身份以拒绝换绑后的旧候选请求。
+  if (source.provider && source.ref) {
+    q.set('provider', source.provider)
+    q.set('ref', source.ref)
     if (source.rg) q.set('rg', source.rg)
   }
   q.set('revision', String(source.revision ?? 0))

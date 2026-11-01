@@ -1,4 +1,5 @@
 import type { Models } from '@/api'
+import { app as WailsApp } from '../../wailsjs/go/models'
 
 type Row = Pick<Models.app.CandidateRow, 'action' | 'ownership'>
 
@@ -16,6 +17,14 @@ export function candidateActionEnabled(row: Row): boolean {
   if (row.action === 'add' || row.action === 'accept') return state === 'unowned'
   if (row.action === 'owned' || row.action === 'skip') return state === 'owned' && row.ownership.trackId > 0
   return false
+}
+
+export function invalidateCandidateOwnership(rows: Models.app.CandidateRow[], reason: string): Models.app.CandidateRow[] {
+  return rows.map(row => new WailsApp.CandidateRow({
+    ...row, action: 'unavailable', localTrackId: 0, badges: [row.provider], note: reason,
+    ownership: { ...row.ownership, state: 'lookup_error', trackId: 0, revision: 0, releaseRevision: 0, reason },
+    releaseId: 0, coverRevision: 0, coverError: reason,
+  }))
 }
 
 export function candidateLocalTarget(row: Row): number {

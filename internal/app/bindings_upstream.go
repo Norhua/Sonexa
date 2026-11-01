@@ -45,8 +45,9 @@ type CandidateRow struct {
 	LocalTrackID int64 `json:"localTrackId"`
 
 	// 封面目标仅按同一发行身份关联，不能借文本疑似命中跨歌集取图。
-	ReleaseID     int64 `json:"releaseId"`
-	CoverRevision int64 `json:"coverRevision"`
+	ReleaseID     int64  `json:"releaseId"`
+	CoverRevision int64  `json:"coverRevision"`
+	CoverError    string `json:"coverError"`
 
 	ThumbKey      string  `json:"thumbKey"`
 	Title         *string `json:"title"`
@@ -271,15 +272,23 @@ func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction matching
 
 // RefreshSearchCandidates 只重查本地身份和封面归属，不请求上游、不改候选事实或顺序。
 func (a *App) RefreshSearchCandidates(rows []CandidateRow) ([]CandidateRow, error) {
+	return a.refreshCandidateRows(rows, matching.CandidateAdd)
+}
+
+// RefreshReviewCandidates 仅刷新给定候选的当前本地状态，不读取旧候选池或进行上游搜索。
+// 因此本次解析出的真实位置和用户正在看的候选不被队列旧快照替换。
+func (a *App) RefreshReviewCandidates(rows []CandidateRow) ([]CandidateRow, error) {
+	return a.refreshCandidateRows(rows, matching.CandidateAccept)
+}
+
+func (a *App) refreshCandidateRows(rows []CandidateRow, action matching.CandidateAction) ([]CandidateRow, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
 	out := make([]CandidateRow, len(rows))
 	for i, row := range rows {
-		// 删除/解除绑定后旧的具体发行不能继续用于封面。
-		row.ReleaseID, row.CoverRevision = 0, 0
 		a.applyLocalMatch(&row, row.toCandidate())
-		row.Action = row.Ownership.ActionFor(matching.CandidateAdd)
+		row.Action = row.Ownership.ActionFor(action)
 		out[i] = row
 	}
 	return out, nil
@@ -375,11 +384,15 @@ func (a *App) BuildCoverRefs(rows []CandidateRow) []covers.Ref {
 			if r.ReleaseRef == nil || *r.ReleaseRef == "" {
 				continue
 			}
-			target := covers.Target{ReleaseID: r.ReleaseID, Provider: r.Provider, Ref: *r.ReleaseRef}
+			releaseID, revision, err := a.store.CandidateCoverTarget(r.Provider, *r.ReleaseRef)
+			if err != nil {
+				continue
+			}
+			target := covers.Target{ReleaseID: releaseID, Provider: r.Provider, Ref: *r.ReleaseRef}
 			if r.ReleaseGroupRef != nil {
 				target.GroupRef = *r.ReleaseGroupRef
 			}
-			out = append(out, covers.Ref{Key: target.Key(covers.Thumbnail, r.CoverRevision), Target: target, Usage: covers.Thumbnail})
+			out = append(out, covers.Ref{Key: target.Key(covers.Thumbnail, revision), Target: target, Usage: covers.Thumbnail})
 			continue
 		}
 		// iTunes 的候选没有 release 级标识，只有 artworkUrl；

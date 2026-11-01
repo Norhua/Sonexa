@@ -8,10 +8,10 @@ function visibleKeys() { return [...new Set([...consumers.values()].flatMap(refs
 export function useCandidateCovers(rows: Ref<Models.app.CandidateRow[]>) {
   const owner = Symbol('candidate-covers')
   let generation = 0
-  const stop = watch(() => rows.value.map(row => [row.releaseId, row.coverRevision, row.provider, row.releaseRef, row.releaseGroupRef]), async () => {
+  const stop = watch(() => rows.value.map(row => [row.releaseId, row.coverRevision, row.provider, row.releaseRef, row.releaseGroupRef, row.coverError]), async () => {
     const current = ++generation
     try {
-      const refs = await App.BuildCoverRefs(rows.value)
+      const refs = await App.BuildCoverRefs(rows.value.filter(row => !row.coverError))
       if (current !== generation) return
       consumers.set(owner, refs ?? [])
       await App.CancelCovers(visibleKeys())

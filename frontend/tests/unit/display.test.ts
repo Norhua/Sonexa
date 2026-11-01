@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addedTime, trackPosition } from '../../src/api'
+import { addedTime, coverUrl, trackPosition } from '../../src/api'
 import { listRows, sortRows } from '../../src/lib/trackRows'
 
 describe('added time', () => {
@@ -20,6 +20,14 @@ describe('added time', () => {
     ])
     expect(sortRows(rows, 'addedAt', false).map(row => row.id)).toEqual([2, 1, 3, 4])
     expect(sortRows(rows, 'addedAt', true).map(row => row.id)).toEqual([1, 2, 3, 4])
+  })
+})
+
+describe('candidate cover identity', () => {
+  it('retains the source release assertion even when a local ID is present', () => {
+    const query = new URL(coverUrl({ releaseId: 7, revision: 3, provider: 'musicbrainz', ref: 'release-a', rg: 'group-a' }), 'http://local').searchParams
+    expect(Object.fromEntries(query)).toEqual({ usage: 'thumbnail', releaseId: '7', provider: 'musicbrainz', ref: 'release-a', rg: 'group-a', revision: '3' })
+    expect(coverUrl({ releaseId: 7 })).toBe('/cover?usage=thumbnail&releaseId=7&revision=0')
   })
 })
 

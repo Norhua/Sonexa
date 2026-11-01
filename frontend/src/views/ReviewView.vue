@@ -9,7 +9,8 @@ const admission = useAdmissionStore()
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { App, display, Events, EventsOn, type Models } from '@/api'
-import { candidateActionEnabled } from '@/lib/candidateActions'
+import { candidateActionEnabled, invalidateCandidateOwnership } from '@/lib/candidateActions'
+import { createRefreshQueue } from '@/lib/refreshQueue'
 import CandidateTable from '@/components/CandidateTable.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import Button from '@/volt/Button.vue'
@@ -35,6 +36,8 @@ const index = ref(0)
 const loading = ref(false)
 const error = ref('')
 const queueError = ref('')
+const localError = ref('')
+const refreshingLocal = ref(false)
 const expanded = ref(false)
 
 /** 可改写的重新搜索表单。改写只影响本次查询，不动原始导入值。 */
@@ -102,13 +105,39 @@ let queueInvalidation = 0
 let refreshTasks = false
 let queueLoad: Promise<void> | null = null
 let disposed = false
+let localRevision = 0
+const localRefresh = createRefreshQueue(async isLatest => {
+  const item = current.value
+  if (!item || !item.candidates.length) return
+  const candidates = item.candidates
+  const candidateRequest = researchRequest
+  const owns = () => isLatest() && current.value?.id === item.id && current.value.candidates === candidates && candidateRequest === researchRequest
+  try {
+    const rows = await App.RefreshReviewCandidates(candidates)
+    if (owns()) { current.value!.candidates = rows ?? []; localError.value = '' }
+  } catch (e) {
+    if (owns()) {
+      current.value!.candidates = invalidateCandidateOwnership(candidates, '本地身份刷新失败，请重试')
+      localError.value = String(e)
+    }
+  }
+})
+async function refreshLocal() {
+  localRevision++
+  refreshingLocal.value = true
+  try { await localRefresh.request() }
+  finally { if (!disposed) refreshingLocal.value = false }
+}
 // 直接订阅事件而非待复核计数：计数相同时也可能有失败、候选或条目变化。
 const offProgress = EventsOn(Events.ImportProgress, () => { void load(true) })
+const offLibrary = EventsOn(Events.LibraryChanged, () => { void refreshLocal() })
 onBeforeUnmount(() => {
   disposed = true
   researchRequest++
   queueRevision++
   offProgress()
+  offLibrary()
+  localRefresh.dispose()
 })
 
 watch(() => current.value?.id, (id) => {
@@ -116,9 +145,11 @@ watch(() => current.value?.id, (id) => {
   researching.value = false
   expanded.value = false
   searched.value = false
+  localError.value = ''
   if (id === undefined) return
   restoreOriginal()
   void updateHint()
+  void refreshLocal()
 })
 
 /** 合并连续进度事件；动作完成后的刷新使旧快照失效，后台事件则安排一次续读。 */
@@ -147,6 +178,7 @@ async function reloadQueue() {
     const invalidation = queueInvalidation
     const candidateRequest = researchRequest
     const wasResearching = researching.value
+    const localAtStart = localRevision
     try {
       const next = await App.GetReviewQueue()
       if (disposed) return
@@ -160,6 +192,7 @@ async function reloadQueue() {
       queueError.value = ''
       queue.value = next
       index.value = position >= 0 ? position : Math.max(0, Math.min(index.value, next.items.length - 1))
+      if (localAtStart !== localRevision) void refreshLocal()
       // 导入事件的全局汇总由 tasks 自身订阅刷新；这里只补进入页面和处理动作。
       if (refreshTasks) {
         refreshTasks = false
@@ -196,6 +229,7 @@ async function doResearch() {
   const item = current.value
   if (!item) return
   const request = ++researchRequest
+  const localAtStart = localRevision
   searched.value = true
   researching.value = true
   error.value = ''
@@ -206,6 +240,7 @@ async function doResearch() {
     )
     if (request !== researchRequest || current.value?.id !== item.id) return
     current.value.candidates = rows ?? []
+    if (localAtStart !== localRevision) void refreshLocal()
     // 后端改搜已递增输入修订，刷新队列取得新令牌，草稿与有效候选仍保留。
     void load(true)
   } catch (e) {
@@ -230,6 +265,7 @@ async function act(fn: () => Promise<void | boolean>) {
     }
   } catch (e) {
     error.value = String(e)
+    if (current.value?.id === itemId) void refreshLocal()
   }
 }
 
@@ -294,6 +330,7 @@ function next() {
         {{ queue.total }} 条待处置 · 待选 {{ queue.pending }} · 失败 {{ queue.failed }}
       </span>
       <div class="flex-1" />
+      <SecondaryButton v-if="current?.candidates.length" size="small" :disabled="refreshingLocal" @click="refreshLocal">刷新本地状态</SecondaryButton>
     </header>
 
     <EmptyState
@@ -457,8 +494,8 @@ function next() {
       </section>
     </div>
 
-    <Message v-if="error || queueError" severity="error" size="small" class="shrink-0 rounded-none">
-      {{ error || queueError }}
+    <Message v-if="error || queueError || localError" severity="error" size="small" class="shrink-0 rounded-none">
+      {{ error || queueError || localError }}
     </Message>
   </div>
 </template>

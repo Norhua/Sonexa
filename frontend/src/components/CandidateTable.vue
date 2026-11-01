@@ -25,6 +25,7 @@ import type { Models } from '@/api'
  * 候选以发行身份读取已存在的本地图；只有 MusicBrainz 发行允许自动查询 CAA。
  */
 function coverSourceOf(row: Models.app.CandidateRow) {
+  if (row.coverError) return null
   return {
     releaseId: row.releaseId,
     revision: row.coverRevision,
@@ -123,6 +124,7 @@ function onAct(row: Models.app.CandidateRow) {
               class="px-1.5 py-0.5 text-[10px] font-normal"
             />
           </div>
+          <div v-if="data.coverError" class="mt-0.5 text-[10px] text-danger-color">{{ data.coverError }}</div>
           <div v-if="data.note" class="mt-0.5 text-[10px] text-muted-color">{{ data.note }}</div>
         </template>
       </Column>

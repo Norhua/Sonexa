@@ -139,6 +139,44 @@ func TestResolverAdopted800WinsOverAutomatic1200AndMissingFails(t *testing.T) {
 	}
 }
 
+func TestCandidateCoverRejectsConflictingLocalReleaseHint(t *testing.T) {
+	svc, st := resolverService(t)
+	source, ref := "musicbrainz", testReleaseMBID
+	id, err := st.UpsertRelease(&store.Release{Title: "album", Provider: &source, ProviderRef: &ref, TracklistState: store.TracklistNone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Library().ImportLocal(id, pngBytes(800, 800), 0); err != nil {
+		t.Fatal(err)
+	}
+	svc.pool.client.Transport = resolverTransport(func(*http.Request) (*http.Response, error) {
+		t.Error("identity check must not fetch")
+		return nil, fmt.Errorf("network")
+	})
+	if got, err := svc.Resolve(context.Background(), Target{ReleaseID: id, Provider: source, Ref: ref}, Thumbnail); err != nil || got.File == nil {
+		t.Fatal(got, err)
+	}
+	for _, target := range []Target{
+		{ReleaseID: id, Provider: source, Ref: "other-release"},
+		{ReleaseID: id, Provider: "itunes", Ref: ref},
+		{ReleaseID: id, Provider: source},
+	} {
+		if got, err := svc.Resolve(context.Background(), target, Thumbnail); err == nil || got != nil {
+			t.Fatal("borrowed another release picture", target, got, err)
+		}
+	}
+	if _, err := st.DB().Exec("UPDATE release SET provider_ref='new-release',revision=revision+1 WHERE id=?", id); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := svc.Resolve(context.Background(), Target{ReleaseID: id, Provider: source, Ref: ref}, Thumbnail); err == nil || got != nil {
+		t.Fatal("stale candidate read rebound picture", got, err)
+	}
+	// Library-only callers still address their current local release without a source assertion.
+	if got, err := svc.Resolve(context.Background(), Target{ReleaseID: id}, Thumbnail); err != nil || got.File == nil {
+		t.Fatal(got, err)
+	}
+}
+
 func TestEditUpstreamPreviewDoesNotUseOrChangeAdoptedCover(t *testing.T) {
 	svc, st := resolverService(t)
 	source, ref := "musicbrainz", testReleaseMBID
