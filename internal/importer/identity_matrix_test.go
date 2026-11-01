@@ -81,7 +81,7 @@ func TestRunnerIdentityValidationMatrix(t *testing.T) {
 				t.Fatal("wrong target", id, err)
 			}
 			wantCalls := 1
-			if tc.name == "pure_translation" || tc.name == "off_vocal" {
+			if tc.name == "pure_translation" || tc.name == "off_vocal" || tc.name == "remix_author" || tc.name == "live_event" {
 				wantCalls = 2
 			}
 			if searcher.queryCount() != wantCalls {

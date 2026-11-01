@@ -242,7 +242,7 @@ func (s *Service) constrainSelection(ctx context.Context, scored []matching.Scor
 			}
 		}
 		if !found {
-			sc.Score = matching.DefaultWeights().ScoreCandidate(provider.Query{Title: input.Title.Raw, Artist: input.Artist.Text.Raw, Album: input.Album.Raw}, c)
+			sc.Score = matching.DefaultWeights().ScoreMetadataCandidate(provider.Query{Title: input.Title.Raw, Artist: input.Artist.Text.Raw, Album: input.Album.Raw}, c)
 			out.display = append(out.display, sc)
 		}
 		out.eligible = append(out.eligible, sc)

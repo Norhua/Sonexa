@@ -77,6 +77,12 @@
 - [x] 9.5 执行 `npm --prefix frontend run typecheck`、`npm --prefix frontend test`、`npm --prefix frontend run build`、`npm --prefix frontend run test:e2e`，记录浏览器替身和真实 Go 入口各自验证边界，不宣称已完成未执行的原生或真实网络验收。
 - [x] 9.6 核对代码、局部说明和增量规格的一致性，运行 `openspec validate fix-track-identity-and-reduce-import-review --strict` 及 `git diff --check`；确认无残留候选合并/ISRC 已拥有行为、无历史选版查询、无无关歌词改动，并按阶段形成中文约定式提交。
 
+## 10. 独立核验修复
+
+- [x] 10.1 修复 W1：在元数据共用检索接入完整版本语义，已支持的等价写法可展示、不同负载不放行；补 Engine/共用入口与真实 Runner 正反例，保持歌词旧比较/评分行为。
+- [ ] 10.2 修复 W2：本地/远程自动决策的字段与默认偏好原因随计划和原子终态保存并返回，日志/复核显示中文短句；补成功接受、已有跳过、后台重评、回滚及前端说明回归，不将诊断用于未来选版。
+- [ ] 10.3 清理 S1 过时注释，重跑全量 Go、五包 race、Wails、前端及双浏览器验证，更新核验/验收/交接记录，执行 strict/diff 并中文提交；不同步或归档主规格。
+
 ## Workflow follow-up
 
 - 用户审阅并明确要求后才开始 apply；本次 propose 不勾选实施任务、不修改代码或主规格。
