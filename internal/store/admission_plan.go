@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/norhua/sonexa/internal/domain"
@@ -97,6 +98,9 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		if err != nil {
 			return err
 		}
+		if !reflect.DeepEqual(plan.Baseline.InputScope, baseline.InputScope) {
+			return ErrPlanStale
+		}
 		// 输入状态/整数修订已由 baseline 在所有写分支前重验。
 		if plan.Seed.Operation == domain.AdmissionSkipExisting && !sameAdmissionBaseline(plan.Baseline, baseline) {
 			return ErrPlanStale
@@ -119,7 +123,7 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 			if groupID != nil {
 				result.GroupID = *groupID
 			}
-			return finishAdmissionTx(tx, plan, *result)
+			return finishAdmissionTx(tx, plan, result)
 		}
 		if !sameAdmissionBaseline(plan.Baseline, baseline) {
 			return ErrPlanStale
@@ -150,14 +154,17 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		if err := rebuildGroupKeysTx(tx); err != nil {
 			return err
 		}
-		return finishAdmissionTx(tx, plan, *result)
+		return finishAdmissionTx(tx, plan, result)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
 }
-func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result domain.AdmissionResult) error {
+func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result *domain.AdmissionResult) error {
+	if t := plan.Seed.Snapshot.Track; t != nil && t.Identity.Ref != "" && t.Release != nil {
+		result.Target = &domain.AdmissionTarget{Track: t.Identity, Release: *t.Release}
+	}
 	if plan.Seed.ProposalID != 0 {
 		row, err := tx.Exec("UPDATE group_change_proposal SET status='accepted',updated_at=? WHERE id=? AND release_id=? AND status='pending'", time.Now().UTC(), plan.Seed.ProposalID, plan.Seed.MoveReleaseID)
 		if err != nil {
@@ -168,12 +175,9 @@ func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result domain.Admi
 		}
 	}
 
-	if plan.Seed.ImportItemID != 0 {
-		if err := finishProblemItemTx(tx, plan.Seed.ImportItemID); err != nil {
-			return err
-		}
-		status, reason := StatusImported, ResolutionImported
+	if plan.Seed.InputScope != nil {
 		var target any
+		reason := ResolutionWithoutMatch
 		if t := plan.Seed.Snapshot.Track; t != nil && t.Identity.Ref != "" {
 			if t.Release == nil {
 				return ErrSnapshotTarget
@@ -182,23 +186,35 @@ func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result domain.Admi
 			if err != nil {
 				return err
 			}
-			target = string(raw)
-		} else {
-			reason = ResolutionWithoutMatch
+			target, reason = string(raw), ResolutionImported
 		}
-		if result.Existing {
-			status, reason = StatusSkipped, ResolutionExistingTrack
-		}
-		row, err := tx.Exec("UPDATE import_item SET status=?,track_id=?,resolution_reason=?,resolution_target=?,revision=revision+1,review_reason=NULL,next_retry_at=NULL,last_error=NULL,updated_at=? WHERE id=? AND revision=? AND status IN ('queued','matching','review','failed')", status, result.TrackID, reason, target, time.Now().UTC(), plan.Seed.ImportItemID, plan.Seed.ItemRevision)
-		if err != nil {
-			return err
-		}
-		n, err := row.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if n != 1 {
-			return ErrPlanStale
+		// Scopes are checked in ascending item ID order. Only the first row
+		// can be the creator; all other approved rows are exact duplicates.
+		for i, member := range plan.Seed.InputScope.Members {
+			if err := finishProblemItemTx(tx, member.ItemID); err != nil {
+				return err
+			}
+			status, rowReason := StatusImported, reason
+			if result.Existing || i > 0 {
+				status, rowReason = StatusSkipped, ResolutionExistingTrack
+			}
+			row, err := tx.Exec("UPDATE import_item SET status=?,track_id=?,resolution_reason=?,resolution_target=?,revision=revision+1,review_reason=NULL,next_retry_at=NULL,last_error=NULL,updated_at=? WHERE id=? AND revision=? AND status IN ('queued','matching','review','failed')", status, result.TrackID, rowReason, target, time.Now().UTC(), member.ItemID, member.InputRevision)
+			if err != nil {
+				return err
+			}
+			n, err := row.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if n != 1 {
+				return ErrPlanStale
+			}
+			if problem := plan.Seed.InputScope.Problem; problem != nil {
+				if _, err := tx.Exec("UPDATE import_item SET resolution_problem_id=?,resolution_problem_revision=? WHERE id=?", problem.ID, problem.Revision, member.ItemID); err != nil {
+					return err
+				}
+			}
+			result.Inputs = append(result.Inputs, domain.AdmissionInputResult{ItemID: member.ItemID, BatchID: member.BatchID, TrackID: result.TrackID, Status: string(status), Reason: string(rowReason)})
 		}
 	}
 	raw, err := json.Marshal(result)

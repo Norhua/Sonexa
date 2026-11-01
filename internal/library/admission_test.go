@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -100,7 +101,7 @@ func TestAdmissionRequiresBoundConfirmationAndIsIdempotent(t *testing.T) {
 	}
 	clock.now = clock.now.Add(PlanTTL + time.Second)
 	again, err := s.CommitAdmission(context.Background(), next.ID, next.Hash, *approval)
-	if err != nil || *again != *result {
+	if err != nil || !reflect.DeepEqual(again, result) {
 		t.Fatal("successful retry changed result", again, err)
 	}
 	expired := prepare(t, s, seed("d", "d1", "g", "Album", "Artist"))

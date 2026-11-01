@@ -33,7 +33,7 @@
 
 **来源行拆出：** `SplitProblemItem(problemID, problemRevision, itemID, inputRevision)` 在事务内校验当前范围，将该行移入 `anchor.isolated` 的独立活跃问题。原问题 revision 和被拆行 revision 递增，其他行原文、候选和输入修订不变。旧单行准入批准因此失效；独立问题重试也不自动合回，不吸纳后续等价输入。隔离仅保存于活跃工作锚点，不作为未来输入的历史身份规则。
 
-**阶段边界：** 5.1–5.4 已交付证明、检索、创建/加入/关闭、拆出、版本化问题操作和生产 Runner 接线。多行准入批准、租约和问题前端仍待后续任务。前端暂时仍逐行读取，不能把后台成员归并称为已交付多来源问题 UI。候选合并 API、旧本地候选快照与 merged 终态已移除，状态 CHECK 拒绝旧写法。
+**阶段边界：** 5.1–5.4 已交付证明、检索、创建/加入/关闭、拆出、版本化问题操作和生产 Runner 接线。6.1–6.3 已加入单行/多行计划、原子结果和显式 API；租约和问题前端仍待后续任务。前端暂时仍逐行读取，不能把后台成员归并称为已交付多来源问题 UI。候选合并 API、旧本地候选快照与 merged 终态已移除，状态 CHECK 拒绝旧写法。
 
 ## 问题查询与范围协议（5.4）
 
@@ -43,6 +43,14 @@
 
 `NoneMatchedProblem` 清候选但保留活跃成员，失效在途查询；`RetryProblemMembers` 只处理范围中明确列出的 failed 成员；`DiscardProblemMembers` 仅原子结束列明成员。空/重复/非成员 ID、旧问题/成员/输入修订均拒绝。App 提供对应显式问题接口及拆出入口；旧单行改搜/无一匹配遇多行问题时要求先拆出，不能静默扩大范围。完整问题 UI 将在 8.x 接线。
 
+## 准入输入范围（6.1）
+
+`AdmissionSeed/Baseline.InputScope(version=1)` 统一单行与问题操作。`single` 只列选定一行，即使该行属于多行问题也不扩大操作范围；`problem` 必须列出全部当前活跃成员，稳定按行 ID 排序，子集、重复、乱序及空范围均拒绝。搜索/编辑没有导入范围；旧 `ImportItemID/ItemRevision` 仅是服务端单行适配，不能与 scope 不一致。
+
+范围绑定问题/查询/候选修订、完整成员 ID/成员修订、输入修订/状态、批次/行号、profile/证明规则版本及证据摘要。证明改动共用问题/成员 revision；摘要同时涵盖保存的 anchor/proof、各行原始 profile 和候选，以及重新核验本地事实后产生的证明。不新增数据库代际。证明 JSON 可解析不授予权限，多行准备与提交必须重新证明全部成员等价；本地删除/换绑或事实修订即使未改队列，也不能沿用旧精确证明。
+
+`ReadProblemInputScope` 仅将已展示且仍有效的 `ProblemScope` 转为准入范围。准备候选在 I/O 前校验并保留该范围，必要身份解析按不同位置要求复用，同一范围内所有行必须解析到同一真实位置；准备结束、确认和提交再次校验。单行计划也绑定所在完整问题的证据摘要，因此其他成员加入/拆出会失效旧批准，但绝不把其他行加入单行操作。`AdmissionHash` 和服务端签名涵盖 seed/baseline 的完整范围与选定目标，客户端重算 Hash 不能获得批准。
+
 ## 单行接受与精确跳过
 
 - `library.PrepareCandidate` 在必要资料加载前记录输入修订，计划绑定本次候选的来源 track/release；提交先检查输入仍活跃且修订未变，再进入任何收藏写分支。
@@ -50,6 +58,14 @@
 - `CommitAdmission` 统一按实际结果记终态：新建为 imported，已存在为 `skipped/existing_track`。不接受客户端指定终态，不以同 ISRC/Recording 复用其他 track。已有目标只写输入结果及 `operation_result`，不修改任何收藏表、封面、歌词或补全状态。
 - 同一成功 plan ID/hash 重试返回原结果；另一旧计划、旧改搜/失败响应不能恢复终态。Runner 与在途改搜使用起始整数修订 CAS，旧同步队列写接口也始终拒绝终态。
 - App 与 Runner 对纯已有结果不发收藏变更通知、不启动补全；前端单行跳过已接入计划，独立任务/问题通知仍待后续任务，不把这一步称为完整事件交付。
+
+## 原子结果与单行辅助操作（6.2–6.3）
+
+`CommitAdmission` 在任何实体写入及已有目标快速返回前，重验整个 seed/baseline 输入范围。新目标只新增一个 track，按最小成员 ID 稳定指定唯一 `imported` 行，其他成员记 `skipped/existing_track`；目标已存在则全范围跳过。`AdmissionResult` 返回来源 track/release、实际目标及逐行/批次结果，`operation_result` 保存同一完整结果用于幂等，不能用于未来输入的身份判断。
+
+多行结果、成员移除、问题关闭及归组决策均在同一事务，任一成员/结果写入失败整体回滚。未按既有文件暂存协议准备的文件字段仍拒绝，不留下暂建实体或终态。新增发行的确认规则不变；另一请求已收藏同一精确目标时只跳过、不修改旧收藏、不要求已无必要的新增确认。
+
+App 提供 `GetReviewAdmissionScope`、`PrepareProblemAdmission` 和 `PrepareProblemSkipExisting`。`PrepareNoMatchNeeded` 先记录所选行范围，再读取原始解析值，不借问题查询草稿替换原文，不给其他行自动创建或跳过。多行无绑定 seed 被拒绝。移出支持单行/显式成员列表，失败重试仅列明 failed 成员；不将单行操作推广到其他成员。任务/问题事件及完整问题 UI 仍由 7.x/8.x 交付。
 
 ## 本地匹配召回
 
@@ -69,4 +85,4 @@
 
 ## 验证
 
-`queue_schema_test.go` 使用临时文件 SQLite 验证整数修订、原始行不变、JSON/正整数约束、跨批成员重启保留、并发单活跃归属、终态/旧修订拒绝归入、历史目标保留、同 ISRC/Recording 多 track 共存及旧代际无改写拒绝。`problems_test.go` 和 importer 的真实 Runner 用例验证跨批等价归并、独立失败/原文保留、单行结束/最终关闭、重启/重试修订、非传递别名拒绝与事务回滚；多行批准和 UI 验收仍待后续。`queue_cas_test.go`、`library/single_input_test.go`、`app/single_input_test.go` 验证单行跳过、并发一次新建、重复计划幂等、删除/换绑/错误回滚、迟到响应拒绝和真实 App 离线跳过。无写入测试读取全部收藏表（包括 FTS 与封面目录）并在 Go 中排序比较，不依赖所有表都有 `rowid`。
+`queue_schema_test.go` 使用临时文件 SQLite 验证整数修订、原始行不变、JSON/正整数约束、跨批成员重启保留、并发单活跃归属、终态/旧修订拒绝归入、历史目标保留、同 ISRC/Recording 多 track 共存及旧代际无改写拒绝。`problems_test.go` 和 importer 的真实 Runner 用例验证跨批等价归并、独立失败/原文保留、单行结束/最终关闭、重启/重试修订、非传递别名拒绝与事务回滚；`library/input_scope_test.go`、`library/multi_input_test.go`、`store/input_scope_test.go` 及 `app/multi_input_test.go` 覆盖范围 Hash/签名、当前证明失效、跨批原子结果、并发一次新建、整体回滚及单行辅助操作；UI 验收仍待后续。`queue_cas_test.go`、`library/single_input_test.go`、`app/single_input_test.go` 验证单行跳过、并发一次新建、重复计划幂等、删除/换绑/错误回滚、迟到响应拒绝和真实 App 离线跳过。无写入测试读取全部收藏表（包括 FTS 与封面目录）并在 Go 中排序比较，不依赖所有表都有 `rowid`。

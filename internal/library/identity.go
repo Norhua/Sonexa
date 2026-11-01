@@ -57,6 +57,20 @@ func (s *Service) validateSeedIdentity(seed domain.AdmissionSeed) error {
 }
 
 func (s *Service) resolveAdmissionCandidate(ctx context.Context, c provider.Candidate, itemID int64) (provider.Candidate, error) {
+	position := matching.PositionRequirement{}
+	if itemID != 0 {
+		item, err := s.store.GetItem(itemID)
+		if err != nil {
+			return c, err
+		}
+		if item != nil && item.Profile != nil {
+			position = matching.PositionRequirement{Disc: item.Profile.Disc, Track: item.Profile.Track}
+		}
+	}
+	return s.resolveCandidatePosition(ctx, c, position)
+}
+
+func (s *Service) resolveCandidatePosition(ctx context.Context, c provider.Candidate, position matching.PositionRequirement) (provider.Candidate, error) {
 	r, err := s.identitySources()
 	if err != nil {
 		return c, err
@@ -64,16 +78,7 @@ func (s *Service) resolveAdmissionCandidate(ctx context.Context, c provider.Cand
 	if r.Inspect(c).State == matching.IdentityExact {
 		return c, nil
 	}
-	request := matching.DecisionRequest{Candidates: []provider.Candidate{c}}
-	if itemID != 0 {
-		item, err := s.store.GetItem(itemID)
-		if err != nil {
-			return c, err
-		}
-		if item != nil && item.Profile != nil {
-			request.Position = matching.PositionRequirement{Disc: item.Profile.Disc, Track: item.Profile.Track}
-		}
-	}
+	request := matching.DecisionRequest{Candidates: []provider.Candidate{c}, Position: position}
 	resolved, err := r.Load(ctx, c.Provider, request)
 	if err != nil {
 		return c, err

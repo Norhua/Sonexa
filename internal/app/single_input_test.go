@@ -157,6 +157,15 @@ func TestLateReviewSearchCannotRestoreSkippedInput(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("search not started")
 	}
+	if _, err := a.CommitAdmission(plan.ID, plan.Hash, domain.AdmissionApproval{}); !errors.Is(err, store.ErrPlanStale) {
+		t.Fatal("query revision did not invalidate old skip", err)
+	}
+	// A fresh explicit user action can finish the row while the old search
+	// is still in flight; that search must not restore the terminal state.
+	plan, err = a.PrepareSkipExisting(row, itemID, item.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := a.CommitAdmission(plan.ID, plan.Hash, domain.AdmissionApproval{}); err != nil {
 		t.Fatal(err)
 	}

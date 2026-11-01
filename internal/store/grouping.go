@@ -204,16 +204,8 @@ func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.Admissio
 	if (identity.Provider == "") != (identity.Ref == "") {
 		return baseline, ErrSnapshotTarget
 	}
-	if seed.ImportItemID != 0 {
-		if err := tx.QueryRow("SELECT status,revision FROM import_item WHERE id=?", seed.ImportItemID).Scan(&baseline.ItemState, &baseline.ItemRevision); err != nil {
-			if err == sql.ErrNoRows {
-				return baseline, ErrPlanStale
-			}
-			return baseline, err
-		}
-		if !activeItemStatus(ItemStatus(baseline.ItemState)) || seed.ItemRevision <= 0 || seed.ItemRevision != baseline.ItemRevision {
-			return baseline, ErrPlanStale
-		}
+	if err := admissionInputScopeTx(tx, seed, &baseline); err != nil {
+		return baseline, err
 	}
 	if identity.Ref != "" {
 		if seed.Snapshot.Track.Release == nil || seed.Snapshot.Release == nil || *seed.Snapshot.Track.Release != seed.Snapshot.Release.Identity {
@@ -233,7 +225,7 @@ func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.Admissio
 		}
 	}
 	if seed.Operation == domain.AdmissionSkipExisting {
-		if seed.ImportItemID == 0 || baseline.ExistingTrackID == 0 || seed.MoveReleaseID != 0 || seed.ProposalID != 0 || seed.MergeTargetID != 0 || seed.EditJSON != "" {
+		if seed.InputScope == nil || baseline.ExistingTrackID == 0 || seed.MoveReleaseID != 0 || seed.ProposalID != 0 || seed.MergeTargetID != 0 || seed.EditJSON != "" {
 			return baseline, ErrPlanStale
 		}
 		// 跳过不引入成员，不取组名证据；只绑定既有精确目标和输入范围。

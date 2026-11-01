@@ -158,7 +158,7 @@ func TestSingleInputSkipAndDuplicateAcceptNeverChangeLibrary(t *testing.T) {
 			}
 			clock.now = clock.now.Add(PlanTTL + time.Second)
 			again := commit(t, s, plan, false)
-			if *again != *result {
+			if !reflect.DeepEqual(again, result) {
 				t.Fatal("idempotent result changed", again, result)
 			}
 			reloaded, err := st.GetItem(item.ID)

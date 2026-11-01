@@ -123,15 +123,8 @@ func (s *Service) PrepareAdmission(ctx context.Context, seed domain.AdmissionSee
 	if seed.Operation != domain.AdmissionCreate && seed.Operation != domain.AdmissionSkipExisting {
 		return nil, store.ErrPlanStale
 	}
-	if seed.ImportItemID != 0 && seed.ItemRevision == 0 {
-		item, err := s.store.GetItem(seed.ImportItemID)
-		if err != nil {
-			return nil, err
-		}
-		if item == nil || item.Status.IsTerminal() {
-			return nil, store.ErrPlanStale
-		}
-		seed.ItemRevision = item.Revision
+	if err := s.prepareInputScope(&seed); err != nil {
+		return nil, err
 	}
 	if err := s.validateSeedIdentity(seed); err != nil {
 		return nil, err
@@ -196,6 +189,25 @@ func (s *Service) PrepareSkipExisting(ctx context.Context, candidate provider.Ca
 	if itemID <= 0 || revision <= 0 {
 		return nil, store.ErrPlanStale
 	}
+	scope, err := s.store.ReadSingleInputScope(itemID, revision)
+	if err != nil {
+		return nil, err
+	}
+	return s.PrepareScopedSkipExisting(ctx, candidate, *scope)
+}
+
+func (s *Service) PrepareScopedSkipExisting(ctx context.Context, candidate provider.Candidate, scope domain.InputScope) (*domain.AdmissionPlan, error) {
+	var err error
+	scope, err = clone(scope)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := s.store.CheckInputScope(&scope); err != nil {
+		return nil, err
+	}
 	sources, err := s.identitySources()
 	if err != nil {
 		return nil, err
@@ -208,35 +220,60 @@ func (s *Service) PrepareSkipExisting(ctx context.Context, candidate provider.Ca
 		return nil, store.ErrPlanStale
 	}
 	identity := ownership.Identity
-	seed := domain.AdmissionSeed{Operation: domain.AdmissionSkipExisting, ImportItemID: itemID, ItemRevision: revision,
+	seed := domain.AdmissionSeed{Operation: domain.AdmissionSkipExisting, InputScope: &scope,
 		Snapshot: domain.Snapshot{
 			Track:   &domain.TrackSnapshot{Identity: identity.Track, Release: &identity.Release},
 			Release: &domain.ReleaseSnapshot{Identity: identity.Release},
 		}}
-	return s.PrepareAdmission(ctx, seed)
+	plan, err := s.PrepareAdmission(ctx, seed)
+	if err == nil && (plan.Baseline.ExistingTrackID != ownership.TrackID || plan.Baseline.ExistingTrackRevision != ownership.Revision || plan.Baseline.ExistingReleaseRevision != ownership.ReleaseRevision) {
+		return nil, store.ErrPlanStale
+	}
+	return plan, err
 }
 
 func (s *Service) PrepareCandidate(ctx context.Context, candidate provider.Candidate, itemID int64) (*domain.AdmissionPlan, error) {
-	var revision int64
+	var scope *domain.InputScope
 	if itemID != 0 {
-		item, err := s.store.GetItem(itemID)
+		var err error
+		scope, err = s.store.ReadSingleInputScope(itemID, 0)
 		if err != nil {
 			return nil, err
 		}
-		if item == nil || item.Status.IsTerminal() {
-			return nil, store.ErrPlanStale
+	}
+	return s.prepareScopedCandidate(ctx, candidate, scope)
+}
+
+// PrepareScopedCandidate consumes the exact displayed scope, never widens it
+// to include a newly arrived row. Resolution I/O happens after the first check;
+// PrepareAdmission checks again before sealing the plan.
+func (s *Service) PrepareScopedCandidate(ctx context.Context, candidate provider.Candidate, scope domain.InputScope) (*domain.AdmissionPlan, error) {
+	return s.prepareScopedCandidate(ctx, candidate, &scope)
+}
+
+func (s *Service) prepareScopedCandidate(ctx context.Context, candidate provider.Candidate, scope *domain.InputScope) (*domain.AdmissionPlan, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if scope != nil {
+		copy, err := clone(*scope)
+		if err != nil {
+			return nil, err
 		}
-		revision = item.Revision
+		scope = &copy
+		if err := s.store.CheckInputScope(scope); err != nil {
+			return nil, err
+		}
 	}
-	candidate, err := s.resolveAdmissionCandidate(ctx, candidate, itemID)
+	resolved, err := s.resolveScopedAdmissionCandidate(ctx, candidate, scope)
 	if err != nil {
 		return nil, err
 	}
-	seed, err := s.CandidateSeed(candidate, itemID)
+	seed, err := s.CandidateSeed(resolved, 0)
 	if err != nil {
 		return nil, err
 	}
-	seed.ItemRevision = revision
+	seed.InputScope = scope
 	return s.PrepareAdmission(ctx, seed)
 }
 func (s *Service) plan(id, hash string) (domain.AdmissionPlan, error) {

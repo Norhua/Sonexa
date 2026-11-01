@@ -9,6 +9,7 @@ import (
 	"github.com/norhua/sonexa/internal/library"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/store"
 )
 
 func (a *App) libraryService() (*library.Service, error) {
@@ -53,14 +54,18 @@ func (a *App) PrepareAdmission(row CandidateRow, itemID int64) (*AdmissionPlanVi
 		return nil
 	})
 	plan, err := service.PrepareCandidate(ctx, row.toCandidate(), itemID)
+	return a.candidateAdmissionView(plan, err, row.Confidence, itemID == 0)
+}
+
+func (a *App) candidateAdmissionView(plan *domain.AdmissionPlan, err error, confidence float64, search bool) (*AdmissionPlanView, error) {
 	var unresolved *library.TargetResolutionError
 	if errors.As(err, &unresolved) && len(unresolved.Resolution.Candidates) > 0 {
 		scored := make([]matching.ScoredCandidate, 0, len(unresolved.Resolution.Candidates))
 		for _, c := range unresolved.Resolution.Candidates {
-			scored = append(scored, matching.ScoredCandidate{Candidate: c, Score: matching.Score{Total: row.Confidence}})
+			scored = append(scored, matching.ScoredCandidate{Candidate: c, Score: matching.Score{Total: confidence}})
 		}
 		action := matching.CandidateAccept
-		if itemID == 0 {
+		if search {
 			action = matching.CandidateAdd
 		}
 		rows := a.rowsFrom(scored, action)
@@ -90,6 +95,38 @@ func (a *App) PrepareSkipExisting(row CandidateRow, itemID, revision int64) (*Ad
 		return nil, err
 	}
 	return admissionView(service.PrepareSkipExisting(a.ctx, row.toCandidate(), itemID, revision))
+}
+
+// GetReviewAdmissionScope captures the exact displayed membership and evidence
+// before the candidate action; subsequent preparation never adopts new rows.
+func (a *App) GetReviewAdmissionScope(scope store.ProblemScope) (*domain.InputScope, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.store.ReadProblemInputScope(scope)
+}
+
+func (a *App) PrepareProblemAdmission(row CandidateRow, scope domain.InputScope) (*AdmissionPlanView, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	ctx := provider.WithRequestGate(a.ctx, func() error {
+		if gate := a.CheckOutbound(); !gate.Allowed {
+			return fmt.Errorf("%s", gate.Reason)
+		}
+		return nil
+	})
+	plan, err := service.PrepareScopedCandidate(ctx, row.toCandidate(), scope)
+	return a.candidateAdmissionView(plan, err, row.Confidence, false)
+}
+
+func (a *App) PrepareProblemSkipExisting(row CandidateRow, scope domain.InputScope) (*AdmissionPlanView, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	return admissionView(service.PrepareScopedSkipExisting(a.ctx, row.toCandidate(), scope))
 }
 
 func (a *App) ConfirmReleaseAdditions(planID, hash string) (*domain.AdmissionApproval, error) {
@@ -159,9 +196,9 @@ type LocalAdmissionInput struct {
 }
 
 func (a *App) PrepareLocalAdmission(input LocalAdmissionInput) (*AdmissionPlanView, error) {
-	return a.prepareLocalAdmission(input, 0)
+	return a.prepareLocalAdmission(input, nil)
 }
-func (a *App) prepareLocalAdmission(input LocalAdmissionInput, itemID int64) (*AdmissionPlanView, error) {
+func (a *App) prepareLocalAdmission(input LocalAdmissionInput, scope *domain.InputScope) (*AdmissionPlanView, error) {
 	service, err := a.libraryService()
 	if err != nil {
 		return nil, err
@@ -177,20 +214,24 @@ func (a *App) prepareLocalAdmission(input LocalAdmissionInput, itemID int64) (*A
 			snapshot.Release.Credit = domain.Known(domain.Credit{Text: *input.AlbumArtist})
 		}
 	}
-	return admissionView(service.PrepareAdmission(a.ctx, domain.AdmissionSeed{Snapshot: snapshot, ImportItemID: itemID}))
+	return admissionView(service.PrepareAdmission(a.ctx, domain.AdmissionSeed{Snapshot: snapshot, InputScope: scope}))
 }
 func (a *App) PrepareNoMatchNeeded(itemID int64) (*AdmissionPlanView, error) {
 	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	scope, err := a.store.ReadSingleInputScope(itemID, 0)
+	if err != nil {
 		return nil, err
 	}
 	item, err := a.store.GetItem(itemID)
 	if err != nil {
 		return nil, err
 	}
-	if item == nil {
-		return nil, fmt.Errorf("条目不存在")
+	if item == nil || item.Revision != scope.Members[0].InputRevision {
+		return nil, store.ErrPlanStale
 	}
-	return a.prepareLocalAdmission(LocalAdmissionInput{Title: item.InTitle, Artist: item.InArtist, Album: item.InAlbum, Year: item.InYear, DiscNumber: item.InDiscNo, TrackNumber: item.InTrackNo}, itemID)
+	return a.prepareLocalAdmission(LocalAdmissionInput{Title: item.InTitle, Artist: item.InArtist, Album: item.InAlbum, Year: item.InYear, DiscNumber: item.InDiscNo, TrackNumber: item.InTrackNo}, scope)
 }
 func (a *App) commitUnconfirmedAdmission(plan *AdmissionPlanView) (int64, error) {
 	if plan == nil || plan.Resolution != nil {

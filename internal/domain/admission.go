@@ -42,6 +42,7 @@ const (
 // 保存本地层时不将它伪装成上游快照。
 type AdmissionSeed struct {
 	Operation      AdmissionOperation `json:"operation"`
+	InputScope     *InputScope        `json:"inputScope,omitempty"`
 	ItemRevision   int64              `json:"itemRevision"`
 	CurrentRelease *ReleaseSnapshot   `json:"currentRelease,omitempty"`
 	EditJSON       string             `json:"editJson,omitempty"`
@@ -52,6 +53,7 @@ type AdmissionSeed struct {
 	MergeTargetID  int64              `json:"mergeTargetId"`
 }
 type AdmissionBaseline struct {
+	InputScope              *InputScope     `json:"inputScope,omitempty"`
 	NewNativeMapping        bool            `json:"newNativeMapping"`
 	ItemRevision            int64           `json:"itemRevision"`
 	Resolution              GroupResolution `json:"resolution"`
@@ -77,9 +79,24 @@ type AdmissionApproval struct {
 	Hash       string `json:"hash"`
 	Credential string `json:"credential"`
 }
+type AdmissionInputResult struct {
+	ItemID  int64  `json:"itemId"`
+	BatchID int64  `json:"batchId"`
+	TrackID int64  `json:"trackId"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason"`
+}
+
+type AdmissionTarget struct {
+	Track   Identity `json:"track"`
+	Release Identity `json:"release"`
+}
+
 type AdmissionResult struct {
-	TrackID   int64 `json:"trackId"`
-	ReleaseID int64 `json:"releaseId"`
-	GroupID   int64 `json:"groupId"`
-	Existing  bool  `json:"existing"`
+	Target    *AdmissionTarget       `json:"target,omitempty"`
+	Inputs    []AdmissionInputResult `json:"inputs,omitempty"`
+	TrackID   int64                  `json:"trackId"`
+	ReleaseID int64                  `json:"releaseId"`
+	GroupID   int64                  `json:"groupId"`
+	Existing  bool                   `json:"existing"`
 }
