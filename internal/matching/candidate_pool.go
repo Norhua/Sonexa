@@ -3,6 +3,7 @@ package matching
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
@@ -21,6 +22,7 @@ type CandidateTarget struct {
 	Facts     []CandidateFact
 	Ownership LocalMatch
 	Conflicts []FactConflict
+	Issues    []DecisionReason
 }
 
 // CandidateFact is one coherent view; it is never completed with another
@@ -74,10 +76,11 @@ func BuildCandidatePool(local LocalRecallResult, remote []provider.Candidate, so
 	// Preserve every remote fact view, including conflicting facts for the same
 	// track. One target still appears once; no "first row wins" reconciliation.
 	for i, c := range remote {
+		source := fmt.Sprintf("remote:%s:%s:%d", c.Provider, c.MatchRef, i)
 		add(CandidateFact{Kind: "remote", Metadata: MetadataFacts{Candidate: c,
-			Source:        fmt.Sprintf("remote:%s:%s:%d", c.Provider, c.MatchRef, i),
+			Source:        source,
 			AlbumComplete: nonemptyText(c.AlbumTitle), PositionVerified: sources.Inspect(c).State == IdentityExact && positive(c.DiscNumber) && positive(c.TrackNumber),
-			CreditRelations: candidateCreditRelations(c, "remote")}})
+			CreditRelations: candidateCreditRelations(c, source)}})
 	}
 	for _, record := range local.Records {
 		if record.TrackIdentity == nil || record.ReleaseIdentity == nil {
@@ -89,6 +92,9 @@ func BuildCandidatePool(local LocalRecallResult, remote []provider.Candidate, so
 			out.Related = append(out.Related, record)
 			continue
 		}
+		// LocalRecall promises bound snapshots, but verify the contract here as
+		// well: a different implementation must not smuggle a stale target in.
+		record = validateLocalFacts(record)
 		origin := "local:" + strconv.FormatInt(record.TrackID, 10)
 		current := record.Current.Profile
 		// Display evidence remains a whole current profile. It does not borrow
@@ -110,12 +116,40 @@ func BuildCandidatePool(local LocalRecallResult, remote []provider.Candidate, so
 				Metadata: MetadataFacts{Candidate: c, Source: origin + ":snapshot", AlbumComplete: nonemptyText(c.AlbumTitle),
 					PositionVerified: completeLocalPosition(c, record.ReleaseSnapshot), CreditRelations: candidateCreditRelations(c, origin+":snapshot")}})
 		}
+		if release := record.ReleaseSnapshot; release != nil && release.Tracklist.State == domain.Value {
+			for i, entry := range release.Tracklist.Value {
+				if entry.Track.State != domain.Value || entry.Track.Value != *record.TrackIdentity {
+					continue
+				}
+				// A position from the same release is a separate coherent source
+				// view, not a bag of fields used to fill a sparse track snapshot.
+				track := &domain.TrackSnapshot{Identity: entry.Track.Value, Release: &release.Identity,
+					Title: entry.Title, Credit: entry.Credit, DurationMS: entry.DurationMS,
+					Recording: entry.Recording, Identifiers: entry.Identifiers,
+					DiscNumber: domain.Known(entry.DiscNumber), TrackNumber: domain.Known(entry.TrackNumber)}
+				c := SnapshotCandidate(track, release)
+				source := fmt.Sprintf("%s:tracklist:%d", origin, i)
+				add(CandidateFact{Kind: "tracklist", LocalTrackID: record.TrackID,
+					TrackRevision: record.TrackRevision, ReleaseRevision: record.ReleaseSnapshotRevision,
+					Track: track, Release: release, Metadata: MetadataFacts{Candidate: c, Source: source,
+						AlbumComplete: nonemptyText(c.AlbumTitle), PositionVerified: completeLocalPosition(c, release),
+						CreditRelations: candidateCreditRelations(c, source)}})
+			}
+		}
+		target := &out.Targets[indices[*record.TrackIdentity]]
+		target.Issues = append(target.Issues, record.Issues...)
 	}
 	for i := range out.Targets {
 		target := &out.Targets[i]
 		// Always re-read ownership; recalled IDs/revisions are evidence, not a
 		// substitute for the current exact binding check (which can fail).
 		target.Ownership, _ = ResolveLocal(lookup, sources, target.Facts[0].Metadata.Candidate)
+		for _, fact := range target.Facts {
+			if fact.Kind == "current" && (target.Ownership.State != OwnershipOwned || target.Ownership.TrackID != fact.LocalTrackID ||
+				target.Ownership.Revision != fact.TrackRevision || target.Ownership.ReleaseRevision != fact.ReleaseRevision) {
+				target.Issues = append(target.Issues, DecisionReason{Code: "stale_local_facts", Detail: fact.Metadata.Source})
+			}
+		}
 		for _, conflict := range target.Conflicts {
 			if conflict.Field == "release" {
 				target.Ownership = LocalMatch{State: OwnershipConflict, Identity: target.Identity, Reason: "candidate_release_conflict"}
@@ -130,6 +164,24 @@ func (t CandidateTarget) Check(input InputProfile) TargetEvidence {
 	eligible, unresolved := false, false
 	for _, fact := range t.Facts {
 		evidence := CheckMetadataEvidence(input, fact.Metadata)
+		if fact.Kind == "current" && evidence.Eligibility == MetadataEligible {
+			// Display renames can explain names, not override explicit source
+			// versions, roles, positions or durations. Do not fill missing
+			// current fields with source values to make this facet eligible.
+			for _, other := range t.Facts {
+				if other.Kind == "current" {
+					continue
+				}
+				constraints := CheckMetadataEvidence(input, other.Metadata)
+				for _, reason := range constraints.Reasons {
+					switch reason.Code {
+					case "different_qualifier", "different_credit_members", "different_credit_role", "position_conflict", "duration_conflict":
+						evidence.Eligibility = MetadataUnresolved
+						evidence.Reasons = append(evidence.Reasons, DecisionReason{Code: "current_cannot_override_source_constraint", Field: reason.Field, Detail: other.Metadata.Source})
+					}
+				}
+			}
+		}
 		out.Facets = append(out.Facets, evidence)
 		eligible = eligible || evidence.Eligibility == MetadataEligible
 		unresolved = unresolved || evidence.Eligibility == MetadataUnresolved
@@ -144,6 +196,10 @@ func (t CandidateTarget) Check(input InputProfile) TargetEvidence {
 		for _, conflict := range t.Conflicts {
 			out.Reasons = append(out.Reasons, DecisionReason{Code: "candidate_fact_conflict", Field: conflict.Field, Detail: conflict.LeftSource + " <> " + conflict.RightSource})
 		}
+	}
+	if len(t.Issues) > 0 {
+		out.Eligibility = MetadataUnresolved
+		out.Reasons = append(out.Reasons, t.Issues...)
 	}
 	if t.Identity.State != IdentityExact || t.Ownership.State == OwnershipConflict || t.Ownership.State == OwnershipError {
 		out.Eligibility = MetadataUnresolved
@@ -165,6 +221,23 @@ func compareCandidateFacts(a, b CandidateFact) []FactConflict {
 	// is evaluated separately, and cannot fill holes in the source view.
 	if a.Kind == "current" || b.Kind == "current" {
 		return out
+	}
+	for _, field := range []struct {
+		name        string
+		left, right bool
+	}{
+		{"title", factExplicitEmpty(a, "title") && nonemptyText(right.Title), factExplicitEmpty(b, "title") && nonemptyText(left.Title)},
+		{"artist", factExplicitEmpty(a, "artist") && nonemptyText(right.ArtistName), factExplicitEmpty(b, "artist") && nonemptyText(left.ArtistName)},
+		{"album", factExplicitEmpty(a, "album") && nonemptyText(right.AlbumTitle), factExplicitEmpty(b, "album") && nonemptyText(left.AlbumTitle)},
+		{"disc", factExplicitEmpty(a, "disc") && positive(right.DiscNumber), factExplicitEmpty(b, "disc") && positive(left.DiscNumber)},
+		{"track", factExplicitEmpty(a, "track") && positive(right.TrackNumber), factExplicitEmpty(b, "track") && positive(left.TrackNumber)},
+		{"duration", factExplicitEmpty(a, "duration") && positive(right.DurationMS), factExplicitEmpty(b, "duration") && positive(left.DurationMS)},
+	} {
+		if field.left {
+			add(field.name, "explicit_empty", "value")
+		} else if field.right {
+			add(field.name, "value", "explicit_empty")
+		}
 	}
 	for _, field := range []struct {
 		name        MetadataField
@@ -209,7 +282,29 @@ func compareCandidateFacts(a, b CandidateFact) []FactConflict {
 	return out
 }
 
-func nonemptyText(p *string) bool { return p != nil && *p != "" }
+func factExplicitEmpty(f CandidateFact, field string) bool {
+	if field == "album" {
+		return f.Release != nil && f.Release.Title.State == domain.Empty
+	}
+	if f.Track == nil {
+		return false
+	}
+	switch field {
+	case "title":
+		return f.Track.Title.State == domain.Empty
+	case "artist":
+		return f.Track.Credit.State == domain.Empty
+	case "disc":
+		return f.Track.DiscNumber.State == domain.Empty
+	case "track":
+		return f.Track.TrackNumber.State == domain.Empty
+	case "duration":
+		return f.Track.DurationMS.State == domain.Empty
+	}
+	return false
+}
+
+func nonemptyText(p *string) bool { return p != nil && strings.TrimSpace(*p) != "" }
 func positive(p *int) bool        { return p != nil && *p > 0 }
 func snapshotValue[T any](f domain.Field[T]) *T {
 	if f.State != domain.Value {
@@ -275,6 +370,19 @@ func candidateCreditRelations(c provider.Candidate, source string) []CreditRelat
 		return nil
 	}
 	return []CreditRelation{{Kind: "release_credit", From: *c.AlbumCredit, To: *c.ArtistName, Source: source}}
+}
+
+func validateLocalFacts(record LocalRecord) LocalRecord {
+	if t := record.TrackSnapshot; t != nil && (t.Identity != *record.TrackIdentity ||
+		(t.Release != nil && *t.Release != *record.ReleaseIdentity)) {
+		record.TrackSnapshot = nil
+		record.Issues = append(record.Issues, DecisionReason{Code: "stale_track_snapshot"})
+	}
+	if r := record.ReleaseSnapshot; r != nil && r.Identity != *record.ReleaseIdentity {
+		record.ReleaseSnapshot = nil
+		record.Issues = append(record.Issues, DecisionReason{Code: "stale_release_snapshot"})
+	}
+	return record
 }
 
 func currentPositionVerified(record LocalRecord) bool {

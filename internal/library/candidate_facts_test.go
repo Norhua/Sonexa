@@ -11,6 +11,8 @@ import (
 	"github.com/norhua/sonexa/internal/store"
 )
 
+func ptr[T any](value T) *T { return &value }
+
 func factFixture(t *testing.T) (*Service, *store.Store, int64, provider.Candidate) {
 	t.Helper()
 	s, st, _ := newTestService(t)
@@ -43,7 +45,7 @@ func TestCandidateFactsUnifiesExactTargetWithoutOverwritingUserValues(t *testing
 		t.Fatal(pool)
 	}
 	target := pool.Targets[0]
-	if target.Identity.Track.Ref != "track" || target.Ownership.State != matching.OwnershipOwned || target.Ownership.TrackID != id || len(target.Facts) != 3 || len(target.Conflicts) != 0 {
+	if target.Identity.Track.Ref != "track" || target.Ownership.State != matching.OwnershipOwned || target.Ownership.TrackID != id || len(target.Facts) != 4 || len(target.Conflicts) != 0 {
 		t.Fatal(target)
 	}
 	if result := target.Check(input); result.Eligibility != matching.MetadataEligible {
@@ -70,6 +72,28 @@ func TestCandidateFactsUnifiesExactTargetWithoutOverwritingUserValues(t *testing
 	localOnly, err := s.CandidateFacts(context.Background(), input, nil)
 	if err != nil || len(localOnly.Targets) != 1 || localOnly.Targets[0].Check(input).Eligibility != matching.MetadataEligible {
 		t.Fatal(localOnly, err)
+	}
+}
+
+func TestCandidateFactsReadsExactBindingEvenWithoutAnyTextRecall(t *testing.T) {
+	s, st, id, remote := factFixture(t)
+	remote.Title, remote.ArtistName, remote.AlbumTitle = ptr("不相交曲名"), ptr("不相交署名"), ptr("不相交专辑")
+	input := matching.NewInputProfile(*remote.Title, *remote.ArtistName, *remote.AlbumTitle)
+	local, err := st.RecallLocal(context.Background(), []matching.InputProfile{input}, 100)
+	if err != nil || len(local[0].Records) != 0 {
+		t.Fatal("fixture must not be recalled by text", local, err)
+	}
+	pool, err := s.CandidateFacts(context.Background(), input, []provider.Candidate{remote})
+	if err != nil || len(pool.Targets) != 1 || len(pool.Targets[0].Facts) != 4 {
+		t.Fatal(pool, err)
+	}
+	target := pool.Targets[0]
+	if target.Ownership.TrackID != id || len(target.Conflicts) == 0 || target.Check(input).Eligibility != matching.MetadataUnresolved {
+		t.Fatal("missing exact local facts concealed conflicts", target)
+	}
+	rows, err := st.ReadLocalFacts(context.Background(), []domain.Identity{{Provider: "test", Ref: "track"}, {Provider: "other", Ref: "track"}, {Provider: "test", Ref: "track"}})
+	if err != nil || len(rows) != 1 || rows[0].TrackID != id {
+		t.Fatal("exact lookup conflated identities or duplicated rows", rows, err)
 	}
 }
 

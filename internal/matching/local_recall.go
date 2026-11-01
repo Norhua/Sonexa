@@ -13,6 +13,10 @@ type LocalRecall interface {
 	RecallLocal(context.Context, []InputProfile, int) ([]LocalRecallResult, error)
 }
 
+type LocalFactLookup interface {
+	ReadLocalFacts(context.Context, []domain.Identity) ([]LocalRecord, error)
+}
+
 type LocalRecallResult struct {
 	Records   []LocalRecord
 	Truncated bool

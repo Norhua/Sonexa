@@ -13,6 +13,49 @@ import (
 )
 
 var _ matching.LocalRecall = (*Store)(nil)
+var _ matching.LocalFactLookup = (*Store)(nil)
+
+// ReadLocalFacts complements text recall with exact identities already supplied
+// by a source. It neither resolves identity nor assigns ownership. Both fact
+// reads and binding lookup share a transaction, independent of display limits.
+func (s *Store) ReadLocalFacts(ctx context.Context, identities []domain.Identity) ([]matching.LocalRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	out := []matching.LocalRecord{}
+	if len(identities) == 0 {
+		return out, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	seen := map[domain.Identity]bool{}
+	for _, identity := range identities {
+		if seen[identity] || identity.Provider == "" || identity.Ref == "" {
+			continue
+		}
+		seen[identity] = true
+		var id int64
+		err := tx.QueryRowContext(ctx, "SELECT id FROM track WHERE match_source=? AND match_ref=?", identity.Provider, identity.Ref).Scan(&id)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		record, err := readLocalRecordTx(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, record)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 // RecallLocal reads a bounded candidate pool for each input, independent of the
 // UI's ListTracks cap. Keys are only a blocking index; full facts stay separate.
