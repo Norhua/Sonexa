@@ -3,6 +3,7 @@ package covers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/png"
 	"net/http"
@@ -85,38 +86,72 @@ func TestAdoptFromLadderFallsBack(t *testing.T) {
 // 滚出视口且尚未开始的任务被取消。
 func TestCancelOutOfView(t *testing.T) {
 	release := make(chan struct{})
-	var started int32
+	visibleStarted := make(chan struct{}, 1)
+	var started atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&started, 1)
+		started.Add(1)
+		if r.URL.Path == "/a" {
+			visibleStarted <- struct{}{}
+		}
 		<-release // 阻塞住，模拟慢请求
 		w.Write(jpegBytes())
 	}))
 	defer srv.Close()
-	defer close(release)
 
-	// 并发 1：第一个任务占住槽位，其余排队
+	// 并发 1：第一个任务占住槽位，其余排队。
 	pool := NewPool(newTestCache(t), 1, "test")
-
-	go pool.Fetch(context.Background(), Fetcher{Key: "visible", URLs: []string{srv.URL + "/a"}})
-	time.Sleep(50 * time.Millisecond)
+	defer pool.Close() // 等待所有工作结束后，testing 才清理缓存目录。
+	visibleDone := make(chan error, 1)
+	go func() {
+		_, err := pool.Fetch(context.Background(), Fetcher{Key: "visible", URLs: []string{srv.URL + "/a"}})
+		visibleDone <- err
+	}()
+	defer func() {
+		close(release)
+		select {
+		case err := <-visibleDone:
+			if err != nil {
+				t.Errorf("仍在视口内的任务应成功写盘: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("仍在视口内的任务未完成")
+		}
+	}()
+	select {
+	case <-visibleStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("可见任务未开始")
+	}
 
 	done := make(chan error, 1)
 	go func() {
 		_, err := pool.Fetch(context.Background(), Fetcher{Key: "scrolled-away", URLs: []string{srv.URL + "/b"}})
 		done <- err
 	}()
-	time.Sleep(50 * time.Millisecond)
+	// 等待排队登记，不靠固定 sleep 猜测调度顺序。
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for pool.InflightCount() != 2 {
+		select {
+		case <-tick.C:
+		case <-deadline.C:
+			t.Fatal("第二个任务未进入等待队列")
+		}
+	}
 
-	// 用户快速滚动：只有 visible 还在视口内
 	pool.CancelAllExcept(map[string]bool{"visible": true})
-
 	select {
 	case err := <-done:
-		if err == nil {
-			t.Error("滚出视口的任务应被取消")
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("滚出视口的任务应被取消: %v", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Error("滚出视口的任务未被取消")
+	}
+	if started.Load() != 1 {
+		t.Errorf("被取消的排队任务不应发出请求: %d", started.Load())
 	}
 }
 

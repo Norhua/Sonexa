@@ -1,5 +1,16 @@
-import { test, expect, type Page } from './fixtures'
+import { test, expect, type Page, type Locator } from './fixtures'
 import { fileURLToPath } from 'node:url'
+
+async function expectPreviewTarget(page: Page, image: Locator, variantId: number, source: string) {
+  const searchId = await page.evaluate(source => (window as any).__coverGridSearchIds[source] as string, source)
+  expect(searchId).toBeTruthy()
+  await expect.poll(async () => {
+    const src = await image.getAttribute('src')
+    if (!src) return null
+    const url = new URL(src, page.url())
+    return { path: url.pathname, variantId: url.searchParams.get('variantId'), searchId: url.searchParams.get('searchId') }
+  }).toEqual({ path: '/cover', variantId: String(variantId), searchId })
+}
 
 async function openSearch(page: Page) {
   await page.locator('.track-list [data-row-key]').first().locator('td').last().dblclick()
@@ -17,6 +28,7 @@ test.beforeEach(async ({ page }) => {
     api.GetTrackDetail = async (id: number) => { const d = await detail(id); return { ...d, track: { ...d.track, releaseId: 20 } } }
     api.StartCoverSearch = async (request: any) => {
       const source = request.sources[0]
+      ;((window as any).__coverGridSearchIds ??= {})[source] = request.searchId
       const card = (id: number, type: string, variants: any[]) => ({ source, sourceRef: 'album', image: { id, title: `${source} ${type}`, artist: '测试艺术家', primaryType: type, variants } })
       const cards = source === 'caa' ? [
         card(1, 'Front', [{ id: 12, spec: '1200' }, { id: 11, spec: '250' }, { id: 13, spec: 'original' }]),
@@ -50,8 +62,8 @@ test('image12 badges, smallest-only previews, dimensions, separate images and ex
   const qq = view.locator('article').filter({ hasText: 'qq Front' })
   await expect(back).toContainText('原图·尺寸未知')
   await expect(qq).toContainText('800px·待验证')
-  await expect(itunes.locator('img')).toHaveAttribute('src', /variantId=32$/)
-  await expect(front.locator('img')).toHaveAttribute('src', /variantId=11$/)
+  await expectPreviewTarget(page, itunes.locator('img'), 32, 'itunes')
+  await expectPreviewTarget(page, front.locator('img'), 11, 'caa')
   await expect.poll(() => requests.length).toBe(4)
   expect([...requests].sort((a, b) => a - b)).toEqual([11, 21, 32, 41])
   await page.screenshot({ path: info.outputPath('cover-specs-pending.png') })
@@ -67,7 +79,7 @@ test('image12 badges, smallest-only previews, dimensions, separate images and ex
     await page.screenshot({ path: info.outputPath(`image12-grid-${dark ? 'dark' : 'light'}.png`), animations: 'disabled' })
   }
   await front.getByRole('button', { name: '1200px', exact: true }).click()
-  await expect(front.locator('img')).toHaveAttribute('src', /variantId=12$/)
+  await expectPreviewTarget(page, front.locator('img'), 12, 'caa')
   await expect(front.locator('span').filter({ hasText: /^600×400$/ })).toBeVisible()
   await front.getByRole('button', { name: '查看大图', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '封面预览', exact: true })
