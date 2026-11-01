@@ -1,11 +1,32 @@
-# 实施交接：4.1 完成，从 4.2 继续
+# 实施交接：4.1 完成，4.2 测试编译阻塞
 
 ## 当前状态
 
 - 变更：`fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
-- `tasks.md` 已完成 1.1–1.7、2.1–2.5、3.1–3.6、4.1，共 **19/48**；CLI 已确认 4.1 完成，下一项 4.2。
+- `tasks.md` 已完成 1.1–1.7、2.1–2.5、3.1–3.6、4.1，共 **19/48**；CLI 已确认 4.1 完成。4.2 有未验证代码，保持未勾选。
 - 本文件只记录实施与验证事实，不替代规划文件、10 个增量规格或 CLI 任务完成标准。
 - 未同步主规格、未归档、未访问真实来源，未修改或清理用户应用数据。测试使用临时 SQLite、fixture 和浏览器替身。
+
+## 4.2 当前阻塞（未完成）
+
+4.1 已提交为 `47ed362`。继续 4.2 后新增：
+
+- `internal/matching/candidate_pool.go`：按来源检查的精确 track 聚合同一目标，保留 remote/current/snapshot 各视图、来源修订、冲突明细和独立输入证据；无绑定记录另放 Related。目标所有权重新走 `ResolveLocal`，不同发行声明明确冲突。
+- `internal/library/candidate_facts.go`：`CandidateFacts` 连接 store 本地召回与 matching 事实池，尚未接 Runner 自动选版。
+- `internal/library/candidate_facts_test.go`：用户改名、有效快照、本地/远程同身份、同录音另一 track、无绑定提示、不同字段冲突及禁止拼接互补字段的初始测试。
+
+首轮命令：
+
+```sh
+gofmt -w internal/matching/candidate_pool.go internal/library/candidate_facts.go internal/library/candidate_facts_test.go
+go test ./internal/matching ./internal/library -count=1
+```
+
+**结果：matching 通过，library 测试编译失败**。新测试多处调用不存在的 `ptr`（如第 18 行）；本包只有 `ptrField`，尚未补通用测试指针辅助函数。候选事实测试没有运行，不能宣称行为正确。按工作流遇错暂停，等待用户确认继续。
+
+下一步先修测试辅助函数并执行新测试，然后完整审查事实池：有效快照断言、当前值与来源字段/位置不能相互补齐制造资格、角色/CV/合作及发行限定冲突、可靠异写正例、同来源不同发行/不同来源同 ID、拥有查询错误/删除/换绑、截断保持、输入对象不被修改。当前已有断言不代表这些全部完成。4.2 说明、最终回归与勾选均未完成；4.3 未开始。
+
+下述 4.1 回归仅对应 `47ed362`，不能视为 4.2 未完成检查点全绿。
 
 ## 4.1 已完成
 
@@ -116,4 +137,4 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 - Wails 绑定、dist、node_modules、测试产物均被忽略。
 - 旧编辑器测试基线位于 `tmp/harness/identity-35-baseline-YM4EZk`（忽略目录，不是工作树），没有切换或重置当前仓库。
 
-阶段提交：`5ba0b3c`（3.1）、`981ba20`（3.2）、`8cea84e`（3.3）、`ecff4cb`（3.4）、`4e912d5`（3.5）、`7f7a5c6`（3.6 未完成检查点）、`ca32fcf`（3.6 完成）、`6e09c02`（4.1 未完成检查点）。4.1 完成提交以 `git log` 为准。
+阶段提交：`5ba0b3c`（3.1）、`981ba20`（3.2）、`8cea84e`（3.3）、`ecff4cb`（3.4）、`4e912d5`（3.5）、`7f7a5c6`（3.6 未完成检查点）、`ca32fcf`（3.6 完成）、`6e09c02`（4.1 未完成检查点）、`47ed362`（4.1 完成）。4.2 未完成检查点以 `git log` 为准。
