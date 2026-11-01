@@ -129,21 +129,7 @@ func syncProblemItemTx(tx *sql.Tx, itemID int64, supplied *matching.ProblemInput
 		}
 	}
 	if problemID == 0 {
-		anchor, proof := matching.NewProblemAnchor(input)
-		anchorJSON, err := json.Marshal(anchor)
-		if err != nil {
-			return err
-		}
-		proofJSON, err := json.Marshal(proof)
-		if err != nil {
-			return err
-		}
-		now := time.Now().UTC()
-		result, err := tx.Exec("INSERT INTO review_problem(rule_version,anchor_json,proof_json,created_at,updated_at) VALUES(?,?,?,?,?)", matching.MetadataRuleVersion, string(anchorJSON), string(proofJSON), now, now)
-		if err != nil {
-			return err
-		}
-		problemID, err = result.LastInsertId()
+		problemID, err = createProblemTx(tx, input, false)
 		if err != nil {
 			return err
 		}
@@ -159,7 +145,30 @@ func syncProblemItemTx(tx *sql.Tx, itemID int64, supplied *matching.ProblemInput
 	return rebuildProblemTx(tx, problemID)
 }
 
+func createProblemTx(tx *sql.Tx, input matching.ProblemInput, isolated bool) (int64, error) {
+	anchor, proof := matching.NewProblemAnchor(input)
+	anchor.Isolated = isolated
+	anchorJSON, err := json.Marshal(anchor)
+	if err != nil {
+		return 0, err
+	}
+	proofJSON, err := json.Marshal(proof)
+	if err != nil {
+		return 0, err
+	}
+	now := time.Now().UTC()
+	result, err := tx.Exec("INSERT INTO review_problem(rule_version,anchor_json,proof_json,created_at,updated_at) VALUES(?,?,?,?,?)", matching.MetadataRuleVersion, string(anchorJSON), string(proofJSON), now, now)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
 func currentProblemAnchorTx(tx *sql.Tx, problemID int64) (*matching.ProblemAnchor, error) {
+	var isolated bool
+	if err := tx.QueryRow("SELECT COALESCE(json_extract(anchor_json,'$.isolated'),0) FROM review_problem WHERE id=? AND status='active'", problemID).Scan(&isolated); err != nil {
+		return nil, err
+	}
 	rows, err := tx.Query(`SELECT m.proof_json,m.input_revision,i.revision,i.status FROM review_problem_item m
  JOIN import_item i ON i.id=m.item_id WHERE m.problem_id=? AND m.active=1 ORDER BY m.item_id`, problemID)
 	if err != nil {
@@ -194,6 +203,7 @@ func currentProblemAnchorTx(tx *sql.Tx, problemID int64) (*matching.ProblemAncho
 		return nil, nil
 	}
 	anchor, _ := matching.NewProblemAnchor(inputs...)
+	anchor.Isolated = isolated
 	return &anchor, nil
 }
 

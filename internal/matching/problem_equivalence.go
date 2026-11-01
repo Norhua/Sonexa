@@ -46,6 +46,7 @@ type ProblemRecallKey struct {
 // transitive closure of pairwise compatibility. These are active-work facts.
 type ProblemAnchor struct {
 	Version    int                `json:"version"`
+	Isolated   bool               `json:"isolated,omitempty"` // explicit current-work split, never a historical identity rule
 	Inputs     []ProblemInput     `json:"inputs"`
 	RecallKeys []ProblemRecallKey `json:"recallKeys"`
 }
@@ -55,7 +56,7 @@ func NewProblemAnchor(inputs ...ProblemInput) (ProblemAnchor, ProblemProof) {
 }
 
 func ExtendProblemAnchor(anchor ProblemAnchor, input ProblemInput) (ProblemAnchor, ProblemProof, bool) {
-	if anchor.Version != ProblemProofVersion || len(anchor.Inputs) == 0 {
+	if anchor.Version != ProblemProofVersion || anchor.Isolated || len(anchor.Inputs) == 0 {
 		return ProblemAnchor{}, ProblemProof{}, false
 	}
 	inputs := append(append([]ProblemInput(nil), anchor.Inputs...), input)
