@@ -28,12 +28,19 @@ type PlanSeedView struct {
 	MoveReleaseID int64            `json:"moveReleaseId"`
 	MergeTargetID int64            `json:"mergeTargetId"`
 }
+type CandidateResolutionView struct {
+	State      string         `json:"state"`
+	Reason     string         `json:"reason"`
+	Candidates []CandidateRow `json:"candidates"`
+}
+
 type AdmissionPlanView struct {
-	ID        string                   `json:"id"`
-	Hash      string                   `json:"hash"`
-	ExpiresAt string                   `json:"expiresAt"`
-	Baseline  domain.AdmissionBaseline `json:"baseline"`
-	Seed      PlanSeedView             `json:"seed"`
+	Resolution *CandidateResolutionView `json:"resolution,omitempty"`
+	ID         string                   `json:"id"`
+	Hash       string                   `json:"hash"`
+	ExpiresAt  string                   `json:"expiresAt"`
+	Baseline   domain.AdmissionBaseline `json:"baseline"`
+	Seed       PlanSeedView             `json:"seed"`
 }
 
 func admissionView(plan *domain.AdmissionPlan, err error) (*AdmissionPlanView, error) {

@@ -83,12 +83,12 @@ func TestEditorLayerCountsAndEmptyLocalTrack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.MatchRef = "two"
+	c.MatchRef = fixtureMBID("two")
 	if _, err := a.AddToLibrary(rowFrom(matching.ScoredCandidate{Candidate: c})); err != nil {
 		t.Fatal(err)
 	}
-	c.MatchRef = "other"
-	c.ReleaseRef = strPtrOrNil("other-release")
+	c.MatchRef = fixtureMBID("other")
+	c.ReleaseRef = strPtrOrNil(fixtureMBID("other-release"))
 	plan, err := a.PrepareAdmission(rowFrom(matching.ScoredCandidate{Candidate: c}), 0)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestEditorBindingAndSharedImpactRemainDraftOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.MatchRef = "second"
+	c.MatchRef = fixtureMBID("second")
 	second, err := a.AddToLibrary(rowFrom(matching.ScoredCandidate{Candidate: c}))
 	if err != nil {
 		t.Fatal(err)
@@ -207,8 +207,8 @@ func TestEditorSingleTrackStillPreviewsAdmissionAndProtectsExistingTarget(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.MatchRef = "target-song"
-	c.ReleaseRef = strPtrOrNil("target-release")
+	c.MatchRef = fixtureMBID("target-song")
+	c.ReleaseRef = strPtrOrNil(fixtureMBID("target-release"))
 	preview, err := a.PreviewEditCandidate(rowFrom(matching.ScoredCandidate{Candidate: c}))
 	if err != nil {
 		t.Fatal(err)

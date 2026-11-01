@@ -16,7 +16,7 @@ func TestEditSaveLocalMigrationIsAtomicAndSelectedOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.MatchRef = "save-second"
+	c.MatchRef = fixtureMBID("save-second")
 	second, err := a.AddToLibrary(rowFrom(matching.ScoredCandidate{Candidate: c}))
 	if err != nil {
 		t.Fatal(err)

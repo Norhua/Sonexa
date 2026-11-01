@@ -14,7 +14,7 @@ func TestAppAdmissionCannotBypassExtraReleaseConfirmation(t *testing.T) {
 	defer cleanup()
 	a := fullCandidate("a1")
 	b := fullCandidate("b1")
-	firstRef, secondRef := "release-a", "release-b"
+	firstRef, secondRef := fixtureMBID("release-a"), fixtureMBID("release-b")
 	a.ReleaseRef = &firstRef
 	b.ReleaseRef = &secondRef
 	artist := "Album Artist"
@@ -54,7 +54,7 @@ func TestLegacyAdmissionBindingsEnforcePlanAndAtomicQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := fullCandidate("next")
-	next.ReleaseRef = strPtrOrNil("next-release")
+	next.ReleaseRef = strPtrOrNil(fixtureMBID("next-release"))
 	row := rowFrom(matching.ScoredCandidate{Candidate: next})
 	itemID := enqueueOneItem(t, a, "原曲名", "原署名", "原专辑")
 	for _, call := range []func() (int64, error){func() (int64, error) { return a.AddToLibrary(row) }, func() (int64, error) { return a.AcceptCandidate(itemID, row) }} {
@@ -88,7 +88,7 @@ func TestLegacyAdmissionBindingsEnforcePlanAndAtomicQueue(t *testing.T) {
 	if item.Status.IsTerminal() {
 		t.Fatal("事务失败改变条目")
 	}
-	if rel, _ := a.store.GetReleaseByRef("musicbrainz", "next-release"); rel != nil {
+	if rel, _ := a.store.GetReleaseByRef("musicbrainz", fixtureMBID("next-release")); rel != nil {
 		t.Fatal("事务失败留下发行")
 	}
 	if _, err := a.store.DB().Exec("DROP TRIGGER fail_accept"); err != nil {

@@ -17,9 +17,9 @@ import (
 // candidateRow 是一条带完整身份的 MusicBrainz 候选，形如搜索响应展开后的那种。
 func candidateRow() CandidateRow {
 	title, artist, album := "God knows...", "平野綾", "涼宮ハルヒの詰合"
-	release, group, recording := "rel-haruhi", "rg-haruhi", "rec-haruhi"
+	release, group, recording := fixtureMBID("rel-haruhi"), fixtureMBID("rg-haruhi"), fixtureMBID("rec-haruhi")
 	return CandidateRow{
-		Provider: "musicbrainz", MatchRef: "trk-haruhi",
+		Provider: "musicbrainz", MatchRef: fixtureMBID("trk-haruhi"),
 		Title: &title, Artist: &artist, Album: &album,
 		ReleaseRef: &release, ReleaseGroupRef: &group, RecordingRef: &recording,
 	}
@@ -67,7 +67,7 @@ func TestAcceptCandidateIssuesNoRequest(t *testing.T) {
 	if len(targets) != 1 || targets[0].TrackID != trackID {
 		t.Fatalf("工作集 = %+v, 期望恰好含刚接受的那条", targets)
 	}
-	if targets[0].ReleaseRef != "rel-haruhi" || targets[0].Provider != "musicbrainz" {
+	if targets[0].ReleaseRef != fixtureMBID("rel-haruhi") || targets[0].Provider != "musicbrainz" {
 		t.Errorf("工作集缺少取详情所需的来源: %+v", targets[0])
 	}
 }

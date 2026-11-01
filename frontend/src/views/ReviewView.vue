@@ -239,7 +239,17 @@ function accept(row: Models.app.CandidateRow) {
     return
   }
   const itemId = current.value.id
-  void act(async () => (await admission.run(() => App.PrepareAdmission(row, itemId))) !== null)
+  void act(async () => {
+    const result = await admission.run(() => App.PrepareAdmission(row, itemId))
+    if (admission.resolution && current.value?.id === itemId) {
+      researchRequest++
+      queueInvalidation++
+      current.value.candidates = admission.resolution.candidates
+      expanded.value = true
+      error.value = '目标有多个位置或资料不足，请选择具体曲目位置'
+    }
+    return result !== null
+  })
 }
 
 function noMatchNeeded() {

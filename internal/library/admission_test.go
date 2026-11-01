@@ -11,6 +11,7 @@ import (
 
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/provider/musicbrainz"
 	"github.com/norhua/sonexa/internal/store"
 )
 
@@ -25,7 +26,10 @@ func newTestService(t *testing.T) (*Service, *store.Store, *testClock) {
 	}
 	t.Cleanup(func() { st.Close() })
 	clock := &testClock{now: time.Now()}
-	svc, err := New(provider.NewRegistry(), st, nil, clock)
+	registry := provider.NewRegistry()
+	registry.Register(&summaryProvider{})
+	registry.Register(&musicbrainz.Provider{})
+	svc, err := New(registry, st, nil, clock)
 	if err != nil {
 		t.Fatal(err)
 	}

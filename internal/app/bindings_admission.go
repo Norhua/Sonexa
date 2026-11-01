@@ -1,11 +1,13 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/norhua/sonexa/internal/covers"
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/library"
+	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 )
 
@@ -44,7 +46,43 @@ func (a *App) PrepareAdmission(row CandidateRow, itemID int64) (*AdmissionPlanVi
 	if err != nil {
 		return nil, err
 	}
-	return admissionView(service.PrepareCandidate(a.ctx, row.toCandidate(), itemID))
+	ctx := provider.WithRequestGate(a.ctx, func() error {
+		if gate := a.CheckOutbound(); !gate.Allowed {
+			return fmt.Errorf("%s", gate.Reason)
+		}
+		return nil
+	})
+	plan, err := service.PrepareCandidate(ctx, row.toCandidate(), itemID)
+	var unresolved *library.TargetResolutionError
+	if errors.As(err, &unresolved) && len(unresolved.Resolution.Candidates) > 0 {
+		scored := make([]matching.ScoredCandidate, 0, len(unresolved.Resolution.Candidates))
+		for _, c := range unresolved.Resolution.Candidates {
+			scored = append(scored, matching.ScoredCandidate{Candidate: c, Score: matching.Score{Total: row.Confidence}})
+		}
+		action := "接受"
+		if itemID == 0 {
+			action = "加入曲库"
+		}
+		rows := a.rowsFrom(scored, action)
+		for i := range rows {
+			position := ""
+			if rows[i].DiscNumber != nil {
+				position = fmt.Sprintf("第 %d 碟", *rows[i].DiscNumber)
+			}
+			if rows[i].TrackNumber != nil {
+				if position != "" {
+					position += " · "
+				}
+				position += fmt.Sprintf("第 %d 轨", *rows[i].TrackNumber)
+			}
+			if rows[i].Note != "" && position != "" {
+				rows[i].Note += " · "
+			}
+			rows[i].Note += position
+		}
+		return &AdmissionPlanView{Resolution: &CandidateResolutionView{State: string(unresolved.Resolution.State), Reason: unresolved.Resolution.Reason, Candidates: rows}}, nil
+	}
+	return admissionView(plan, err)
 }
 func (a *App) ConfirmReleaseAdditions(planID, hash string) (*domain.AdmissionApproval, error) {
 	service, err := a.libraryService()
@@ -147,6 +185,9 @@ func (a *App) PrepareNoMatchNeeded(itemID int64) (*AdmissionPlanView, error) {
 	return a.prepareLocalAdmission(LocalAdmissionInput{Title: item.InTitle, Artist: item.InArtist, Album: item.InAlbum, Year: item.InYear, DiscNumber: item.InDiscNo, TrackNumber: item.InTrackNo}, itemID)
 }
 func (a *App) commitUnconfirmedAdmission(plan *AdmissionPlanView) (int64, error) {
+	if plan == nil || plan.Resolution != nil {
+		return 0, fmt.Errorf("目标存在多个位置或资料不足，请选择具体 track")
+	}
 	result, err := a.CommitAdmission(plan.ID, plan.Hash, domain.AdmissionApproval{})
 	if err != nil {
 		return 0, err

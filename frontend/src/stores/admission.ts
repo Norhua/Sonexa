@@ -9,6 +9,13 @@ export const useAdmissionStore = defineStore('admission', () => {
   const plan = ref<Plan | null>(null)
   const busy = ref(false)
   const error = ref('')
+  const resolution = ref<Models.app.CandidateResolutionView | null>(null)
+  function takeResolution(next: Plan) {
+    if (!next.resolution) return false
+    resolution.value = next.resolution
+    finish(null)
+    return true
+  }
   let prepare: (() => Promise<Plan>) | null = null
   let settle: ((result: Result | null) => void) | null = null
   let generation = 0
@@ -23,9 +30,10 @@ export const useAdmissionStore = defineStore('admission', () => {
   async function run(next: () => Promise<Plan>, commit = App.CommitAdmission): Promise<Result | null> {
     if (busy.value || plan.value) throw new Error('请先完成当前入库确认')
     commitPlan = commit
-    busy.value = true; error.value = ''
+    busy.value = true; error.value = ''; resolution.value = null
     try {
       const first = await next()
+      if (takeResolution(first)) return null
       if (!first.baseline.conflict && !first.baseline.requiresConfirmation) {
         try { return await commitPlan(first.id, first.hash, {} as Models.domain.AdmissionApproval) }
         catch (e) { error.value = String(e) }
@@ -39,7 +47,7 @@ export const useAdmissionStore = defineStore('admission', () => {
     if (!prepare || busy.value) return
     const owner = ++generation
     busy.value = true; error.value = ''
-    try { const next = await prepare(); if (owner === generation) plan.value = next }
+    try { const next = await prepare(); if (owner === generation && !takeResolution(next)) plan.value = next }
     catch (e) { if (owner === generation) error.value = String(e) }
     finally { if (owner === generation) busy.value = false }
   }
@@ -62,5 +70,5 @@ export const useAdmissionStore = defineStore('admission', () => {
     } catch (e) { error.value = String(e); busy.value = false }
   }
   function cancel() { if (!busy.value) finish(null) }
-  return { plan, busy, error, run, refresh, merge, confirm, cancel }
+  return { plan, busy, error, resolution, run, refresh, merge, confirm, cancel }
 })

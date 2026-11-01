@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ func fullCandidate(ref string) provider.Candidate {
 	s := func(v string) *string { return &v }
 	i := func(v int) *int { return &v }
 	return provider.Candidate{
-		Provider: provider.MusicBrainz, MatchRef: ref,
+		Provider: provider.MusicBrainz, MatchRef: fixtureMBID(ref),
 		Title: s("God knows..."), ArtistName: s("平野綾"), AlbumTitle: s("涼宮ハルヒの詰合"), AlbumCredit: s("平野綾"),
 		Labels:            []domain.Label{{Name: "Lantis", CatalogNumber: "LACM-4262"}},
 		Media:             []domain.Medium{{Number: 1, TrackTotal: domain.Known(4), Format: domain.Known("CD")}},
@@ -28,7 +29,7 @@ func fullCandidate(ref string) provider.Candidate {
 		DiscNumber: i(1), Year: i(2006), MediumFormat: s("CD"), Country: s("JP"),
 		ReleaseStatus: s("Official"), FirstReleaseDate: s("2006-07-05"),
 		Label: s("Lantis"), CatalogNumber: s("LACM-4262"),
-		ReleaseRef: s("rel-common"), ReleaseGroupRef: s("rg-1"), RecordingRef: s("rec-1"), ISRC: s("JPB600600001"),
+		ReleaseRef: s(fixtureMBID("rel-common")), ReleaseGroupRef: s(fixtureMBID("rg-1")), RecordingRef: s(fixtureMBID("rec-1")), ISRC: s("JPB600600001"),
 	}
 }
 
@@ -78,7 +79,7 @@ func TestAllAdmissionPathsWriteIdenticalTracks(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "导入跑完", func() bool { return !runner.IsRunning(batchID) })
-	idC, err := app.store.FindByMatchRef("musicbrainz", "c")
+	idC, err := app.store.FindByMatchRef("musicbrainz", fixtureMBID("c"))
 	if err != nil || idC == 0 {
 		t.Fatalf("导入未入库: %v", err)
 	}
@@ -112,9 +113,9 @@ func TestAllAdmissionPathsWriteIdenticalTracks(t *testing.T) {
 	}
 
 	// 路径 D：灰色行必须从具体发行清单读取，保留位置及专辑事实。
-	release, _ := app.store.GetReleaseByRef("musicbrainz", "rel-common")
+	release, _ := app.store.GetReleaseByRef("musicbrainz", fixtureMBID("rel-common"))
 	snapshot, _ := app.store.GetReleaseSnapshot(release.ID)
-	snapshot.Tracklist = domain.Known([]domain.TracklistEntry{{DiscNumber: 1, TrackNumber: 3, Track: domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: "d"}), Title: domain.Known("God knows..."), Credit: domain.Known(domain.Credit{Text: "平野綾"}), DurationMS: domain.Known(272000), Recording: domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: "rec-1"})}})
+	snapshot.Tracklist = domain.Known([]domain.TracklistEntry{{DiscNumber: 1, TrackNumber: 3, Track: domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: fixtureMBID("d")}), Title: domain.Known("God knows..."), Credit: domain.Known(domain.Credit{Text: "平野綾"}), DurationMS: domain.Known(272000), Recording: domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: fixtureMBID("rec-1")})}})
 	snapshot.TracklistCompleteness = domain.Complete
 	rev, _ := app.store.ReleaseRevision(release.ID)
 	if err := app.store.ApplyReleaseSnapshot(release.ID, &domain.Snapshot{Release: snapshot}, rev); err != nil {
@@ -142,8 +143,8 @@ func TestAdmissionNeverBorrowsImportValues(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
 
-	// 上游只给了曲名
-	bare := provider.Candidate{Provider: provider.MusicBrainz, MatchRef: "bare"}
+	// 来源身份完整但展示字段缺失，不借输入补齐来源事实。
+	bare := provider.Candidate{Provider: provider.MusicBrainz, MatchRef: fixtureMBID("bare"), ReleaseRef: strPtr(fixtureMBID("bare-release"))}
 	bareTitle := "曲"
 	bare.Title = &bareTitle
 
@@ -153,11 +154,34 @@ func TestAdmissionNeverBorrowsImportValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	track, _ := app.store.GetTrack(id)
-	// 歌集名来自所属歌集：上游没给歌集，曲目就不该挂在任何歌集上
-	if track.Credit != nil || track.Album != nil || track.ReleaseID != nil {
-		t.Errorf("接受候选后署名/歌集 = %v/%v, 期望留空而不是拿表格值去补",
-			deref(track.Credit), deref(track.Album))
+	track, err := app.store.GetTrack(id)
+	if err != nil || track == nil || track.ReleaseID == nil {
+		t.Fatalf("已知发行身份未保留: %+v %v", track, err)
+	}
+	// release_read 将缺失名称投影为空字符串；不能据此误判来源有名称。
+	if track.Credit != nil || deref(track.Album) != "" {
+		t.Errorf("读取投影借用了输入署名/专辑: %+v", track)
+	}
+	var currentTitle, currentCredit, releaseCredit *string
+	if err := app.store.DB().QueryRow(`SELECT r.title, r.credit, t.credit
+		FROM release_current r JOIN track_current t ON t.track_id=? WHERE r.release_id=?`, id, *track.ReleaseID).
+		Scan(&currentTitle, &releaseCredit, &currentCredit); err != nil {
+		t.Fatal(err)
+	}
+	if currentTitle != nil || releaseCredit != nil || currentCredit != nil {
+		t.Fatal("缺失的原始当前值被填入", currentTitle, releaseCredit, currentCredit)
+	}
+	releaseSnapshot, err := app.store.GetReleaseSnapshot(*track.ReleaseID)
+	if err != nil || releaseSnapshot == nil || releaseSnapshot.Title.IsKnown() || releaseSnapshot.Credit.IsKnown() {
+		t.Fatalf("发行快照借用了输入: %+v %v", releaseSnapshot, err)
+	}
+	var snapshotBody string
+	if err := app.store.DB().QueryRow("SELECT body FROM track_snapshot WHERE track_id=?", id).Scan(&snapshotBody); err != nil {
+		t.Fatal(err)
+	}
+	var trackSnapshot domain.TrackSnapshot
+	if err := json.Unmarshal([]byte(snapshotBody), &trackSnapshot); err != nil || trackSnapshot.Credit.IsKnown() {
+		t.Fatalf("曲目快照借用了输入: %+v %v", trackSnapshot, err)
 	}
 	meta := metaOf(t, app, id)
 	if meta.ProvenanceJSON != nil && strings.Contains(*meta.ProvenanceJSON, "import") {

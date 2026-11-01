@@ -22,9 +22,10 @@ const (
 )
 
 type Selection struct {
-	Candidate *provider.Candidate   `json:"candidate"`
-	Reason    string                `json:"reason"`
-	Plan      *domain.AdmissionPlan `json:"plan,omitempty"`
+	ResolvedCandidates []matching.ScoredCandidate `json:"resolvedCandidates,omitempty"`
+	Candidate          *provider.Candidate        `json:"candidate"`
+	Reason             string                     `json:"reason"`
+	Plan               *domain.AdmissionPlan      `json:"plan,omitempty"`
 }
 type selectionCandidate struct {
 	candidate provider.Candidate
@@ -140,9 +141,26 @@ func ptrField[T any](field domain.Field[T]) *T {
 
 // SelectCandidate 只对当前候选中确实缺少决策事实的发行补摘要，不枚举原生组。
 func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredCandidate, itemID int64, profiles ...*matching.InputProfile) (Selection, error) {
-	if len(profiles) > 0 && profiles[0] != nil && profiles[0].RuleVersion != matching.MetadataRuleVersion {
+	var profile *matching.InputProfile
+	if len(profiles) > 0 {
+		profile = profiles[0]
+	}
+	if profile != nil && profile.RuleVersion != matching.MetadataRuleVersion {
 		return Selection{}, errors.New("输入证据版本已失效，需要重新解析")
 	}
+	resolved, unresolved, err := s.resolveSelectionIdentities(ctx, scored, profile)
+	if err != nil {
+		return Selection{}, err
+	}
+	if unresolved {
+		return Selection{Reason: ReasonAmbiguous, ResolvedCandidates: resolved}, nil
+	}
+	selection, err := s.selectResolvedCandidates(ctx, resolved, itemID)
+	selection.ResolvedCandidates = resolved
+	return selection, err
+}
+
+func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matching.ScoredCandidate, itemID int64) (Selection, error) {
 	prepared := []selectionCandidate{}
 	summaries := map[domain.Identity]domain.ReleaseSummary{}
 	seen := map[string]bool{}

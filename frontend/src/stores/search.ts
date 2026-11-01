@@ -153,6 +153,13 @@ export const useSearchStore = defineStore('search', () => {
     }
   }
 
+  function replaceResolvedCandidate(seed: Models.app.CandidateRow, candidates: Models.app.CandidateRow[]) {
+    const index = upstreamRows.value.findIndex(row => row.provider === seed.provider && row.matchRef === seed.matchRef)
+    if (index < 0) return
+    request++
+    upstreamRows.value.splice(index, 1, ...candidates)
+  }
+
   function libraryFilter(): Models.store.TrackFilter {
     const filter: Partial<Models.store.TrackFilter> = {}
     if (query.value.trim()) filter.query = query.value.trim()
@@ -218,6 +225,6 @@ export const useSearchStore = defineStore('search', () => {
     resetConditions,
     setScope,
     prefillUpstream,
-    run, refreshResults, subscribe, unsubscribeAll,
+    run, replaceResolvedCandidate, refreshResults, subscribe, unsubscribeAll,
   }
 })

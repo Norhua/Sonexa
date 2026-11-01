@@ -266,6 +266,9 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts)
 		return matching.ErrorLogLine(err)
 	}
+	if selection.ResolvedCandidates != nil {
+		res.Scored = selection.ResolvedCandidates
+	}
 	if selection.Candidate != nil && selection.Reason == "" {
 		result, err := r.library.CommitAdmission(ctx, selection.Plan.ID, selection.Plan.Hash, domain.AdmissionApproval{})
 		if err == nil {

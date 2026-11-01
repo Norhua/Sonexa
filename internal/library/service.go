@@ -117,6 +117,9 @@ func (s *Service) PrepareAdmission(ctx context.Context, seed domain.AdmissionSee
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateSeedIdentity(seed); err != nil {
+		return nil, err
+	}
 	baseline, err := s.store.PreviewAdmission(seed)
 	if err != nil {
 		return nil, err
@@ -164,9 +167,17 @@ func (s *Service) CandidateSeed(candidate provider.Candidate, itemID int64) (dom
 			snapshot.Release.Group = &snapshot.Group.Identity
 		}
 	}
-	return domain.AdmissionSeed{Snapshot: *snapshot, ImportItemID: itemID, ItemStatus: "imported"}, nil
+	seed := domain.AdmissionSeed{Snapshot: *snapshot, ImportItemID: itemID, ItemStatus: "imported"}
+	if err := s.validateSeedIdentity(seed); err != nil {
+		return domain.AdmissionSeed{}, err
+	}
+	return seed, nil
 }
 func (s *Service) PrepareCandidate(ctx context.Context, candidate provider.Candidate, itemID int64) (*domain.AdmissionPlan, error) {
+	candidate, err := s.resolveAdmissionCandidate(ctx, candidate, itemID)
+	if err != nil {
+		return nil, err
+	}
 	seed, err := s.CandidateSeed(candidate, itemID)
 	if err != nil {
 		return nil, err

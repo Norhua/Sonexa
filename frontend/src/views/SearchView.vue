@@ -126,6 +126,11 @@ async function run() {
 async function addToLibrary(row: Models.app.CandidateRow) {
   try {
     const result = await admission.run(() => App.PrepareAdmission(row, 0))
+    if (admission.resolution) {
+      search.replaceResolvedCandidate(row, admission.resolution.candidates)
+      search.error = '目标有多个位置或资料不足，请选择具体曲目位置'
+      return
+    }
     if (!result) return
     const id = result.trackId
     row.localTrackId = id

@@ -342,15 +342,8 @@ func (a *App) AddToLibrary(row CandidateRow) (int64, error) {
 
 // admitCandidate 保留旧调用协议，所有写入委托准入计划；需要确认时明确返回错误。
 func (a *App) admitCandidate(c provider.Candidate) (int64, error) {
-	service, err := a.libraryService()
-	if err != nil {
-		return 0, err
-	}
-	plan, err := service.PrepareCandidate(a.ctx, c, 0)
-	if err != nil {
-		return 0, err
-	}
-	view, err := admissionView(plan, nil)
+	// 和复核共用准备入口，包括身份解析所需的动态出网门禁。
+	view, err := a.PrepareAdmission(rowFrom(matching.ScoredCandidate{Candidate: c}), 0)
 	if err != nil {
 		return 0, err
 	}
