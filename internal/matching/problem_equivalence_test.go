@@ -46,7 +46,7 @@ func TestProblemStrongTextProof(t *testing.T) {
 		{"same_collaboration", problemInput("Song", "Artist feat. A", "Album"), problemInput("Song", "Artist with A", "Album"), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			before, _ := json.Marshal(tc)
+			before, _ := json.Marshal([]ProblemInput{tc.a, tc.b})
 			for _, inputs := range [][]ProblemInput{{tc.a, tc.b}, {tc.b, tc.a}} {
 				proof := ProveProblem(inputs)
 				if got := proof.Kind == ProblemStrongText; got != tc.want {
@@ -58,7 +58,7 @@ func TestProblemStrongTextProof(t *testing.T) {
 					t.Fatal("extension disagrees", extension, ok)
 				}
 			}
-			after, _ := json.Marshal(tc)
+			after, _ := json.Marshal([]ProblemInput{tc.a, tc.b})
 			if string(before) != string(after) {
 				t.Fatal("proof modified raw input")
 			}

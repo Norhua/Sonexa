@@ -310,7 +310,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		}{selection.Plan.Baseline, selection.Plan.Seed.Snapshot.Release, selection.Reasons})
 		evidence = string(raw)
 	}
-	if err := r.store.MarkReviewAtRevision(item.ID, item.Revision, reason, string(candidatesJSON), string(variantsJSON), evidence); err != nil {
+	if err := r.store.MarkReviewWithProblem(item.ID, item.Revision, reason, string(candidatesJSON), string(variantsJSON), evidence, matching.ProblemInput{Profile: *in.Profile, Pool: selection.ProblemFacts}); err != nil {
 		return matching.ErrorLogLine(err)
 	}
 

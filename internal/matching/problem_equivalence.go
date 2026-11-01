@@ -50,8 +50,8 @@ type ProblemAnchor struct {
 	RecallKeys []ProblemRecallKey `json:"recallKeys"`
 }
 
-func NewProblemAnchor(input ProblemInput) (ProblemAnchor, ProblemProof) {
-	return makeProblemAnchor([]ProblemInput{input})
+func NewProblemAnchor(inputs ...ProblemInput) (ProblemAnchor, ProblemProof) {
+	return makeProblemAnchor(inputs)
 }
 
 func ExtendProblemAnchor(anchor ProblemAnchor, input ProblemInput) (ProblemAnchor, ProblemProof, bool) {

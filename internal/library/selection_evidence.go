@@ -17,6 +17,7 @@ type selectionEvidence struct {
 	summaries map[domain.Identity]domain.ReleaseSummary
 	reasons   []matching.DecisionReason
 	pending   bool
+	pool      matching.CandidatePool
 }
 
 func (s *Service) constrainSelection(ctx context.Context, scored []matching.ScoredCandidate, input matching.InputProfile) (selectionEvidence, error) {
@@ -139,7 +140,8 @@ func (s *Service) constrainSelection(ctx context.Context, scored []matching.Scor
 	if pool.Truncated {
 		out.reasons = append(out.reasons, matching.DecisionReason{Code: "local_recall_truncated"})
 	}
-	for _, target := range pool.Targets {
+	out.pool = pool
+	for targetIndex, target := range pool.Targets {
 		if absent[string(target.Identity.Track.Provider)+"\x00"+target.Identity.Release.Ref+"\x00"+target.Identity.Track.Ref] {
 			target.Issues = append(target.Issues, matching.DecisionReason{Code: "local_target_missing_from_source"})
 		}
@@ -172,12 +174,15 @@ func (s *Service) constrainSelection(ctx context.Context, scored []matching.Scor
 			if !hasRemote && input.Album.Raw == "" {
 				evidence.Eligibility = matching.MetadataUnresolved
 				evidence.Reasons = append(evidence.Reasons, matching.DecisionReason{Code: "local_target_album_required"})
+				target.Issues = append(target.Issues, matching.DecisionReason{Code: "local_target_album_required"})
 			}
 			if positionUnresolved {
 				evidence.Eligibility = matching.MetadataUnresolved
 				evidence.Reasons = append(evidence.Reasons, matching.DecisionReason{Code: "position_ambiguous"})
+				target.Issues = append(target.Issues, matching.DecisionReason{Code: "position_ambiguous"})
 			}
 		}
+		out.pool.Targets[targetIndex] = target
 		out.reasons = append(out.reasons, evidence.Reasons...)
 		for _, facet := range evidence.Facets {
 			out.reasons = append(out.reasons, facet.Reasons...)

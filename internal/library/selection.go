@@ -22,6 +22,7 @@ const (
 )
 
 type Selection struct {
+	ProblemFacts       *matching.CandidatePool    `json:"-"`
 	Reasons            []matching.DecisionReason  `json:"reasons,omitempty"`
 	ResolvedCandidates []matching.ScoredCandidate `json:"resolvedCandidates,omitempty"`
 	Candidate          *provider.Candidate        `json:"candidate"`
@@ -195,10 +196,14 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 		return Selection{}, err
 	}
 	if constrained.pending {
-		return Selection{Reason: ReasonAmbiguous, ResolvedCandidates: constrained.display, Reasons: constrained.reasons}, nil
+		return Selection{Reason: ReasonAmbiguous, ResolvedCandidates: constrained.display, Reasons: constrained.reasons, ProblemFacts: &constrained.pool}, nil
 	}
 	selection, err := s.selectResolvedCandidates(ctx, constrained.eligible, itemID, revision, constrained.summaries, *profile)
 	selection.ResolvedCandidates = constrained.display
+	selection.ProblemFacts = &constrained.pool
+	if selection.Candidate == nil && selection.Reason != ReasonNoMatch {
+		selection.ProblemFacts.Truncated = true // no exact proof from unresolved later grouping/summary facts
+	}
 	selection.Reasons = append(constrained.reasons, selection.Reasons...)
 	return selection, err
 }

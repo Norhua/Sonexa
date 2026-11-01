@@ -124,12 +124,10 @@ func TestReviewMembershipSchemaAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MarkReview(one.ID, ReviewNoMatch, `[]`, `[]`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.RecordFailure(two.ID, "网络失败", time.Second, 1); err != nil {
-		t.Fatal(err)
-	}
+	// This test exercises raw schema constraints; lifecycle behavior is tested
+	// separately. Avoid MarkReview/RecordFailure, which now attach membership.
+	execQueueSQL(t, s, "UPDATE import_item SET status='review',review_reason='no_match',revision=revision+1 WHERE id=?", one.ID)
+	execQueueSQL(t, s, "UPDATE import_item SET status='failed',last_error='网络失败',revision=revision+1 WHERE id=?", two.ID)
 	one, err = s.GetItem(one.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +146,7 @@ func TestReviewMembershipSchemaAndRestart(t *testing.T) {
 	if _, err := s.db.Exec("UPDATE review_problem SET status='closed',closed_at=datetime('now') WHERE id=?", problem); err == nil {
 		t.Fatal("closed a problem with active members")
 	}
-	if err := s.MarkSkipped(one.ID); err == nil {
+	if _, err := s.db.Exec("UPDATE import_item SET status='skipped' WHERE id=?", one.ID); err == nil {
 		t.Fatal("finished an item without ending its active membership")
 	}
 	if err := s.Close(); err != nil {

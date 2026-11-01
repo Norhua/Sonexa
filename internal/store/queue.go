@@ -230,6 +230,9 @@ func (s *Store) ClaimNextItem(batchID int64) (*ImportItem, error) {
 		}
 		it.Status = StatusMatching
 		it.Revision++
+		if err := syncProblemItemTx(tx, it.ID, nil); err != nil {
+			return err
+		}
 		item = it
 		return nil
 	})
@@ -281,7 +284,11 @@ func (s *Store) MarkReview(itemID int64, reason ReviewReason, candidatesJSON, va
 
 // MarkReviewAtRevision 拒绝迟到响应；revision=0 仅供同步内部操作，仍不能恢复终态。
 func (s *Store) MarkReviewAtRevision(itemID, revision int64, reason ReviewReason, candidatesJSON, variantsJSON string, evidence ...string) error {
-	return s.setStatusAtRevision(itemID, revision, StatusReview, func(tx *sql.Tx) error {
+	return s.markReviewAtRevision(itemID, revision, reason, candidatesJSON, variantsJSON, evidence, nil)
+}
+
+func (s *Store) markReviewAtRevision(itemID, revision int64, reason ReviewReason, candidatesJSON, variantsJSON string, evidence []string, input *matching.ProblemInput) error {
+	return s.setStatusWithProblem(itemID, revision, StatusReview, input, func(tx *sql.Tx) error {
 		if len(evidence) > 0 {
 			if _, err := tx.Exec("UPDATE import_item SET review_evidence=? WHERE id=?", evidence[0], itemID); err != nil {
 				return err
@@ -316,9 +323,18 @@ func (s *Store) setStatus(itemID int64, status ItemStatus, extra func(*sql.Tx) e
 }
 
 func (s *Store) setStatusAtRevision(itemID, revision int64, status ItemStatus, extra func(*sql.Tx) error) error {
+	return s.setStatusWithProblem(itemID, revision, status, nil, extra)
+}
+
+func (s *Store) setStatusWithProblem(itemID, revision int64, status ItemStatus, input *matching.ProblemInput, extra func(*sql.Tx) error) error {
 	return s.withTx(func(tx *sql.Tx) error {
 		if err := checkActiveItemTx(tx, itemID, revision); err != nil {
 			return err
+		}
+		if status.IsTerminal() {
+			if err := finishProblemItemTx(tx, itemID); err != nil {
+				return err
+			}
 		}
 		var reason any
 		switch status {
@@ -335,7 +351,12 @@ func (s *Store) setStatusAtRevision(itemID, revision int64, status ItemStatus, e
 			return err
 		}
 		if extra != nil {
-			return extra(tx)
+			if err := extra(tx); err != nil {
+				return err
+			}
+		}
+		if !status.IsTerminal() {
+			return syncProblemItemTx(tx, itemID, input)
 		}
 		return nil
 	})
@@ -386,7 +407,10 @@ func (s *Store) RecordFailure(itemID int64, errMsg string, backoff time.Duration
 					last_error = ?, last_error_at = ?, next_retry_at = NULL, updated_at = ?
 				WHERE id = ?`,
 				string(StatusFailed), attempts, errMsg, now, now, itemID)
-			return err
+			if err != nil {
+				return err
+			}
+			return syncProblemItemTx(tx, itemID, nil)
 		}
 
 		final = StatusQueued
@@ -396,7 +420,10 @@ func (s *Store) RecordFailure(itemID int64, errMsg string, backoff time.Duration
 				last_error = ?, last_error_at = ?, next_retry_at = ?, updated_at = ?
 			WHERE id = ?`,
 			string(StatusQueued), attempts, errMsg, now, retryAt, now, itemID)
-		return err
+		if err != nil {
+			return err
+		}
+		return syncProblemItemTx(tx, itemID, nil)
 	})
 	return final, err
 }
@@ -414,7 +441,10 @@ func (s *Store) RetryItem(itemID int64, expectedRevision ...int64) error {
 		_, err := tx.Exec(`
 			UPDATE import_item SET status = ?, next_retry_at = NULL, revision = revision + 1, updated_at = ?
 			WHERE id = ?`, string(StatusQueued), time.Now().UTC(), itemID)
-		return err
+		if err != nil {
+			return err
+		}
+		return syncProblemItemTx(tx, itemID, nil)
 	})
 }
 
@@ -424,10 +454,23 @@ func (s *Store) RetryItem(itemID int64, expectedRevision ...int64) error {
 // 而已完成的条目不受影响、不重复处理。
 func (s *Store) ResetStaleMatching() error {
 	return s.withTx(func(tx *sql.Tx) error {
-		_, err := tx.Exec(
-			`UPDATE import_item SET status = ?, revision = revision + 1, updated_at = ? WHERE status = ?`,
-			string(StatusQueued), time.Now().UTC(), string(StatusMatching))
-		return err
+		rows, err := tx.Query("SELECT id FROM import_item WHERE status=?", StatusMatching)
+		if err != nil {
+			return err
+		}
+		ids, err := readRecallIDs(rows)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if _, err := tx.Exec(`UPDATE import_item SET status=?,revision=revision+1,updated_at=? WHERE id=?`, StatusQueued, time.Now().UTC(), id); err != nil {
+				return err
+			}
+			if err := syncProblemItemTx(tx, id, nil); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 

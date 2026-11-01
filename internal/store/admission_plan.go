@@ -169,6 +169,9 @@ func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result domain.Admi
 	}
 
 	if plan.Seed.ImportItemID != 0 {
+		if err := finishProblemItemTx(tx, plan.Seed.ImportItemID); err != nil {
+			return err
+		}
 		status, reason := StatusImported, ResolutionImported
 		var target any
 		if t := plan.Seed.Snapshot.Track; t != nil && t.Identity.Ref != "" {
