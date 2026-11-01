@@ -19,7 +19,8 @@ func appProblemRows(t *testing.T, a *App) (int64, int64, store.ProblemScope) {
 			t.Fatal(err)
 		}
 		artist, album := "Artist", "Album"
-		if err := a.store.EnqueueItems(batch, []store.ImportItem{{RawRow: `["` + title + `"]`, InTitle: &title, InArtist: &artist, InAlbum: &album}}); err != nil {
+		year, disc, position, duration := 2020, 2, 3, 620000
+		if err := a.store.EnqueueItems(batch, []store.ImportItem{{RawRow: `["` + title + `"]`, InTitle: &title, InArtist: &artist, InAlbum: &album, InYear: &year, InDiscNo: &disc, InTrackNo: &position, InDurationMS: &duration}}); err != nil {
 			t.Fatal(err)
 		}
 		item, err := a.store.ClaimNextItem(batch)
@@ -113,6 +114,16 @@ func TestAppNoMatchIsOnlySelectedOriginalRow(t *testing.T) {
 	track, err := a.store.GetTrack(result.TrackID)
 	if err != nil || track.Title != "Song" {
 		t.Fatal(track, err)
+	}
+	var year, disc, position int
+	if err := a.store.DB().QueryRow("SELECT year,disc_number,track_number FROM track_current WHERE track_id=?", result.TrackID).Scan(&year, &disc, &position); err != nil || year != 2020 || disc != 2 || position != 3 {
+		t.Fatal(year, disc, position, err)
+	}
+	// Duration remains an original input fact, not a fabricated source
+	// snapshot or a new editable current field.
+	original, err := a.store.GetItem(one)
+	if err != nil || original.InDurationMS == nil || *original.InDurationMS != 620000 {
+		t.Fatal(original, err)
 	}
 	var source, ref *string
 	if err := a.store.DB().QueryRow("SELECT match_source,match_ref FROM track WHERE id=?", result.TrackID).Scan(&source, &ref); err != nil || source != nil || ref != nil {
