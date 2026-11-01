@@ -97,6 +97,14 @@ App 提供 `GetReviewAdmissionScope`、`PrepareProblemAdmission` 和 `PreparePro
 
 纯 skip 不发送 library 通知、不修改收藏事实代次；无操作的提示消费也不自发新建重评。App 读取复核页只读本地状态，不会启动匹配。测试覆盖释放续评、保留失败、no-op CAS、终态不恢复、重启、门禁关闭/恢复及实际 Runner 调用。
 
+## 行数与独立问题数（7.3）
+
+`BatchStats` 的 Total/Queued/Matching/Imported/Review/Failed/Skipped/Discarded 以原始入队行为单位，互斥状态之和等于 Total。`Unmatched` 是 Review 子集，`ExistingSkipped` 是 Skipped 子集，不再次相加；Processed 仍包括 review/failed，表示本轮已处理而非全部处置完。Merged 统计及新写路径已移除。
+
+`ProblemStats` 分别返回 ReviewProblems/PendingProblems/FailedProblems/SourceRows。活跃成员全部 failed 才归失败问题，含 review/queued/matching 成员的归待选；SourceRows 是活跃来源行数。批次统计只计与该批有关的问题和来源行，但问题分项按完整跨批范围判定，因此全局问题数不能由各批相加。行数、子集和批次关联问题在同一只读事务读取。
+
+TaskSummary.ReviewPending 现在为全局独立问题数，并返回完整 Problems；`GetReviewProblemStats` 提供无候选加载的本地统计。旧 GetReviewQueue 仍返回逐行列表和行计数，8.x 将替换界面，不能将其旧 Total 混作问题数。
+
 ## 本地匹配召回
 
 `Store.RecallLocal(ctx, profiles, limit)` 实现 matching 声明的事实召回接口。一次最多 128 个输入，返回顺序与输入一致；每个输入默认 100、最多 1000 个目标，读取 limit+1 判断 `Truncated`。它不调用有 2000 条上限的浏览接口、不出网、不读历史导入或选版记录。空输入不触发重建，查询错误/取消返回错误而非空结果。

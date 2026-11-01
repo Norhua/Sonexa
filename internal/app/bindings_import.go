@@ -213,13 +213,14 @@ func (a *App) SubmitImport(path, sheetName string, columnMap []string,
 // TaskSummary 是侧栏任务区的常驻内容。
 type TaskSummary struct {
 	// ActiveBatch 非零时有正在运行的导入任务。
-	ActiveBatch int64            `json:"activeBatch"`
-	Filename    string           `json:"filename"`
-	Processed   int              `json:"processed"`
-	Total       int              `json:"total"`
-	Stats       store.BatchStats `json:"stats"`
-	Running     bool             `json:"running"`
-	// ReviewPending 是复核待处置数（含待选与失败）。
+	ActiveBatch int64              `json:"activeBatch"`
+	Filename    string             `json:"filename"`
+	Processed   int                `json:"processed"`
+	Total       int                `json:"total"`
+	Stats       store.BatchStats   `json:"stats"`
+	Running     bool               `json:"running"`
+	Problems    store.ProblemStats `json:"problems"`
+	// ReviewPending 是全局独立活跃问题数，不是原始行数。
 	ReviewPending int `json:"reviewPending"`
 }
 
@@ -248,11 +249,12 @@ func (a *App) GetTaskSummary() (*TaskSummary, error) {
 		out.Running = a.runner != nil && a.runner.IsRunning(b.ID)
 	}
 
-	pending, err := a.store.AllReviewItems()
+	problems, err := a.store.ReviewProblemStats(0)
 	if err != nil {
 		return nil, err
 	}
-	out.ReviewPending = len(pending)
+	out.Problems = problems
+	out.ReviewPending = problems.ReviewProblems
 	return out, nil
 }
 

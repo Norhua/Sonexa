@@ -1,10 +1,16 @@
-# 实施交接：7.1–7.2 已完成
+# 实施交接：7.1–7.3 已完成
 
 ## 当前状态
 
 - 变更 `fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
-- 已完成 1.1–7.2，**35/48**；CLI 已确认 7.2 完成。下一任务 7.3：行统计与独立问题统计。
+- 已完成 1.1–7.3，**36/48**；CLI 已确认 7.3 完成。下一任务 7.4：独立问题/任务通知。
 - 未同步主规格、未归档、未修改或清理用户应用数据。测试使用临时 SQLite、fixture 和 httptest；本轮未执行浏览器、真实网络或原生验收。
+
+## 7.3 已完成
+
+- BatchStats 新增 ExistingSkipped 子集和 Problems；状态总和不重复加子集，同一事务读取原始行及问题统计。
+- ProblemStats 返回独立总数/待选/失败/SourceRows；跨批问题全局不重复，批次按涉及行计算，混合状态按完整问题判定。TaskSummary 和独立统计 API 已接入；旧逐行 GetReviewQueue 尚留给 8.x 切换。
+- store/library/importer/app 定向回归、Wails 生成、typecheck、strict/diff 通过；跨批混合、状态求和、实际多行接受的新增/跳过计数测试通过。7.2 提交 `62fe520`。
 
 ## 7.2 已完成
 
@@ -257,7 +263,7 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 
 ### 未完成范围
 
-- 4.1–7.2 已完成；当前从 7.3 开始。
+- 4.1–7.3 已完成；当前从 7.4 开始。
 - 5.x 已交付后端证明、生命周期、拆出和问题范围协议；6.x 已交付多行准入、单行辅助操作和后端交互租约。
 - 7.x 有界重评、独立问题统计、review/task 事件。
 - 8.x 多来源问题 UI、成员范围、拆出和租约；当前复核仍逐行。

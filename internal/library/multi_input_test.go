@@ -64,7 +64,7 @@ func TestMultiInputAdmissionAtomicAccounting(t *testing.T) {
 					t.Fatal(result.Inputs)
 				}
 				stats, err := st.Stats(item.BatchID)
-				if err != nil || stats.Review != 0 || stats.Imported+stats.Skipped != 1 || (status == store.StatusImported && stats.Imported != 1) || (status == store.StatusSkipped && stats.Skipped != 1) {
+				if err != nil || stats.Review != 0 || stats.Imported+stats.Skipped != 1 || stats.ExistingSkipped != stats.Skipped || stats.Problems.ReviewProblems != 0 || (status == store.StatusImported && stats.Imported != 1) || (status == store.StatusSkipped && stats.Skipped != 1) {
 					t.Fatal(stats, err)
 				}
 			}

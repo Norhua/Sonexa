@@ -12,6 +12,24 @@ import (
 	"github.com/norhua/sonexa/internal/store"
 )
 
+func TestTaskSummaryCountsProblemsNotSourceRows(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.enricher.Pause()
+	_, _, _ = appProblemRows(t, a)
+	summary, err := a.GetTaskSummary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.ReviewPending != 1 || summary.Problems.SourceRows != 2 || summary.Problems.PendingProblems != 1 {
+		t.Fatal(summary)
+	}
+	stats, err := a.GetReviewProblemStats()
+	if err != nil || stats != summary.Problems {
+		t.Fatal(stats, err)
+	}
+}
+
 func TestReviewWorkerLeaseReleaseResumesWithoutLibraryEvent(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()

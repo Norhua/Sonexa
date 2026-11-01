@@ -52,6 +52,13 @@ func (a *App) UpdateReviewProblemDraft(scope store.ProblemScope, query store.Rev
 	return a.store.UpdateProblemDraft(scope, query)
 }
 
+func (a *App) GetReviewProblemStats() (store.ProblemStats, error) {
+	if err := a.ready(); err != nil {
+		return store.ProblemStats{}, err
+	}
+	return a.store.ReviewProblemStats(0)
+}
+
 func (a *App) GetReviewProblemScope(problemID int64) (store.ProblemScope, error) {
 	if err := a.ready(); err != nil {
 		return store.ProblemScope{}, err

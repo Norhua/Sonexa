@@ -488,10 +488,12 @@ func (s *Store) ResetStaleMatching() error {
 
 // BatchStats 是一次导入的分状态计数。
 type BatchStats struct {
-	Total    int `json:"total"`
-	Queued   int `json:"queued"`
-	Matching int `json:"matching"`
-	Imported int `json:"imported"`
+	ExistingSkipped int          `json:"existingSkipped"` // subset of Skipped
+	Problems        ProblemStats `json:"problems"`        // distinct problems, not rows
+	Total           int          `json:"total"`
+	Queued          int          `json:"queued"`
+	Matching        int          `json:"matching"`
+	Imported        int          `json:"imported"`
 	// Review 是待复核总数，三种成因都在里面。
 	Review int `json:"review"`
 	// Unmatched 是 Review 中成因为「无结果 / 全部低置信」的那部分。
@@ -511,7 +513,12 @@ func (b BatchStats) Processed() int {
 
 // Stats 统计某批次各状态的条目数。
 func (s *Store) Stats(batchID int64) (BatchStats, error) {
-	rows, err := s.db.Query(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return BatchStats{}, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(
 		`SELECT status, COUNT(*) FROM import_item WHERE batch_id = ? GROUP BY status`, batchID)
 	if err != nil {
 		return BatchStats{}, err
@@ -547,10 +554,18 @@ func (s *Store) Stats(batchID int64) (BatchStats, error) {
 		return BatchStats{}, err
 	}
 
-	// 「未匹配」是待复核里的一个子集，取不到状态分组里，单独数一次
-	if err := s.db.QueryRow(
+	rows.Close()
+	// 「未匹配」是复核子集；「已存在跳过」是跳过子集，不能重复相加。
+	if err := tx.QueryRow(
 		`SELECT COUNT(*) FROM import_item WHERE batch_id = ? AND status = ? AND review_reason = ?`,
 		batchID, string(StatusReview), string(ReviewNoMatch)).Scan(&st.Unmatched); err != nil {
+		return BatchStats{}, err
+	}
+	if err := tx.QueryRow("SELECT count(*) FROM import_item WHERE batch_id=? AND status='skipped' AND resolution_reason=?", batchID, ResolutionExistingTrack).Scan(&st.ExistingSkipped); err != nil {
+		return BatchStats{}, err
+	}
+	st.Problems, err = problemStatsTx(tx, batchID)
+	if err != nil {
 		return BatchStats{}, err
 	}
 	return st, nil
