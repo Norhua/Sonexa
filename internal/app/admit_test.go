@@ -47,32 +47,24 @@ func fullCandidate(ref string) provider.Candidate {
 func TestAllAdmissionPathsWriteIdenticalTracks(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
+	app.enricher.Pause() // 本用例比较准入快照，不调用后台真实资料补全。
 
-	// 路径 A：搜索页加入曲库（经 CandidateRow 往返）
-	rowA := rowFrom(matching.ScoredCandidate{Candidate: fullCandidate("a")})
-	idA, err := app.AddToLibrary(rowA)
-	if err != nil {
-		t.Fatalf("搜索页入库失败: %v", err)
+	// 每条路径使用同一份完整描述。自动入口先跑，避免先人工创建三个
+	// 同发行、同位置却不同 track 的 fixture 后再要求自动流程消除歧义。
+	candidate := func(ref string) provider.Candidate {
+		c := fullCandidate(ref)
+		c.Title = strPtr("Lost my music") // 不把可能截断的标题当自动身份正证据。
+		return c
 	}
-
-	// 路径 B：复核队列接受
-	itemID := enqueueOneItem(t, app, "God knows...", "表格里的署名", "表格里的歌集")
-	rowB := rowFrom(matching.ScoredCandidate{Candidate: fullCandidate("b")})
-	idB, err := app.AcceptCandidate(itemID, rowB)
-	if err != nil {
-		t.Fatalf("复核接受失败: %v", err)
-	}
-
-	// 路径 C：导入自动入库（唯一高置信）
-	c := fullCandidate("c")
+	c := candidate("c")
 	runner := importer.NewRunner(app.store, matching.NewEngine(app.settings.Get().Matching),
 		&recordingSearcher{hit: []provider.Candidate{c}}, provider.DefaultRetryPolicy(), false, nil, app.library)
 	batchID, err := app.store.CreateBatch(&store.ImportBatch{Filename: "t.csv", TotalRows: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	title, artist := "God knows...", "平野綾"
-	if err := app.store.EnqueueItems(batchID, []store.ImportItem{{RawRow: "{}", InTitle: &title, InArtist: &artist}}); err != nil {
+	title, artist, album := *c.Title, *c.ArtistName, *c.AlbumTitle
+	if err := app.store.EnqueueItems(batchID, []store.ImportItem{{RawRow: "{}", InTitle: &title, InArtist: &artist, InAlbum: &album}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := runner.Start(context.Background(), batchID); err != nil {
@@ -82,6 +74,21 @@ func TestAllAdmissionPathsWriteIdenticalTracks(t *testing.T) {
 	idC, err := app.store.FindByMatchRef("musicbrainz", fixtureMBID("c"))
 	if err != nil || idC == 0 {
 		t.Fatalf("导入未入库: %v", err)
+	}
+
+	// 路径 A：搜索页加入曲库（经 CandidateRow 往返）
+	rowA := rowFrom(matching.ScoredCandidate{Candidate: candidate("a")})
+	idA, err := app.AddToLibrary(rowA)
+	if err != nil {
+		t.Fatalf("搜索页入库失败: %v", err)
+	}
+
+	// 路径 B：复核队列明确接受，不将输入值写入上游事实。
+	itemID := enqueueOneItem(t, app, title, "表格里的署名", "表格里的歌集")
+	rowB := rowFrom(matching.ScoredCandidate{Candidate: candidate("b")})
+	idB, err := app.AcceptCandidate(itemID, rowB)
+	if err != nil {
+		t.Fatalf("复核接受失败: %v", err)
 	}
 
 	metaA, metaB, metaC := metaOf(t, app, idA), metaOf(t, app, idB), metaOf(t, app, idC)
@@ -115,7 +122,7 @@ func TestAllAdmissionPathsWriteIdenticalTracks(t *testing.T) {
 	// 路径 D：灰色行必须从具体发行清单读取，保留位置及专辑事实。
 	release, _ := app.store.GetReleaseByRef("musicbrainz", fixtureMBID("rel-common"))
 	snapshot, _ := app.store.GetReleaseSnapshot(release.ID)
-	snapshot.Tracklist = domain.Known([]domain.TracklistEntry{{DiscNumber: 1, TrackNumber: 3, Track: domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: fixtureMBID("d")}), Title: domain.Known("God knows..."), Credit: domain.Known(domain.Credit{Text: "平野綾"}), DurationMS: domain.Known(272000), Recording: domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: fixtureMBID("rec-1")})}})
+	snapshot.Tracklist = domain.Known([]domain.TracklistEntry{{DiscNumber: 1, TrackNumber: 3, Track: domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: fixtureMBID("d")}), Title: domain.Known(title), Credit: domain.Known(domain.Credit{Text: "平野綾"}), DurationMS: domain.Known(272000), Recording: domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: fixtureMBID("rec-1")})}})
 	snapshot.TracklistCompleteness = domain.Complete
 	rev, _ := app.store.ReleaseRevision(release.ID)
 	if err := app.store.ApplyReleaseSnapshot(release.ID, &domain.Snapshot{Release: snapshot}, rev); err != nil {
@@ -142,6 +149,7 @@ func TestAllAdmissionPathsWriteIdenticalTracks(t *testing.T) {
 func TestAdmissionNeverBorrowsImportValues(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
+	app.enricher.Pause() // 稀疏候选应保持稀疏；补全路径另有 replay 测试。
 
 	// 来源身份完整但展示字段缺失，不借输入补齐来源事实。
 	bare := provider.Candidate{Provider: provider.MusicBrainz, MatchRef: fixtureMBID("bare"), ReleaseRef: strPtr(fixtureMBID("bare-release"))}

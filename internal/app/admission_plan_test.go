@@ -12,6 +12,7 @@ import (
 func TestAppAdmissionCannotBypassExtraReleaseConfirmation(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
+	app.enricher.Pause() // 只测试准入批准边界，不启动真实来源补全。
 	a := fullCandidate("a1")
 	b := fullCandidate("b1")
 	firstRef, secondRef := fixtureMBID("release-a"), fixtureMBID("release-b")

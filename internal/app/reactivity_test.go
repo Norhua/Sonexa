@@ -120,6 +120,9 @@ func TestImportProductionWiringNotifiesLibraryAfterCommit(t *testing.T) {
 	}
 	row := candidateRow()
 	row.AlbumCredit = row.Artist
+	row.Title = strPtr("Lost my music")
+	disc, track := 1, 1
+	row.DiscNumber, row.TrackNumber = &disc, &track
 	searcher := &recordingSearcher{MetadataProvider: base, hit: []provider.Candidate{row.toCandidate()}}
 	a.registry = provider.NewRegistry()
 	a.registry.Register(searcher)

@@ -110,7 +110,14 @@ func TestAdmissionResolvesSyntheticTargetAndRejectsSeedBypass(t *testing.T) {
 	if _, err := service.CandidateSeed(candidate, 0); err == nil {
 		t.Fatal("unresolved CandidateSeed accepted")
 	}
-	selection, err := service.SelectCandidate(context.Background(), []matching.ScoredCandidate{{Candidate: candidate, Score: matching.Score{HighConf: true}}}, item.ID, &profile)
+	// The deliberately wrong query-like fields above exercise manual source
+	// resolution only. Automatic selection must exclude that explicit mismatch.
+	selection, err := service.SelectCandidate(context.Background(), []matching.ScoredCandidate{{Candidate: candidate}}, item.ID, &profile)
+	if err != nil || selection.Candidate != nil {
+		t.Fatal("automatic selection ignored explicit source mismatch", selection, err)
+	}
+	candidate.Title, candidate.ArtistName, candidate.AlbumTitle = strPtr("you"), strPtr("歌手"), strPtr("特典CD")
+	selection, err = service.SelectCandidate(context.Background(), []matching.ScoredCandidate{{Candidate: candidate, Score: matching.Score{HighConf: true}}}, item.ID, &profile)
 	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != track || selection.Plan.Baseline.ExistingTrackID != created.TrackID {
 		t.Fatal("automatic resolution not wired", selection, err)
 	}

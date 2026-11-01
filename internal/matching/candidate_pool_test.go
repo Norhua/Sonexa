@@ -49,6 +49,21 @@ func TestCandidatePoolSourceIdentityAndUnresolvedSeeds(t *testing.T) {
 	}
 }
 
+func TestCandidatePoolExplicitMismatchCanExcludeUnresolvedSeed(t *testing.T) {
+	sources, lookup, _, c := poolFixture(t)
+	c.Provider = "unresolved"
+	c.AlbumTitle = sptr("Different Album")
+	pool := BuildCandidatePool(LocalRecallResult{}, []provider.Candidate{c}, sources, lookup)
+	if evidence := pool.Targets[0].Check(NewInputProfile("Song", "Artist", "Album")); evidence.Eligibility != MetadataExcluded {
+		t.Fatal("explicit album mismatch requires needless identity resolution", evidence)
+	}
+	c.AlbumTitle = nil
+	pool = BuildCandidatePool(LocalRecallResult{}, []provider.Candidate{c}, sources, lookup)
+	if evidence := pool.Targets[0].Check(NewInputProfile("Song", "Artist", "Album")); evidence.Eligibility != MetadataUnresolved {
+		t.Fatal("unknown album was excluded", evidence)
+	}
+}
+
 func TestCandidatePoolRechecksStaleLocalFactsAndErrors(t *testing.T) {
 	for _, scenario := range []string{"deleted", "revision", "release", "query_error", "stale_track", "stale_release"} {
 		t.Run(scenario, func(t *testing.T) {

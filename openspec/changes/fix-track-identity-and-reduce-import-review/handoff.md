@@ -1,39 +1,31 @@
-# 实施交接：4.3 完成，4.4 扩大回归阻塞
+# 实施交接：4.4 已完成
 
 ## 当前状态
 
-- 变更：`fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
-- `tasks.md` 已完成 1.1–1.7、2.1–2.5、3.1–3.6、4.1–4.3，共 **21/48**；CLI 已确认 4.3 完成。4.4 有未验证完的代码，扩大回归失败，保持未勾选。
-- 本文件只记录实施与验证事实，不替代规划文件、10 个增量规格或 CLI 任务完成标准。
-- 未同步主规格、未归档、未修改或清理用户应用数据。测试使用临时 SQLite 和 fixture；本轮没有主动做真实来源验收，但 4.4 扩大回归后发现旧 App 桩的决策资料补取未完全隔离，见下文出网边界。
+- 变更 `fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
+- 已完成 1.1–4.4，**22/48**；CLI 已确认 4.4 完成。下一任务 4.5。
+- 未同步主规格、未归档、未修改或清理用户应用数据。测试使用临时 SQLite、fixture 和 httptest；本轮未执行真实网络/原生验收或前端测试。
 
-## 4.4 当前阻塞（未完成）
+## 4.4 已完成
 
-4.3 已提交为 `edbf935`。随后开始 4.4，当前修改：
+- 为普通 App 测试安装外部 HTTP 拦截，覆盖 provider 重装及封面默认 transport；只允许数字回环地址及明确 replay。意外请求使整包失败。保护启用后发现三个旧准入测试启动后台补全，现已暂停与测试无关的补全。显式 live 环境开关仍保留。
+- 修复远程无结果后本地候选重入丢失专辑门槛/清单位置歧义；即使远程返回已有精确 track，完整清单中未收藏重复位置仍阻止自动操作。
+- 完整 profile 先限定输入再判组；明确不符的合成候选不补取、不参与竞争；未知候选不被当作冲突排除。人工解析测试与自动输入约束分开。
+- 保留原精确搜索事实及新资料视图，摘要名称/组等冲突重新核验，不以新摘要覆盖旧证据。展开后相同精确目标在人工列表合一。删除旧未使用的 `resolveSelectionIdentities`。
+- 旧 fixture 补真实位置及发行署名。`God knows...` 按现有规则仍视为可能截断；自动通路 fixture 改用完整标题，同时增加该截断标题不得自动入库的反例，没有放宽规则。
+- 新 selection 用例覆盖非 HighConf 充分证据、只补未排除子集、批量请求、unsupported/partial/失败/取消、完整无结果、资料冲突和未收藏重复位置。
+- 真实 Runner + MusicBrainz 适配器 + httptest 覆盖第二碟 track、重复录音、部分清单、请求失败、旧输入修订；同发行请求一次，被排除发行零请求，无预览实体写入。
 
-- `internal/library/selection_evidence.go` 新增输入预筛选和按源批量补资料，区分人工 display 与自动 eligible 候选；合入本地事实、保留未知竞争者和结构化原因。
-- `SelectCandidate` 改为要求完整 profile，不再用 HighConf 直接授权；内部选版消费筛后集合与已加载摘要，摘要改变描述后重新校验输入。旧 `resolveSelectionIdentities` 仍未清理，暂未被新入口调用。
-- Runner 将结构化 selection reasons 写入 review evidence。
-- `selection_test.go` 接入明确 profile 与位置；新 `importer/input_priority_test.go` 经真实 Runner 验证特典截断/合集选择真实 track，以及无专辑跨组/未知候选保持复核和人工候选。
-
-先前定向命令均通过：
+通过：
 
 ```sh
-go test ./internal/importer -run '^TestRunnerInputAlbumConstrainsBeforeCrossGroupGuard$' -count=1
-go test ./internal/library -run 'TestAutomaticSelection|TestDisplayPreferences' -count=1
+go test ./internal/matching ./internal/importer ./internal/library ./internal/store ./internal/app ./internal/acceptance ./internal/lyrics ./internal/provider/musicbrainz -count=1
+go test -race ./internal/matching ./internal/importer ./internal/library ./internal/store ./internal/app
+openspec validate fix-track-identity-and-reduce-import-review --strict
+git diff --check
 ```
 
-**随后扩大回归失败**：`go test ./internal/importer ./internal/library ./internal/app -count=1`。library 通过；失败清单：
-
-- importer：`TestRunnerSparseOrAmbiguousLocalFactsStillSearch/no_album` 与 `/repeated_position`，预期 review 却被 skipped。**真实逻辑缺陷**：本地前置分支保留的歧义，在远程无结果后重新合入本地目标时丢失；新路径只看各候选正证据，没有保持纯本地完成门槛/完整清单竞争位置。
-- importer：`TestRunnerUnboundTextDoesNotBlockUpstreamAdmission`、`TestLibraryNotificationFollowsCommitBeforeOptionalEnrichment/imported`、`TestRunnerImportsHighConfidence`、`TestRunnerEmitsProgress`、`TestRunnerOnlyQueriesMusicBrainz`、`TestRunnerImportsAnchoredRowWhereArtistIsReleaseCredit`、`TestRunnerBatchUsesCommittedMembershipAndFourCounts`。旧 fixture 很多没有碟/轨位置；发行署名用例也没有明确的发行署名事实，不再足以授予自动资格。须逐项检查 fixture 本意后补真实充分事实，不能统一改期望或降低新规则。`God knows...` 还涉及文本尾部省略号被 profile 标为截断，不能只归咎于位置。
-- app：`TestAllAdmissionPathsWriteIdenticalTracks`，输入无专辑且库中已存在多个人工加入的同发行不同 track，需要结合新的歧义规则检查 fixture（它的候选本来含完整位置，不能当无位置问题处理）。
-- app：`TestAdmissionResolvesSyntheticTargetAndRejectsSeedBypass`。合成候选携带刻意不正确的查询文本，预筛选把它排除而不解析，当前目标没有展开。要区分人工解析测试与自动证据意图，不能把查询填进新快照，也不能无视输入明确冲突。
-- app：`TestImportProductionWiringNotifiesLibraryAfterCommit`，5 秒内没有 final progress。该桩只替换 SearchTracks，元数据 provider 仍是生产来源；新代码缺位置时触发 LoadDecisionFacts，原桩未隔离这条资料请求。**下一次回归前先加入拒绝真实出网/httptest 决策资料替身**。本轮没有请求审计，不能声称这次扩大回归完全无真实网络请求。
-
-按 apply 工作流在错误后暂停，没有修掉/放松上述失败；4.4 不可作为可用版本。下一步先保护测试出网边界，再修正本地来源重新合入的歧义与位置完整性、资料解析/摘要一致性，并逐一检验旧 fixture。尚须补决策请求计数（已排除候选不出网、同发行复用）、必要资料失败、部分清单、非高分充分候选、来源快照与新事实冲突和旧输入修订回归。4.5/4.6 尚未开始；共享生产路径的最终切换不能提前宣称完成。
-
-下述 4.3 通过结果只对应 `edbf935`，不是当前 4.4 检查点全绿。
+4.5 的已收藏 track 优先、4.6 最终 skip 路径整理、4.7 旧 Engine 说明/测试整理仍未完成，不能由本轮通过推定最终变更全量验收完成。
 
 ## 4.3 已完成
 
@@ -170,7 +162,7 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 
 ### 未完成范围
 
-- 4.4–4.7 远程输入优先自动选版、统一精确跳过路径及旧测试替换。仍有旧 HighConf/跨组与已有发行逻辑。
+- 4.5–4.7 已收藏兼容 track 优先、统一精确跳过路径及旧测试整理。4.4 输入优先筛选已完成。
 - 5.x 问题等价证明、归并/拆出/关闭业务生命周期与版本化候选持久化。
 - 6.x 多行 scope/hash、原子结果和租约；当前准备入口仍主要支持单行。
 - 7.x 有界重评、独立问题统计、review/task 事件。

@@ -252,8 +252,15 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 			v := c.summary.Group.Ref
 			c.candidate.ReleaseGroupRef = &v
 		}
-		if value(original.AlbumTitle) != value(c.candidate.AlbumTitle) || value(original.AlbumCredit) != value(c.candidate.AlbumCredit) {
-			evidence := matching.CheckMetadataEvidence(input, matching.MetadataFacts{Candidate: c.candidate, Source: "loaded_summary", AlbumComplete: c.candidate.AlbumTitle != nil, PositionVerified: c.candidate.DiscNumber != nil && c.candidate.TrackNumber != nil})
+		updated, err := s.CandidateFacts(ctx, input, []provider.Candidate{original, c.candidate})
+		if err != nil {
+			return Selection{}, err
+		}
+		for _, target := range updated.Targets {
+			if target.Identity.Track != (domain.Identity{Provider: c.candidate.Provider, Ref: c.candidate.MatchRef}) {
+				continue
+			}
+			evidence := target.Check(input)
 			if evidence.Eligibility != matching.MetadataEligible {
 				return Selection{Reason: ReasonAmbiguous, Reasons: evidence.Reasons}, nil
 			}

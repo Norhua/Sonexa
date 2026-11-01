@@ -201,7 +201,7 @@ func (t CandidateTarget) Check(input InputProfile) TargetEvidence {
 		out.Eligibility = MetadataUnresolved
 		out.Reasons = append(out.Reasons, t.Issues...)
 	}
-	if t.Identity.State != IdentityExact || t.Ownership.State == OwnershipConflict || t.Ownership.State == OwnershipError {
+	if (t.Identity.State != IdentityExact && out.Eligibility != MetadataExcluded) || t.Ownership.State == OwnershipConflict || t.Ownership.State == OwnershipError {
 		out.Eligibility = MetadataUnresolved
 		out.Reasons = append(out.Reasons, DecisionReason{Code: "candidate_identity_unavailable", Detail: t.Ownership.Reason})
 	}

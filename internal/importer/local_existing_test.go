@@ -100,10 +100,10 @@ func TestRunnerLocalFactsSkipWithoutHistoryOrNetwork(t *testing.T) {
 }
 
 func TestRunnerSparseOrAmbiguousLocalFactsStillSearch(t *testing.T) {
-	for _, scenario := range []string{"sparse", "no_album", "repeated_position", "different_album"} {
+	for _, scenario := range []string{"sparse", "no_album", "repeated_position", "repeated_position_with_remote", "different_album"} {
 		t.Run(scenario, func(t *testing.T) {
 			st := openStore(t)
-			id, _ := seedLocalRunnerTrack(t, st, scenario != "sparse", scenario == "repeated_position")
+			id, candidate := seedLocalRunnerTrack(t, st, scenario != "sparse", strings.HasPrefix(scenario, "repeated_position"))
 			album := "Album"
 			if scenario == "no_album" {
 				album = ""
@@ -112,6 +112,9 @@ func TestRunnerSparseOrAmbiguousLocalFactsStillSearch(t *testing.T) {
 				album = "Different Album"
 			}
 			searcher := &recordingSearcher{}
+			if scenario == "repeated_position_with_remote" {
+				searcher.byTitle = map[string][]provider.Candidate{"Song": {candidate}}
+			}
 			batch := enqueueOne(t, st, "Song", "Artist", album)
 			runToCompletion(t, newRunner(st, searcher), batch)
 			stats, err := st.Stats(batch)

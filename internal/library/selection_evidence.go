@@ -124,6 +124,13 @@ func (s *Service) constrainSelection(ctx context.Context, scored []matching.Scor
 			candidates = append(candidates, sc.Candidate)
 		}
 	}
+	for i, sc := range scored {
+		if _, ok := resolved[i]; ok && sources.Inspect(sc.Candidate).State == matching.IdentityExact && !absent[candidateKey(sc.Candidate)] {
+			// Keep the original exact source view too. Loading new details is
+			// not permission to erase a conflicting search/snapshot assertion.
+			candidates = append(candidates, sc.Candidate)
+		}
+	}
 	pool, err := s.CandidateFacts(ctx, input, candidates)
 	if err != nil {
 		return out, err
@@ -133,20 +140,44 @@ func (s *Service) constrainSelection(ctx context.Context, scored []matching.Scor
 		out.reasons = append(out.reasons, matching.DecisionReason{Code: "local_recall_truncated"})
 	}
 	for _, target := range pool.Targets {
+		if absent[string(target.Identity.Track.Provider)+"\x00"+target.Identity.Release.Ref+"\x00"+target.Identity.Track.Ref] {
+			target.Issues = append(target.Issues, matching.DecisionReason{Code: "local_target_missing_from_source"})
+		}
+		hasRemote := false
 		for i := range target.Facts {
 			fact := &target.Facts[i]
 			key := candidateKey(fact.Metadata.Candidate)
 			if fact.Kind == "remote" {
+				hasRemote = true
 				if release := loaded[key]; release != nil {
 					fact.Release = release
-					fact.Metadata.PositionVerified = localPositionUnique(input, target, release)
 				}
 				if reason, ok := blocked[key]; ok {
 					target.Issues = append(target.Issues, matching.DecisionReason{Code: "decision_facts_unavailable", Detail: reason})
 				}
 			}
 		}
+		// A remote miss does not turn local recall into a complete search.
+		// Keep the local-only album/position threshold after rejoining facts.
+		// Likewise a remote row cannot hide competing positions already known
+		// from a complete release list (including positions not collected).
+		positionUnresolved := false
+		for _, fact := range target.Facts {
+			if fact.Release != nil && fact.Release.TracklistCompleteness == domain.Complete && !localPositionUnique(input, target, fact.Release) {
+				positionUnresolved = true
+			}
+		}
 		evidence := target.Check(input)
+		if evidence.Eligibility != matching.MetadataExcluded {
+			if !hasRemote && input.Album.Raw == "" {
+				evidence.Eligibility = matching.MetadataUnresolved
+				evidence.Reasons = append(evidence.Reasons, matching.DecisionReason{Code: "local_target_album_required"})
+			}
+			if positionUnresolved {
+				evidence.Eligibility = matching.MetadataUnresolved
+				evidence.Reasons = append(evidence.Reasons, matching.DecisionReason{Code: "position_ambiguous"})
+			}
+		}
 		out.reasons = append(out.reasons, evidence.Reasons...)
 		for _, facet := range evidence.Facets {
 			out.reasons = append(out.reasons, facet.Reasons...)
@@ -201,6 +232,21 @@ func (s *Service) constrainSelection(ctx context.Context, scored []matching.Scor
 		}
 		out.eligible = append(out.eligible, sc)
 	}
+	// Identity expansion can make several seeds name the same exact track.
+	// Keep all source views in the evidence pool above, one row in the UI.
+	seenDisplay := map[string]bool{}
+	display := out.display[:0]
+	for _, sc := range out.display {
+		if sources.Inspect(sc.Candidate).State == matching.IdentityExact {
+			key := candidateKey(sc.Candidate)
+			if seenDisplay[key] {
+				continue
+			}
+			seenDisplay[key] = true
+		}
+		display = append(display, sc)
+	}
+	out.display = display
 	if out.pending {
 		out.reasons = append(out.reasons, matching.DecisionReason{Code: "unresolved_competitor", Detail: fmt.Sprintf("eligible=%d", len(out.eligible))})
 	}

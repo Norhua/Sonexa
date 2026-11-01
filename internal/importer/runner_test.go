@@ -71,11 +71,13 @@ func openStore(t *testing.T) *store.Store {
 func sptr(s string) *string { return &s }
 
 func mbCandidate(ref, title, artist, album string) provider.Candidate {
+	disc, track := 1, 1
 	return provider.Candidate{
 		Provider: provider.MusicBrainz, MatchRef: ref,
 		Title: sptr(title), ArtistName: sptr(artist), AlbumTitle: sptr(album),
 		ReleaseRef: sptr("rel-" + album), ReleaseGroupRef: sptr("rg-" + album),
-		AlbumCredit:   sptr(artist),
+		AlbumCredit: sptr(artist),
+		DiscNumber:  &disc, TrackNumber: &track,
 		ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
 	}
 }
@@ -141,10 +143,11 @@ func newRunner(st *store.Store, s matching.Searcher) *Runner {
 // TestRunnerImportsHighConfidence 覆盖 11.6 的直接入库分支。
 func TestRunnerImportsHighConfidence(t *testing.T) {
 	st := openStore(t)
+	// 自动资格要求完整曲名；尾部省略号仍按可能截断复核，另见反例。
 	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{
-		"God knows...": {mbCandidate("trk-1", "God knows...", "平野綾", "涼宮ハルヒの詰合")},
+		"Lost my music": {mbCandidate("trk-1", "Lost my music", "平野綾", "涼宮ハルヒの詰合")},
 	}}
-	batchID := enqueueOne(t, st, "God knows...", "平野綾", "涼宮ハルヒの詰合")
+	batchID := enqueueOne(t, st, "Lost my music", "平野綾", "涼宮ハルヒの詰合")
 
 	events := runToCompletion(t, newRunner(st, searcher), batchID)
 
@@ -181,6 +184,19 @@ func TestRunnerImportsHighConfidence(t *testing.T) {
 	}
 	if !sawImport {
 		t.Error("应输出直接入库的提示")
+	}
+}
+
+func TestRunnerTruncatedTitleIsNotAutomaticIdentity(t *testing.T) {
+	st := openStore(t)
+	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{
+		"God knows...": {mbCandidate("truncated", "God knows...", "平野綾", "涼宮ハルヒの詰合")},
+	}}
+	batch := enqueueOne(t, st, "God knows...", "平野綾", "涼宮ハルヒの詰合")
+	runToCompletion(t, newRunner(st, searcher), batch)
+	stats, err := st.Stats(batch)
+	if err != nil || stats.Review != 1 || stats.Imported != 0 || stats.Skipped != 0 {
+		t.Fatal("possible truncation granted automatic identity", stats, err)
 	}
 }
 
@@ -474,9 +490,10 @@ func TestPauseEmitsSummary(t *testing.T) {
 // 匹配引擎自己的判定另有 acceptance/csv_import_test.go 覆盖。
 func TestRunnerImportsAnchoredRowWhereArtistIsReleaseCredit(t *testing.T) {
 	st := openStore(t)
+	candidate := mbCandidate("trk-1", "綿雪の夢", "ハトリアヤ", "狼と巫女とお菓子の家")
+	candidate.AlbumCredit = sptr("Crest") // 明确来源发行署名，不用专辑相同抵消任意冲突。
 	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{
-		// 上游返回的署名与表格里的歌手列对不上，但歌集对得上
-		"綿雪の夢": {mbCandidate("trk-1", "綿雪の夢", "ハトリアヤ", "狼と巫女とお菓子の家")},
+		"綿雪の夢": {candidate},
 	}}
 	batchID := enqueueOne(t, st, "綿雪の夢（繁雪之梦）", "Crest", "狼と巫女とお菓子の家")
 
