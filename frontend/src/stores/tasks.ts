@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { App, Events, EventsOn } from '@/api'
 import { createRefreshQueue } from '@/lib/refreshQueue'
-import type { ImportProgress, TaskState } from '@/api/events'
+import { emptyProblems, type ImportProgress, type TaskState } from '@/api/events'
 
 /** 一条日志行。 */
 export interface LogLine {
@@ -23,12 +23,14 @@ export interface LogLine {
 export const useTasksStore = defineStore('tasks', () => {
   const summary = ref<TaskState | null>(null)
   const log = ref<LogLine[]>([])
-  let unsubscribe: (() => void) | null = null
+  let subscriptions: (() => void)[] = []
 
   const hasActiveImport = computed(
     () => (summary.value?.total ?? 0) > 0 && (summary.value?.processed ?? 0) < (summary.value?.total ?? 0),
   )
-  const reviewPending = computed(() => summary.value?.reviewPending ?? 0)
+  const problems = computed(() => summary.value?.problems ?? emptyProblems)
+  const reviewPending = computed(() => problems.value.reviewProblems)
+  const reviewSourceRows = computed(() => problems.value.sourceRows)
   const progressLabel = computed(() => {
     if (!summary.value || summary.value.total === 0) return ''
     return `${summary.value.processed}/${summary.value.total}`
@@ -40,8 +42,8 @@ export const useTasksStore = defineStore('tasks', () => {
 
   /** 开始监听后端推送的进度事件。 */
   function subscribe() {
-    if (unsubscribe) return
-    unsubscribe = EventsOn(Events.ImportProgress, (p: ImportProgress) => {
+    if (subscriptions.length) return
+    subscriptions = [EventsOn(Events.ImportProgress, (p: ImportProgress) => {
       summary.value = {
         activeBatch: p.batchId,
         filename: summary.value?.activeBatch === p.batchId ? summary.value.filename : '',
@@ -50,7 +52,8 @@ export const useTasksStore = defineStore('tasks', () => {
         stats: p.stats,
         running: !p.done && !p.paused,
         // 批次统计不是全库待复核总数；保留上次汇总，事件后按全批次重新读取。
-        reviewPending: summary.value?.reviewPending ?? 0,
+        reviewPending: problems.value.reviewProblems,
+        problems: { ...problems.value },
       }
       void refresh()
       if (p.line) {
@@ -58,12 +61,14 @@ export const useTasksStore = defineStore('tasks', () => {
         // 只保留最近 500 行，避免长任务把内存占满
         if (log.value.length > 500) log.value.splice(0, log.value.length - 500)
       }
-    })
+    }), ...[Events.TasksChanged, Events.ReviewChanged, Events.LibraryChanged].map(event =>
+      EventsOn(event, () => { void refresh() }),
+    )]
   }
 
   function unsubscribeAll() {
-    unsubscribe?.()
-    unsubscribe = null
+    subscriptions.forEach(off => off())
+    subscriptions = []
     refreshQueue.dispose()
     refreshQueue = makeRefreshQueue()
   }
@@ -89,6 +94,8 @@ export const useTasksStore = defineStore('tasks', () => {
     log,
     hasActiveImport,
     reviewPending,
+    reviewSourceRows,
+    problems,
     progressLabel,
     progressPercent,
     subscribe,

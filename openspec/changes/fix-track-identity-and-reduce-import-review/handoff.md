@@ -1,10 +1,33 @@
-# 实施交接：第七组已完成
+# 实施交接：8.1 未完成检查点
 
 ## 当前状态
 
 - 变更 `fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
-- 已完成 1.1–7.4，**37/48**；CLI 已确认 7.4 完成。下一任务 8.1：前端独立问题队列与任务 store。
+- 已完成 1.1–7.4，**37/48**；CLI 已确认 7.4 完成。8.1 已写入部分实现，首轮测试失败，尚未勾选；下一步修复新测试的行创建方式并完成验证。
 - 未同步主规格、未归档、未修改或清理用户应用数据。测试使用临时 SQLite、fixture 和 httptest；本轮未执行浏览器、真实网络或原生验收。
+
+## 8.1 未完成
+
+本轮已写入但尚未验证完成：
+
+- `internal/store/problem_queue.go` 在同一只读事务读取任务 revision、独立问题、完整 scope、查询草稿、来源行与统计；包含正在 queued/matching 重试的活跃成员，不获取租约、不启动网络。批次文件名按批次复用读取。
+- `GetReviewProblemQueue` 返回稳定问题 ID、pending/failed 分类、完整来源及范围；各行候选仍归各自来源，不把冲突快照拼成一行。`ReviewItem` 增加原始整行、行索引、数值输入和 profile；候选所有权继续本地重算。
+- `frontend/src/stores/review.ts` 新增问题读状态、稳定选择、串行合并刷新、任务 revision 下限及卸载响应失效；订阅 review/tasks/import/library 事件。尚未连接 `ReviewView.vue`，界面仍逐行；8.2–8.4 才完成显示、操作和租约接线。
+- tasks store 订阅 review/tasks/library，保留全局 Problems 与 SourceRows，不用单批行数覆盖问题数；事件数据形状引用生成 DTO。前端桩新增问题读 API，通过显式 problemId 分组，不在浏览器按文本判等价。
+- 新增问题 store 单测、扩展任务 store 单测、新增真实 App 问题队列测试。
+
+实际执行：
+
+```sh
+gofmt -w internal/store/problem_queue.go internal/app/bindings_review.go internal/app/bindings_review_problem.go internal/app/review_queue_test.go
+go test ./internal/app -run 'TestReviewProblemQueue' -count=1
+```
+
+**失败：** `TestReviewProblemQueueSourcesScopeAndReadOnly` 预期两个问题，但得到一个。定位到既有 `internal/app/enrich_worker_test.go` 的 `enqueueOneItem`：只要全局已有 review 行，它就返回第一条旧行，而不是新批次的行。新测试调用该 helper 后 MarkReview 作用在旧行，不同专辑新行仍 queued，因此不出现在问题队列。尚未修复；不能将这次失败解释为已证明生产问题归并错误。
+
+建议下一步：新测试自行 CreateBatch→EnqueueItems→ClaimNextItem，明确取得新行 ID（或单独评估修复共享 helper 的影响），重跑定向测试，再执行 `/Users/amadeus/.go/bin/wails generate module`、typecheck、前端单测和后端回归。
+
+**未执行：** 同一 `&&` 命令链中的 Wails 生成、typecheck、store 单测均因 Go 失败未运行；新 DTO 尚未生成到被忽略的 `frontend/wailsjs/`。本轮也未跑全量 Go/race/build/Playwright/严格规格校验。8.1 仍未完成，不把新增代码当作交付。
 
 ## 7.4 已完成
 

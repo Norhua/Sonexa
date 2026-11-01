@@ -52,6 +52,49 @@ func (a *App) UpdateReviewProblemDraft(scope store.ProblemScope, query store.Rev
 	return a.store.UpdateProblemDraft(scope, query)
 }
 
+// ReviewProblemView keeps membership explicit; candidate facts stay attached to
+// their source rows instead of merging contradictory snapshots into one row.
+type ReviewProblemView struct {
+	ID      int64              `json:"id"`
+	Status  string             `json:"status"`
+	Scope   store.ProblemScope `json:"scope"`
+	Query   *store.ReviewQuery `json:"query"`
+	Sources []ReviewItem       `json:"sources"`
+}
+
+type ReviewProblemQueueView struct {
+	Revision int64               `json:"revision"`
+	Problems store.ProblemStats  `json:"problems"`
+	Items    []ReviewProblemView `json:"items"`
+}
+
+// GetReviewProblemQueue reads one row per active problem with its complete
+// source range. Ownership is projected locally after the read transaction; the
+// returned scope must still be revalidated by every mutating operation.
+func (a *App) GetReviewProblemQueue() (*ReviewProblemQueueView, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	queue, err := a.store.ReadReviewProblemQueue()
+	if err != nil {
+		return nil, err
+	}
+	out := &ReviewProblemQueueView{Revision: queue.Revision, Problems: queue.Problems, Items: []ReviewProblemView{}}
+	for _, p := range queue.Items {
+		view := ReviewProblemView{ID: p.Scope.ProblemID, Scope: p.Scope, Query: p.Query, Status: "failed", Sources: []ReviewItem{}}
+		for _, source := range p.Sources {
+			row := a.reviewSource(source.Item)
+			row.BatchTag = source.BatchTag
+			view.Sources = append(view.Sources, row)
+			if source.Item.Status != store.StatusFailed {
+				view.Status = "pending"
+			}
+		}
+		out.Items = append(out.Items, view)
+	}
+	return out, nil
+}
+
 func (a *App) GetReviewProblemStats() (store.ProblemStats, error) {
 	if err := a.ready(); err != nil {
 		return store.ProblemStats{}, err

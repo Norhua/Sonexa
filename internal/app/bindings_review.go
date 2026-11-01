@@ -21,10 +21,17 @@ type ReviewItem struct {
 	BatchID        int64   `json:"batchId"`
 	Status         string  `json:"status"`
 	// 原始导入文本，上半区展示；改搜不改动它
-	InTitle  *string `json:"inTitle"`
-	InArtist *string `json:"inArtist"`
-	InAlbum  *string `json:"inAlbum"`
-	BatchTag string  `json:"batchTag"`
+	InTitle      *string               `json:"inTitle"`
+	InArtist     *string               `json:"inArtist"`
+	InAlbum      *string               `json:"inAlbum"`
+	BatchTag     string                `json:"batchTag"`
+	RowIndex     int                   `json:"rowIndex"`
+	RawRow       string                `json:"rawRow"`
+	InYear       *int                  `json:"inYear"`
+	InTrackNo    *int                  `json:"inTrackNo"`
+	InDiscNo     *int                  `json:"inDiscNo"`
+	InDurationMS *int                  `json:"inDurationMs"`
+	Profile      matching.InputProfile `json:"profile"`
 
 	// TriedVariants 供「已尝试变体」提示行。
 	TriedVariants []string `json:"triedVariants"`
@@ -60,24 +67,9 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 
 	out := &ReviewQueue{Items: []ReviewItem{}, Total: len(items)}
 	for _, it := range items {
-		r := ReviewItem{
-			ID: it.ID, BatchID: it.BatchID, Revision: it.Revision, Status: string(it.Status),
-			ReviewReason: it.ReviewReason, ReviewEvidence: it.ReviewEvidence,
-			InTitle: it.InTitle, InArtist: it.InArtist, InAlbum: it.InAlbum,
-			AttemptCount: it.AttemptCount,
-			LastError:    it.LastError, LastErrorAt: formatTime(it.LastErrorAt),
-		}
+		r := a.reviewSource(it)
 		if b, _ := a.store.GetBatch(it.BatchID); b != nil {
 			r.BatchTag = b.Filename
-		}
-		if it.TriedVariants != nil {
-			json.Unmarshal([]byte(*it.TriedVariants), &r.TriedVariants)
-		}
-		if it.Candidates != nil {
-			r.Candidates = a.parseCandidateSnapshot(*it.Candidates)
-		}
-		if r.Candidates == nil {
-			r.Candidates = []CandidateRow{}
 		}
 
 		switch it.Status {
@@ -89,6 +81,28 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 		out.Items = append(out.Items, r)
 	}
 	return out, nil
+}
+
+func (a *App) reviewSource(it store.ImportItem) ReviewItem {
+	r := ReviewItem{
+		ID: it.ID, BatchID: it.BatchID, Revision: it.Revision, Status: string(it.Status),
+		ReviewReason: it.ReviewReason, ReviewEvidence: it.ReviewEvidence,
+		InTitle: it.InTitle, InArtist: it.InArtist, InAlbum: it.InAlbum,
+		RowIndex: it.RowIndex, RawRow: it.RawRow, Profile: store.ItemProfile(&it),
+		InYear: it.InYear, InTrackNo: it.InTrackNo, InDiscNo: it.InDiscNo, InDurationMS: it.InDurationMS,
+		AttemptCount: it.AttemptCount, LastError: it.LastError, LastErrorAt: formatTime(it.LastErrorAt),
+		Candidates: []CandidateRow{}, TriedVariants: []string{},
+	}
+	if it.TriedVariants != nil {
+		json.Unmarshal([]byte(*it.TriedVariants), &r.TriedVariants)
+	}
+	if it.Candidates != nil {
+		r.Candidates = a.parseCandidateSnapshot(*it.Candidates)
+	}
+	if r.Candidates == nil {
+		r.Candidates = []CandidateRow{}
+	}
+	return r
 }
 
 // parseCandidateSnapshot 只读取来源候选事实；本地关联和旧动作不能赋予收藏权限。

@@ -3,16 +3,19 @@
 // 这些类型不出现在任何绑定方法的签名中，因此不在生成的 models.ts 里，
 // 需要在前端单独声明并与 Go 侧的结构保持一致。
 
-/** 匹配队列各状态的条目数。对应 store.BatchStats。 */
-export interface BatchStats {
-  total: number
-  queued: number
-  matching: number
-  imported: number
-  review: number
-  failed: number
-  skipped: number
-  discarded: number
+import type { Models } from '@/api'
+
+/** Data-only shapes derived from bindings, without generated class helpers. */
+export type ProblemStats = Pick<Models.store.ProblemStats, 'reviewProblems' | 'pendingProblems' | 'failedProblems' | 'sourceRows'>
+export type BatchStats = Pick<Models.store.BatchStats,
+  'total' | 'queued' | 'matching' | 'imported' | 'review' | 'failed' | 'skipped' | 'discarded' | 'unmatched' | 'existingSkipped'
+> & { problems: ProblemStats }
+
+/** A committed task/problem transaction; not a library mutation. */
+export interface TaskChange { revision: number }
+
+export const emptyProblems: ProblemStats = {
+  reviewProblems: 0, pendingProblems: 0, failedProblems: 0, sourceRows: 0,
 }
 
 /** 匹配进度事件。对应 importer.Progress。 */
@@ -36,6 +39,7 @@ export interface TaskState {
   stats: BatchStats | null
   running: boolean
   reviewPending: number
+  problems: ProblemStats
 }
 
 export const emptyStats: BatchStats = {
@@ -47,4 +51,7 @@ export const emptyStats: BatchStats = {
   failed: 0,
   skipped: 0,
   discarded: 0,
+  unmatched: 0,
+  existingSkipped: 0,
+  problems: { ...emptyProblems },
 }

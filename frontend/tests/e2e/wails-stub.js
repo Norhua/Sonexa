@@ -92,7 +92,10 @@
           window.__lastReorder = { id, ids }
           tracks.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id))
         },
-        GetTaskSummary: record('GetTaskSummary', async () => ({ activeBatch: 0, filename: '', processed: 0, total: 0, stats: null, running: false, reviewPending: 3 })),
+        GetTaskSummary: record('GetTaskSummary', async () => {
+          const queue = await window.go.app.App.GetReviewProblemQueue()
+          return { activeBatch: 0, filename: '', processed: 0, total: 0, stats: null, running: false, reviewPending: queue.problems.reviewProblems, problems: queue.problems }
+        }),
         GetEnrichStatus: record('GetEnrichStatus', async () => state.enrich),
         StartEnrich: async () => {
           state.enrich = { ...state.enrich, state: 'running' }
@@ -193,6 +196,32 @@
           window.__lastExport = req
           return { path: '/tmp/export.csv', count: (req.trackIds || []).length }
         },
+        // Explicit problem IDs in fixtures define membership, never matching
+        // text/candidate pools in the browser. Legacy one-row fixtures default
+        // to one problem each while the UI is switched in 8.2–8.4.
+        GetReviewProblemQueue: record('GetReviewProblemQueue', async () => {
+          const legacy = await window.go.app.App.GetReviewQueue()
+          const grouped = new Map()
+          for (const item of legacy.items) {
+            const id = item.problemId ?? item.id + 1000
+            if (!grouped.has(id)) grouped.set(id, [])
+            grouped.get(id).push({ ...item, rowIndex: item.rowIndex ?? 0,
+              rawRow: item.rawRow ?? JSON.stringify([item.inTitle, item.inArtist, item.inAlbum]),
+              inYear: item.inYear ?? null, inDiscNo: item.inDiscNo ?? null, inTrackNo: item.inTrackNo ?? null, inDurationMs: item.inDurationMs ?? null,
+              reviewReason: item.reviewReason ?? null, reviewEvidence: item.reviewEvidence ?? null,
+            })
+          }
+          const items = [...grouped].map(([id, sources]) => ({ id, sources,
+            status: sources.every(row => row.status === 'failed') ? 'failed' : 'pending', query: null,
+            scope: { version: 1, problemId: id, revision: sources[0].revision ?? 1, queryRevision: 1, candidateRevision: 1,
+              members: sources.map(row => ({ itemId: row.id, revision: row.revision ?? 1, inputRevision: row.revision ?? 1 })),
+            },
+          }))
+          return { revision: window.__reviewRevision ?? 1, items,
+            problems: { reviewProblems: items.length, pendingProblems: items.filter(p => p.status === 'pending').length,
+              failedProblems: items.filter(p => p.status === 'failed').length, sourceRows: legacy.items.length },
+          }
+        }),
         GetReviewQueue: async () => ({
           items: [
             {
@@ -230,7 +259,8 @@
         GetImportQueue: async () => [{
           id: 1, filename: '/tmp/music_extracted.csv', status: 'done',
           running: false, processed: 10, totalRows: 10, fileRows: 12,
-          stats: { imported: 7, review: 3, queued: 0, failed: 0 },
+          stats: { total: 10, imported: 7, review: 3, queued: 0, matching: 0, failed: 0, skipped: 0, discarded: 0, unmatched: 1, existingSkipped: 0,
+            problems: { reviewProblems: 2, pendingProblems: 2, failedProblems: 0, sourceRows: 3 } },
           failedTitles: [], createdAt: '2026-09-16T01:00:00Z',
         }],
         PickImportFile: async () => '/tmp/music_extracted.csv',

@@ -6,14 +6,16 @@ import { useEnrichStore } from '../../src/stores/enrich'
 
 vi.mock('../../src/api', () => ({
   App: { GetTaskSummary: vi.fn(), GetEnrichStatus: vi.fn() },
-  Events: { ImportProgress: 'import:progress', EnrichProgress: 'enrich:progress' }, EventsOn: vi.fn(),
+  Events: { ImportProgress: 'import:progress', EnrichProgress: 'enrich:progress', ReviewChanged: 'review:changed', TasksChanged: 'tasks:changed', LibraryChanged: 'library:changed' }, EventsOn: vi.fn(),
 }))
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>(res => { resolve = res })
   return { promise, resolve }
 }
-const summary = (processed: number, reviewPending: number) => ({ activeBatch: 2, filename: 'new.csv', processed, total: 10, stats: { review: 1, failed: 2 }, running: true, reviewPending }) as Models.app.TaskSummary
+const summary = (processed: number, reviewPending: number) => ({ activeBatch: 2, filename: 'new.csv', processed, total: 10, stats: { review: 1, failed: 2 }, running: true, reviewPending,
+  problems: { reviewProblems: reviewPending, pendingProblems: reviewPending - 1, failedProblems: 1, sourceRows: reviewPending * 2 },
+}) as Models.app.TaskSummary
 let listeners: Record<string, (...args: any[]) => void>
 beforeEach(() => {
   setActivePinia(createPinia()); vi.resetAllMocks(); listeners = {}
@@ -63,6 +65,27 @@ describe('task progress and global review totals', () => {
     vi.mocked(App.GetTaskSummary).mockResolvedValue(summary(9, 12))
     await store.refresh()
     expect(store.reviewPending).toBe(12)
+  })
+
+  it('refreshes idle tasks for problem/library events and keeps row units separate', async () => {
+    const store = useTasksStore()
+    store.subscribe(); store.subscribe()
+    vi.mocked(App.GetTaskSummary).mockResolvedValue({ ...summary(10, 2), running: false })
+    await store.refresh()
+    expect(store.reviewPending).toBe(2)
+    expect(store.reviewSourceRows).toBe(4)
+    expect(store.problems.pendingProblems).toBe(1)
+    for (const event of [Events.ReviewChanged, Events.TasksChanged, Events.LibraryChanged]) {
+      const calls = vi.mocked(App.GetTaskSummary).mock.calls.length
+      // Same problem count, changed membership: refresh must not watch counts.
+      vi.mocked(App.GetTaskSummary).mockResolvedValue({ ...summary(10, 2), problems: { ...summary(10, 2).problems, sourceRows: 5 } })
+      listeners[event]({ revision: 20 })
+      await vi.waitFor(() => expect(App.GetTaskSummary).toHaveBeenCalledTimes(calls + 1))
+      expect(store.reviewSourceRows).toBe(5)
+    }
+    expect(EventsOn).toHaveBeenCalledTimes(4)
+    store.unsubscribeAll()
+    expect(listeners).toEqual({})
   })
 
   it('enrichment summary cannot replace a newer progress event', async () => {
