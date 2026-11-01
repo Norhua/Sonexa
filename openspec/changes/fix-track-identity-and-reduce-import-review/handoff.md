@@ -1,4 +1,4 @@
-# 实施交接：4.2 完成，4.3 首轮测试编译阻塞
+# 实施交接：4.2 完成，4.3 发行修订竞态测试阻塞
 
 ## 当前状态
 
@@ -16,18 +16,25 @@
 - 旧 Runner 文本重复测试改为验证仍请求上游，不制造 owned/skip。
 - `internal/importer/local_existing_test.go` 新增完整本地跳过、稀疏/无专辑/不同专辑/重复位置继续检索、明确位置消歧及删除历史批次后相同结果的初始测试。
 
-首轮执行 `go test ./internal/importer ./internal/library -count=1`：**library 通过，importer 测试编译失败**。
+上个检查点 `22f5a8a` 的测试类型错误已修复：将终态原因读为 `store.ResolutionReason`。原有 importer/library 测试随后通过。
+
+本轮继续补充：
+
+- 本地准备拒绝过期 profile，要求同一个实际本地组而非跨组名称传递连接；保留选定候选的原始来源字段，只将完整 current 视图与已核验的同一位置建立证据关系。
+- 清单检查拒绝重复身份/重复位置及未知竞争位置；skip 准备结束后对照当次事实的 track/release revision，不能把较新的绑定修订当作旧证据仍有效。
+- Runner 在本地提交被取消时不记录为匹配失败。
+- 新增 `internal/library/local_existing_test.go`，覆盖实际 skip 不写收藏表、当前值改名与有效来源名、取消/旧输入/删除/换绑/失败回滚、未知位置、显式版本/时长/专辑，以及准备期间绑定修订变化。
+
+最新命令 `go test ./internal/library ./internal/importer -count=1`：**importer 通过，library 仅一项失败**：
 
 ```text
-internal/importer/local_existing_test.go:75:186: invalid operation:
-reason != store.ResolutionExistingTrack (mismatched types string and store.ResolutionReason)
+TestLocalExistingRejectsStaleOrCancelledScope/release
+local_existing_test.go:84: stale/failed skip succeeded
 ```
 
-测试将 SQL 的终态原因读为 string，却与具名类型常量直接比较。尚未修正；Runner 新行为测试没有执行。按工作流遇错暂停，不标完成。
+已定位测试构造错误：轻量 skip 的 `admissionBaselineTx` 在填写 `ExistingReleaseID` 前就返回（只保存既有 track 与 track/release 修订），所以测试 `UPDATE release ... WHERE id=selected.Plan.Baseline.ExistingReleaseID` 使用了 0、没有修改任何行，旧计划自然仍能提交。这不是已证明的生产修订校验问题。下一步通过计划的来源发行身份读取实际发行 ID，并断言 UPDATE RowsAffected=1 后重新验证。尚未修这个测试；按工作流遇错暂停。
 
-下一步先修类型，再核验纯本地分支不能按某个合格视图替换为另一份不合格候选、明确输入限定/位置竞争不被偏好覆盖、清单中未知竞争者/非传递组关系保守处理、稀疏与未绑定仍出网、错误/CAS/取消无错误终态。后续还须接入本地与远程合一的完整决策路径（4.4–4.6），当前远程分支仍旧 SelectCandidate，不能描述成完整新流水线。4.3 局部说明与最终回归尚未完成，4.4 未开始。
-
-下述通过结果仅针对 4.2 提交，不是当前 4.3 检查点全绿。
+4.3 仍未完成、未勾选。后续还须检查本地跳过期间竞争事实/修订、多个本地相容目标、未绑定有上游结果、真实请求次数和错误保留，更新局部说明并回归。远程分支仍旧 SelectCandidate，完整输入优先生产路径待 4.4–4.6；4.4 未开始。下述通过结果仅针对 4.2 提交，不能当作当前 4.3 代码全绿。
 
 ## 4.2 已完成
 

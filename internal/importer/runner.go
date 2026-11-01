@@ -243,6 +243,9 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	if local != nil {
 		result, err := r.library.CommitAdmission(ctx, local.Plan.ID, local.Plan.Hash, domain.AdmissionApproval{})
 		if err != nil {
+			if ctx.Err() != nil {
+				return ""
+			}
 			r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts, item.Revision)
 			return matching.ErrorLogLine(err)
 		}

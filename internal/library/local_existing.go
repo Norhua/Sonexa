@@ -2,9 +2,12 @@ package library
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
+	"github.com/norhua/sonexa/internal/store"
 )
 
 // PrepareLocalExisting uses the same metadata evidence as the full pipeline,
@@ -12,14 +15,19 @@ import (
 // and complete local facts establish the position. A nil selection means more
 // facts are needed, not "not owned". No historical input/selection is read.
 func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.InputProfile, itemID, revision int64) (*Selection, error) {
+	if input.RuleVersion != matching.MetadataRuleVersion {
+		return nil, errors.New("输入证据版本已失效，需要重新解析")
+	}
 	pool, err := s.CandidateFacts(ctx, input, nil)
 	if err != nil {
 		return nil, err
 	}
-	if pool.Truncated || len(pool.Targets) == 0 || input.Album.Raw == "" {
+	if pool.Truncated || len(pool.Targets) == 0 || strings.TrimSpace(input.Album.Raw) == "" {
 		return nil, nil
 	}
 	prepared := []selectionCandidate{}
+	ownerships := map[domain.Identity]matching.LocalMatch{}
+	var commonGroup int64
 	for _, target := range pool.Targets {
 		evidence := target.Check(input)
 		if evidence.Eligibility == matching.MetadataExcluded {
@@ -34,7 +42,16 @@ func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.Input
 			if fact.Kind == "current" || fact.Release == nil || !fact.Metadata.PositionVerified {
 				continue
 			}
-			if localPositionUnique(input, target, fact.Release) {
+			// Names can be established by the whole current view, while its
+			// exact position is independently verified against this snapshot.
+			// This is a link between fact views, never copying their fields.
+			supported := evidence.Facets[i].Eligibility == matching.MetadataEligible
+			for j, current := range target.Facts {
+				if current.Kind == "current" && current.Metadata.PositionVerified && evidence.Facets[j].Eligibility == matching.MetadataEligible {
+					supported = true
+				}
+			}
+			if supported && localPositionUnique(input, target, fact.Release) {
 				chosen = fact
 				break
 			}
@@ -51,7 +68,13 @@ func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.Input
 		if resolution.Insufficient || len(resolution.Groups) != 1 {
 			return nil, nil
 		}
-		groups[resolution.Groups[0].ID] = true
+		groupID := resolution.Groups[0].ID
+		if commonGroup != 0 && commonGroup != groupID {
+			return nil, nil // no transitive name bridge between different local groups
+		}
+		commonGroup = groupID
+		groups[groupID] = true
+		ownerships[target.Identity.Track] = target.Ownership
 		prepared = append(prepared, selectionCandidate{candidate: chosen.Metadata.Candidate, summary: chosen.Release.Summary(), groups: groups, existing: true})
 	}
 	if len(prepared) == 0 {
@@ -65,6 +88,12 @@ func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.Input
 	if err != nil {
 		return nil, err
 	}
+	// Skip preparation re-reads current bindings. A newer binding revision is
+	// not permission to use the older automatic evidence we just checked.
+	expected := ownerships[domain.Identity{Provider: selected.Candidate.Provider, Ref: selected.Candidate.MatchRef}]
+	if plan.Baseline.ExistingTrackID != expected.TrackID || plan.Baseline.ExistingTrackRevision != expected.Revision || plan.Baseline.ExistingReleaseRevision != expected.ReleaseRevision {
+		return nil, store.ErrPlanStale
+	}
 	selected.Plan = plan
 	return &selected, nil
 }
@@ -76,10 +105,17 @@ func localPositionUnique(input matching.InputProfile, target matching.CandidateT
 		return false
 	}
 	found := false
+	positions := map[[2]int]bool{}
+	identities := map[domain.Identity]bool{}
 	for _, entry := range release.Tracklist.Value {
 		if entry.Track.State != domain.Value || entry.Track.Value.Provider != release.Identity.Provider || entry.Track.Value.Ref == "" || entry.DiscNumber <= 0 || entry.TrackNumber <= 0 {
 			return false
 		}
+		position := [2]int{entry.DiscNumber, entry.TrackNumber}
+		if positions[position] || identities[entry.Track.Value] {
+			return false
+		}
+		positions[position], identities[entry.Track.Value] = true, true
 		if entry.Track.Value == target.Identity.Track {
 			if found {
 				return false

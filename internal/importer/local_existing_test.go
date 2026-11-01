@@ -71,7 +71,8 @@ func TestRunnerLocalFactsSkipWithoutHistoryOrNetwork(t *testing.T) {
 			t.Fatal(stats, err, events)
 		}
 		var target int64
-		var reason, raw string
+		var reason store.ResolutionReason
+		var raw string
 		if err := st.DB().QueryRow("SELECT track_id,resolution_reason,raw_row FROM import_item WHERE batch_id=?", batch).Scan(&target, &reason, &raw); err != nil || target != id || reason != store.ResolutionExistingTrack || !strings.Contains(raw, "译名") {
 			t.Fatal(target, reason, raw, err)
 		}
