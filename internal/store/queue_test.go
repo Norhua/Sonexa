@@ -75,7 +75,7 @@ func TestRawRowNeverModified(t *testing.T) {
 // TestStateMachineTransitions 覆盖 11.2 的状态流转。
 func TestStateMachineTransitions(t *testing.T) {
 	s := openTestStore(t)
-	batchID := seedBatch(t, s, 6)
+	batchID := seedBatch(t, s, 5)
 
 	// queued → matching
 	item, _ := s.ClaimNextItem(batchID)
@@ -104,17 +104,6 @@ func TestStateMachineTransitions(t *testing.T) {
 		t.Errorf("状态 = %q, 期望 review", got2.Status)
 	}
 
-	// → merged（不新建曲目）
-	item3, _ := s.ClaimNextItem(batchID)
-	s.MarkMerged(item3.ID, trackID)
-	got3, _ := s.GetItem(item3.ID)
-	if got3.Status != StatusMerged {
-		t.Errorf("状态 = %q, 期望 merged", got3.Status)
-	}
-	if got3.MergedInto == nil || *got3.MergedInto != trackID {
-		t.Errorf("合并目标 = %v", got3.MergedInto)
-	}
-
 	// → discarded
 	item4, _ := s.ClaimNextItem(batchID)
 	s.MarkDiscarded(item4.ID)
@@ -132,7 +121,7 @@ func TestStateMachineTransitions(t *testing.T) {
 	}
 
 	// 终态判定
-	for _, st := range []ItemStatus{StatusImported, StatusSkipped, StatusMerged, StatusDiscarded} {
+	for _, st := range []ItemStatus{StatusImported, StatusSkipped, StatusDiscarded} {
 		if !st.IsTerminal() {
 			t.Errorf("%q 应为终态", st)
 		}

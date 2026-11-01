@@ -3,7 +3,7 @@ package store
 // 新代际仅用于空库初始化；当前值与上游事实独立保存。
 const migration0001Init = `
 CREATE TABLE model_generation (id INTEGER PRIMARY KEY CHECK(id=1), generation TEXT NOT NULL);
-INSERT INTO model_generation VALUES(1,'track-identity-v3');
+INSERT INTO model_generation VALUES(1,'track-identity-v4');
 CREATE TABLE release_group (
  id INTEGER PRIMARY KEY, display_provider TEXT, display_group_ref TEXT, representative_id INTEGER,
  revision INTEGER NOT NULL DEFAULT 1, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL
@@ -264,7 +264,7 @@ CREATE TABLE import_item (
   in_disc_no INTEGER,
   in_duration_ms INTEGER,
   revision       INTEGER NOT NULL DEFAULT 1 CHECK(typeof(revision)='integer' AND revision>0),
-  status         TEXT NOT NULL,
+  status         TEXT NOT NULL CHECK(status IN ('queued','matching','imported','review','failed','skipped','discarded')),
   review_reason  TEXT,
   review_evidence TEXT,
   attempt_count  INTEGER NOT NULL DEFAULT 0,
@@ -278,7 +278,6 @@ CREATE TABLE import_item (
   resolution_target TEXT CHECK(resolution_target IS NULL OR json_valid(resolution_target)),
   resolution_problem_id INTEGER,
   resolution_problem_revision INTEGER CHECK(resolution_problem_revision IS NULL OR (typeof(resolution_problem_revision)='integer' AND resolution_problem_revision>0)),
-  merged_into    INTEGER,
   updated_at     DATETIME NOT NULL,
   CHECK((resolution_problem_id IS NULL)=(resolution_problem_revision IS NULL))
 );
@@ -346,7 +345,7 @@ BEFORE UPDATE OF status ON review_problem WHEN NEW.status='closed'
  AND EXISTS(SELECT 1 FROM review_problem_item WHERE problem_id=NEW.id AND active=1)
 BEGIN SELECT RAISE(ABORT,'review problem still has active members'); END;
 CREATE TRIGGER import_item_finish_guard
-BEFORE UPDATE OF status ON import_item WHEN NEW.status IN ('imported','skipped','discarded','merged')
+BEFORE UPDATE OF status ON import_item WHEN NEW.status IN ('imported','skipped','discarded')
  AND EXISTS(SELECT 1 FROM review_problem_item WHERE item_id=NEW.id AND active=1)
 BEGIN SELECT RAISE(ABORT,'import item still has active membership'); END;
 

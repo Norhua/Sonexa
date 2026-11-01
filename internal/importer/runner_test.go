@@ -218,7 +218,7 @@ func TestRunnerSendsToReview(t *testing.T) {
 }
 
 // TestRunnerLocalDuplicateGoesToReview 覆盖 11.3：
-// 疑似重复送入复核，且不新建曲目；库中曲目作为一条候选出现。
+// 旧短路暂留到本地召回替换；文本相关只作提示，不生成可合并/跳过的假候选。
 func TestRunnerLocalDuplicateGoesToReview(t *testing.T) {
 	st := openStore(t)
 
@@ -247,23 +247,20 @@ func TestRunnerLocalDuplicateGoesToReview(t *testing.T) {
 		t.Errorf("曲目数 = %d, 期望仍为 1（疑似重复不新建）", count)
 	}
 
-	// 库中曲目作为一条候选出现在同一列表里
+	// 相关提示独立于候选，不可凭这个本地 ID 绕过来源精确身份校验。
 	items, _ := st.AllReviewItems()
-	if len(items) != 1 || items[0].Candidates == nil {
-		t.Fatal("应把库中曲目作为候选写入快照")
+	if len(items) != 1 || items[0].Candidates == nil || *items[0].Candidates != "[]" || items[0].ReviewEvidence == nil {
+		t.Fatal("相关文本不得生成收藏动作候选")
 	}
-	var snapshot []map[string]any
-	if err := json.Unmarshal([]byte(*items[0].Candidates), &snapshot); err != nil {
-		t.Fatalf("候选快照无法解析: %v", err)
+	var evidence struct {
+		Code           string `json:"code"`
+		RelatedTrackID int64  `json:"relatedTrackId"`
 	}
-	if len(snapshot) != 1 || snapshot[0]["local"] != true {
-		t.Errorf("候选快照 = %v, 期望含本地候选", snapshot)
+	if err := json.Unmarshal([]byte(*items[0].ReviewEvidence), &evidence); err != nil {
+		t.Fatal(err)
 	}
-	if snapshot[0]["action"] != "合并" {
-		t.Errorf("本地候选的动作 = %v, 期望 合并", snapshot[0]["action"])
-	}
-	if int64(snapshot[0]["trackId"].(float64)) != existing {
-		t.Error("候选应指向库中已有的那首曲目")
+	if evidence.Code != "unbound_related_track" || evidence.RelatedTrackID != existing {
+		t.Fatalf("相关提示丢失：%+v", evidence)
 	}
 
 	// 疑似重复的提示同时输出两边信息

@@ -295,7 +295,7 @@ func TestTrackIdentifiersDoNotImposeRecordingOrISRCUniqueness(t *testing.T) {
 }
 
 func TestPreProblemGenerationsRejectedWithoutChanges(t *testing.T) {
-	for _, generation := range []string{"upstream-snapshot-v1", "track-identity-v2"} {
+	for _, generation := range []string{"upstream-snapshot-v1", "track-identity-v2", "track-identity-v3"} {
 		t.Run(generation, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "old.db")
 			db, err := sql.Open("sqlite", path)

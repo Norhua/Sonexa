@@ -10,6 +10,7 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(async () => {
     const w = window as any, api = w.go.app.App
     const queue = await api.GetReviewQueue()
+    queue.items[0].revision = 3
     queue.items[0].candidates = [{
       provider: 'qq', matchRef: 'candidate-11', title: '复核候选', artist: '候选艺术家',
       album: '候选专辑', badges: ['qq'], action: '接受', confidence: 90, localTrackId: 0,
@@ -42,7 +43,7 @@ test.beforeEach(async ({ page }) => {
     }
     api.DiscardReviewItem = action('discard', 'discarded')
     api.NoneMatched = action('none')
-    api.MergeCandidate = action('merge', 'merged')
+
     api.RetryReviewItem = action('retry', 'queued')
     const prepare = (itemId: number) => {
       state.prepares.push(itemId)
@@ -51,13 +52,18 @@ test.beforeEach(async ({ page }) => {
         baseline: { conflict: false, requiresConfirmation: state.requiresConfirmation, resolution: { groups: [], evidence: [] } },
       }
     }
+    api.PrepareSkipExisting = async (candidate: any, itemId: number, revision: number) => {
+      state.actions.push({ name: 'skip', itemId, revision, matchRef: candidate.matchRef })
+      return { id: `skip-${itemId}`, hash: 'hash', baseline: { conflict: false, requiresConfirmation: false } }
+    }
     api.PrepareAdmission = async (_candidate: any, itemId: number) => prepare(itemId)
     api.PrepareNoMatchNeeded = async (itemId: number) => prepare(itemId)
     api.ConfirmReleaseAdditions = async (id: string, hash: string) => ({ planId: id, hash, credential: 'confirmed' })
     api.CommitAdmission = async (id: string) => {
       state.commits.push(id)
-      state.items.find((item: any) => id === `admit-${item.id}`).status = 'imported'
-      return { trackId: 90 }
+      const skipped = id.startsWith('skip-')
+      state.items.find((item: any) => id === `${skipped ? 'skip' : 'admit'}-${item.id}`).status = skipped ? 'skipped' : 'imported'
+      return { trackId: skipped ? 7 : 90, existing: skipped }
     }
   })
 })
@@ -123,17 +129,18 @@ test('none matched returning null clears candidates but keeps the item and count
   expect(await page.evaluate(() => (window as any).__review.queueReads)).toBe(2)
 })
 
-test('merge returning null advances the queue without admitting another track', async ({ page }) => {
+test('exact skip advances the queue without admitting another track', async ({ page }) => {
   await page.evaluate(() => {
-    Object.assign((window as any).__review.items[0].candidates[0], { localTrackId: 7, action: '合并', badges: ['本地', 'qq'] })
+    Object.assign((window as any).__review.items[0].candidates[0], { localTrackId: 7, ownership: { state: 'owned', trackId: 7 }, action: '跳过', badges: ['本地', 'qq'] })
   })
   await openReview(page)
-  await page.getByRole('button', { name: '合并', exact: true }).click()
+  await page.getByRole('button', { name: '跳过', exact: true }).click()
   await expectSecondItem(page)
   const state = await page.evaluate(() => (window as any).__review)
-  expect(state.actions).toEqual([{ name: 'merge', itemId: 11, targetTrackId: 7 }])
-  expect(state.commits).toEqual([])
+  expect(state.actions).toEqual([{ name: 'skip', itemId: 11, revision: 3, matchRef: 'candidate-11' }])
+  expect(state.commits).toEqual(['skip-11'])
   expect(state.prepares).toEqual([])
+  expect(state.items[0].status).toBe('skipped')
 })
 
 test('retry returning null refreshes the failed count after requeuing the item', async ({ page }) => {

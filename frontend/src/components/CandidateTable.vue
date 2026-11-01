@@ -3,7 +3,7 @@
  * 全应用唯一的候选结果表格组件。
  *
  * 上游搜索结果与复核队列候选列表共用本组件，列定义完全一致；
- * 动作按上下文不同（加入曲库 / 已在库中 / 接受 / 合并），而列不变。
+ * 动作按上下文不同（加入曲库 / 已在库中 / 接受 / 跳过），而列不变。
  *
  * 表格本体与曲目表格同为 Volt 的 DataTable——两张表的行高、表头、
  * 边框因此天然一致，不靠各写一遍 class 去对齐。
@@ -92,6 +92,7 @@ useCandidateCovers(visibleRows)
 const truncated = computed(() => props.limit > 0 && !expanded.value && props.rows.length > props.limit)
 
 function onAct(row: Models.app.CandidateRow) {
+  if (row.ownership?.state === 'identity_conflict' || row.ownership?.state === 'lookup_error') return
   // 「已在库中」为禁用态，但点击可跳转到该曲目
   if (row.action === '已在库中') {
     if (row.localTrackId) emit('jumpLocal', row.localTrackId)
@@ -193,7 +194,7 @@ function onAct(row: Models.app.CandidateRow) {
           <SecondaryButton
             variant="outlined"
             size="small"
-            :disabled="data.action === '已在库中' && !data.localTrackId"
+            :disabled="data.ownership?.state === 'identity_conflict' || data.ownership?.state === 'lookup_error' || (data.action === '已在库中' && !data.localTrackId)"
             :aria-label="data.action === '已在库中' ? `查看库中曲目：${data.title}` : undefined"
             :title="data.action === '已在库中' ? '点击跳转到该曲目' : ''"
             @click="onAct(data)"

@@ -62,7 +62,7 @@ func NewEngine(m config.MatchingSettings) *Engine {
 
 // Run 对一条输入执行完整的匹配流程。
 //
-//	[1] 本地去重检查 —— 疑似重复直接进复核，库中曲目作为一条候选
+//	[1] 旧本地检查由 Runner 单独执行；此入口仅检索和评分
 //	[2] 上游查询 —— 按变体策略执行（默认渐进式）
 //	[3] 置信度评分
 //	[4] 分流
@@ -165,8 +165,7 @@ type LocalDuplicateLookup interface {
 
 // CheckLocalDuplicate 执行本地去重前置检查。
 //
-// 判定为疑似重复时该条目进复核队列，且库中那首曲目作为一条候选
-// 出现在同一列表里——不新建曲目。
+// 判定为疑似重复时暂进复核，仅保存相关提示，不创建拥有结论或收藏动作。
 func (e *Engine) CheckLocalDuplicate(lookup LocalDuplicateLookup, in Input) (int64, error) {
 	if lookup == nil {
 		return 0, nil

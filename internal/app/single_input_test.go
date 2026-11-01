@@ -14,6 +14,37 @@ import (
 	"github.com/norhua/sonexa/internal/store"
 )
 
+func TestRemovedCandidateMergeProtocolCannotBeReplayed(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	if _, ok := reflect.TypeOf(a).MethodByName("MergeCandidate"); ok {
+		t.Fatal("removed API still exposed")
+	}
+	if _, ok := reflect.TypeOf(a.store).MethodByName("MarkMerged"); ok {
+		t.Fatal("removed store writer still exposed")
+	}
+	legacy := `[{"local":true,"trackId":7,"title":"旧候选","action":"合并","badges":["本地?"]}]`
+	if rows := a.parseCandidateSnapshot(legacy); len(rows) != 0 {
+		t.Fatal("legacy snapshot restored actionable candidate", rows)
+	}
+	itemID := enqueueOneItem(t, a, "原曲名", "原署名", "原专辑")
+	item, err := a.store.GetItem(itemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := CandidateRow{LocalTrackID: 7, Action: "合并", Badges: []string{"本地"}}
+	if _, err := a.PrepareSkipExisting(row, itemID, item.Revision); err == nil {
+		t.Fatal("legacy local target bypassed exact identity")
+	}
+	if _, err := a.AcceptCandidate(itemID, row); err == nil {
+		t.Fatal("legacy candidate bypassed admission")
+	}
+	got, err := a.store.GetItem(itemID)
+	if err != nil || !reflect.DeepEqual(item, got) {
+		t.Fatal("legacy replay ended input", got, err)
+	}
+}
+
 func TestAppExactSkipIsOfflineAndDoesNotNotifyLibrary(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()

@@ -26,7 +26,7 @@
 
 `ResolveLocal` 先经注入的来源能力验证身份，再通过 `LocalLookup.FindExactBinding` 一次读取当前 track 和发行绑定及修订。仅来源、真实 track、发行关系均一致时返回 `owned` 和本地 ID；ISRC、Recording、相似文本及旧绑定快照不参与拥有判定。结果区分 `unowned / owned / identity_conflict / lookup_error`，错误和冲突不携带可跳过的本地目标。
 
-未解析候选保留 `identity.state=unresolved`，不查询本地精确拥有、不妨碍后续目标解析；不支持身份检查及数据库失败明确返回错误。当前候选 DTO 已传递结构化结果，单行 `PrepareSkipExisting` / `CommitAdmission` 已支持精确跳过和输入修订重验，见 [store 事务说明](../store/README.md#单行接受与精确跳过)；完整的前端动作协议仍由后续任务接入。旧文本重复检查使用独立 `LocalDuplicateLookup`，仍待本地召回任务替换，不能把它的相关 ID 当作精确拥有。
+未解析候选保留 `identity.state=unresolved`，不查询本地精确拥有、不妨碍后续目标解析；不支持身份检查及数据库失败明确返回错误。当前候选 DTO 已传递结构化结果，单行 `PrepareSkipExisting` / `CommitAdmission` 已支持精确跳过和输入修订重验，见 [store 事务说明](../store/README.md#单行接受与精确跳过)；完整的前端动作协议仍由后续任务接入。旧文本重复检查使用独立 `LocalDuplicateLookup`，只保存相关提示，不再产生简化本地候选或合并动作；仍待本地召回任务替换，不能把它的相关 ID 当作精确拥有。
 
 ## 名称、版本与署名
 
@@ -48,7 +48,7 @@
 
 ## 存储边界与验证
 
-`import_item.input_profile` 保存完整 JSON，文件导入经 App → Store → Runner 传递；无 profile 的内部调用由已明确单位的映射值构造，不猜原始列。本次新库代际为 `track-identity-v3`，旧代际（含仅有 profile 的 `track-identity-v2`）拒绝打开，不自动迁移或删除数据。整数修订、问题及成员约束见 [store 结构说明](../store/README.md)；语义归并与问题生命周期仍由后续任务实现。
+`import_item.input_profile` 保存完整 JSON，文件导入经 App → Store → Runner 传递；无 profile 的内部调用由已明确单位的映射值构造，不猜原始列。本次新库代际为 `track-identity-v4`，旧代际（含仍有合并终态的 v3、仅有 profile 的 v2）拒绝打开，不自动迁移或删除数据。整数修订、问题及成员约束见 [store 结构说明](../store/README.md)；语义归并与问题生命周期仍由后续任务实现。
 
 定向验证：
 

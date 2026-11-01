@@ -231,11 +231,15 @@ func (r *Runner) loop(ctx context.Context, batchID int64) {
 func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string {
 	in := inputFromItem(item)
 
-	// [1] 本地去重检查：疑似重复进复核，库中曲目作为一条候选
+	// [1] 旧文本重复短路暂留：仅保存相关提示，不生成可接受/跳过的假候选。
 	if dupID, err := r.engine.CheckLocalDuplicate(r.store, in); err == nil && dupID != 0 {
 		existing := r.describeTrack(dupID)
-		candidates := r.localCandidateSnapshot(dupID)
-		if err := r.store.MarkReviewAtRevision(item.ID, item.Revision, store.ReviewDuplicate, candidates, "[]"); err != nil {
+		evidence, _ := json.Marshal(struct {
+			Code           string `json:"code"`
+			RelatedTrackID int64  `json:"relatedTrackId"`
+			Detail         string `json:"detail"`
+		}{"unbound_related_track", dupID, existing})
+		if err := r.store.MarkReviewAtRevision(item.ID, item.Revision, store.ReviewDuplicate, "[]", "[]", string(evidence)); err != nil {
 			return matching.ErrorLogLine(err)
 		}
 		return matching.DuplicateLogLine(in, existing)
@@ -376,26 +380,6 @@ func (r *Runner) describeTrack(trackID int64) string {
 		return fmt.Sprintf("曲目 #%d", trackID)
 	}
 	return fmt.Sprintf("%s · %s · %s", t.Title, orDash(t.Credit), orDash(t.Album))
-}
-
-// localCandidateSnapshot 把库中曲目作为一条候选写入快照，
-// 使它出现在复核队列的同一个候选列表里。
-func (r *Runner) localCandidateSnapshot(trackID int64) string {
-	t, err := r.store.GetTrack(trackID)
-	if err != nil || t == nil {
-		return "[]"
-	}
-	snapshot := []map[string]any{{
-		"local":   true,
-		"trackId": trackID,
-		"title":   t.Title,
-		"artist":  t.Credit,
-		"album":   t.Album,
-		"action":  "合并",
-		"badges":  []string{"本地?"},
-	}}
-	data, _ := json.Marshal(snapshot)
-	return string(data)
 }
 
 func findScored(scored []matching.ScoredCandidate, ref string) *matching.ScoredCandidate {

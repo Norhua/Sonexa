@@ -21,7 +21,6 @@ const (
 	StatusReview    ItemStatus = "review"    // 待复核
 	StatusFailed    ItemStatus = "failed"    // 失败
 	StatusSkipped   ItemStatus = "skipped"   // 已跳过
-	StatusMerged    ItemStatus = "merged"    // 已合并
 	StatusDiscarded ItemStatus = "discarded" // 已丢弃
 )
 
@@ -67,14 +66,14 @@ const (
 func AllStatuses() []ItemStatus {
 	return []ItemStatus{
 		StatusQueued, StatusMatching, StatusImported, StatusReview,
-		StatusFailed, StatusSkipped, StatusMerged, StatusDiscarded,
+		StatusFailed, StatusSkipped, StatusDiscarded,
 	}
 }
 
 // IsTerminal 报告该状态是否为终态（不再自动流转）。
 func (s ItemStatus) IsTerminal() bool {
 	switch s {
-	case StatusImported, StatusSkipped, StatusMerged, StatusDiscarded:
+	case StatusImported, StatusSkipped, StatusDiscarded:
 		return true
 	}
 	return false
@@ -134,7 +133,6 @@ type ImportItem struct {
 	ReviewReason              *string           `json:"reviewReason"`
 	ReviewEvidence            *string           `json:"reviewEvidence"`
 	TrackID                   *int64            `json:"trackId"`
-	MergedInto                *int64            `json:"mergedInto"`
 	ResolutionReason          *ResolutionReason `json:"resolutionReason"`
 	ResolutionTarget          *ResolutionTarget `json:"-"`
 	ResolutionProblemID       *int64            `json:"resolutionProblemId"`
@@ -145,7 +143,7 @@ type ImportItem struct {
 const itemColumns = `id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
  in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
  last_error, last_error_at, next_retry_at, candidates, tried_variants,
- review_reason, review_evidence, track_id, merged_into, input_profile, revision,
+ review_reason, review_evidence, track_id, input_profile, revision,
  resolution_reason, resolution_target, resolution_problem_id, resolution_problem_revision`
 
 // CreateBatch 建立一个导入批次。
@@ -247,7 +245,7 @@ func scanItem(row interface{ Scan(...any) error }) (*ImportItem, error) {
 		&it.InTitle, &it.InArtist, &it.InAlbum,
 		&it.InYear, &it.InTrackNo, &it.InDiscNo, &it.InDurationMS, &status, &it.AttemptCount,
 		&it.LastError, &it.LastErrorAt, &it.NextRetryAt, &it.Candidates, &it.TriedVariants,
-		&it.ReviewReason, &it.ReviewEvidence, &it.TrackID, &it.MergedInto, &profile, &it.Revision,
+		&it.ReviewReason, &it.ReviewEvidence, &it.TrackID, &profile, &it.Revision,
 		&it.ResolutionReason, &target, &it.ResolutionProblemID, &it.ResolutionProblemRevision)
 	if err != nil {
 		return nil, err
@@ -298,16 +296,6 @@ func (s *Store) MarkReviewAtRevision(itemID, revision int64, reason ReviewReason
 		_, err := tx.Exec(
 			`UPDATE import_item SET review_reason = ?, candidates = ?, tried_variants = ? WHERE id = ?`,
 			string(reason), nullIfEmpty(candidatesJSON), nullIfEmpty(variantsJSON), itemID)
-		return err
-	})
-}
-
-// MarkMerged 把条目置为已合并并指向库中已有曲目。
-//
-// 合并不新建曲目：标记 merged_into 后条目从队列中消失，库中曲目数不变。
-func (s *Store) MarkMerged(itemID, targetTrackID int64) error {
-	return s.setStatus(itemID, StatusMerged, func(tx *sql.Tx) error {
-		_, err := tx.Exec(`UPDATE import_item SET merged_into = ? WHERE id = ?`, targetTrackID, itemID)
 		return err
 	})
 }
@@ -458,13 +446,12 @@ type BatchStats struct {
 	Unmatched int `json:"unmatched"`
 	Failed    int `json:"failed"`
 	Skipped   int `json:"skipped"`
-	Merged    int `json:"merged"`
 	Discarded int `json:"discarded"`
 }
 
 // Processed 返回已处理（不在队列中等待）的条目数。
 func (b BatchStats) Processed() int {
-	return b.Imported + b.Review + b.Failed + b.Skipped + b.Merged + b.Discarded
+	return b.Imported + b.Review + b.Failed + b.Skipped + b.Discarded
 }
 
 // Stats 统计某批次各状态的条目数。
@@ -497,8 +484,6 @@ func (s *Store) Stats(batchID int64) (BatchStats, error) {
 			st.Failed = n
 		case StatusSkipped:
 			st.Skipped = n
-		case StatusMerged:
-			st.Merged = n
 		case StatusDiscarded:
 			st.Discarded = n
 		}

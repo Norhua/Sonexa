@@ -58,7 +58,7 @@ const reviewReason = computed(() => ({
   unknown_total: '发行总曲数未知，需要人工选版', no_match: '没有高置信匹配', ambiguous: '候选存在歧义', duplicate: '可能与已有收藏重复',
 }[current.value?.reviewReason ?? ''] ?? current.value?.reviewReason ?? ''))
 const reviewEvidence = computed(() => {
-  try { return JSON.parse(current.value?.reviewEvidence || 'null') as (Models.domain.AdmissionBaseline & { proposed?: Models.app.PlanReleaseView }) | null }
+  try { return JSON.parse(current.value?.reviewEvidence || 'null') as (Models.domain.AdmissionBaseline & { proposed?: Models.app.PlanReleaseView; relatedTrackId?: number; detail?: string }) | null }
   catch { return null }
 })
 
@@ -205,6 +205,8 @@ async function doResearch() {
     )
     if (request !== researchRequest || current.value?.id !== item.id) return
     current.value.candidates = rows ?? []
+    // 后端改搜已递增输入修订，刷新队列取得新令牌，草稿与有效候选仍保留。
+    void load(true)
   } catch (e) {
     if (request === researchRequest) error.value = String(e)
   } finally {
@@ -232,13 +234,20 @@ async function act(fn: () => Promise<void | boolean>) {
 
 /** 接受：采用该上游候选入库并写入溯源。 */
 function accept(row: Models.app.CandidateRow) {
-  if (!current.value) return
-  // 带本地徽章的候选走「合并」：不新建曲目
-  if (row.localTrackId) {
-    void act(() => App.MergeCandidate(current.value!.id, row.localTrackId))
+  const item = current.value
+  if (!item) return
+  if (row.ownership?.state === 'identity_conflict' || row.ownership?.state === 'lookup_error') {
+    error.value = row.note || '候选身份尚不可用，请刷新'
     return
   }
-  const itemId = current.value.id
+  const itemId = item.id
+  if (row.ownership?.state === 'owned') {
+    void act(async () => {
+      const plan = await App.PrepareSkipExisting(row, itemId, item.revision)
+      await App.CommitAdmission(plan.id, plan.hash, {} as Models.domain.AdmissionApproval)
+    })
+    return
+  }
   void act(async () => {
     const result = await admission.run(() => App.PrepareAdmission(row, itemId))
     if (admission.resolution && current.value?.id === itemId) {
@@ -311,6 +320,7 @@ function next() {
 
         <div v-if="reviewReason" class="mt-3 space-y-2 rounded border p-3 text-xs">
           <p class="font-medium">{{ reviewReason }}</p>
+          <p v-if="reviewEvidence?.relatedTrackId" class="text-muted-color">相关收藏（不是精确拥有）：{{ reviewEvidence.detail }}。可改搜选择上游 track，或在编辑器处理原收藏。</p>
           <div v-for="group in reviewEvidence?.resolution?.groups ?? []" :key="group.id">
             <p>已有专辑组：{{ group.title || '未命名专辑' }} · {{ display(group.credit) }}</p>
             <p v-for="member in group.members" :key="member.id" class="text-muted-color">已有发行：{{ member.title || '未命名发行' }} · {{ member.identity?.provider || '本地' }} · {{ display(member.identity?.ref) }} · 收藏 {{ member.trackIds?.length || 0 }} 首</p>

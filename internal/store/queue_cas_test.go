@@ -7,6 +7,26 @@ import (
 	"time"
 )
 
+func TestImportStateSchemaRejectsRemovedMergeProtocol(t *testing.T) {
+	s := openTestStore(t)
+	item, err := s.ClaimNextItem(seedBatch(t, s, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("UPDATE import_item SET status='merged' WHERE id=?", item.ID); err == nil {
+		t.Fatal("removed terminal status accepted")
+	}
+	var count int
+	if err := s.db.QueryRow("SELECT count(*) FROM pragma_table_info('import_item') WHERE name='merged_into'").Scan(&count); err != nil || count != 0 {
+		t.Fatal("removed merge target column survived", count, err)
+	}
+	for _, status := range AllStatuses() {
+		if string(status) == "merged" {
+			t.Fatal("removed status advertised")
+		}
+	}
+}
+
 func TestQueueCASRejectsStaleActiveAndTerminalWrites(t *testing.T) {
 	s := openTestStore(t)
 	item, err := s.ClaimNextItem(seedBatch(t, s, 1))

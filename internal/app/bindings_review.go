@@ -92,28 +92,21 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 	return out, nil
 }
 
-// parseCandidateSnapshot 解析候选快照。
-//
-// 快照可能是管线写入的 ScoredCandidate 数组，
-// 也可能是本地疑似重复写入的简化结构。
+// parseCandidateSnapshot 只读取来源候选事实；本地关联和旧动作不能赋予收藏权限。
 func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 	// 先按管线的评分候选解析
 	var scored []matching.ScoredCandidate
 	if err := json.Unmarshal([]byte(raw), &scored); err == nil && len(scored) > 0 && scored[0].Candidate.MatchRef != "" {
 		// 复核队列的候选必须与上游搜索一样做本地判定，
-		// 否则库里已有的那首不会显示双徽章、动作也不会变成「合并」。
+		// 否则库里已有的那首不会显示双徽章、动作也不会变成「跳过」。
 		return a.rowsFrom(scored, "接受")
 	}
 
-	// 再按 CandidateRow 解析：ResearchReviewItem 写快照时存的就是这个形状。
-	//
-	// 没有这一支时它会掉到下面的「本地候选」分支——那个分支只认
-	// badges/action/title/artist/album 五个字段，于是用户改搜出来的候选
-	// 一旦经过一次队列重载，置信度、年份、时长、厂牌等列全部变成占位短横线。
+	// 改搜保存 CandidateRow；仅还原事实，绝不沿用存储时的所有权和动作。
 	var stored []CandidateRow
 	if err := json.Unmarshal([]byte(raw), &stored); err == nil &&
 		len(stored) > 0 && stored[0].MatchRef != "" {
-		// 本地判定不随快照持久化：入库/合并状态可能在存快照之后变了
+		// 本地判定不随快照持久化：收藏状态可能在存快照之后变了
 		for i := range stored {
 			c := stored[i].toCandidate()
 			a.applyLocalMatch(&stored[i], c)
@@ -121,27 +114,6 @@ func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 		return stored
 	}
 
-	// 最后按本地疑似重复的简化快照解析
-	var local []struct {
-		Local   bool     `json:"local"`
-		TrackID int64    `json:"trackId"`
-		Title   string   `json:"title"`
-		Artist  *string  `json:"artist"`
-		Album   *string  `json:"album"`
-		Action  string   `json:"action"`
-		Badges  []string `json:"badges"`
-	}
-	if err := json.Unmarshal([]byte(raw), &local); err == nil {
-		out := make([]CandidateRow, 0, len(local))
-		for _, l := range local {
-			title := l.Title
-			out = append(out, CandidateRow{
-				Badges: l.Badges, Action: l.Action, LocalTrackID: l.TrackID,
-				Title: &title, Artist: l.Artist, Album: l.Album,
-			})
-		}
-		return out
-	}
 	return nil
 }
 
@@ -243,16 +215,6 @@ func (a *App) AcceptCandidate(itemID int64, row CandidateRow) (int64, error) {
 		return 0, err
 	}
 	return a.commitUnconfirmedAdmission(plan)
-}
-
-// MergeCandidate 把条目标记为与库中已有曲目相同。
-//
-// 不新建曲目：标记合并目标后条目从队列中消失，库中曲目数不变。
-func (a *App) MergeCandidate(itemID, targetTrackID int64) error {
-	if err := a.ready(); err != nil {
-		return err
-	}
-	return a.store.MarkMerged(itemID, targetTrackID)
 }
 
 // NoMatchNeeded 按原始输入入库，丰富信息为空，溯源置空。

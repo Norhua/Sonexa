@@ -12,7 +12,6 @@ export interface BatchStats {
   review: number
   failed: number
   skipped: number
-  merged: number
   discarded: number
 }
 
@@ -47,6 +46,5 @@ export const emptyStats: BatchStats = {
   review: 0,
   failed: 0,
   skipped: 0,
-  merged: 0,
   discarded: 0,
 }
