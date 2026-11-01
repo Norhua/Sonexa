@@ -15,6 +15,8 @@ testdata/track-identity/    成对 CSV/TSV 异写、等值时长及未匹配原�
 
 `internal/app/paired_import_test.go` 经真实 SubmitImport→Runner→Store 提交 `original.csv` 和 `aliases.tsv`；固定候选事实离线返回，身份检查仍由 MusicBrainz 适配器提供。断言精确 track/release、新增 1、已存在跳过 1、无结果两行共享 1 问题及原文不变；第二次提交前删除首个终态输入，证明不依赖该历史行。搜索请求计数 7 来自当前查询变体，不包含真实网络。此前代码内 Runner fixture 不冒充成对文件的入口验收。
 
+`you-identities.json` 固定设计提供的两个真实 track MBID、共同 Recording/ISRC 与名称。`you_identity_matrix_test.go` 的发行/组 ID、附加总数/时长等沿用确定性构造 fixture，不冒充完整真实发行响应；它测试真实身份可并存、显式目标不被拥有偏好替代、特典截断跳过、无专辑复核，以及旧字段/快照/本地图片选择/歌单不变。四个入口场景的固定查询次数为 1/2/2/2，全部离线。
+
 ## 测试分层
 
 - `internal/app/*_test.go`：与应用包同包，调用生产绑定、详情应用及后台补全入口，使用隔离 SQLite 与本地 HTTP 桩件。
