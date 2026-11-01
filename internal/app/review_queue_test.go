@@ -18,8 +18,18 @@ func TestReviewProblemQueueSourcesScopeAndReadOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A different explicit album must remain a separate problem.
-	other := enqueueOneItem(t, a, "Song", "Artist", "Other Album")
-	if err := a.store.MarkReview(other, store.ReviewNoMatch, "[]", "[]"); err != nil {
+	batch, err := a.store.CreateBatch(&store.ImportBatch{Filename: "other.csv", TotalRows: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.store.EnqueueItems(batch, []store.ImportItem{{RawRow: `["Song","Artist","Other Album"]`, InTitle: strPtr("Song"), InArtist: strPtr("Artist"), InAlbum: strPtr("Other Album")}}); err != nil {
+		t.Fatal(err)
+	}
+	other, err := a.store.ClaimNextItem(batch)
+	if err != nil || other == nil {
+		t.Fatal(other, err)
+	}
+	if err := a.store.MarkReview(other.ID, store.ReviewNoMatch, "[]", "[]"); err != nil {
 		t.Fatal(err)
 	}
 	base, _ := a.registry.Get(provider.MusicBrainz)

@@ -86,7 +86,7 @@ test('unchanged processed counts still update completion, pause, failures and ba
     const w = window as any, api = w.go.app.App
     w.__batch = { id: 1, filename: 'first.csv', status: 'running', running: true, processed: 10, totalRows: 10, fileRows: 10, stats: { imported: 7, review: 1, failed: 2, queued: 0 }, failedTitles: ['失败歌曲'] }
     api.GetImportQueue = async () => [structuredClone(w.__batch)]
-    api.GetTaskSummary = async () => ({ activeBatch: w.__batch.id, filename: w.__batch.filename, processed: 10, total: 10, stats: structuredClone(w.__batch.stats), running: w.__batch.running, reviewPending: 8 })
+    api.GetTaskSummary = async () => ({ activeBatch: w.__batch.id, filename: w.__batch.filename, processed: 10, total: 10, stats: structuredClone(w.__batch.stats), running: w.__batch.running, reviewPending: 8, problems: { reviewProblems: 8, pendingProblems: 6, failedProblems: 2, sourceRows: 12 } })
   })
   await page.locator('nav').getByRole('button', { name: /导入队列/ }).click()
   await expect(page.getByText('进行中 · 10/10', { exact: true })).toBeVisible()

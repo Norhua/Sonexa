@@ -111,6 +111,12 @@ TaskSummary.ReviewPending 现在为全局独立问题数，并返回完整 Probl
 
 `library:changed` 继续只由真实收藏操作发送；纯 skip 和后台已有目标重评只发 review/tasks，不启动补全、不反馈成新的收藏变更事件。App 初始化装配唯一回调，Runner 和所有事务准入路径共用。通知发生在数据库提交后，回调可立即读取完整终态。既有 import:progress 继续反映运行集合及批次进度，不由数据库提前宣称 Runner 已结束。
 
+## 问题级只读队列（8.1）
+
+`GetReviewProblemQueue` 返回稳定问题 ID、pending/failed 分类、完整 `ProblemScope`、查询草稿及所有活跃来源行；包含 queued/matching 重试成员。原始整行、文件、行索引、数值/profile、失败信息及候选均保留，不将多个来源的冲突快照拼接为一个候选事实。scope、来源和全局问题统计在同一只读事务读取，队列 revision 来自 task_change_state；本地所有权在事务外重算，修改操作仍须重验范围。
+
+前端 review store 以问题 ID 保持选择、合并事件续读，用请求代次、卸载保护及任务 revision 下限拒绝旧响应。tasks store 订阅 review/tasks/library 变化，区分 Problems 和 SourceRows，不用单批行计数覆盖全局问题数。读取不获取租约、不搜索上游。完整问题界面、动作范围和租约生命周期由 8.2–8.4 接线。
+
 ## 本地匹配召回
 
 `Store.RecallLocal(ctx, profiles, limit)` 实现 matching 声明的事实召回接口。一次最多 128 个输入，返回顺序与输入一致；每个输入默认 100、最多 1000 个目标，读取 limit+1 判断 `Truncated`。它不调用有 2000 条上限的浏览接口、不出网、不读历史导入或选版记录。空输入不触发重建，查询错误/取消返回错误而非空结果。

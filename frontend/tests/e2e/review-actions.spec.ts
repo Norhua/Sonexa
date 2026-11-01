@@ -31,7 +31,8 @@ test.beforeEach(async ({ page }) => {
     }
     api.GetTaskSummary = async () => {
       state.taskReads++
-      return { activeBatch: 0, filename: '', processed: 0, total: 0, stats: null, running: false, reviewPending: pending().length }
+      return { activeBatch: 0, filename: '', processed: 0, total: 0, stats: null, running: false, reviewPending: pending().length,
+        problems: { reviewProblems: pending().length, pendingProblems: pending().filter((item: any) => item.status === 'review').length, failedProblems: pending().filter((item: any) => item.status === 'failed').length, sourceRows: pending().length } }
     }
     const action = (name: string, status?: string) => async (itemId: number, targetTrackId?: number) => {
       state.actions.push({ name, itemId, targetTrackId })
