@@ -1,6 +1,16 @@
-# 实施交接：48/48 完成，独立核验发现两项规格偏差
+# 实施交接：51/51 完成，核验发现已修复
 
 ## 当前状态
+
+- 变更 `fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
+- 原48项及追加10.1–10.3核验修复任务完成，**51/51**。W1 `ebab1ac`，W2 `599abb5`，S1注释清理及最终验收完成。
+- **W1**：元数据共用检索使用独立完整版本语义，Instrumental/off vocal等价正例可通过，不同Remix作者/Live场次/重录年份不展示；歌词旧比较实现不变。
+- **W2**：当次决策原因纳入计划签名，随原子终态与结果保存；本地/远程成功及后台重评保留中文字段/偏好依据，前端不把内部码或detail当作主说明。诊断不供未来输入选版；复用现有JSON列，代际仍v9。
+- 最新全量：**Go 1846测试及子测试、五包race 1141、前端120、Chromium/WebKit320/320**；Wails、typecheck、build、strict/diff全部通过。既有chunk警告1,065.69kB（gzip271.52kB）保留。
+- `verification.md` 已将2项WARNING及1项SUGGESTION标记修复；`validation.md` 最新节记录新矩阵与历史失败。当前可按独立请求继续核验、主规格同步或归档。
+- 未同步主规格、未归档、未修改或清理用户应用数据。测试使用临时SQLite、fixture、httptest和浏览器Wails替身，未执行真实网络或原生验收。
+
+## 上轮独立核验（历史，发现现已修复）
 
 - 变更 `fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
 - 已完成 1.1–9.6，**48/48**；CLI apply 已确认 `all_done`。独立核验没有重开任务或修改生产代码，但发现下述两项规格偏差，不能把任务完成等同于规格完全一致。

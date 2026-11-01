@@ -209,8 +209,8 @@ type Score struct {
 	// 至少有一处对得上。Engine.Run 据它筛候选池——导入、搜索、改搜、重新匹配
 	// 都经由那里，因此同一个上游在四处的筛法完全一致。
 	//
-	// 它与 HighConf 是两道不同的闸，不是同一判断的两个档位：
-	// 前者管「给不给人看」，后者管「要不要经人手」。
+	// 它与 HighConf 分别描述展示准入与检索匹配程度；二者均不授予
+	// 元数据自动入库权限，自动选择另检查完整输入证据。
 	Plausible bool
 }
 
@@ -310,7 +310,7 @@ func (w Weights) IsHighConfidence(s Score) bool {
 // 缺一个歌集名而毙掉一条曲名精确相符的候选。两侧一处可比的都没有时（例如
 // 表格只有曲名一列），曲名自己就够。
 //
-// 它不决定入库（那是 IsHighConfidence）。手动检索同样按它筛：用户留空的字段
+// 它不决定入库，IsHighConfidence 也只表示展示匹配程度。手动检索同样按它筛：用户留空的字段
 // 不可比、不参与，因此只填曲名时它退化为曲名闸，填了署名或歌集就必须对得上——
 // 「验证署名和歌集名，除非传入的是空值」。
 func (w Weights) IsPlausible(q provider.Query, c provider.Candidate, s Score) bool {

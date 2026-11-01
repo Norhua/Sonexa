@@ -1,11 +1,31 @@
-# 独立核验报告
+# 独立核验报告与修复复验
+
+## 当前结论：W1、W2、S1 已修复
+
+用户明确要求修复后，新增 10.1–10.3 跟踪核验问题。W1 实现提交 `ebab1ac`，W2 实现提交 `599abb5`；S1 注释已清理。本节为当前复验结论，下文保留 `dae0e64` 时的历史发现与原始反证，不再代表未修复项。
+
+- **W1 已关闭**：`internal/matching/metadata_search.go:10,24` 将完整版本语义接入共用 Engine，已支持的 Instrumental/off vocal 等价写法可展示，不同 Remix 作者、Live 场次及重录年份被排除。旧 `CompareTitle/ScoreCandidate` 仅改注释，歌词行为不变。`TestMetadataSearchVersionSemantics` 13 场景、`TestRunnerVersionEquivalenceAndPayloads` 7 场景、`TestMetadataVersionSemanticsAcrossManualSearchEntries` 4 组真实 App 入口验证均通过。
+- **W2 已关闭**：`DecisionEvidence` 随 seed 签名、原子终态及 result 保存；`internal/store/admission_plan.go:177,247` 复用既有 JSON 证据列，不改表结构。`SuccessfulTargetReasons` 只取选中目标的有效事实视图；本地、远程和后台重评保留字段、默认偏好及精确已有原因。Runner 输出同一中文摘要，App 只读投影 `DecisionReasons`，前端以中文 message 为主、code 为辅助。成功接受/跳过、重评、签名防篡改、失败回滚、幂等和中文展示回归通过。
+- **S1 已关闭**：包说明不再描述候选合并，旧评分注释不再授予自动入库，逐行 API 注释改为当前兼容范围约束。主规格 Purpose 仍留待独立同步请求，不在本轮改写。
+
+| 维度 | 当前结果 |
+|---|---|
+| 完整性 | 原48项及3项核验修复完成；全部45需求/124规格场景的原证据索引继续有效，修复新增入口回归 |
+| 正确性 | 历史2项偏差均有生产入口或事务/UI回归证明关闭；固定反例错误自动接受/跳过为0 |
+| 一致性 | 元数据检索与歌词旧比较隔离；决策说明为当次诊断，不用于未来选版；数据代际仍v9 |
+
+**本轮复验未发现尚未处理的 CRITICAL/WARNING/SUGGESTION，可按独立请求进入主规格同步及归档。** 此结论仅覆盖代码和离线自动化；原生 Wails、真实来源网络仍未验收，不将浏览器替身与临时 SQLite 结果冒充这些验收。
+
+最终重跑：21包、871顶层/**1846 Go测试及子测试**；五包race、532顶层/**1141测试及子测试**；Wails、typecheck、**120前端单测**、build、双浏览器**320/320**、strict/diff全部通过。主chunk **1,065.69kB（gzip271.52kB）**警告保留。新增版本Runner矩阵4个正例各新增1，3个反例各保留1问题；搜索调用合计10。完整新指标见 `validation.md` 最新节。
+
+## 历史核验（修复前，dae0e64）
 
 变更：`fix-track-identity-and-reduce-import-review`
 
 日期：2026-11-01
 核验实现：`dae0e64`；实现差异基线：`d5c60dd`。本轮不修改生产代码、实施任务或主规格，不归档，不操作用户应用数据。
 
-## 结论
+## 历史结论（修复前）
 
 **现有自动化套件全部重新通过，但不能据此称为规格完全一致。发现 2 项 WARNING、1 项 SUGGESTION，无 CRITICAL。**
 
@@ -149,7 +169,7 @@ s := matching.DefaultWeights().ScoreCandidate(provider.Query{
 
 W2 复用同包 `seedLocalRunnerTrack(t, st, true, false)` 建立完整有效事实，导入 `Song（译名：歌曲） / Artist / Album`；先查看 `PrepareLocalExisting(...).Reasons`，再通过 `runner.processItem` 提交并读取 `GetItem`。观察偏好原因存在于 selection，但终态只有 `existing_track`，`ReviewEvidence` 为 nil，日志没有该偏好说明。
 
-## 后续建议
+## 历史后续建议（1–3 已由本轮执行）
 
 1. 独立实施 W1 的元数据检索接线与端到端回归，保留歌词边界。
 2. 实施 W2 的原因传递、终态诊断及中文说明；同时清理 S1 注释。

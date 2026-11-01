@@ -2,7 +2,55 @@
 
 变更：fix-track-identity-and-reduce-import-review。实施与自动化验收已完成；完整结果、历史失败及验证边界如下。未执行原生 Wails 人工或真实来源网络验收，不将自动化通过等同于这些验收。
 
-## 后续独立核验（2026-11-01）
+## 核验修复后最终验收（2026-11-01）
+
+W1（`ebab1ac`）与W2（`599abb5`）已修复，S1注释已清理。核验报告最新结论见 [verification.md](verification.md)；其历史反证继续保留，不再代表未修复项。
+
+| 检查 | 本轮实际结果 |
+|---|---|
+| 全量 Go，`-count=1` | 21包、871顶层/**1846测试及子测试通过**，0失败；11项测试/子测试skip |
+| matching/importer/library/store/app race，`-count=1` | 5包、532顶层/**1141测试及子测试通过**，0失败；9项测试/子测试skip |
+| Wails / typecheck | 通过 |
+| Vitest | 24文件/**120测试通过** |
+| build | 通过；主chunk **1,065.69kB**，gzip271.52kB，既有大chunk警告保留 |
+| Chromium/WebKit完整Playwright | **320/320通过**，约1.8分钟 |
+| strict / diff | 通过 |
+
+真实网络live/probe开关显式清除；无原生验收或用户数据操作。数据库表结构不变，仍 `track-identity-v9`，原因诊断复用已有JSON列；不做历史数据迁移、规格同步或归档。
+
+### 更新后的D10指标
+
+原15项 `TestRunnerIdentityValidationMatrix` 仍新增4、跳过0、问题11/来源11、错误自动操作0；**搜索调用17→19**。变化只有 remix_author 与 live_event 各1→2：完整版本冲突现在在展示阶段被过滤，因此继续下一查询变体，终态保护不变。
+
+新增 `TestRunnerVersionEquivalenceAndPayloads` 使用真实Runner/library/临时Store，每项独立新库：
+
+| 场景 | 新增 | 跳过 | 问题 | 错误自动操作 | 假搜索调用 |
+|---|---:|---:|---:|---:|---:|
+| instrumental_alias | 1 | 0 | 0 | 0 | 1 |
+| remix_form | 1 | 0 | 0 | 0 | 1 |
+| live_form | 1 | 0 | 0 | 0 | 1 |
+| remaster_form | 1 | 0 | 0 | 0 | 1 |
+| remix_author | 0 | 0 | 1 | 0 | 2 |
+| live_event | 0 | 0 | 1 | 0 | 2 |
+| rerecording_year | 0 | 0 | 1 | 0 | 2 |
+
+7项合计新增4、跳过0、问题3、搜索10；与原15项合计新增8、问题14、搜索29，反例错误自动操作0。断言来源快照保留上游原文；版本反例虽无展示候选仍保存中文冲突说明。原you/成对CSV/TSV及MusicBrainz replay随全量通过，原有计数不变。
+
+### W2证据
+
+- `TestRunnerSuccessfulDecisionEvidenceAndLogs` 覆盖新建、本地已有、远程已有：规则版本、可靠异写、默认偏好和精确已有原因在终态JSON、operation_result及日志一致。
+- `TestAutomaticDecisionEvidenceRollbackAndPlanSeal` 拒绝篡改说明；证据写失败使终态和操作结果全部回滚，去掉故障后同计划可提交并幂等返回同说明。
+- `TestRecheckCurrentEvidenceNeverCopiesManualChoice` / `TestRecheckNoResultUsesSufficientCurrentFactsOnly` 验证后台重评也保存依据，且不会把排除竞争者的冲突描述为成功目标的事实。
+- selection回归验证已有发行、曲数、国家及稳定排序偏好随签名计划和结果保留；App只读说明投影不改行修订或原证据。
+- `review-problems.spec.ts` 验证位置/时长/未知专辑/兼容已收藏偏好中文短句，不显示内部detail作为主说明。
+
+### 本轮历史失败（已处理）
+
+W1新测试先在旧实现按预期失败，确认等价漏召回与不同负载展示放行；实现后扩大回归仅旧D10的两个搜索调用断言失败，按上面明确的行为变化更新，未删除终态/错误自动操作断言。W2编辑中一次参数列表多余括号使gofmt报错，修正后定向及最终全量通过。未将这些中间失败隐去或当作最终结果。
+
+临时日志：`/tmp/sonexa-fix-{go,race}.json`、`/tmp/sonexa-fix-{wails,e2e}.log`；本节记录持久结论，不依赖临时产物留存。
+
+## 后续独立核验（2026-11-01，以下为修复前历史）
 
 对实现 `dae0e64` 重新执行本文件的全量自动化检查，结果仍为 Go 1812、五包 race 1107、前端单测120、Chromium/WebKit320/320，Wails/typecheck/build/strict/diff 通过。但逐规格核验及离线生产入口探针发现 **2 项 WARNING、1 项 SUGGESTION**：版本等价候选被旧检索门槛提前过滤，自动成功原因没有完整传递/保存及转换为简明中文，另有过时注释。没有复现错误自动接受/跳过。
 

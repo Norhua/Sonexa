@@ -10,8 +10,9 @@ import (
 	"github.com/norhua/sonexa/internal/store"
 )
 
-// Until the multi-source UI is wired, legacy per-row research must never
-// silently broaden to all members. A multi-row problem requires explicit split.
+// Legacy per-row research remains a bounded compatibility entry. It must
+// never silently broaden to all members; multi-row problems require a split
+// or the explicit problem-scope API used by the multi-source UI.
 func (a *App) singleReviewProblemScope(itemID int64) (store.ProblemScope, error) {
 	scope, err := a.store.ItemProblemScope(itemID)
 	if err != nil {
