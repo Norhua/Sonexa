@@ -1,9 +1,11 @@
-# 实施交接：48/48 完成，自动化验收通过
+# 实施交接：48/48 完成，独立核验发现两项规格偏差
 
 ## 当前状态
 
 - 变更 `fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
-- 已完成 1.1–9.6，**48/48**；CLI apply 已确认 `all_done`。下一步是用户独立要求的核验、主规格同步或归档，不再有未勾选实施任务。
+- 已完成 1.1–9.6，**48/48**；CLI apply 已确认 `all_done`。独立核验没有重开任务或修改生产代码，但发现下述两项规格偏差，不能把任务完成等同于规格完全一致。
+- 最新报告见 [verification.md](verification.md)：**0 CRITICAL、2 WARNING、1 SUGGESTION**。W1：新版本等价比较未接入旧检索门槛，Instrumental/off vocal 正例在真实 Runner 变成未匹配问题；W2：自动成功分支丢失字段/默认偏好说明，复核部分原因直接显示内部码。S1 为残留过时注释。
+- 独立核验重新执行全量 Go（1812）、五包 race（1107）、Wails、typecheck、120 前端单测、build、Chromium/WebKit（320/320）、strict 与 diff，全部通过；离线探针仍能复现 W1/W2，说明当前套件有覆盖缺口。建议先按独立实施请求修复，再核验、同步或归档。
 - 未同步主规格、未归档、未修改或清理用户应用数据。测试使用临时 SQLite、fixture、httptest 和浏览器 Wails 替身；未执行真实网络或原生验收。
 
 ## 最终验收完成
