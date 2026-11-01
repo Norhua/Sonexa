@@ -90,6 +90,18 @@ func TestRunnerDecisionFactsReplayAndRevisionBoundary(t *testing.T) {
 			if err != nil || calls.Load() != 1 {
 				t.Fatal(got, err, calls.Load(), line)
 			}
+			stats, err := st.Stats(batch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantProblems := 1
+			if scenario == "second_disc" {
+				wantProblems = 0
+			}
+			if stats.Problems.ReviewProblems != wantProblems || stats.Problems.SourceRows != wantProblems {
+				t.Fatal(stats)
+			}
+			t.Logf("D10 %s: new=%d skip=%d problems=%d source_rows=%d false_auto=0 decision_http=%d", scenario, stats.Imported, stats.Skipped, stats.Problems.ReviewProblems, stats.Problems.SourceRows, calls.Load())
 			if scenario == "second_disc" {
 				if got.Status != store.StatusImported || got.TrackID == nil {
 					t.Fatal(got, line)
