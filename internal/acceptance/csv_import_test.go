@@ -9,7 +9,10 @@ import (
 	"github.com/norhua/sonexa/internal/provider"
 )
 
-// 这一组用例锁定一次真实的导入：用户那份 10 行的导出表格。
+// 这一组保留历史十行样例的检索展示回归，不是导入端到端测试。
+// fixture 缺少发行身份/位置等自动决策事实，不能用旧 Decision 推定入库。
+// 真实自动分流见 importer/input_priority_test.go、decision_replay_test.go
+// 及 library/selection_test.go；这里不伪补历史响应未记录的来源字段。
 //
 // 候选不是编的——它们是拿真实的 MusicBrainz 跑一遍**原样**抄回来的
 // （track MBID / 曲名 / 署名 / 歌集 / recording MBID / release group MBID /
@@ -26,7 +29,7 @@ import (
 type csvRow struct {
 	title, artist, album string
 	candidates           []provider.Candidate
-	// wantOutcome 是期望的分流结果。
+	// wantOutcome 是旧展示分类，不是生产 Runner 的终态。
 	wantOutcome matching.Outcome
 	// wantTitle 是应当被选中的候选曲名（入库时校验）。
 	wantTitle string
@@ -158,7 +161,7 @@ func csvRows() []csvRow {
 			},
 			wantOutcome: matching.OutcomeReviewCrossGroup,
 			wantScored:  2,
-			why:         "两条候选虽是同一条 recording，却分属两个发行组——规则 4 没有例外，交人工",
+			why:         "人工展示保留特典与合集；输入能否收敛由完整 profile 和真实位置事实决定，不由此旧分类决定",
 		},
 		{
 			title: "3253212", artist: "reche",
@@ -173,7 +176,7 @@ func csvRows() []csvRow {
 			},
 			wantOutcome: matching.OutcomeReviewCrossGroup,
 			wantScored:  3, // 署名都是 reche，三条都有旁证
-			why:         "同名单曲与 live 蓝光跨发行组。只有单曲那条歌集精确，但那也不足以替用户裁决",
+			why:         "检索展示保留单曲与 live；自动入口可用明确专辑排除其他版本，须另验证位置及准入",
 		},
 		{
 			title: "Sacred Play SecretPlace_雨夜", artist: "Wiz-H",
@@ -248,17 +251,9 @@ func (s *csvSearcher) SearchTracks(_ context.Context, q provider.Query) ([]provi
 	return nil, nil
 }
 
-// TestCSVImportEndToEnd 覆盖用户报告的那次导入：10 行输入各自该落到哪里。
-//
-// 分流规则没有例外，这组用例把每一条规则各钉住至少一行：
-//
-//	规则 2  唯一高置信          綿雪の夢 / 夕立 / Tetra. / By the Seaside
-//	规则 3  同组多份发行        世界中の雨（11 张同名 CD，过滤后仍剩多条 → 复核）
-//	规则 4  跨发行组            you / 3253212
-//	规则 5  无结果 / 全低置信    That Girl / Sacred Play / ツバサ
-//
-// 期望：4 条直接入库，3 条进入复核，3 条未匹配。
-func TestCSVImportEndToEnd(t *testing.T) {
+// TestCSVSearchDisplayRegression 保留十行旧检索/评分分类基线。
+// 没有 Runner、library 或写入，因此不宣称 4 首实际新增。
+func TestCSVSearchDisplayRegression(t *testing.T) {
 	engine := matching.NewEngine(config.Defaults().Matching)
 	rows := csvRows()
 	searcher := &csvSearcher{rows: rows}

@@ -37,7 +37,7 @@
 - [x] 4.4 改造 `library.SelectCandidate` 接收完整输入证据，先限定专辑/版本/位置，再检查剩余组和内容；用真实 Runner fixture 验证 you 特典截断选择特典、合集输入选择合集、无专辑仍跨组复核、未知候选不能被丢弃制造唯一。
 - [x] 4.5 在相容同组同内容且无位置歧义的子集中实现已收藏 track、已有发行、总曲数、非世界国家及稳定身份优先；通过 selection 测试验证显式新版本优先、同发行多位置不走偏好、未知总数只补必要子集及多已收藏目标不新增。
 - [x] 4.6 将最终目标所有权、自动 skip 和既有成员准入串成单一生产路径，保留搜索/复核人工候选与明确选择；通过 importer/app 测试验证已存在不计新增、不触发补全重置、新发行仍需确认、人工选第二版不被默认偏好替换。
-- [ ] 4.7 替换“跨组无条件复核”及旧本地重复短路测试，保留真正跨组、不同内容和位置反例；更新自动判定说明并运行 `go test ./internal/matching ./internal/importer ./internal/library ./internal/acceptance`，确认测试覆盖生产 Runner/library 而不只旧 Engine.Decision。
+- [x] 4.7 替换“跨组无条件复核”及旧本地重复短路测试，保留真正跨组、不同内容和位置反例；更新自动判定说明并运行 `go test ./internal/matching ./internal/importer ./internal/library ./internal/acceptance`，确认测试覆盖生产 Runner/library 而不只旧 Engine.Decision。
 
 ## 5. 活跃复核问题与语义归并
 

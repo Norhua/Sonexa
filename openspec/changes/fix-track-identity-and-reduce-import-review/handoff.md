@@ -1,10 +1,17 @@
-# 实施交接：4.6 已完成
+# 实施交接：第四组已完成
 
 ## 当前状态
 
 - 变更 `fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
-- 已完成 1.1–4.6，**24/48**；CLI 已确认 4.6 完成。下一任务 4.7。
+- 已完成 1.1–4.7，**25/48**；CLI 已确认 4.7 完成。下一任务 5.1：活跃问题等价证明。
 - 未同步主规格、未归档、未修改或清理用户应用数据。测试使用临时 SQLite、fixture 和 httptest；本轮未执行真实网络/原生验收或前端测试。
+
+## 4.7 已完成
+
+- 移除旧 `TestCrossGroupNeverAutoSelects` 无条件守卫，保留真正跨组反例；真实 Runner 增加 3253212 显式专辑选择/无专辑不同内容复核成对用例，与 you 两版/未知竞争者、重复位置测试共同覆盖生产链路。
+- 旧 `Engine.Decision` 仅是展示分类，注释已说明不授予自动身份或准入；历史十行 fixture 改名 `TestCSVSearchDisplayRegression`，不把缺少发行/位置的旧 Engine 测试称为导入端到端。不改变歌词或旧展示评分。
+- 定向 matching/importer/library/acceptance/lyrics 通过；本阶段末 **`go test ./...` 通过**。严格规格与 diff 检查通过。
+- 4.6 提交 `00eeada`。9.4 最终验收仍未勾选：后续 5–8 组完成后须重跑全量和 race。未运行前端/原生/真实网络验收。
 
 ## 4.6 已完成
 
@@ -39,7 +46,7 @@ openspec validate fix-track-identity-and-reduce-import-review --strict
 git diff --check
 ```
 
-4.7 旧 Engine 说明/测试整理仍未完成，不能由本轮通过推定最终变更全量验收完成。
+第四组已完成，但不能由本轮通过推定整个变更最终验收完成。
 
 ## 4.3 已完成
 
@@ -176,7 +183,7 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 
 ### 未完成范围
 
-- 4.7 旧测试整理。4.4–4.6 输入优先筛选、兼容已收藏偏好和统一自动提交已完成。
+- 4.1–4.7 已完成；当前从 5.1 开始，不能把基础 review_problem 表当作已实现语义问题功能。
 - 5.x 问题等价证明、归并/拆出/关闭业务生命周期与版本化候选持久化。
 - 6.x 多行 scope/hash、原子结果和租约；当前准备入口仍主要支持单行。
 - 7.x 有界重评、独立问题统计、review/task 事件。

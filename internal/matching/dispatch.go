@@ -5,33 +5,31 @@ import (
 	"github.com/norhua/sonexa/internal/provider"
 )
 
-// Outcome 是一条待匹配条目在上游查询结束后的分流结果。
+// Outcome 是旧展示分类/日志标签，不是当前自动准入授权。
 type Outcome string
 
 const (
-	// OutcomeImportUnique 仅一条高置信结果 → 直接入库。
+	// OutcomeImportUnique 旧分类：仅一条展示高置信。
 	OutcomeImportUnique Outcome = "import_unique"
-	// OutcomeImportLadder 多条高置信、同属一个 release group，且过滤实体载体后
-	// 恰好剩一条 → 入库。
+	// OutcomeImportLadder 保留旧日志标签；Decide 不再生成。
 	OutcomeImportLadder Outcome = "import_ladder"
-	// OutcomeReviewCrossGroup 多条高置信但跨 release group → 进复核队列。
+	// OutcomeReviewCrossGroup 旧分类：未按完整输入筛选的展示池跨组。
 	OutcomeReviewCrossGroup Outcome = "review_cross_group"
-	// OutcomeReviewManyReleases 多条高置信、同属一个 release group，但过滤实体载体
-	// 后并非只剩一条 → 进复核队列。
+	// OutcomeReviewManyReleases 旧分类：同组多条展示高置信。
 	OutcomeReviewManyReleases Outcome = "review_many_releases"
-	// OutcomeReviewNoMatch 无结果或全部低置信 → 进复核队列。
+	// OutcomeReviewNoMatch 旧分类：无展示高置信。
 	OutcomeReviewNoMatch Outcome = "review_no_match"
 )
 
-// IsImport 报告该分流是否直接入库。
+// IsImport 识别旧标签；不能据此执行当前入库或跳过。
 func (o Outcome) IsImport() bool {
 	return o == OutcomeImportUnique || o == OutcomeImportLadder
 }
 
-// Decision 是分流判定的结果。
+// Decision 是兼容旧读取的展示分类；自动分流使用 library.SelectCandidate。
 type Decision struct {
 	Outcome Outcome
-	// Selected 是被选中入库的候选；进复核时为 nil。
+	// Selected 是唯一展示高置信候选，不是已获准入的目标。
 	Selected *provider.Candidate
 	// HighConfidence 是全部达到高置信的候选，供复核队列展示。
 	HighConfidence []provider.Candidate

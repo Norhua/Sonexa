@@ -20,6 +20,34 @@ func inputPriorityCandidates() (provider.Candidate, provider.Candidate) {
 	return bonus, collection
 }
 
+func TestRunnerExplicitAlbumExcludesDifferentContentBeforeGroupCheck(t *testing.T) {
+	for _, album := range []string{"3253212", ""} {
+		t.Run("album="+album, func(t *testing.T) {
+			st := openStore(t)
+			single := mbCandidate("single", "3253212", "reche", "3253212")
+			live := mbCandidate("live", "3253212", "reche", "reche GaLLERy#101 on live 20230407 in Zepp DiverCity TOKYO")
+			single.RecordingRef, live.RecordingRef = sptr("studio-recording"), sptr("live-recording")
+			searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{"3253212": {live, single}}}
+			batch := enqueueOne(t, st, "3253212", "reche", album)
+			runToCompletion(t, newRunner(st, searcher), batch)
+			stats, err := st.Stats(batch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if album == "" {
+				if stats.Review != 1 || stats.Imported != 0 || stats.Skipped != 0 {
+					t.Fatal("missing album inherited explicit selection", stats)
+				}
+			} else {
+				id, err := st.FindByMatchRef("musicbrainz", single.MatchRef)
+				if err != nil || id == 0 || stats.Imported != 1 {
+					t.Fatal("excluded cross-group content still blocked input target", stats, id, err)
+				}
+			}
+		})
+	}
+}
+
 func TestRunnerInputAlbumConstrainsBeforeCrossGroupGuard(t *testing.T) {
 	for _, scenario := range []string{"bonus_truncated", "collection", "no_album", "unknown_competitor"} {
 		t.Run(scenario, func(t *testing.T) {

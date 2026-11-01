@@ -24,7 +24,7 @@ func lowConf(ref string) ScoredCandidate {
 	}
 }
 
-// TestDecideUniqueHighConfidence 覆盖「唯一高置信」→ 直接入库。
+// TestDecideUniqueHighConfidence 仅验证旧展示分类，不授权自动入库。
 func TestDecideUniqueHighConfidence(t *testing.T) {
 	cfg := DefaultLadderConfig()
 	got := cfg.Decide([]ScoredCandidate{highConf("a", sptr("rg-1")), lowConf("b")})
@@ -37,8 +37,7 @@ func TestDecideUniqueHighConfidence(t *testing.T) {
 	}
 }
 
-// TestDecideSameGroupSolePhysical 覆盖规则 3：同组多条高置信，
-// 过滤实体载体后恰好剩一条 → 入库那一条。
+// TestDecideSameGroupSolePhysical 验证展示载体偏好不参与自动选版。
 func TestDecideSameGroupSolePhysical(t *testing.T) {
 	cfg := DefaultLadderConfig()
 	rg := sptr("rg-1")
@@ -50,12 +49,8 @@ func TestDecideSameGroupSolePhysical(t *testing.T) {
 	}
 }
 
-// TestDecideSameGroupManyPhysicalGoesToReview 覆盖规则 3 的收尾：
-// 同一发行组内过滤实体载体后仍剩多条时不自动裁决。
-//
-// 这是用户报告的那条 `世界中の雨`：MusicBrainz 里同一条录音挂在 11 张
-// 同名 CD 发行上，载体、国家、发行日、发行状态全同。优选阶梯只能靠 MBID
-// 字典序收尾，那是「随便挑一个」——必须交人工。
+// TestDecideSameGroupManyPhysicalGoesToReview 保留多发行展示分类。
+// 自动选版由 library 按完整输入与总曲数等事实决定，不消费此 Outcome。
 func TestDecideSameGroupManyPhysicalGoesToReview(t *testing.T) {
 	cfg := DefaultLadderConfig()
 	rg := sptr("rg-4")
@@ -76,8 +71,7 @@ func TestDecideSameGroupManyPhysicalGoesToReview(t *testing.T) {
 	}
 }
 
-// TestDecideSameGroupNoPhysicalGoesToReview 覆盖规则 3 的另一端：
-// 同组多条但一条实体发行都没有时，同样没有裁决依据。
+// TestDecideSameGroupNoPhysicalGoesToReview 保留缺少载体时的展示分类。
 func TestDecideSameGroupNoPhysicalGoesToReview(t *testing.T) {
 	cfg := DefaultLadderConfig()
 	rg := sptr("rg-5")
@@ -90,8 +84,8 @@ func TestDecideSameGroupNoPhysicalGoesToReview(t *testing.T) {
 	}
 }
 
-// TestDecideCrossGroupGoesToReview 覆盖 4.7：
-// 跨 release group 的多个高置信不自动选择，整条进复核队列。
+// TestDecideCrossGroupGoesToReview 仅验证未筛选展示池的旧分类。
+// 真实输入优先分流见 importer/input_priority_test.go，不以这里决定复核。
 func TestDecideCrossGroupGoesToReview(t *testing.T) {
 	cfg := DefaultLadderConfig()
 	got := cfg.Decide([]ScoredCandidate{
@@ -160,69 +154,4 @@ func TestLadderFromSettings(t *testing.T) {
 	if got.MatchRef != "vinyl-de" {
 		t.Errorf("选中 %q, 期望 vinyl-de（设置把 Vinyl 与 DE 排在前）", got.MatchRef)
 	}
-}
-
-// TestCrossGroupNeverAutoSelects 守住规则 4 没有例外。
-//
-// 曾经为跨发行组开过两个就地裁决的口子：全部候选同属一条 recording、
-// 恰好一条候选的歌集精确匹配。它们把 `you`、`3253212` 两行从复核提到了入库，
-// 代价是规则不再可预期——用户读到「多条高置信 → 复核」，实现却替他做了决定。
-// 两个口子都已撤销，这条用例是它们不会被重新打开的守卫。
-func TestCrossGroupNeverAutoSelects(t *testing.T) {
-	cfg := DefaultLadderConfig()
-	rec := "2283ceda-0000-0000-0000-000000000000"
-
-	t.Run("全部候选同一条recording", func(t *testing.T) {
-		scored := []ScoredCandidate{
-			{
-				Candidate: provider.Candidate{
-					MatchRef: "a", RecordingRef: &rec, ReleaseGroupRef: sptr("rg-1"),
-					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
-				},
-				Score: Score{HighConf: true, AlbumMatch: MatchFuzzy},
-			},
-			{
-				Candidate: provider.Candidate{
-					MatchRef: "b", RecordingRef: &rec, ReleaseGroupRef: sptr("rg-2"),
-					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
-				},
-				Score: Score{HighConf: true, AlbumMatch: MatchNone},
-			},
-		}
-		got := cfg.Decide(scored)
-		if got.Outcome != OutcomeReviewCrossGroup {
-			t.Errorf("分流 = %q, 期望 review_cross_group", got.Outcome)
-		}
-		if got.Selected != nil {
-			t.Errorf("跨发行组不应自动选择, 却选中了 %+v", got.Selected)
-		}
-	})
-
-	t.Run("恰好一条歌集精确", func(t *testing.T) {
-		scored := []ScoredCandidate{
-			{
-				Candidate: provider.Candidate{
-					MatchRef: "single", RecordingRef: sptr("rec-1"),
-					ReleaseGroupRef: sptr("rg-1"), AlbumTitle: sptr("3253212"),
-					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
-				},
-				Score: Score{HighConf: true, AlbumMatch: MatchExact},
-			},
-			{
-				Candidate: provider.Candidate{
-					MatchRef: "live", RecordingRef: sptr("rec-2"),
-					ReleaseGroupRef: sptr("rg-2"), AlbumTitle: sptr("GaLLERy on live"),
-					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
-				},
-				Score: Score{HighConf: true, AlbumMatch: MatchNone},
-			},
-		}
-		got := cfg.Decide(scored)
-		if got.Outcome != OutcomeReviewCrossGroup {
-			t.Errorf("分流 = %q, 期望 review_cross_group", got.Outcome)
-		}
-		if got.Selected != nil {
-			t.Errorf("歌集精确不足以替用户裁决, 却选中了 %+v", got.Selected)
-		}
-	})
 }

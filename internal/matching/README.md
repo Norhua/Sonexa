@@ -104,4 +104,4 @@ Runner 传递持久化 profile，`library.SelectCandidate` 先按完整输入筛
 go test ./internal/matching ./internal/importer ./internal/lyrics
 ```
 
-测试包括 unknown/conflict/truncation 的区分、可靠异写与反例、完整版本负载、角色/合作保护、原始行及解析状态持久化、relevance 与时长独立、未知竞争者保留。`internal/app/identity_admission_test.go` 验证真实准备入口的身份展开、已有目标及 seed 拒绝；自动输入判定及多行问题事务仍需要后续 Runner/App/Store 集成验证，不能由上述测试替代。
+测试包括 unknown/conflict/truncation 的区分、可靠异写与反例、完整版本负载、角色/合作保护、原始行及解析状态持久化、relevance 与时长独立、未知竞争者保留。`internal/app/identity_admission_test.go` 验证真实准备入口的身份展开、已有目标及 seed 拒绝；自动目标由 Runner/library 真实入口测试验证。历史十行 `TestCSVSearchDisplayRegression` 仅保留展示基线，不代表导入新增统计；`Engine.Decision` 的旧分类也不能代替真实终态验收。多行问题事务仍需后续集成验证。
