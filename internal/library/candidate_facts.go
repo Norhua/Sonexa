@@ -30,6 +30,15 @@ func (s *Service) CandidateFacts(ctx context.Context, input matching.InputProfil
 			identities = append(identities, identity.Track)
 		}
 	}
+	retained := []matching.CandidateFact{}
+	if state := currentRecheck(ctx); state != nil {
+		retained = state.facts
+		for _, fact := range retained {
+			if id := sources.Inspect(fact.Metadata.Candidate); id.State == matching.IdentityExact {
+				identities = append(identities, id.Track)
+			}
+		}
+	}
 	var facts matching.LocalFactLookup = s.store
 	exact, err := facts.ReadLocalFacts(ctx, identities)
 	if err != nil {
@@ -47,7 +56,10 @@ func (s *Service) CandidateFacts(ctx context.Context, input matching.InputProfil
 			local[0].Records = append(local[0].Records, record)
 		}
 	}
-	pool := matching.BuildCandidatePool(local[0], remote, sources, s.store)
+	pool := matching.BuildCandidatePool(local[0], remote, sources, s.store, retained)
+	if state := currentRecheck(ctx); state != nil && state.incomplete {
+		pool.Truncated = true
+	}
 	if err := ctx.Err(); err != nil {
 		return matching.CandidatePool{}, err
 	}

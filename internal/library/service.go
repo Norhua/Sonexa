@@ -117,6 +117,9 @@ func (s *Service) PrepareAdmission(ctx context.Context, seed domain.AdmissionSee
 	if err != nil {
 		return nil, err
 	}
+	if recheck := currentRecheck(ctx); recheck != nil {
+		seed.EvidenceRevision = recheck.revision
+	}
 	seed.Automatic = seed.Automatic || isAutomaticAdmission(ctx)
 	if seed.Operation == "" {
 		seed.Operation = domain.AdmissionCreate

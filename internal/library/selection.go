@@ -257,6 +257,9 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 		}
 		summary, ok := summaries[identity]
 		if !ok {
+			if currentRecheck(ctx) != nil {
+				return errRecheckNeedsFacts
+			}
 			p, err := s.provider(identity.Provider)
 			if err != nil {
 				return err
@@ -379,6 +382,9 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 // boundary. It consumes evidence revisions, never refreshes a stale decision
 // into permission to recreate a deleted/rebound collection.
 func (s *Service) prepareAutomaticTarget(ctx context.Context, selection Selection, itemID, revision int64, expected matching.LocalMatch) (Selection, error) {
+	if !recheckOwned(ctx, expected) {
+		return Selection{Reason: ReasonAmbiguous}, nil
+	}
 	ctx = automaticAdmissionContext(ctx)
 	if _, err := s.checkedAutomaticScope(ctx); err != nil {
 		return Selection{}, err

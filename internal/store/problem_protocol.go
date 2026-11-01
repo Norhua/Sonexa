@@ -431,5 +431,8 @@ func rebuildProblemCandidatesTx(tx *sql.Tx, id int64) error {
 		return err
 	}
 	_, err = tx.Exec("UPDATE review_problem SET candidate_facts=?,candidate_revision=candidate_revision+1 WHERE id=?", string(body), id)
-	return err
+	if err != nil {
+		return err
+	}
+	return rebuildProblemKeysTx(tx, id)
 }

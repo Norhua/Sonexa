@@ -33,9 +33,15 @@ func localRecallSchema() string {
 	trigger := func(table, event, timing, where string) {
 		name := strings.Fields(event)[0]
 		schema += "CREATE TRIGGER local_match_" + table + "_" + name + " " + timing + " " + event + " ON " + table + " BEGIN " + mark(where) + " END;\n"
+		changeTiming := timing
+		if name == "UPDATE" || name == "DELETE" {
+			changeTiming = "BEFORE"
+		}
+		schema += "CREATE TRIGGER review_library_" + table + "_" + name + " " + changeTiming + " " + event + " ON " + table + " BEGIN " + problemLibraryMark(where) + " END;\n"
 	}
 	trigger("track", "INSERT", "AFTER", "t.id=NEW.id")
 	trigger("track", "UPDATE OF match_source,match_ref,release_id", "AFTER", "t.id=NEW.id")
+	schema += "CREATE TRIGGER review_library_track_DELETE BEFORE DELETE ON track BEGIN " + problemLibraryMark("t.id=OLD.id") + " END;\n"
 	// Moving a relation invalidates both its old and new owners. Other writes
 	// usually keep the key unchanged; the set predicate still marks each once.
 	for _, entry := range []struct{ table, key, target string }{

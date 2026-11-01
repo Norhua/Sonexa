@@ -503,5 +503,6 @@ func (a *App) ListAlbumsForTag(tagID int64) ([]store.AlbumListItem, error) {
 
 // notifyLibraryChanged 通知前端曲库已变更。
 func (a *App) notifyLibraryChanged() {
+	a.wakeReviewWorker()
 	a.emitEvent(EventLibraryChanged)
 }

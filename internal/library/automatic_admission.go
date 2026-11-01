@@ -9,6 +9,13 @@ type automaticAdmissionKey struct{}
 type automaticScopeKey struct{}
 
 func (s *Service) automaticScope(ctx context.Context, itemID, revision int64) (context.Context, error) {
+	if currentRecheck(ctx) != nil {
+		if scope, err := s.checkedAutomaticScope(ctx); err != nil {
+			return ctx, err
+		} else if scope != nil {
+			return ctx, nil
+		}
+	}
 	if itemID == 0 {
 		return ctx, nil
 	}

@@ -51,7 +51,7 @@ func problemToken() (string, error) {
 func queueProblemRecheckTx(tx *sql.Tx, id int64) error {
 	_, err := tx.Exec(`INSERT INTO review_problem_recheck(problem_id)
  SELECT id FROM review_problem WHERE id=? AND status='active'
- ON CONFLICT(problem_id) DO UPDATE SET revision=revision+1`, id)
+ ON CONFLICT(problem_id) DO UPDATE SET revision=revision+1,after_item=0,retry_at=0,last_error=NULL`, id)
 	return err
 }
 func problemProtectedTx(tx *sql.Tx, id, now int64) (bool, error) {

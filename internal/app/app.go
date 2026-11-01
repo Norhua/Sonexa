@@ -52,6 +52,7 @@ type App struct {
 	countryHint     func(string) CountryHint
 	runner          *importer.Runner
 
+	reviewWorker      *reviewWorker
 	reviewLeaseCancel context.CancelFunc
 	reviewLeaseDone   chan struct{}
 	// enricher 是后台的「补全信息匹配」任务：入库不再同步补详情，
@@ -92,6 +93,9 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 
+	if err := a.startReviewWorker(ctx); err != nil {
+		log.Printf("启动问题重评失败: %v", err)
+	}
 	leaseCtx, cancel := context.WithCancel(ctx)
 	a.reviewLeaseCancel, a.reviewLeaseDone = cancel, make(chan struct{})
 	go func() {
@@ -355,6 +359,7 @@ func (a *App) shutdown(ctx context.Context) {
 		a.reviewLeaseCancel()
 		<-a.reviewLeaseDone
 	}
+	a.stopReviewWorker()
 	if a.store != nil {
 		if err := a.store.Close(); err != nil {
 			log.Printf("关闭数据库失败: %v", err)

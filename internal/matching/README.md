@@ -102,7 +102,7 @@ Runner 传递持久化 profile，`library.SelectCandidate` 先按完整输入筛
 
 ## 存储边界与验证
 
-`import_item.input_profile` 保存完整 JSON，文件导入经 App → Store → Runner 传递；无 profile 的内部调用由已明确单位的映射值构造，不猜原始列。当前新库代际为 `track-identity-v6`；v5 及更早代际拒绝打开，不自动迁移或删除数据。整数修订、问题、成员与交互租约约束见 [store 结构说明](../store/README.md)；语义归并及问题生命周期已接入，后台重评和完整问题界面仍待后续。
+`import_item.input_profile` 保存完整 JSON，文件导入经 App → Store → Runner 传递；无 profile 的内部调用由已明确单位的映射值构造，不猜原始列。当前新库代际为 `track-identity-v7`；v6 及更早代际拒绝打开，不自动迁移或删除数据。整数修订、问题、成员与交互租约约束见 [store 结构说明](../store/README.md)；语义归并及问题生命周期已接入，后台重评和完整问题界面仍待后续。
 
 `LocalRecall` 是 matching 消费侧的批量事实契约；store 的独立派生索引覆盖当前值、有效绑定快照、角色和一跳关系，返回各层事实与修订、显式截断状态，不授权拥有或自动跳过。`RecallTextForms` 仅提供召回键，不能替代完整 profile 的限定/冲突检查。索引重建与召回不读取历史输入选择；4.4 已连接输入优先筛选，后续偏好/问题生命周期单独验证。
 

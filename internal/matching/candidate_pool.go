@@ -51,7 +51,7 @@ type TargetEvidence struct {
 
 // BuildCandidatePool does only local reads and pure comparison. Each candidate
 // is inspected by its source; matching never interprets source-native IDs.
-func BuildCandidatePool(local LocalRecallResult, remote []provider.Candidate, sources *CandidateSources, lookup LocalLookup) CandidatePool {
+func BuildCandidatePool(local LocalRecallResult, remote []provider.Candidate, sources *CandidateSources, lookup LocalLookup, retained ...[]CandidateFact) CandidatePool {
 	out := CandidatePool{Truncated: local.Truncated}
 	indices := map[domain.Identity]int{}
 	add := func(fact CandidateFact) {
@@ -81,6 +81,15 @@ func BuildCandidatePool(local LocalRecallResult, remote []provider.Candidate, so
 			Source:        source,
 			AlbumComplete: nonemptyText(c.AlbumTitle), PositionVerified: sources.Inspect(c).State == IdentityExact && positive(c.DiscNumber) && positive(c.TrackNumber),
 			CreditRelations: candidateCreditRelations(c, source)}})
+	}
+	// Retained decision facts are still whole source views. Never bring back
+	// saved local ownership/current values, which must be read fresh below.
+	for _, facts := range retained {
+		for _, fact := range facts {
+			if fact.Kind == "remote" {
+				add(fact)
+			}
+		}
 	}
 	for _, record := range local.Records {
 		if record.TrackIdentity == nil || record.ReleaseIdentity == nil {

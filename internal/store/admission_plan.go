@@ -94,6 +94,15 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		if !s.validApproval(plan, domain.AdmissionApproval{}) {
 			return ErrPlanStale
 		}
+		if plan.Seed.EvidenceRevision != 0 {
+			var revision int64
+			if err := tx.QueryRow("SELECT revision FROM review_library_state WHERE id=1").Scan(&revision); err != nil {
+				return err
+			}
+			if revision != plan.Seed.EvidenceRevision {
+				return ErrPlanStale
+			}
+		}
 		if err := s.checkAdmissionInteractionTx(tx, plan.Seed); err != nil {
 			return err
 		}

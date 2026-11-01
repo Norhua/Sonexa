@@ -21,6 +21,13 @@ type selectionEvidence struct {
 }
 
 func (s *Service) constrainSelection(ctx context.Context, scored []matching.ScoredCandidate, input matching.InputProfile) (selectionEvidence, error) {
+	if state := currentRecheck(ctx); state != nil {
+		copied := append([]matching.ScoredCandidate(nil), scored...)
+		for _, fact := range state.facts {
+			copied = append(copied, matching.ScoredCandidate{Candidate: fact.Metadata.Candidate})
+		}
+		scored = copied
+	}
 	out := selectionEvidence{display: scored, summaries: map[domain.Identity]domain.ReleaseSummary{}}
 	sources, err := s.identitySources()
 	if err != nil {
@@ -79,6 +86,9 @@ func (s *Service) constrainSelection(ctx context.Context, scored []matching.Scor
 	}
 	resolved := map[int]matching.TargetResolution{}
 	for _, source := range order {
+		if currentRecheck(ctx) != nil {
+			return out, errRecheckNeedsFacts
+		}
 		results, err := sources.Load(ctx, source, requests[source])
 		if err != nil {
 			return out, err
