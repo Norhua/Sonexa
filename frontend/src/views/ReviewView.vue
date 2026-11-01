@@ -1,17 +1,11 @@
 <script setup lang="ts">
-import { useAdmissionStore } from '@/stores/admission'
-const admission = useAdmissionStore()
-/**
- * 复核队列。
- *
- * 单一界面处置全部人工判断——疑似重复、跨发行组的多个高置信、无结果、失败。
- * 待选 / 匹配中 / 失败只是状态标签，界面结构完全一致。
- */
+/** Independent review problems; original rows and displayed action scope stay explicit. */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { App, display, Events, EventsOn, type Models } from '@/api'
+import { App, display, duration, Events, EventsOn, type Models } from '@/api'
 import { candidateActionEnabled, invalidateCandidateOwnership } from '@/lib/candidateActions'
 import { createRefreshQueue } from '@/lib/refreshQueue'
 import CandidateTable from '@/components/CandidateTable.vue'
+import ReviewReasons from '@/components/ReviewReasons.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import Button from '@/volt/Button.vue'
 import InputText from '@/volt/InputText.vue'
@@ -23,103 +17,99 @@ import { useSettingsStore } from '@/stores/settings'
 import { useLibraryStore } from '@/stores/library'
 import { useSearchStore } from '@/stores/search'
 import { useTasksStore } from '@/stores/tasks'
+import { useReviewStore } from '@/stores/review'
+import { useAdmissionStore } from '@/stores/admission'
 
-const settings = useSettingsStore()
-const tasks = useTasksStore()
-const library = useLibraryStore()
-const search = useSearchStore()
-
+const settings = useSettingsStore(), tasks = useTasksStore(), library = useLibraryStore()
+const search = useSearchStore(), review = useReviewStore(), admission = useAdmissionStore()
 const emit = defineEmits<{ jumpLocal: [trackId: number]; goSettings: [] }>()
-
-const queue = ref<Models.app.ReviewQueue | null>(null)
-const index = ref(0)
-const loading = ref(false)
-const error = ref('')
-const queueError = ref('')
-const localError = ref('')
-const refreshingLocal = ref(false)
-const expanded = ref(false)
-
-/** 可改写的重新搜索表单。改写只影响本次查询，不动原始导入值。 */
+const problem = ref<Models.app.ReviewProblemView | null>(null)
+const sourceId = ref<number | null>(null)
+const source = computed(() => problem.value?.sources.find(row => row.id === sourceId.value) ?? null)
+const candidates = ref<Models.app.CandidateRow[]>([])
+const error = ref(''), localError = ref('')
+const busy = ref(false), researching = ref(false), refreshingLocal = ref(false)
+const expanded = ref(false), sourcesExpanded = ref(false), stale = ref(false)
 const research = ref({ title: '', artist: '', album: '' })
-/** 上游为单选下拉，默认 MusicBrainz。 */
-const researchProvider = ref('')
+const researchProvider = ref(''), country = ref('')
+const countries = ref<Models.app.CountryOption[]>([])
+const hint = ref<Models.app.CountryHint | null>(null)
+const searched = ref(false), draftDirty = ref(false)
+let restoring = false, disposed = false, requestRevision = 0, localRevision = 0
+
+const countryOptions = computed(() => [{ code: '', name: '跟随默认' }, ...countries.value])
+const showCountry = computed(() => settings.anyNeedsCountry([researchProvider.value]))
+const providerCaps = computed(() => Object.fromEntries(settings.providers.map(p => [p.id, p.capabilities ?? []])))
+const activeCaps = computed(() => [...new Set([
+  ...(providerCaps.value[researchProvider.value] ?? []),
+  ...candidates.value.flatMap(row => providerCaps.value[row.provider] ?? []),
+])])
+const sourceOptions = computed(() => problem.value?.sources.map(row => ({ id: row.id, label: `${row.batchTag} · 第 ${row.rowIndex + 1} 行 · ${display(row.inTitle)}` })) ?? [])
+const blocked = computed(() => busy.value || researching.value || stale.value)
+const failedIds = computed(() => problem.value?.sources.filter(row => row.status === 'failed').map(row => row.id) ?? [])
+const scopeKey = (p: Models.app.ReviewProblemView) => JSON.stringify(p.scope)
+const memberKey = (p: Models.app.ReviewProblemView) => JSON.stringify(p.scope.members.map(m => m.itemId))
+
 watch(() => settings.providers, providers => {
   if (!providers.some(p => p.id === researchProvider.value)) researchProvider.value = providers[0]?.id ?? ''
 }, { immediate: true })
-const country = ref('')
-const countries = ref<Models.app.CountryOption[]>([])
-const hint = ref<Models.app.CountryHint | null>(null)
-const researching = ref(false)
-/** 本条目是否已经手动搜过一次——决定改选上游要不要自动重搜。 */
-const searched = ref(false)
+watch([research, country], () => { if (!restoring) draftDirty.value = true }, { deep: true, flush: 'sync' })
+watch(researchProvider, () => {
+  if (restoring) return
+  draftDirty.value = true
+  if (searched.value && !blocked.value && settings.outboundAllowed) void doResearch()
+}, { flush: 'sync' })
 
-const current = computed(() => queue.value?.items[index.value] ?? null)
+function adopt(next: Models.app.ReviewProblemView | null, reset = false) {
+  problem.value = next
+  stale.value = false
+  const row = next?.sources.find(row => row.id === sourceId.value)
+    ?? next?.sources.find(row => row.status === 'review' && row.candidates.length)
+    ?? next?.sources[0]
+  sourceId.value = row?.id ?? null
+  candidates.value = row?.candidates ?? []
+  if (!reset) return
+  requestRevision++
+  researching.value = false
+  expanded.value = false; sourcesExpanded.value = false
+  error.value = ''; localError.value = ''; searched.value = false
+  restoring = true
+  research.value = next?.query
+    ? { title: next.query.title, artist: next.query.artist, album: next.query.album }
+    : { title: row?.inTitle ?? '', artist: row?.inArtist ?? '', album: row?.inAlbum ?? '' }
+  researchProvider.value = next?.query?.provider || settings.providers[0]?.id || ''
+  country.value = next?.query?.country ?? ''
+  restoring = false; draftDirty.value = false
+  void updateHint()
+}
 
-const reviewReason = computed(() => ({
-  new_release: '新增发行加入已有专辑组，接受后还需确认成员变化',
-  group_insufficient: '判组资料不足，可按已知信息保存', group_conflict: '专辑组证据冲突，需要明确合组方案',
-  unknown_total: '发行总曲数未知，需要人工选版', no_match: '没有高置信匹配', ambiguous: '候选存在歧义', duplicate: '可能与已有收藏重复',
-}[current.value?.reviewReason ?? ''] ?? current.value?.reviewReason ?? ''))
-const reviewEvidence = computed(() => {
-  try { return JSON.parse(current.value?.reviewEvidence || 'null') as (Models.domain.AdmissionBaseline & { proposed?: Models.app.PlanReleaseView; relatedTrackId?: number; detail?: string }) | null }
-  catch { return null }
+watch(() => review.current, next => {
+  if (disposed) return
+  const old = problem.value
+  if (old?.id !== next?.id || !old) { adopt(next, true); return }
+  if (scopeKey(old) !== scopeKey(next!) && (busy.value || researching.value || searched.value || draftDirty.value)) {
+    // Do not silently broaden a displayed search/approval. Reopening retains
+    // the draft but explicitly replaces the visible source range.
+    stale.value = true
+    return
+  }
+  if (!busy.value && !researching.value) adopt(next)
+}, { immediate: true })
+watch(sourceId, () => {
+  candidates.value = source.value?.candidates ?? []
+  expanded.value = false; localError.value = ''
+  void refreshLocal()
 })
 
-/** 地区下拉仅在选中需要地区参数的上游时出现。 */
-const showCountry = computed(() => settings.anyNeedsCountry([researchProvider.value]))
-
-const providerCaps = computed(() => {
-  const map: Record<string, string[]> = {}
-  for (const p of settings.providers) map[p.id] = p.capabilities ?? []
-  return map
-})
-
-/** 当前选中上游的能力决定候选列表的列显示。 */
-const activeCaps = computed(() => settings.providerById(researchProvider.value)?.capabilities ?? [])
-
-onMounted(async () => {
-  void load()
-  countries.value = (await App.ListCountries()) ?? []
-})
-
-/**
- * 切换上游即重新检索。
- *
- * 此前改选上游不动结果：屏幕上还挂着上一个上游的候选，而「上游」下拉已经指向
- * 另一家——读起来像是这些候选来自新选的那个上游。
- *
- * 只在真的搜过一次之后才自动重搜：刚打开一个条目就因为默认值触发一次出网，
- * 会把 1 req/s 的配额花在用户还没提出的请求上。
- */
-watch(researchProvider, async () => {
-  if (!current.value) return
-  if (!settings.outboundAllowed) return
-  if (!searched.value) return
-  await doResearch()
-})
-
-let researchRequest = 0
-let queueRevision = 0
-let queueInvalidation = 0
-let refreshTasks = false
-let queueLoad: Promise<void> | null = null
-let disposed = false
-let localRevision = 0
-const localRefresh = createRefreshQueue(async isLatest => {
-  const item = current.value
-  if (!item || !item.candidates.length) return
-  const candidates = item.candidates
-  const candidateRequest = researchRequest
-  const owns = () => isLatest() && current.value?.id === item.id && current.value.candidates === candidates && candidateRequest === researchRequest
+const localRefresh = createRefreshQueue(async latest => {
+  const rows = candidates.value, id = problem.value?.id, selected = sourceId.value, revision = requestRevision
+  if (!id || !rows.length) return
+  const owns = () => latest() && !disposed && id === problem.value?.id && selected === sourceId.value && rows === candidates.value && revision === requestRevision
   try {
-    const rows = await App.RefreshReviewCandidates(candidates)
-    if (owns()) { current.value!.candidates = rows ?? []; localError.value = '' }
+    const next = await App.RefreshReviewCandidates(rows)
+    if (owns()) { candidates.value = next ?? []; localError.value = '' }
   } catch (e) {
-    if (owns()) {
-      current.value!.candidates = invalidateCandidateOwnership(candidates, '本地身份刷新失败，请重试')
-      localError.value = String(e)
-    }
+    if (owns()) { candidates.value = invalidateCandidateOwnership(rows, '本地身份刷新失败，请重试'); localError.value = String(e) }
   }
 })
 async function refreshLocal() {
@@ -128,374 +118,205 @@ async function refreshLocal() {
   try { await localRefresh.request() }
   finally { if (!disposed) refreshingLocal.value = false }
 }
-// 直接订阅事件而非待复核计数：计数相同时也可能有失败、候选或条目变化。
-const offProgress = EventsOn(Events.ImportProgress, () => { void load(true) })
 const offLibrary = EventsOn(Events.LibraryChanged, () => { void refreshLocal() })
+onMounted(() => {
+  review.subscribe()
+  void Promise.all([review.refresh(), tasks.refresh()])
+  void App.ListCountries().then(rows => { if (!disposed) countries.value = rows ?? [] }).catch(e => { if (!disposed) error.value = String(e) })
+})
 onBeforeUnmount(() => {
-  disposed = true
-  researchRequest++
-  queueRevision++
-  offProgress()
-  offLibrary()
-  localRefresh.dispose()
+  disposed = true; requestRevision++
+  review.unsubscribeAll(); offLibrary(); localRefresh.dispose()
 })
-
-watch(() => current.value?.id, (id) => {
-  researchRequest++
-  researching.value = false
-  expanded.value = false
-  searched.value = false
-  localError.value = ''
-  if (id === undefined) return
-  restoreOriginal()
-  void updateHint()
-  void refreshLocal()
-})
-
-/** 合并连续进度事件；动作完成后的刷新使旧快照失效，后台事件则安排一次续读。 */
-function load(background = false): Promise<void> {
-  if (disposed) return Promise.resolve()
-  queueRevision++
-  loading.value = true
-  if (!background) {
-    refreshTasks = true
-    queueInvalidation++
-    error.value = ''
-  }
-  if (!queueLoad) {
-    queueLoad = reloadQueue().finally(() => {
-      queueLoad = null
-      if (!disposed) loading.value = false
-    })
-  }
-  return queueLoad
-}
-
-async function reloadQueue() {
-  let request: number
-  do {
-    request = queueRevision
-    const invalidation = queueInvalidation
-    const candidateRequest = researchRequest
-    const wasResearching = researching.value
-    const localAtStart = localRevision
-    try {
-      const next = await App.GetReviewQueue()
-      if (disposed) return
-      if (invalidation !== queueInvalidation) continue
-      const item = current.value
-      const position = next.items.findIndex(row => row.id === item?.id)
-      if (position >= 0 && item && (wasResearching || researching.value || candidateRequest !== researchRequest)) {
-        // 搜索中或此快照之后完成了搜索：不以旧快照盖掉交互结果。
-        next.items[position].candidates = item.candidates
-      }
-      queueError.value = ''
-      queue.value = next
-      index.value = position >= 0 ? position : Math.max(0, Math.min(index.value, next.items.length - 1))
-      if (localAtStart !== localRevision) void refreshLocal()
-      // 导入事件的全局汇总由 tasks 自身订阅刷新；这里只补进入页面和处理动作。
-      if (refreshTasks) {
-        refreshTasks = false
-        await tasks.refresh()
-      }
-    } catch (e) {
-      if (!disposed && invalidation === queueInvalidation) queueError.value = String(e)
-    }
-  } while (!disposed && request !== queueRevision)
-}
-
-/** 地区下拉的选项：「跟随默认」置顶。 */
-const countryOptions = computed(() => [{ code: '', name: '跟随默认' }, ...countries.value])
 
 async function updateHint() {
+  const owner = requestRevision
   const text = `${research.value.title} ${research.value.artist}`.trim()
+  hint.value = null
   if (!text) return
-  hint.value = await App.SuggestCountry(text)
-  if (hint.value?.detected && !country.value) country.value = hint.value.country
+  try {
+    const next = await App.SuggestCountry(text)
+    if (disposed || owner !== requestRevision) return
+    hint.value = next
+    if (next?.detected && !country.value) country.value = next.country
+  } catch { /* Optional hint does not prevent review. */ }
 }
-
-/** 只恢复三个输入，不提交查询、不修改原始记录或上游/地区选择。 */
 function restoreOriginal() {
-  const item = current.value
-  if (!item) return
-  research.value = {
-    title: item.inTitle ?? '',
-    artist: item.inArtist ?? '',
-    album: item.inAlbum ?? '',
-  }
+  if (!source.value) return
+  research.value = { title: source.value.inTitle ?? '', artist: source.value.inArtist ?? '', album: source.value.inAlbum ?? '' }
 }
-
+async function reopen() {
+  if (busy.value || researching.value) return
+  await review.refresh()
+  if (review.current?.id === problem.value?.id) { requestRevision++; adopt(review.current); void refreshLocal() }
+}
+async function reloadAfter(scope: Models.app.ReviewProblemView) {
+  await Promise.all([review.refresh(), tasks.refresh()])
+  if (disposed || problem.value?.id !== scope.id || review.current?.id !== scope.id) return
+  // Own successful query can advance revisions, not membership.
+  if (memberKey(scope) !== memberKey(review.current)) { stale.value = true; return }
+  adopt(review.current)
+}
 async function doResearch() {
-  const item = current.value
-  if (!item) return
-  const request = ++researchRequest
-  const localAtStart = localRevision
-  searched.value = true
-  researching.value = true
-  error.value = ''
+  const p = problem.value
+  if (!p || blocked.value || !settings.outboundAllowed) return
+  const owner = ++requestRevision, localAtStart = localRevision
+  searched.value = true; researching.value = true; error.value = ''
   try {
-    const rows = await App.ResearchReviewItem(
-      item.id, research.value.title, research.value.artist,
-      research.value.album, researchProvider.value, country.value,
-    )
-    if (request !== researchRequest || current.value?.id !== item.id) return
-    current.value.candidates = rows ?? []
+    const rows = await App.ResearchReviewProblem(p.scope, { version: 1, ...research.value, provider: researchProvider.value, country: country.value } as Models.store.ReviewQuery)
+    if (disposed || owner !== requestRevision || problem.value?.id !== p.id) return
+    candidates.value = rows ?? []
+    await reloadAfter(p)
     if (localAtStart !== localRevision) void refreshLocal()
-    // 后端改搜已递增输入修订，刷新队列取得新令牌，草稿与有效候选仍保留。
-    void load(true)
-  } catch (e) {
-    if (request === researchRequest) error.value = String(e)
-  } finally {
-    if (request === researchRequest) researching.value = false
-  }
+  } catch (e) { if (!disposed && owner === requestRevision) { error.value = String(e); void review.refresh() } }
+  finally { if (owner === requestRevision) researching.value = false }
 }
-
-/** 只有调用方明确返回 false 才表示取消；Wails 空结果 null 仍代表操作成功。 */
-async function act(fn: () => Promise<void | boolean>) {
-  const itemId = current.value?.id
-  error.value = ''
+async function act(action: (p: Models.app.ReviewProblemView) => Promise<void | boolean>) {
+  const p = problem.value
+  if (!p || blocked.value) return
+  busy.value = true; error.value = ''
   try {
-    const result = await fn()
-    if (result !== false) {
-      if (current.value?.id === itemId) {
-        researchRequest++
-        researching.value = false
-      }
-      await load()
+    if (await action(p) !== false) {
+      requestRevision++
+      await reloadAfter(p)
     }
   } catch (e) {
-    error.value = String(e)
-    if (current.value?.id === itemId) void refreshLocal()
-  }
+    if (!disposed && problem.value?.id === p.id) { error.value = String(e); void review.refresh(); void refreshLocal() }
+  } finally { if (!disposed) busy.value = false }
 }
-
-/** 接受：采用该上游候选入库并写入溯源。 */
 function accept(row: Models.app.CandidateRow) {
-  const item = current.value
-  if (!item) return
-  if (!candidateActionEnabled(row) || !['accept', 'skip'].includes(row.action)) {
-    error.value = row.note || '候选身份尚不可用，请刷新'
-    return
-  }
-  const itemId = item.id
-  if (row.action === 'skip') {
-    void act(async () => {
-      const plan = await App.PrepareSkipExisting(row, itemId, item.revision)
+  if (!candidateActionEnabled(row) || !['accept', 'skip'].includes(row.action)) return
+  void act(async p => {
+    const scope = await App.GetReviewAdmissionScope(p.scope)
+    if (row.action === 'skip') {
+      const plan = await App.PrepareProblemSkipExisting(row, scope)
       await App.CommitAdmission(plan.id, plan.hash, {} as Models.domain.AdmissionApproval)
-    })
-    return
-  }
-  void act(async () => {
-    const result = await admission.run(() => App.PrepareAdmission(row, itemId))
-    if (admission.resolution && current.value?.id === itemId) {
-      researchRequest++
-      queueInvalidation++
-      current.value.candidates = admission.resolution.candidates
-      expanded.value = true
+      return
+    }
+    const result = await admission.run(() => App.PrepareProblemAdmission(row, scope))
+    if (admission.resolution && problem.value?.id === p.id) {
+      candidates.value = admission.resolution.candidates; expanded.value = true
       error.value = '目标有多个位置或资料不足，请选择具体曲目位置'
     }
     return result !== null
   })
 }
-
 function noMatchNeeded() {
-  const itemId = current.value?.id
-  if (itemId) void act(async () => (await admission.run(() => App.PrepareNoMatchNeeded(itemId))) !== null)
+  const id = sourceId.value
+  if (id) void act(async () => (await admission.run(() => App.PrepareNoMatchNeeded(id))) !== null)
 }
-
-/** 空态的引导动作。上游搜索现在是搜索页的一种范围，不再是独立视图。 */
+function discard() {
+  const id = sourceId.value
+  if (id) void act(p => App.DiscardReviewProblemMembers(p.scope, [id]))
+}
+function split() {
+  const id = sourceId.value
+  if (id) void act(async p => { await App.SplitReviewProblemItem(p.scope, id) })
+}
+function retry() {
+  const ids = [...failedIds.value]
+  if (ids.length) void act(p => App.RetryReviewProblemMembers(p.scope, ids))
+}
+function move(delta: number) {
+  if (busy.value) return
+  const next = review.items[review.index + delta]
+  if (next) review.select(next.id)
+}
 async function onEmptyAction(key: string) {
-  if (key !== 'upstream') {
-    await library.goTo('all')
-    return
-  }
-  search.setScope(settings.providers[0]?.id ?? 'library')
-  await library.goTo('search')
+  if (key !== 'upstream') { await library.goTo('all'); return }
+  search.setScope(settings.providers[0]?.id ?? 'library'); await library.goTo('search')
 }
-
-function prev() {
-  if (index.value > 0) index.value--
-}
-function next() {
-  if (queue.value && index.value < queue.value.items.length - 1) index.value++
+function numberText(row: Models.app.ReviewItem, key: 'year' | 'disc' | 'track' | 'duration', value: number | null | undefined) {
+  const field = row.profile?.[key]
+  if (field?.state === 'invalid') return `${field.raw}（无法解析）`
+  if (field?.raw) return field.raw
+  return key === 'duration' ? duration(value) : display(value)
 }
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <!-- 顶部：待处置总数与分项计数 -->
     <header class="flex h-12 shrink-0 items-center gap-3 px-4" style="--wails-draggable: drag">
       <h2 class="text-xl font-bold">复核队列</h2>
-      <span v-if="queue" class="text-sm text-muted-color">
-        {{ queue.total }} 条待处置 · 待选 {{ queue.pending }} · 失败 {{ queue.failed }}
+      <span v-if="review.queue" class="text-sm text-muted-color">
+        {{ review.problems.reviewProblems }} 个待处理问题 · 待选 {{ review.problems.pendingProblems }} · 失败 {{ review.problems.failedProblems }} · 涉及 {{ review.problems.sourceRows }} 行
       </span>
       <div class="flex-1" />
-      <SecondaryButton v-if="current?.candidates.length" size="small" :disabled="refreshingLocal" @click="refreshLocal">刷新本地状态</SecondaryButton>
+      <SecondaryButton size="small" :disabled="review.loading || busy || researching" @click="reopen">刷新队列</SecondaryButton>
+      <SecondaryButton v-if="candidates.length" size="small" :disabled="refreshingLocal" @click="refreshLocal">刷新本地状态</SecondaryButton>
     </header>
-
-    <EmptyState
-      v-if="queue && queue.items.length === 0 && !loading"
-      title="复核队列是空的"
-      description="导入时无法自动判断的条目会出现在这里，逐条处置即可。"
-      :actions="[{ label: '到全部曲目', key: 'all' }, { label: '到上游搜索', key: 'upstream' }]"
-      @action="onEmptyAction"
-    />
-
-    <div v-else-if="current" class="min-h-0 flex-1 overflow-auto">
-      <!-- 条目标题、来源批次与逐条浏览 -->
+    <EmptyState v-if="review.queue && !review.items.length && !review.loading" title="复核队列是空的"
+      description="导入时无法自动判断的独立问题会出现在这里，可展开查看每一行来源。"
+      :actions="[{ label: '到全部曲目', key: 'all' }, { label: '到上游搜索', key: 'upstream' }]" @action="onEmptyAction" />
+    <div v-else-if="problem && source" class="min-h-0 flex-1 overflow-auto">
       <section class="border-b p-4">
         <div class="flex items-start gap-3">
           <div class="min-w-0 flex-1">
-            <p class="text-base font-medium">{{ display(current.inTitle) }}</p>
-            <p class="mt-0.5 text-xs text-muted-color">来自 {{ current.batchTag }}</p>
+            <p class="text-base font-medium" data-testid="problem-title">{{ display(problem.sources[0]?.inTitle) }}</p>
+            <p class="mt-0.5 text-xs text-muted-color">问题 #{{ problem.id }} · 涉及 {{ problem.sources.length }} 行 · {{ new Set(problem.sources.map(row => row.batchId)).size }} 个批次</p>
           </div>
-          <Tag
-            class="shrink-0"
-            :severity="current.status === 'failed' ? 'danger' : 'secondary'"
-            :value="current.status === 'failed' ? '失败' : '待选'"
-          />
+          <Tag :severity="problem.status === 'failed' ? 'danger' : 'secondary'" :value="problem.status === 'failed' ? '失败' : '待选'" />
         </div>
-
-        <div v-if="reviewReason" class="mt-3 space-y-2 rounded border p-3 text-xs">
-          <p class="font-medium">{{ reviewReason }}</p>
-          <p v-if="reviewEvidence?.relatedTrackId" class="text-muted-color">相关收藏（不是精确拥有）：{{ reviewEvidence.detail }}。可改搜选择上游 track，或在编辑器处理原收藏。</p>
-          <div v-for="group in reviewEvidence?.resolution?.groups ?? []" :key="group.id">
-            <p>已有专辑组：{{ group.title || '未命名专辑' }} · {{ display(group.credit) }}</p>
-            <p v-for="member in group.members" :key="member.id" class="text-muted-color">已有发行：{{ member.title || '未命名发行' }} · {{ member.identity?.provider || '本地' }} · {{ display(member.identity?.ref) }} · 收藏 {{ member.trackIds?.length || 0 }} 首</p>
-          </div>
-          <p v-if="reviewEvidence?.proposed">拟加入发行：{{ reviewEvidence.proposed.title?.value || '未命名发行' }} · {{ reviewEvidence.proposed.identity?.provider }} · {{ reviewEvidence.proposed.identity?.ref }}</p>
-          <p v-for="(e, i) in reviewEvidence?.resolution?.evidence ?? []" :key="i">判组依据：{{ e.kind === 'native' ? '相同上游组身份' : '专辑名与专辑艺术家相同' }} · {{ e.title }} · {{ e.credit }}</p>
+        <div class="mt-3 flex items-center gap-2 text-sm">
+          <SecondaryButton size="small" :disabled="review.index <= 0 || busy" @click="move(-1)">← 上一条</SecondaryButton>
+          <span class="tabular-nums text-muted-color">{{ review.index + 1 }} / {{ review.items.length }}</span>
+          <SecondaryButton size="small" :disabled="review.index >= review.items.length - 1 || busy" @click="move(1)">下一条 →</SecondaryButton>
+          <SecondaryButton size="small" :aria-expanded="sourcesExpanded" @click="sourcesExpanded = !sourcesExpanded">{{ sourcesExpanded ? '收起来源' : '展开来源' }}（{{ problem.sources.length }} 行）</SecondaryButton>
         </div>
-        <p v-if="!current.inTitle || !current.inArtist || !current.inAlbum" class="mt-2 text-xs text-muted-color">部分基本信息缺失，仍可选择候选或按已知原始信息无需匹配保存。</p>
-        <!-- 逐条浏览保留在条目标题下方。 -->
-        <div v-if="queue && queue.items.length > 0" class="mt-3 flex items-center gap-2 text-sm">
-          <SecondaryButton variant="outlined" size="small" :disabled="index === 0" @click="prev">
-            ← 上一条
-          </SecondaryButton>
-          <span class="tabular-nums text-muted-color">
-            {{ index + 1 }} / {{ queue.items.length }}
-          </span>
-          <SecondaryButton
-            variant="outlined"
-            size="small"
-            :disabled="index >= queue.items.length - 1"
-            @click="next"
-          >
-            下一条 →
-          </SecondaryButton>
+        <div v-if="sourcesExpanded" class="mt-3 space-y-3" data-testid="problem-sources">
+          <article v-for="row in problem.sources" :key="row.id" class="space-y-2 rounded border p-3 text-sm" :data-source-id="row.id">
+            <p class="font-medium">{{ row.batchTag }} · 批次 #{{ row.batchId }} · 第 {{ row.rowIndex + 1 }} 行 · {{ ({ review: '待选', failed: '失败', queued: '排队中', matching: '匹配中' } as Record<string, string>)[row.status] || row.status }}</p>
+            <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 break-words">
+              <dt>原始曲名</dt><dd>{{ display(row.inTitle) }}</dd>
+              <dt>原始艺术家</dt><dd>{{ display(row.inArtist) }}</dd>
+              <dt>原始专辑</dt><dd>{{ display(row.inAlbum) }}</dd>
+              <dt>年份 / 碟号 / 轨号 / 时长</dt><dd>{{ numberText(row, 'year', row.inYear) }} / {{ numberText(row, 'disc', row.inDiscNo) }} / {{ numberText(row, 'track', row.inTrackNo) }} / {{ numberText(row, 'duration', row.inDurationMs) }}</dd>
+            </dl>
+            <details><summary class="cursor-pointer">完整原始行</summary><pre class="mt-1 whitespace-pre-wrap break-all text-xs">{{ row.rawRow }}</pre></details>
+            <ReviewReasons :source="row" />
+            <p v-if="row.status === 'failed'" class="text-xs text-danger-color">已重试 {{ row.attemptCount }} 次 · 最后错误：{{ display(row.lastError) }} · {{ row.lastErrorAt ? new Date(row.lastErrorAt).toLocaleString() : '—' }}</p>
+          </article>
         </div>
+        <p class="mt-3 rounded border p-3 text-xs" data-testid="problem-scope">接受 / 跳过 / 改搜 / 无一匹配作用于上述 {{ problem.sources.length }} 行；一次接受最多新增一个 track，其余精确重复行记已存在跳过。</p>
+        <Message v-if="stale" severity="warn" class="mt-2">问题范围或证据已变化，旧操作已禁用。草稿仍保留，请刷新队列查看新范围后重新确认。</Message>
       </section>
-
-      <!-- 重新搜索 -->
-      <section class="border-b p-4">
+      <section class="space-y-3 border-b p-4">
+        <label class="block text-xs">来源行（候选事实及单行操作）
+          <Select v-model="sourceId" :options="sourceOptions" option-label="label" option-value="id" size="small" :disabled="busy || researching" class="mt-1 w-full" />
+        </label>
+        <ReviewReasons :source="source" />
         <div class="flex flex-wrap items-end gap-2">
-          <label class="text-xs">曲名
-            <InputText v-model="research.title" size="small" class="mt-1 block w-48" />
-          </label>
-          <label class="text-xs">艺术家
-            <InputText v-model="research.artist" size="small" class="mt-1 block w-36" />
-          </label>
-          <label class="text-xs">专辑
-            <InputText v-model="research.album" size="small" class="mt-1 block w-36" />
-          </label>
-          <!-- 上游单选下拉，从注册表渲染，默认 MusicBrainz -->
-          <label class="text-xs">上游
-            <Select
-              v-model="researchProvider"
-              :options="settings.providers"
-              option-label="displayName"
-              option-value="id"
-              size="small"
-              class="mt-1 block"
-            />
-          </label>
-          <label v-if="showCountry" class="text-xs">地区
-            <Select
-              v-model="country"
-              :options="countryOptions"
-              option-label="name"
-              option-value="code"
-              size="small"
-              class="mt-1 block"
-            />
-          </label>
-          <Button
-            size="small"
-            :disabled="researching || !settings.outboundAllowed"
-            :title="!settings.outboundAllowed ? settings.outboundReason : ''"
-            @click="doResearch"
-          >
-            {{ researching ? '搜索中…' : '重新搜索' }}
-          </Button>
+          <label class="text-xs">曲名<InputText v-model="research.title" size="small" class="mt-1 block w-48" :disabled="busy" /></label>
+          <label class="text-xs">艺术家<InputText v-model="research.artist" size="small" class="mt-1 block w-36" :disabled="busy" /></label>
+          <label class="text-xs">专辑<InputText v-model="research.album" size="small" class="mt-1 block w-36" :disabled="busy" /></label>
+          <label class="text-xs">上游<Select v-model="researchProvider" :options="settings.providers" option-label="displayName" option-value="id" size="small" class="mt-1 block" :disabled="busy" /></label>
+          <label v-if="showCountry" class="text-xs">地区<Select v-model="country" :options="countryOptions" option-label="name" option-value="code" size="small" class="mt-1 block" :disabled="busy" /></label>
+          <Button size="small" :disabled="blocked || !settings.outboundAllowed" :title="!settings.outboundAllowed ? settings.outboundReason : ''" @click="doResearch">{{ researching ? '搜索中…' : '重新搜索' }}</Button>
         </div>
-        <p v-if="showCountry && hint?.detected" class="mt-1 text-xs text-muted-color">
-          {{ hint.message }}
-        </p>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <SecondaryButton variant="outlined" size="small" @click="restoreOriginal">
-            恢复原始信息
-          </SecondaryButton>
-          <SecondaryButton variant="outlined" size="small" @click="noMatchNeeded">
-            无需匹配
-          </SecondaryButton>
-          <SecondaryButton variant="outlined" size="small" @click="act(() => App.DiscardReviewItem(current!.id))">
-            移出队列
-          </SecondaryButton>
+        <p v-if="showCountry && hint?.detected" class="text-xs text-muted-color">{{ hint.message }}</p>
+        <p class="text-xs text-muted-color">单行操作仅作用于 {{ source.batchTag }} 第 {{ source.rowIndex + 1 }} 行（输入 #{{ source.id }}），不影响其他来源。</p>
+        <div class="flex flex-wrap gap-2">
+          <SecondaryButton size="small" :disabled="busy" @click="restoreOriginal">恢复原始信息</SecondaryButton>
+          <SecondaryButton size="small" :disabled="blocked" @click="noMatchNeeded">无需匹配</SecondaryButton>
+          <SecondaryButton size="small" :disabled="blocked" @click="discard">移出队列</SecondaryButton>
+          <SecondaryButton v-if="problem.sources.length > 1" size="small" :disabled="blocked" @click="split">拆出此行</SecondaryButton>
         </div>
+        <p v-if="!source.inTitle || !source.inArtist || !source.inAlbum" class="text-xs text-muted-color">部分基本信息缺失，仍可选择候选或按选定行的原始信息无需匹配保存。</p>
       </section>
-
-      <!-- 候选列表：与上游搜索共用同一组件 -->
-      <section>
-        <CandidateTable
-          v-model:expanded="expanded"
-          :rows="current.candidates"
-          :capabilities="activeCaps"
-          :provider-capabilities="providerCaps"
-          :limit="10"
-          :total="current.candidates.length"
-          @act="accept"
-          @jump-local="(id) => emit('jumpLocal', id)"
-        >
+      <section :inert="blocked || undefined">
+        <CandidateTable v-model:expanded="expanded" :rows="candidates" :capabilities="activeCaps" :provider-capabilities="providerCaps" :limit="10" :total="candidates.length" @act="accept" @jump-local="id => emit('jumpLocal', id)">
           <template #empty>还没有候选结果，可改写条件或换上游再试</template>
-          <template #footer-actions>
-            <SecondaryButton
-              variant="outlined"
-              size="small"
-              @click="act(() => App.NoneMatched(current!.id))"
-            >
-              无一匹配
-            </SecondaryButton>
-          </template>
+          <template #footer-actions><SecondaryButton size="small" :disabled="blocked" @click="act(p => App.NoneMatchedProblem(p.scope))">无一匹配</SecondaryButton></template>
         </CandidateTable>
       </section>
-
-      <!-- 状态说明：仅失败状态显示 -->
-      <section v-if="current.status === 'failed'" class="border-t p-4 text-sm">
-        <h3 class="mb-1 font-medium">状态说明</h3>
-        <p class="text-muted-color">
-          已重试 {{ current.attemptCount }} 次
-          <template v-if="current.lastError"> · 最后错误: {{ current.lastError }}</template>
-          <template v-if="current.lastErrorAt">
-            · {{ new Date(current.lastErrorAt).toLocaleTimeString() }}
-          </template>
-        </p>
-        <div class="mt-2 flex gap-2">
-          <SecondaryButton
-            variant="outlined"
-            size="small"
-            @click="act(() => App.RetryReviewItem(current!.id))"
-          >
-            立即重试
-          </SecondaryButton>
-          <SecondaryButton variant="outlined" size="small" @click="library.goTo('importQueue')">
-            查看日志
-          </SecondaryButton>
-        </div>
+      <section v-if="failedIds.length" class="space-y-2 border-t p-4 text-sm">
+        <h3 class="font-medium">失败来源（{{ failedIds.length }} 行）</h3>
+        <p v-for="row in problem.sources.filter(row => row.status === 'failed')" :key="row.id">{{ row.batchTag }} 第 {{ row.rowIndex + 1 }} 行 · 已重试 {{ row.attemptCount }} 次 · {{ display(row.lastError) }} · {{ row.lastErrorAt ? new Date(row.lastErrorAt).toLocaleString() : '—' }}</p>
+        <p class="text-xs text-muted-color">立即重试仅处理输入 #{{ failedIds.join('、#') }}。</p>
+        <SecondaryButton size="small" :disabled="blocked" @click="retry">立即重试</SecondaryButton>
+        <SecondaryButton size="small" @click="library.goTo('importQueue')">查看日志</SecondaryButton>
       </section>
     </div>
-
-    <Message v-if="error || queueError || localError" severity="error" size="small" class="shrink-0 rounded-none">
-      {{ error || queueError || localError }}
-    </Message>
+    <Message v-if="error || review.error || localError" severity="error" size="small" class="shrink-0 rounded-none">{{ error || review.error || localError }}</Message>
   </div>
 </template>

@@ -239,6 +239,31 @@
           ],
           total: 2, pending: 2, failed: 0,
         }),
+        ResearchReviewProblem: async (scope, query) => {
+          // Legacy single-row tests override these endpoints. Multi-source
+          // transaction/lease behavior uses the dedicated review-problem fixture.
+          if (scope.members.length !== 1) throw new Error('多行改搜需要问题范围桩件')
+          return window.go.app.App.ResearchReviewItem(scope.members[0].itemId, query.title, query.artist, query.album, query.provider, query.country)
+        },
+        GetReviewAdmissionScope: async scope => JSON.parse(JSON.stringify(scope)),
+        PrepareProblemAdmission: async (row, scope) => {
+          if (scope.members.length !== 1) throw new Error('多行准入需要问题范围桩件')
+          return window.go.app.App.PrepareAdmission(row, scope.members[0].itemId)
+        },
+        PrepareProblemSkipExisting: async (row, scope) => {
+          if (scope.members.length !== 1) throw new Error('多行跳过需要问题范围桩件')
+          return window.go.app.App.PrepareSkipExisting(row, scope.members[0].itemId, scope.members[0].inputRevision)
+        },
+        NoneMatchedProblem: async scope => {
+          if (scope.members.length !== 1) throw new Error('多行无一匹配需要问题范围桩件')
+          return window.go.app.App.NoneMatched(scope.members[0].itemId)
+        },
+        DiscardReviewProblemMembers: async (_scope, ids) => {
+          for (const id of ids) await window.go.app.App.DiscardReviewItem(id)
+        },
+        RetryReviewProblemMembers: async (_scope, ids) => {
+          for (const id of ids) await window.go.app.App.RetryReviewItem(id)
+        },
         ResearchReviewItem: record('ResearchReviewItem', async (id, title, artist, album, providerID) => {
           window.__lastResearch = { id, title, artist, album, providerID }
           return [
