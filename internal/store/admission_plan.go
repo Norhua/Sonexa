@@ -164,7 +164,11 @@ func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result domain.Admi
 		if status != "imported" && status != "skipped" {
 			return fmt.Errorf("无效导入终态")
 		}
-		row, err := tx.Exec("UPDATE import_item SET status=?,track_id=?,review_reason=NULL,next_retry_at=NULL,last_error=NULL,updated_at=? WHERE id=? AND status IN ('queued','matching','review','failed')", status, result.TrackID, time.Now().UTC(), plan.Seed.ImportItemID)
+		reason := ResolutionImported
+		if plan.Seed.Snapshot.Track != nil && plan.Seed.Snapshot.Track.Identity.Ref == "" {
+			reason = ResolutionWithoutMatch
+		}
+		row, err := tx.Exec("UPDATE import_item SET status=?,track_id=?,resolution_reason=?,revision=revision+1,review_reason=NULL,next_retry_at=NULL,last_error=NULL,updated_at=? WHERE id=? AND status IN ('queued','matching','review','failed')", status, result.TrackID, reason, time.Now().UTC(), plan.Seed.ImportItemID)
 		if err != nil {
 			return err
 		}

@@ -45,7 +45,7 @@ type AdmissionSeed struct {
 }
 type AdmissionBaseline struct {
 	NewNativeMapping     bool            `json:"newNativeMapping"`
-	ItemRevision         string          `json:"itemRevision"`
+	ItemRevision         int64           `json:"itemRevision"`
 	Resolution           GroupResolution `json:"resolution"`
 	ExistingTrackID      int64           `json:"existingTrackId"`
 	ExistingReleaseID    int64           `json:"existingReleaseId"`

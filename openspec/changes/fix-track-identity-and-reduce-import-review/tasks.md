@@ -22,7 +22,7 @@
 
 ## 3. 队列基础结构与精确候选接受/跳过
 
-- [ ] 3.1 在新库结构中增加输入/问题整数修订、profile/证据、问题成员关系和终态原因，保持 source+track 唯一约束；通过 schema/store 测试验证原始行保留、一行最多一个活跃归属、同 ISRC 不设唯一、新模型与旧库拒绝边界，并更新结构说明。
+- [x] 3.1 在新库结构中增加输入/问题整数修订、profile/证据、问题成员关系和终态原因，保持 source+track 唯一约束；通过 schema/store 测试验证原始行保留、一行最多一个活跃归属、同 ISRC 不设唯一、新模型与旧库拒绝边界，并更新结构说明。
 - [ ] 3.2 替换 `ResolveLocal` 的所有权判定，只有有效来源+track+发行关系可返回 owned，错误和冲突独立返回；在 `matching/provenance_test.go` 与 `store/lookup_test.go` 覆盖同 ISRC/Recording 不同 track、不同来源、无绑定文本、查询失败及精确已有。
 - [ ] 3.3 为单行接受和跳过实现服务端计划/事务重验，重复接受记 `skipped/existing_track`，精确 skip 不修改收藏；通过 `library`、`store` 测试验证删除/换绑后拒绝、并发一次新增、重复计划幂等、旧队列修订不能恢复终态。
 - [ ] 3.4 移除 `MergeCandidate`/`MarkMerged`、简化本地候选快照和 `merged` 新写路径，保留无关的编辑器归组功能；以代码引用检查和后端定向测试验证旧候选协议不可绕过精确校验，并更新相关接口注释。

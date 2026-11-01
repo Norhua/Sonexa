@@ -210,7 +210,7 @@ func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.Admissio
 		}
 	}
 	if seed.ImportItemID != 0 {
-		if err := tx.QueryRow("SELECT status,updated_at FROM import_item WHERE id=?", seed.ImportItemID).Scan(&baseline.ItemState, &baseline.ItemRevision); err != nil {
+		if err := tx.QueryRow("SELECT status,revision FROM import_item WHERE id=?", seed.ImportItemID).Scan(&baseline.ItemState, &baseline.ItemRevision); err != nil {
 			return baseline, err
 		}
 	}

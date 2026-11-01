@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
 )
 
@@ -23,6 +24,24 @@ const (
 	StatusMerged    ItemStatus = "merged"    // 已合并
 	StatusDiscarded ItemStatus = "discarded" // 已丢弃
 )
+
+// ResolutionReason 与处理状态分开；已有目标跳过不能计为新建收藏。
+type ResolutionReason string
+
+const (
+	ResolutionImported      ResolutionReason = "imported"
+	ResolutionExistingTrack ResolutionReason = "existing_track"
+	ResolutionWithoutMatch  ResolutionReason = "without_matching"
+	ResolutionUserSkipped   ResolutionReason = "user_skipped"
+	ResolutionUserDiscarded ResolutionReason = "user_discarded"
+)
+
+// ResolutionTarget 是当次核验的来源身份，不随收藏删除或换绑而改变，
+// 仅供终态诊断，不能作为未来输入的选版证据。
+type ResolutionTarget struct {
+	Track   domain.Identity `json:"track"`
+	Release domain.Identity `json:"release"`
+}
 
 // ReviewReason 是条目进入复核队列的成因。
 //
@@ -88,6 +107,7 @@ type ImportItem struct {
 	ID       int64 `json:"id"`
 	BatchID  int64 `json:"batchId"`
 	RowIndex int   `json:"rowIndex"`
+	Revision int64 `json:"revision"`
 	// RawRow 是原始整行 JSON，永不修改——
 	// 用户在复核队列改搜只影响查询，不动原值。
 	Profile       *matching.InputProfile `json:"-"`
@@ -107,11 +127,22 @@ type ImportItem struct {
 	Candidates    *string                `json:"candidates"`
 	TriedVariants *string                `json:"triedVariants"`
 	// ReviewReason 是进入复核的成因；非复核状态时为空。
-	ReviewReason   *string `json:"reviewReason"`
-	ReviewEvidence *string `json:"reviewEvidence"`
-	TrackID        *int64  `json:"trackId"`
-	MergedInto     *int64  `json:"mergedInto"`
+	ReviewReason              *string           `json:"reviewReason"`
+	ReviewEvidence            *string           `json:"reviewEvidence"`
+	TrackID                   *int64            `json:"trackId"`
+	MergedInto                *int64            `json:"mergedInto"`
+	ResolutionReason          *ResolutionReason `json:"resolutionReason"`
+	ResolutionTarget          *ResolutionTarget `json:"-"`
+	ResolutionProblemID       *int64            `json:"resolutionProblemId"`
+	ResolutionProblemRevision *int64            `json:"resolutionProblemRevision"`
 }
+
+// 所有队列读取共用列顺序，整数修订随状态/候选变化递增，不使用时间戳作 CAS。
+const itemColumns = `id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
+ in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
+ last_error, last_error_at, next_retry_at, candidates, tried_variants,
+ review_reason, review_evidence, track_id, merged_into, input_profile, revision,
+ resolution_reason, resolution_target, resolution_problem_id, resolution_problem_revision`
 
 // CreateBatch 建立一个导入批次。
 func (s *Store) CreateBatch(b *ImportBatch) (int64, error) {
@@ -176,11 +207,7 @@ func (s *Store) ClaimNextItem(batchID int64) (*ImportItem, error) {
 	var item *ImportItem
 	err := s.withTx(func(tx *sql.Tx) error {
 		now := time.Now().UTC()
-		row := tx.QueryRow(`
-			SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
-			       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
-			       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-			       review_reason, review_evidence, track_id, merged_into, input_profile
+		row := tx.QueryRow(`SELECT `+itemColumns+`
 			FROM import_item
 			WHERE batch_id = ? AND status = ?
 			  AND (next_retry_at IS NULL OR next_retry_at <= ?)
@@ -195,11 +222,12 @@ func (s *Store) ClaimNextItem(batchID int64) (*ImportItem, error) {
 			return err
 		}
 		if _, err := tx.Exec(
-			`UPDATE import_item SET status = ?, updated_at = ? WHERE id = ?`,
+			`UPDATE import_item SET status = ?, revision = revision + 1, updated_at = ? WHERE id = ?`,
 			string(StatusMatching), now, it.ID); err != nil {
 			return err
 		}
 		it.Status = StatusMatching
+		it.Revision++
 		item = it
 		return nil
 	})
@@ -210,12 +238,13 @@ func (s *Store) ClaimNextItem(batchID int64) (*ImportItem, error) {
 func scanItem(row interface{ Scan(...any) error }) (*ImportItem, error) {
 	var it ImportItem
 	var status string
-	var profile *string
+	var profile, target *string
 	err := row.Scan(&it.ID, &it.BatchID, &it.RowIndex, &it.RawRow,
 		&it.InTitle, &it.InArtist, &it.InAlbum,
 		&it.InYear, &it.InTrackNo, &it.InDiscNo, &it.InDurationMS, &status, &it.AttemptCount,
 		&it.LastError, &it.LastErrorAt, &it.NextRetryAt, &it.Candidates, &it.TriedVariants,
-		&it.ReviewReason, &it.ReviewEvidence, &it.TrackID, &it.MergedInto, &profile)
+		&it.ReviewReason, &it.ReviewEvidence, &it.TrackID, &it.MergedInto, &profile, &it.Revision,
+		&it.ResolutionReason, &target, &it.ResolutionProblemID, &it.ResolutionProblemRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -223,6 +252,11 @@ func scanItem(row interface{ Scan(...any) error }) (*ImportItem, error) {
 	if profile != nil {
 		if err := json.Unmarshal([]byte(*profile), &it.Profile); err != nil {
 			return nil, fmt.Errorf("读取输入证据失败: %w", err)
+		}
+	}
+	if target != nil {
+		if err := json.Unmarshal([]byte(*target), &it.ResolutionTarget); err != nil {
+			return nil, fmt.Errorf("读取处理目标失败: %w", err)
 		}
 	}
 	return &it, nil
@@ -282,9 +316,18 @@ func (s *Store) MarkSkipped(itemID int64) error {
 // setStatus 在事务内更新状态并执行附加操作。
 func (s *Store) setStatus(itemID int64, status ItemStatus, extra func(*sql.Tx) error) error {
 	return s.withTx(func(tx *sql.Tx) error {
+		var reason any
+		switch status {
+		case StatusImported:
+			reason = ResolutionImported
+		case StatusDiscarded:
+			reason = ResolutionUserDiscarded
+		case StatusSkipped:
+			reason = ResolutionUserSkipped
+		}
 		if _, err := tx.Exec(
-			`UPDATE import_item SET status = ?, updated_at = ? WHERE id = ?`,
-			string(status), time.Now().UTC(), itemID); err != nil {
+			`UPDATE import_item SET status = ?, resolution_reason = ?, revision = revision + 1, updated_at = ? WHERE id = ?`,
+			string(status), reason, time.Now().UTC(), itemID); err != nil {
 			return err
 		}
 		if extra != nil {
@@ -312,7 +355,7 @@ func (s *Store) RecordFailure(itemID int64, errMsg string, backoff time.Duration
 		if attempts >= maxAttempts {
 			final = StatusFailed
 			_, err := tx.Exec(`
-				UPDATE import_item SET status = ?, attempt_count = ?,
+				UPDATE import_item SET status = ?, attempt_count = ?, revision = revision + 1,
 					last_error = ?, last_error_at = ?, next_retry_at = NULL, updated_at = ?
 				WHERE id = ?`,
 				string(StatusFailed), attempts, errMsg, now, now, itemID)
@@ -322,7 +365,7 @@ func (s *Store) RecordFailure(itemID int64, errMsg string, backoff time.Duration
 		final = StatusQueued
 		retryAt := now.Add(backoff)
 		_, err := tx.Exec(`
-			UPDATE import_item SET status = ?, attempt_count = ?,
+			UPDATE import_item SET status = ?, attempt_count = ?, revision = revision + 1,
 				last_error = ?, last_error_at = ?, next_retry_at = ?, updated_at = ?
 			WHERE id = ?`,
 			string(StatusQueued), attempts, errMsg, now, retryAt, now, itemID)
@@ -335,7 +378,7 @@ func (s *Store) RecordFailure(itemID int64, errMsg string, backoff time.Duration
 func (s *Store) RetryItem(itemID int64) error {
 	return s.withTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`
-			UPDATE import_item SET status = ?, next_retry_at = NULL, updated_at = ?
+			UPDATE import_item SET status = ?, next_retry_at = NULL, revision = revision + 1, updated_at = ?
 			WHERE id = ?`, string(StatusQueued), time.Now().UTC(), itemID)
 		return err
 	})
@@ -348,7 +391,7 @@ func (s *Store) RetryItem(itemID int64) error {
 func (s *Store) ResetStaleMatching() error {
 	return s.withTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(
-			`UPDATE import_item SET status = ?, updated_at = ? WHERE status = ?`,
+			`UPDATE import_item SET status = ?, revision = revision + 1, updated_at = ? WHERE status = ?`,
 			string(StatusQueued), time.Now().UTC(), string(StatusMatching))
 		return err
 	})
@@ -450,11 +493,7 @@ func (s *Store) ReviewItems(batchID int64) ([]ImportItem, error) {
 
 // AllReviewItems 返回全部批次的待复核与失败条目，供复核队列逐条浏览。
 func (s *Store) AllReviewItems() ([]ImportItem, error) {
-	rows, err := s.db.Query(`
-		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
-		       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
-		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       review_reason, review_evidence, track_id, merged_into, input_profile
+	rows, err := s.db.Query(`SELECT `+itemColumns+`
 		FROM import_item
 		WHERE status IN (?, ?)
 		ORDER BY batch_id, row_index`, string(StatusReview), string(StatusFailed))
@@ -466,11 +505,7 @@ func (s *Store) AllReviewItems() ([]ImportItem, error) {
 }
 
 func (s *Store) itemsByStatus(batchID int64, status ItemStatus) ([]ImportItem, error) {
-	rows, err := s.db.Query(`
-		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
-		       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
-		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       review_reason, review_evidence, track_id, merged_into, input_profile
+	rows, err := s.db.Query(`SELECT `+itemColumns+`
 		FROM import_item WHERE batch_id = ? AND status = ? ORDER BY row_index`,
 		batchID, string(status))
 	if err != nil {
@@ -494,11 +529,7 @@ func collectItems(rows *sql.Rows) ([]ImportItem, error) {
 
 // GetItem 按 id 读取条目。
 func (s *Store) GetItem(itemID int64) (*ImportItem, error) {
-	row := s.db.QueryRow(`
-		SELECT id, batch_id, row_index, raw_row, in_title, in_artist, in_album,
-		       in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count,
-		       last_error, last_error_at, next_retry_at, candidates, tried_variants,
-		       review_reason, review_evidence, track_id, merged_into, input_profile
+	row := s.db.QueryRow(`SELECT `+itemColumns+`
 		FROM import_item WHERE id = ?`, itemID)
 	it, err := scanItem(row)
 	if errors.Is(err, sql.ErrNoRows) {
