@@ -67,6 +67,9 @@ func (s *Store) AdmissionResult(id, hash string) (*domain.AdmissionResult, error
 }
 
 func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.AdmissionApproval) (*domain.AdmissionResult, error) {
+	if plan.Seed.Operation != domain.AdmissionCreate && plan.Seed.Operation != domain.AdmissionSkipExisting {
+		return nil, ErrPlanStale
+	}
 	if plan.Seed.EditJSON != "" {
 		return nil, fmt.Errorf("编辑计划必须通过 SaveEdit 提交")
 	}
@@ -94,7 +97,16 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		if err != nil {
 			return err
 		}
-		// 精确歌曲已经被另一入口写入，仍原子结束当前导入条目，且不再改变任何成员。
+		// 输入状态/整数修订已由 baseline 在所有写分支前重验。
+		if plan.Seed.Operation == domain.AdmissionSkipExisting && !sameAdmissionBaseline(plan.Baseline, baseline) {
+			return ErrPlanStale
+		}
+		if plan.Baseline.ExistingTrackID != 0 && (plan.Baseline.ExistingTrackID != baseline.ExistingTrackID ||
+			plan.Baseline.ExistingTrackRevision != baseline.ExistingTrackRevision ||
+			plan.Baseline.ExistingReleaseRevision != baseline.ExistingReleaseRevision) {
+			return ErrPlanStale
+		}
+		// 精确歌曲已经被另一入口写入，只结束当前输入，不再改变任何收藏或成员。
 		if baseline.ExistingTrackID != 0 {
 			var releaseID, groupID *int64
 			if err := tx.QueryRow("SELECT t.release_id,r.release_group_id FROM track t LEFT JOIN release r ON r.id=t.release_id WHERE t.id=?", baseline.ExistingTrackID).Scan(&releaseID, &groupID); err != nil {
@@ -157,18 +169,24 @@ func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result domain.Admi
 	}
 
 	if plan.Seed.ImportItemID != 0 {
-		status := plan.Seed.ItemStatus
-		if status == "" {
-			status = "imported"
-		}
-		if status != "imported" && status != "skipped" {
-			return fmt.Errorf("无效导入终态")
-		}
-		reason := ResolutionImported
-		if plan.Seed.Snapshot.Track != nil && plan.Seed.Snapshot.Track.Identity.Ref == "" {
+		status, reason := StatusImported, ResolutionImported
+		var target any
+		if t := plan.Seed.Snapshot.Track; t != nil && t.Identity.Ref != "" {
+			if t.Release == nil {
+				return ErrSnapshotTarget
+			}
+			raw, err := json.Marshal(ResolutionTarget{Track: t.Identity, Release: *t.Release})
+			if err != nil {
+				return err
+			}
+			target = string(raw)
+		} else {
 			reason = ResolutionWithoutMatch
 		}
-		row, err := tx.Exec("UPDATE import_item SET status=?,track_id=?,resolution_reason=?,revision=revision+1,review_reason=NULL,next_retry_at=NULL,last_error=NULL,updated_at=? WHERE id=? AND status IN ('queued','matching','review','failed')", status, result.TrackID, reason, time.Now().UTC(), plan.Seed.ImportItemID)
+		if result.Existing {
+			status, reason = StatusSkipped, ResolutionExistingTrack
+		}
+		row, err := tx.Exec("UPDATE import_item SET status=?,track_id=?,resolution_reason=?,resolution_target=?,revision=revision+1,review_reason=NULL,next_retry_at=NULL,last_error=NULL,updated_at=? WHERE id=? AND revision=? AND status IN ('queued','matching','review','failed')", status, result.TrackID, reason, target, time.Now().UTC(), plan.Seed.ImportItemID, plan.Seed.ItemRevision)
 		if err != nil {
 			return err
 		}

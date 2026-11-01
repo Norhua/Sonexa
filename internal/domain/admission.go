@@ -31,28 +31,38 @@ type GroupResolution struct {
 	Insufficient bool            `json:"insufficient"`
 }
 
+type AdmissionOperation string
+
+const (
+	AdmissionCreate       AdmissionOperation = "admit"
+	AdmissionSkipExisting AdmissionOperation = "skip_existing"
+)
+
 // AdmissionSeed 同时承载已归一化的上游事实和本地当前值；空身份层仅用于本地创建。
 // 保存本地层时不将它伪装成上游快照。
 type AdmissionSeed struct {
-	CurrentRelease *ReleaseSnapshot `json:"currentRelease,omitempty"`
-	EditJSON       string           `json:"editJson,omitempty"`
-	MoveReleaseID  int64            `json:"moveReleaseId"`
-	ProposalID     int64            `json:"proposalId"`
-	Snapshot       Snapshot         `json:"snapshot"`
-	ImportItemID   int64            `json:"importItemId"`
-	ItemStatus     string           `json:"itemStatus"`
-	MergeTargetID  int64            `json:"mergeTargetId"`
+	Operation      AdmissionOperation `json:"operation"`
+	ItemRevision   int64              `json:"itemRevision"`
+	CurrentRelease *ReleaseSnapshot   `json:"currentRelease,omitempty"`
+	EditJSON       string             `json:"editJson,omitempty"`
+	MoveReleaseID  int64              `json:"moveReleaseId"`
+	ProposalID     int64              `json:"proposalId"`
+	Snapshot       Snapshot           `json:"snapshot"`
+	ImportItemID   int64              `json:"importItemId"`
+	MergeTargetID  int64              `json:"mergeTargetId"`
 }
 type AdmissionBaseline struct {
-	NewNativeMapping     bool            `json:"newNativeMapping"`
-	ItemRevision         int64           `json:"itemRevision"`
-	Resolution           GroupResolution `json:"resolution"`
-	ExistingTrackID      int64           `json:"existingTrackId"`
-	ExistingReleaseID    int64           `json:"existingReleaseId"`
-	TargetGroupID        int64           `json:"targetGroupId"`
-	RequiresConfirmation bool            `json:"requiresConfirmation"`
-	Conflict             bool            `json:"conflict"`
-	ItemState            string          `json:"itemState"`
+	NewNativeMapping        bool            `json:"newNativeMapping"`
+	ItemRevision            int64           `json:"itemRevision"`
+	Resolution              GroupResolution `json:"resolution"`
+	ExistingTrackID         int64           `json:"existingTrackId"`
+	ExistingTrackRevision   int64           `json:"existingTrackRevision"`
+	ExistingReleaseRevision int64           `json:"existingReleaseRevision"`
+	ExistingReleaseID       int64           `json:"existingReleaseId"`
+	TargetGroupID           int64           `json:"targetGroupId"`
+	RequiresConfirmation    bool            `json:"requiresConfirmation"`
+	Conflict                bool            `json:"conflict"`
+	ItemState               string          `json:"itemState"`
 }
 type AdmissionPlan struct {
 	Seal      string            `json:"seal"`

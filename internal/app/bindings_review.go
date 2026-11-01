@@ -17,6 +17,7 @@ import (
 type ReviewItem struct {
 	ReviewReason   *string `json:"reviewReason"`
 	ReviewEvidence *string `json:"reviewEvidence"`
+	Revision       int64   `json:"revision"`
 	ID             int64   `json:"id"`
 	BatchID        int64   `json:"batchId"`
 	Status         string  `json:"status"`
@@ -61,7 +62,7 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 	out := &ReviewQueue{Items: []ReviewItem{}, Total: len(items)}
 	for _, it := range items {
 		r := ReviewItem{
-			ID: it.ID, BatchID: it.BatchID, Status: string(it.Status),
+			ID: it.ID, BatchID: it.BatchID, Revision: it.Revision, Status: string(it.Status),
 			ReviewReason: it.ReviewReason, ReviewEvidence: it.ReviewEvidence,
 			InTitle: it.InTitle, InArtist: it.InArtist, InAlbum: it.InAlbum,
 			AttemptCount: it.AttemptCount,
@@ -155,6 +156,13 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 		return nil, fmt.Errorf("%s", gate.Reason)
 	}
 
+	item, err := a.store.GetItem(itemID)
+	if err != nil {
+		return nil, err
+	}
+	if item == nil || item.Status.IsTerminal() {
+		return nil, store.ErrPlanStale
+	}
 	p, err := a.metadataRegistry().Get(provider.ProviderID(providerID))
 	if err != nil {
 		return nil, err
@@ -178,11 +186,16 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 	rows := a.rowsFrom(scored, "接受")
 
 	// 把本次候选写入快照，但不动原始导入值
-	snapshot, _ := json.Marshal(rows)
-	item, err := a.store.GetItem(itemID)
-	if err == nil && item != nil {
-		tried, _ := json.Marshal(variants)
-		a.store.MarkReview(itemID, store.ReviewReasonUnchanged, string(snapshot), string(tried))
+	snapshot, err := json.Marshal(rows)
+	if err != nil {
+		return nil, err
+	}
+	tried, err := json.Marshal(variants)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.store.MarkReviewAtRevision(itemID, item.Revision, store.ReviewReasonUnchanged, string(snapshot), string(tried)); err != nil {
+		return nil, err
 	}
 	return rows, nil
 }

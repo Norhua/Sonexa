@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/norhua/sonexa/internal/domain"
+	"github.com/norhua/sonexa/internal/matching"
 )
 
 // groupNameEvidenceTx 从当前值及有效绑定快照重建证据，不把历史名称当成永久别名。
@@ -203,16 +204,40 @@ func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.Admissio
 	if (identity.Provider == "") != (identity.Ref == "") {
 		return baseline, ErrSnapshotTarget
 	}
-	if identity.Ref != "" {
-		err := tx.QueryRow("SELECT id FROM track WHERE match_source=? AND match_ref=?", identity.Provider, identity.Ref).Scan(&baseline.ExistingTrackID)
-		if err != nil && err != sql.ErrNoRows {
-			return baseline, err
-		}
-	}
 	if seed.ImportItemID != 0 {
 		if err := tx.QueryRow("SELECT status,revision FROM import_item WHERE id=?", seed.ImportItemID).Scan(&baseline.ItemState, &baseline.ItemRevision); err != nil {
+			if err == sql.ErrNoRows {
+				return baseline, ErrPlanStale
+			}
 			return baseline, err
 		}
+		if !activeItemStatus(ItemStatus(baseline.ItemState)) || seed.ItemRevision <= 0 || seed.ItemRevision != baseline.ItemRevision {
+			return baseline, ErrPlanStale
+		}
+	}
+	if identity.Ref != "" {
+		if seed.Snapshot.Track.Release == nil || seed.Snapshot.Release == nil || *seed.Snapshot.Track.Release != seed.Snapshot.Release.Identity {
+			return baseline, ErrSnapshotTarget
+		}
+		binding, err := findExactBinding(tx, identity)
+		if err != nil {
+			return baseline, err
+		}
+		if binding != nil {
+			if binding.Release != *seed.Snapshot.Track.Release || binding.Release.Provider != identity.Provider || binding.Release.Ref == "" || binding.ReleaseRevision <= 0 {
+				return baseline, matching.ErrIdentityConflict
+			}
+			baseline.ExistingTrackID = binding.TrackID
+			baseline.ExistingTrackRevision = binding.Revision
+			baseline.ExistingReleaseRevision = binding.ReleaseRevision
+		}
+	}
+	if seed.Operation == domain.AdmissionSkipExisting {
+		if seed.ImportItemID == 0 || baseline.ExistingTrackID == 0 || seed.MoveReleaseID != 0 || seed.ProposalID != 0 || seed.MergeTargetID != 0 || seed.EditJSON != "" {
+			return baseline, ErrPlanStale
+		}
+		// 跳过不引入成员，不取组名证据；只绑定既有精确目标和输入范围。
+		return baseline, nil
 	}
 	if r := seed.Snapshot.Release; r != nil {
 		if (r.Identity.Provider == "") != (r.Identity.Ref == "") {

@@ -80,6 +80,10 @@ func (s ItemStatus) IsTerminal() bool {
 	return false
 }
 
+func activeItemStatus(status ItemStatus) bool {
+	return status == StatusQueued || status == StatusMatching || status == StatusReview || status == StatusFailed
+}
+
 // BatchStatus 是导入批次的状态。
 type BatchStatus string
 
@@ -274,7 +278,12 @@ func (s *Store) MarkImported(itemID, trackID int64) error {
 //
 // reason 为 ReviewReasonUnchanged 时不改写已有成因。
 func (s *Store) MarkReview(itemID int64, reason ReviewReason, candidatesJSON, variantsJSON string, evidence ...string) error {
-	return s.setStatus(itemID, StatusReview, func(tx *sql.Tx) error {
+	return s.MarkReviewAtRevision(itemID, 0, reason, candidatesJSON, variantsJSON, evidence...)
+}
+
+// MarkReviewAtRevision 拒绝迟到响应；revision=0 仅供同步内部操作，仍不能恢复终态。
+func (s *Store) MarkReviewAtRevision(itemID, revision int64, reason ReviewReason, candidatesJSON, variantsJSON string, evidence ...string) error {
+	return s.setStatusAtRevision(itemID, revision, StatusReview, func(tx *sql.Tx) error {
 		if len(evidence) > 0 {
 			if _, err := tx.Exec("UPDATE import_item SET review_evidence=? WHERE id=?", evidence[0], itemID); err != nil {
 				return err
@@ -315,7 +324,14 @@ func (s *Store) MarkSkipped(itemID int64) error {
 
 // setStatus 在事务内更新状态并执行附加操作。
 func (s *Store) setStatus(itemID int64, status ItemStatus, extra func(*sql.Tx) error) error {
+	return s.setStatusAtRevision(itemID, 0, status, extra)
+}
+
+func (s *Store) setStatusAtRevision(itemID, revision int64, status ItemStatus, extra func(*sql.Tx) error) error {
 	return s.withTx(func(tx *sql.Tx) error {
+		if err := checkActiveItemTx(tx, itemID, revision); err != nil {
+			return err
+		}
 		var reason any
 		switch status {
 		case StatusImported:
@@ -337,13 +353,36 @@ func (s *Store) setStatus(itemID int64, status ItemStatus, extra func(*sql.Tx) e
 	})
 }
 
+// checkActiveItemTx 必须在任何附加写入之前调用；0 只省略修订比较，不省略终态保护。
+func checkActiveItemTx(tx *sql.Tx, id, expected int64) error {
+	var status ItemStatus
+	var revision int64
+	if err := tx.QueryRow("SELECT status,revision FROM import_item WHERE id=?", id).Scan(&status, &revision); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrPlanStale
+		}
+		return err
+	}
+	if !activeItemStatus(status) || (expected != 0 && expected != revision) {
+		return ErrPlanStale
+	}
+	return nil
+}
+
 // RecordFailure 记录一次失败并决定是退避重排还是标记失败。
 //
 // 累计失败达到 maxAttempts 后标记为失败状态并停止自动重排；
 // 未达上限时按 backoff 重新排队。
-func (s *Store) RecordFailure(itemID int64, errMsg string, backoff time.Duration, maxAttempts int) (ItemStatus, error) {
+func (s *Store) RecordFailure(itemID int64, errMsg string, backoff time.Duration, maxAttempts int, expectedRevision ...int64) (ItemStatus, error) {
 	var final ItemStatus
 	err := s.withTx(func(tx *sql.Tx) error {
+		var revision int64
+		if len(expectedRevision) > 0 {
+			revision = expectedRevision[0]
+		}
+		if err := checkActiveItemTx(tx, itemID, revision); err != nil {
+			return err
+		}
 		var attempts int
 		if err := tx.QueryRow(
 			`SELECT attempt_count FROM import_item WHERE id = ?`, itemID).Scan(&attempts); err != nil {
@@ -375,8 +414,15 @@ func (s *Store) RecordFailure(itemID int64, errMsg string, backoff time.Duration
 }
 
 // RetryItem 让失败条目重新进入匹配（复核队列的「立即重试」）。
-func (s *Store) RetryItem(itemID int64) error {
+func (s *Store) RetryItem(itemID int64, expectedRevision ...int64) error {
 	return s.withTx(func(tx *sql.Tx) error {
+		var revision int64
+		if len(expectedRevision) > 0 {
+			revision = expectedRevision[0]
+		}
+		if err := checkActiveItemTx(tx, itemID, revision); err != nil {
+			return err
+		}
 		_, err := tx.Exec(`
 			UPDATE import_item SET status = ?, next_retry_at = NULL, revision = revision + 1, updated_at = ?
 			WHERE id = ?`, string(StatusQueued), time.Now().UTC(), itemID)

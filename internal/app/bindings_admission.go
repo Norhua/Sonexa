@@ -84,6 +84,14 @@ func (a *App) PrepareAdmission(row CandidateRow, itemID int64) (*AdmissionPlanVi
 	}
 	return admissionView(plan, err)
 }
+func (a *App) PrepareSkipExisting(row CandidateRow, itemID, revision int64) (*AdmissionPlanView, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	return admissionView(service.PrepareSkipExisting(a.ctx, row.toCandidate(), itemID, revision))
+}
+
 func (a *App) ConfirmReleaseAdditions(planID, hash string) (*domain.AdmissionApproval, error) {
 	service, err := a.libraryService()
 	if err != nil {
@@ -97,7 +105,7 @@ func (a *App) CommitAdmission(planID, hash string, approval domain.AdmissionAppr
 		return nil, err
 	}
 	result, err := service.CommitAdmission(a.ctx, planID, hash, approval)
-	if err == nil {
+	if err == nil && result != nil && !result.Existing {
 		a.notifyLibraryChanged()
 		a.autoStartEnrich()
 	}
@@ -169,7 +177,7 @@ func (a *App) prepareLocalAdmission(input LocalAdmissionInput, itemID int64) (*A
 			snapshot.Release.Credit = domain.Known(domain.Credit{Text: *input.AlbumArtist})
 		}
 	}
-	return admissionView(service.PrepareAdmission(a.ctx, domain.AdmissionSeed{Snapshot: snapshot, ImportItemID: itemID, ItemStatus: "imported"}))
+	return admissionView(service.PrepareAdmission(a.ctx, domain.AdmissionSeed{Snapshot: snapshot, ImportItemID: itemID}))
 }
 func (a *App) PrepareNoMatchNeeded(itemID int64) (*AdmissionPlanView, error) {
 	if err := a.ready(); err != nil {

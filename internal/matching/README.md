@@ -10,7 +10,7 @@
 - `CheckMetadataPool`：保留 eligible / excluded / unresolved 三类；有未排除的未知竞争者时不得进行自动选版。
 - `MetadataFacts` 必须来自同一套有出处的事实，不能把互相矛盾的用户当前值与上游快照拼为假候选。完整性及位置验证由资料提供者声明，不由搜索排名推断。
 
-当前阶段 Runner 已传递持久化 profile，并在 library 自动选择前解析非精确身份；完整的输入优先选版及精确跳过仍由变更后续任务完成。歌词不读取这些新元数据规则。
+当前阶段 Runner 已传递持久化 profile，并在 library 自动选择前解析非精确身份；完整的输入优先选版及自动跳过判定仍由变更后续任务完成。歌词不读取这些新元数据规则。
 
 ## 来源身份与接受准备
 
@@ -20,13 +20,13 @@
 - iTunes 在来源内检查小写 storefront 与曲目/发行一致性；QQ 在来源内检查 MID。已有精确候选不额外出网，未实现的决策清单补取明确 unsupported。
 - `library.PrepareCandidate` 先解析再创建 seed；`CandidateSeed` 和直接 `PrepareAdmission` 均重新检查精确身份及一致的发行关系，不允许合成 seed 绕过。完整身份不要求展示字段齐全，缺失名称/署名仍保持未提供，不能借输入填充。
 - `App.PrepareAdmission` 返回正常计划，或者仅带 `resolution` 的候选展开结果。后者没有可提交的计划 ID/hash，前端不调用 commit，而是回到列表选择真实位置；展开说明显示碟号与轨号。直接接受/加入兼容入口不能提交展开结果。
-- 自动解析得到的真实候选再执行输入证据核验；仍有未解析目标时保留复核，Runner 保存展开候选而不是错误的合成收藏。重复终态、问题修订和多行事务仍属于后续任务，不能由身份解析测试推定已完成。
+- 自动解析得到的真实候选再执行输入证据核验；仍有未解析目标时保留复核，Runner 保存展开候选而不是错误的合成收藏。问题修订和多行事务仍属于后续任务，不能由身份解析测试推定已完成。
 
 ## 精确所有权
 
 `ResolveLocal` 先经注入的来源能力验证身份，再通过 `LocalLookup.FindExactBinding` 一次读取当前 track 和发行绑定及修订。仅来源、真实 track、发行关系均一致时返回 `owned` 和本地 ID；ISRC、Recording、相似文本及旧绑定快照不参与拥有判定。结果区分 `unowned / owned / identity_conflict / lookup_error`，错误和冲突不携带可跳过的本地目标。
 
-未解析候选保留 `identity.state=unresolved`，不查询本地精确拥有、不妨碍后续目标解析；不支持身份检查及数据库失败明确返回错误。当前候选 DTO 已传递结构化结果，完整的前端动作协议与跳过提交由后续任务接入。旧文本重复检查使用独立 `LocalDuplicateLookup`，仍待本地召回任务替换，不能把它的相关 ID 当作精确拥有。
+未解析候选保留 `identity.state=unresolved`，不查询本地精确拥有、不妨碍后续目标解析；不支持身份检查及数据库失败明确返回错误。当前候选 DTO 已传递结构化结果，单行 `PrepareSkipExisting` / `CommitAdmission` 已支持精确跳过和输入修订重验，见 [store 事务说明](../store/README.md#单行接受与精确跳过)；完整的前端动作协议仍由后续任务接入。旧文本重复检查使用独立 `LocalDuplicateLookup`，仍待本地召回任务替换，不能把它的相关 ID 当作精确拥有。
 
 ## 名称、版本与署名
 
@@ -56,4 +56,4 @@
 go test ./internal/matching ./internal/importer ./internal/lyrics
 ```
 
-测试包括 unknown/conflict/truncation 的区分、可靠异写与反例、完整版本负载、角色/合作保护、原始行及解析状态持久化、relevance 与时长独立、未知竞争者保留。`internal/app/identity_admission_test.go` 验证真实准备入口的身份展开、已有目标及 seed 拒绝；自动跳过和复核事务仍需要后续 Runner/App/Store 集成验证，不能由上述测试替代。
+测试包括 unknown/conflict/truncation 的区分、可靠异写与反例、完整版本负载、角色/合作保护、原始行及解析状态持久化、relevance 与时长独立、未知竞争者保留。`internal/app/identity_admission_test.go` 验证真实准备入口的身份展开、已有目标及 seed 拒绝；自动输入判定及多行问题事务仍需要后续 Runner/App/Store 集成验证，不能由上述测试替代。

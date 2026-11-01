@@ -117,6 +117,22 @@ func (s *Service) PrepareAdmission(ctx context.Context, seed domain.AdmissionSee
 	if err != nil {
 		return nil, err
 	}
+	if seed.Operation == "" {
+		seed.Operation = domain.AdmissionCreate
+	}
+	if seed.Operation != domain.AdmissionCreate && seed.Operation != domain.AdmissionSkipExisting {
+		return nil, store.ErrPlanStale
+	}
+	if seed.ImportItemID != 0 && seed.ItemRevision == 0 {
+		item, err := s.store.GetItem(seed.ImportItemID)
+		if err != nil {
+			return nil, err
+		}
+		if item == nil || item.Status.IsTerminal() {
+			return nil, store.ErrPlanStale
+		}
+		seed.ItemRevision = item.Revision
+	}
 	if err := s.validateSeedIdentity(seed); err != nil {
 		return nil, err
 	}
@@ -167,13 +183,51 @@ func (s *Service) CandidateSeed(candidate provider.Candidate, itemID int64) (dom
 			snapshot.Release.Group = &snapshot.Group.Identity
 		}
 	}
-	seed := domain.AdmissionSeed{Snapshot: *snapshot, ImportItemID: itemID, ItemStatus: "imported"}
+	seed := domain.AdmissionSeed{Snapshot: *snapshot, ImportItemID: itemID}
 	if err := s.validateSeedIdentity(seed); err != nil {
 		return domain.AdmissionSeed{}, err
 	}
 	return seed, nil
 }
+
+// PrepareSkipExisting 只检查已提供的精确候选与本地绑定，不解析合成候选，
+// 不出网、不需要发行成员批准。调用方给出其读到的输入修订。
+func (s *Service) PrepareSkipExisting(ctx context.Context, candidate provider.Candidate, itemID, revision int64) (*domain.AdmissionPlan, error) {
+	if itemID <= 0 || revision <= 0 {
+		return nil, store.ErrPlanStale
+	}
+	sources, err := s.identitySources()
+	if err != nil {
+		return nil, err
+	}
+	ownership, err := matching.ResolveLocal(s.store, sources, candidate)
+	if err != nil {
+		return nil, err
+	}
+	if ownership.State != matching.OwnershipOwned {
+		return nil, store.ErrPlanStale
+	}
+	identity := ownership.Identity
+	seed := domain.AdmissionSeed{Operation: domain.AdmissionSkipExisting, ImportItemID: itemID, ItemRevision: revision,
+		Snapshot: domain.Snapshot{
+			Track:   &domain.TrackSnapshot{Identity: identity.Track, Release: &identity.Release},
+			Release: &domain.ReleaseSnapshot{Identity: identity.Release},
+		}}
+	return s.PrepareAdmission(ctx, seed)
+}
+
 func (s *Service) PrepareCandidate(ctx context.Context, candidate provider.Candidate, itemID int64) (*domain.AdmissionPlan, error) {
+	var revision int64
+	if itemID != 0 {
+		item, err := s.store.GetItem(itemID)
+		if err != nil {
+			return nil, err
+		}
+		if item == nil || item.Status.IsTerminal() {
+			return nil, store.ErrPlanStale
+		}
+		revision = item.Revision
+	}
 	candidate, err := s.resolveAdmissionCandidate(ctx, candidate, itemID)
 	if err != nil {
 		return nil, err
@@ -182,6 +236,7 @@ func (s *Service) PrepareCandidate(ctx context.Context, candidate provider.Candi
 	if err != nil {
 		return nil, err
 	}
+	seed.ItemRevision = revision
 	return s.PrepareAdmission(ctx, seed)
 }
 func (s *Service) plan(id, hash string) (domain.AdmissionPlan, error) {
@@ -225,9 +280,6 @@ func (s *Service) CommitAdmission(ctx context.Context, id, hash string, approval
 	plan, err := s.plan(id, hash)
 	if err != nil {
 		return nil, err
-	}
-	if plan.Baseline.RequiresConfirmation && approval.Credential == "" {
-		return nil, store.ErrConfirmationRequired
 	}
 	return s.store.CommitAdmission(plan, approval)
 }

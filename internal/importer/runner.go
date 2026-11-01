@@ -235,7 +235,9 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	if dupID, err := r.engine.CheckLocalDuplicate(r.store, in); err == nil && dupID != 0 {
 		existing := r.describeTrack(dupID)
 		candidates := r.localCandidateSnapshot(dupID)
-		r.store.MarkReview(item.ID, store.ReviewDuplicate, candidates, "[]")
+		if err := r.store.MarkReviewAtRevision(item.ID, item.Revision, store.ReviewDuplicate, candidates, "[]"); err != nil {
+			return matching.ErrorLogLine(err)
+		}
 		return matching.DuplicateLogLine(in, existing)
 	}
 
@@ -247,7 +249,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		}
 		// 出错时退避重排；累计达上限则标记失败（规则 6）
 		backoff := r.retry.Backoff(item.AttemptCount+1, err)
-		status, _ := r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts)
+		status, _ := r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts, item.Revision)
 		if status == store.StatusFailed {
 			return matching.ExhaustedLogLine(in, r.retry.MaxAttempts, err)
 		}
@@ -263,19 +265,22 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 			return ""
 		}
 		backoff := r.retry.Backoff(item.AttemptCount+1, err)
-		r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts)
+		r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts, item.Revision)
 		return matching.ErrorLogLine(err)
 	}
 	if selection.ResolvedCandidates != nil {
 		res.Scored = selection.ResolvedCandidates
 	}
 	if selection.Candidate != nil && selection.Reason == "" {
+		if selection.Plan.Seed.ItemRevision != item.Revision {
+			return matching.ErrorLogLine(store.ErrPlanStale)
+		}
 		result, err := r.library.CommitAdmission(ctx, selection.Plan.ID, selection.Plan.Hash, domain.AdmissionApproval{})
 		if err == nil {
-			if r.onLibraryChanged != nil {
+			if !result.Existing && r.onLibraryChanged != nil {
 				r.onLibraryChanged()
 			}
-			if r.fetchOnMatch && r.enricher != nil {
+			if !result.Existing && r.fetchOnMatch && r.enricher != nil {
 				r.enricher(result.TrackID, string(selection.Candidate.Provider), deref(selection.Candidate.ReleaseRef))
 			}
 			return matching.LogLine(matching.OutcomeImportUnique, in, findScored(res.Scored, selection.Candidate.MatchRef))
@@ -283,7 +288,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		if errors.Is(err, store.ErrPlanStale) || errors.Is(err, store.ErrConfirmationRequired) {
 			selection.Reason = library.ReasonNewRelease
 		} else {
-			r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
+			r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts, item.Revision)
 			return matching.ErrorLogLine(err)
 		}
 	}
@@ -300,7 +305,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		}{selection.Plan.Baseline, selection.Plan.Seed.Snapshot.Release})
 		evidence = string(raw)
 	}
-	if err := r.store.MarkReview(item.ID, reason, string(candidatesJSON), string(variantsJSON), evidence); err != nil {
+	if err := r.store.MarkReviewAtRevision(item.ID, item.Revision, reason, string(candidatesJSON), string(variantsJSON), evidence); err != nil {
 		return matching.ErrorLogLine(err)
 	}
 
