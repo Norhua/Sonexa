@@ -34,6 +34,7 @@ type selectionCandidate struct {
 	groups    map[int64]bool
 	existing  bool // concrete release already in the library
 	owned     bool // this exact track is currently collected
+	ownership matching.LocalMatch
 }
 
 // selectionCompatibility runs before preferences or total-count I/O. Owning
@@ -178,6 +179,17 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 	if profile == nil || profile.RuleVersion != matching.MetadataRuleVersion {
 		return Selection{}, errors.New("缺少当前版本的完整输入证据")
 	}
+	var revision int64
+	if itemID != 0 {
+		item, err := s.store.GetItem(itemID)
+		if err != nil {
+			return Selection{}, err
+		}
+		if item == nil || item.Status.IsTerminal() {
+			return Selection{}, store.ErrPlanStale
+		}
+		revision = item.Revision
+	}
 	constrained, err := s.constrainSelection(ctx, scored, *profile)
 	if err != nil {
 		return Selection{}, err
@@ -185,13 +197,13 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 	if constrained.pending {
 		return Selection{Reason: ReasonAmbiguous, ResolvedCandidates: constrained.display, Reasons: constrained.reasons}, nil
 	}
-	selection, err := s.selectResolvedCandidates(ctx, constrained.eligible, itemID, constrained.summaries, *profile)
+	selection, err := s.selectResolvedCandidates(ctx, constrained.eligible, itemID, revision, constrained.summaries, *profile)
 	selection.ResolvedCandidates = constrained.display
 	selection.Reasons = append(constrained.reasons, selection.Reasons...)
 	return selection, err
 }
 
-func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matching.ScoredCandidate, itemID int64, summaries map[domain.Identity]domain.ReleaseSummary, input matching.InputProfile) (Selection, error) {
+func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matching.ScoredCandidate, itemID, revision int64, summaries map[domain.Identity]domain.ReleaseSummary, input matching.InputProfile) (Selection, error) {
 	prepared := []selectionCandidate{}
 	sources, err := s.identitySources()
 	if err != nil {
@@ -226,7 +238,7 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 		if err != nil {
 			return Selection{}, err
 		}
-		prepared = append(prepared, selectionCandidate{candidate: sc.Candidate, summary: summary, existing: existing, owned: ownership.State == matching.OwnershipOwned})
+		prepared = append(prepared, selectionCandidate{candidate: sc.Candidate, summary: summary, existing: existing, owned: ownership.State == matching.OwnershipOwned, ownership: ownership})
 	}
 	load := func(c *selectionCandidate) error {
 		identity := c.summary.Identity
@@ -345,9 +357,33 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 	if selection.Candidate == nil {
 		return selection, nil
 	}
-	plan, err := s.PrepareCandidate(ctx, *selection.Candidate, itemID)
+	for _, candidate := range prepared {
+		if candidateKey(candidate.candidate) == candidateKey(*selection.Candidate) {
+			return s.prepareAutomaticTarget(ctx, selection, itemID, revision, candidate.ownership)
+		}
+	}
+	return Selection{}, store.ErrPlanStale
+}
+
+// Both local-only and upstream decisions reach this final ownership/admission
+// boundary. It consumes evidence revisions, never refreshes a stale decision
+// into permission to recreate a deleted/rebound collection.
+func (s *Service) prepareAutomaticTarget(ctx context.Context, selection Selection, itemID, revision int64, expected matching.LocalMatch) (Selection, error) {
+	var plan *domain.AdmissionPlan
+	var err error
+	if itemID > 0 && expected.State == matching.OwnershipOwned {
+		plan, err = s.PrepareSkipExisting(ctx, *selection.Candidate, itemID, revision)
+		if err == nil && (plan.Baseline.ExistingTrackID != expected.TrackID || plan.Baseline.ExistingTrackRevision != expected.Revision || plan.Baseline.ExistingReleaseRevision != expected.ReleaseRevision) {
+			err = store.ErrPlanStale
+		}
+	} else {
+		plan, err = s.PrepareCandidate(ctx, *selection.Candidate, itemID)
+	}
 	if err != nil {
 		return Selection{}, err
+	}
+	if itemID > 0 && plan.Seed.ItemRevision != revision {
+		return Selection{}, store.ErrPlanStale
 	}
 	selection.Plan = plan
 	if plan.Baseline.Conflict {

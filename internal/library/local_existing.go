@@ -7,7 +7,6 @@ import (
 
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
-	"github.com/norhua/sonexa/internal/store"
 )
 
 // PrepareLocalExisting uses the same metadata evidence as the full pipeline,
@@ -84,17 +83,11 @@ func (s *Service) PrepareLocalExisting(ctx context.Context, input matching.Input
 	if selected.Candidate == nil || selected.Reason != "" {
 		return nil, nil
 	}
-	plan, err := s.PrepareSkipExisting(ctx, *selected.Candidate, itemID, revision)
+	expected := ownerships[domain.Identity{Provider: selected.Candidate.Provider, Ref: selected.Candidate.MatchRef}]
+	selected, err = s.prepareAutomaticTarget(ctx, selected, itemID, revision, expected)
 	if err != nil {
 		return nil, err
 	}
-	// Skip preparation re-reads current bindings. A newer binding revision is
-	// not permission to use the older automatic evidence we just checked.
-	expected := ownerships[domain.Identity{Provider: selected.Candidate.Provider, Ref: selected.Candidate.MatchRef}]
-	if plan.Baseline.ExistingTrackID != expected.TrackID || plan.Baseline.ExistingTrackRevision != expected.Revision || plan.Baseline.ExistingReleaseRevision != expected.ReleaseRevision {
-		return nil, store.ErrPlanStale
-	}
-	selected.Plan = plan
 	return &selected, nil
 }
 

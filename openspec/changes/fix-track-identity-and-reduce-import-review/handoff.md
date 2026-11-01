@@ -1,10 +1,17 @@
-# 实施交接：4.5 已完成
+# 实施交接：4.6 已完成
 
 ## 当前状态
 
 - 变更 `fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
-- 已完成 1.1–4.5，**23/48**；CLI 已确认 4.5 完成。下一任务 4.6。
+- 已完成 1.1–4.6，**24/48**；CLI 已确认 4.6 完成。下一任务 4.7。
 - 未同步主规格、未归档、未修改或清理用户应用数据。测试使用临时 SQLite、fixture 和 httptest；本轮未执行真实网络/原生验收或前端测试。
+
+## 4.6 已完成
+
+- 本地充分和远程选版共用 `prepareAutomaticTarget`，已收藏目标采用轻量 skip 计划并绑定决策读取的 track/release 修订；输入修订在补资料前读取，不给迟到决策刷新授权。
+- Runner 共用单一提交、日志和通知分支；远程 Existing 同样记录已存在跳过，不发 library 事件、不触发补全、不改已有元数据。
+- 新测试验证真实 skip operation、事实修订改变拒绝、远程已有目标通知/补全计数为零、人工选择同组第二发行不被偏好替换且仍要求成员确认。
+- 七个后端定向包及 library/importer/app race 通过。4.5 提交 `ca6119e`。
 
 ## 4.5 已完成
 
@@ -32,7 +39,7 @@ openspec validate fix-track-identity-and-reduce-import-review --strict
 git diff --check
 ```
 
-4.6 最终 skip 路径整理、4.7 旧 Engine 说明/测试整理仍未完成，不能由本轮通过推定最终变更全量验收完成。
+4.7 旧 Engine 说明/测试整理仍未完成，不能由本轮通过推定最终变更全量验收完成。
 
 ## 4.3 已完成
 
@@ -169,7 +176,7 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 
 ### 未完成范围
 
-- 4.6–4.7 统一精确跳过路径及旧测试整理。4.4–4.5 输入优先筛选和兼容已收藏偏好已完成。
+- 4.7 旧测试整理。4.4–4.6 输入优先筛选、兼容已收藏偏好和统一自动提交已完成。
 - 5.x 问题等价证明、归并/拆出/关闭业务生命周期与版本化候选持久化。
 - 6.x 多行 scope/hash、原子结果和租约；当前准备入口仍主要支持单行。
 - 7.x 有界重评、独立问题统计、review/task 事件。

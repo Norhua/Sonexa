@@ -161,10 +161,32 @@ func TestRunnerSparseExactOwnedTargetStillSearchesBeforeSkipping(t *testing.T) {
 	id, candidate := seedLocalRunnerTrack(t, st, false, false)
 	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{"Song": {candidate}}}
 	batch := enqueueOne(t, st, "Song", "Artist", "Album")
-	runToCompletion(t, newRunner(st, searcher), batch)
+	runner := newRunner(st, searcher)
+	libraryEvents, enrichments := 0, 0
+	runner.SetLibraryChanged(func() { libraryEvents++ })
+	runner.SetEnricher(func(int64, string, string) { enrichments++ })
+	runner.fetchOnMatch = true
+	before, err := st.GetMetadata(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeJSON, _ := json.Marshal(before)
+	events := runToCompletion(t, runner, batch)
 	stats, err := st.Stats(batch)
 	if err != nil || stats.Skipped != 1 || stats.Imported != 0 || searcher.queryCount() != 1 {
 		t.Fatal("sparse local singleton bypassed upstream", stats, err, searcher.queryCount())
+	}
+	if libraryEvents != 0 || enrichments != 0 {
+		t.Fatal("remote existing target triggered library/enrichment", libraryEvents, enrichments)
+	}
+	found := false
+	for _, event := range events {
+		found = found || strings.Contains(event.Line, "[已存在跳过]")
+	}
+	after, err := st.GetMetadata(id)
+	afterJSON, _ := json.Marshal(after)
+	if err != nil || !found || string(beforeJSON) != string(afterJSON) {
+		t.Fatal("remote skip changed metadata or was logged as import", err, events)
 	}
 	var target int64
 	if err := st.DB().QueryRow("SELECT track_id FROM import_item WHERE batch_id=?", batch).Scan(&target); err != nil || target != id {

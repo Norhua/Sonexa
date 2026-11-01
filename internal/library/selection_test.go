@@ -2,6 +2,7 @@ package library
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -215,6 +216,45 @@ func mustCandidatePlan(t *testing.T, s *Service, c provider.Candidate) *domain.A
 		t.Fatal(err)
 	}
 	return plan
+}
+
+func TestAutomaticOwnedTargetUsesSkipPlanAndEvidenceRevision(t *testing.T) {
+	for _, changed := range []bool{false, true} {
+		t.Run(fmt.Sprint(changed), func(t *testing.T) {
+			s, st, _ := newTestService(t)
+			c := candidate("release", "track", nil)
+			owned := commit(t, s, mustCandidatePlan(t, s, c), false)
+			batch, err := st.CreateBatch(&store.ImportBatch{Filename: "skip.csv", TotalRows: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.EnqueueItems(batch, []store.ImportItem{{RawRow: "[]", Profile: selectionProfile()}}); err != nil {
+				t.Fatal(err)
+			}
+			item, err := st.ClaimNextItem(batch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			selection, err := s.SelectCandidate(context.Background(), high(c), item.ID, selectionProfile())
+			if err != nil || selection.Plan == nil || selection.Plan.Seed.Operation != domain.AdmissionSkipExisting || selection.Plan.Baseline.ExistingTrackID != owned.TrackID {
+				t.Fatal("automatic owned target used admission instead of skip", selection, err)
+			}
+			if changed {
+				if err := st.ApplyMetadataEdits(owned.TrackID, map[string]string{"title": "changed"}, nil, nil); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := s.CommitAdmission(context.Background(), selection.Plan.ID, selection.Plan.Hash, domain.AdmissionApproval{}); !errors.Is(err, store.ErrPlanStale) {
+					t.Fatal("skip accepted changed evidence", err)
+				}
+				return
+			}
+			result := commit(t, s, selection.Plan, false)
+			got, err := st.GetItem(item.ID)
+			if err != nil || !result.Existing || got.Status != store.StatusSkipped || got.TrackID == nil || *got.TrackID != owned.TrackID {
+				t.Fatal(result, got, err)
+			}
+		})
+	}
 }
 
 func TestDisplayPreferencesDoNotChangeSelectionOrBindings(t *testing.T) {

@@ -240,25 +240,21 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts, item.Revision)
 		return matching.ErrorLogLine(err)
 	}
+	selection := library.Selection{}
+	res := &matching.Result{}
 	if local != nil {
-		result, err := r.library.CommitAdmission(ctx, local.Plan.ID, local.Plan.Hash, domain.AdmissionApproval{})
-		if err != nil {
-			if ctx.Err() != nil {
-				return ""
-			}
-			r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts, item.Revision)
-			return matching.ErrorLogLine(err)
+		selection = *local
+	} else {
+		// 本地不足才查询；最终结果与本地充分分支共用提交和通知路径。
+		res, err = r.engine.Run(ctx, r.searcher, r.store, in)
+		if err == nil {
+			selection, err = r.library.SelectCandidate(ctx, res.Scored, item.ID, in.Profile)
 		}
-		return fmt.Sprintf("[已存在跳过] %s · %s · %s；精确目标 %s:%s（曲目 #%d）", in.Title, in.Artist, in.Album, local.Candidate.Provider, local.Candidate.MatchRef, result.TrackID)
 	}
-
-	// [2][3] 上游查询与评分
-	res, err := r.engine.Run(ctx, r.searcher, r.store, in)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ""
 		}
-		// 出错时退避重排；累计达上限则标记失败（规则 6）
 		backoff := r.retry.Backoff(item.AttemptCount+1, err)
 		status, _ := r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts, item.Revision)
 		if status == store.StatusFailed {
@@ -266,19 +262,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		}
 		return matching.ErrorLogLine(err)
 	}
-
 	variantsJSON, _ := json.Marshal(res.TriedVariants)
-
-	// [4] 同一用例执行按需摘要、自动选版和准入；成员变更始终进入复核。
-	selection, err := r.library.SelectCandidate(ctx, res.Scored, item.ID, in.Profile)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ""
-		}
-		backoff := r.retry.Backoff(item.AttemptCount+1, err)
-		r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts, item.Revision)
-		return matching.ErrorLogLine(err)
-	}
 	if selection.ResolvedCandidates != nil {
 		res.Scored = selection.ResolvedCandidates
 	}
@@ -288,10 +272,13 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		}
 		result, err := r.library.CommitAdmission(ctx, selection.Plan.ID, selection.Plan.Hash, domain.AdmissionApproval{})
 		if err == nil {
-			if !result.Existing && r.onLibraryChanged != nil {
+			if result.Existing {
+				return fmt.Sprintf("[已存在跳过] %s · %s · %s；精确目标 %s:%s（曲目 #%d）", in.Title, in.Artist, in.Album, selection.Candidate.Provider, selection.Candidate.MatchRef, result.TrackID)
+			}
+			if r.onLibraryChanged != nil {
 				r.onLibraryChanged()
 			}
-			if !result.Existing && r.fetchOnMatch && r.enricher != nil {
+			if r.fetchOnMatch && r.enricher != nil {
 				r.enricher(result.TrackID, string(selection.Candidate.Provider), deref(selection.Candidate.ReleaseRef))
 			}
 			return matching.LogLine(matching.OutcomeImportUnique, in, findScored(res.Scored, selection.Candidate.MatchRef))

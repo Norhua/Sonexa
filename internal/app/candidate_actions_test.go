@@ -11,6 +11,40 @@ import (
 	"github.com/norhua/sonexa/internal/store"
 )
 
+func TestManualCompatibleEditionIsNotReplacedByOwnedPreference(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.enricher.Pause()
+	first := fullCandidate("preferred-owned")
+	first.Title = sptr("Song")
+	second := first
+	second.MatchRef, second.ReleaseRef = fixtureMBID("manual-second"), sptr(fixtureMBID("manual-release"))
+	firstID, err := a.AddToLibrary(rowFrom(matching.ScoredCandidate{Candidate: first}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemID := enqueueOneItem(t, a, "Song", *first.ArtistName, *first.AlbumTitle)
+	plan, err := a.PrepareAdmission(rowFrom(matching.ScoredCandidate{Candidate: second}), itemID)
+	if err != nil || !plan.Baseline.RequiresConfirmation || plan.Baseline.ExistingTrackID != 0 {
+		t.Fatal("manual target replaced with preferred owned track", plan, err)
+	}
+	if _, err := a.CommitAdmission(plan.ID, plan.Hash, domain.AdmissionApproval{}); err == nil {
+		t.Fatal("new compatible release bypassed confirmation")
+	}
+	approval, err := a.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.CommitAdmission(plan.ID, plan.Hash, *approval)
+	if err != nil || result.Existing || result.TrackID == firstID {
+		t.Fatal(result, err)
+	}
+	id, err := a.store.FindByMatchRef("musicbrainz", second.MatchRef)
+	if err != nil || id != result.TrackID {
+		t.Fatal("manual second edition not saved", id, err)
+	}
+}
+
 func TestCandidateActionsKeepSameISRCDifferentTracksIndependent(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
