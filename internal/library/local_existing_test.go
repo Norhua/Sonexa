@@ -69,7 +69,18 @@ func TestLocalExistingRejectsStaleOrCancelledScope(t *testing.T) {
 			case "rebind":
 				err = st.SetProvenance(id, "test", "different-track")
 			case "release":
-				_, err = st.DB().Exec("UPDATE release SET revision=revision+1 WHERE id=?", selected.Plan.Baseline.ExistingReleaseID)
+				identity := selected.Plan.Seed.Snapshot.Release.Identity
+				release, readErr := st.GetReleaseByRef(string(identity.Provider), identity.Ref)
+				if readErr != nil || release == nil {
+					t.Fatal("skip target release missing", release, readErr)
+				}
+				result, updateErr := st.DB().Exec("UPDATE release SET revision=revision+1 WHERE id=?", release.ID)
+				if updateErr != nil {
+					t.Fatal(updateErr)
+				}
+				if count, countErr := result.RowsAffected(); countErr != nil || count != 1 {
+					t.Fatal("fixture did not change exactly one release", count, countErr)
+				}
 			case "commit_failure":
 				_, err = st.DB().Exec(`CREATE TRIGGER fail_local_skip BEFORE INSERT ON operation_result BEGIN SELECT RAISE(ABORT,'forced failure'); END`)
 			}
@@ -140,6 +151,95 @@ func TestLocalExistingUnknownPositionsAndExplicitConstraints(t *testing.T) {
 			selected, err := s.PrepareLocalExisting(context.Background(), input, item.ID, item.Revision)
 			if err != nil || selected != nil {
 				t.Fatal("insufficient/conflicting facts skipped", selected, err)
+			}
+		})
+	}
+}
+
+func TestLocalExistingCurrentAlbumCannotHideRepeatedPosition(t *testing.T) {
+	s, st, id, _ := factFixture(t)
+	track, err := st.GetTrack(id)
+	if err != nil || track.ReleaseID == nil {
+		t.Fatal(track, err)
+	}
+	release, err := st.GetReleaseSnapshot(*track.ReleaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The other position uses a different textual alias but the same recording.
+	release.Tracklist.Value = append(release.Tracklist.Value, domain.TracklistEntry{Track: domain.Known(domain.Identity{Provider: "test", Ref: "repeat"}), DiscNumber: 2, TrackNumber: 4, Title: domain.Known("Another name"), Recording: domain.Known(domain.Identity{Provider: "test", Ref: "recording"})})
+	revision, err := st.ReleaseRevision(*track.ReleaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ApplyReleaseSnapshot(*track.ReleaseID, &domain.Snapshot{Release: release}, revision); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateReleaseFields(*track.ReleaseID, map[string]string{"title": "用户专辑"}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	item := queueInput(t, st)
+	selected, err := s.PrepareLocalExisting(context.Background(), matching.NewInputProfile("Song", "Artist", "用户专辑"), item.ID, item.Revision)
+	if err != nil || selected != nil {
+		t.Fatal("renamed album or recording alias hid repeated position", selected, err)
+	}
+}
+
+func TestLocalExistingMultipleVersionsUseOnlyCompatibleTargets(t *testing.T) {
+	for _, scenario := range []string{"compatible", "explicit_album", "unknown_total", "different_content"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, st, id, _ := factFixture(t)
+			release, err := st.GetReleaseByRef("test", "release")
+			if err != nil || release == nil {
+				t.Fatal(release, err)
+			}
+			snapshot, err := st.GetReleaseSnapshot(release.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshot.ReleaseTrackTotal = domain.Known(12)
+			revision, err := st.ReleaseRevision(release.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.ApplyReleaseSnapshot(release.ID, &domain.Snapshot{Release: snapshot}, revision); err != nil {
+				t.Fatal(err)
+			}
+			other := seed("other-release", "other-track", "group", "Album", "Artist")
+			other.Snapshot.Track.Title = domain.Known("Song")
+			other.Snapshot.Track.Credit = domain.Known(domain.Credit{Text: "Artist"})
+			other.Snapshot.Track.Recording = domain.Known(domain.Identity{Provider: "test", Ref: "recording"})
+			other.Snapshot.Track.DiscNumber, other.Snapshot.Track.TrackNumber = domain.Known(1), domain.Known(1)
+			other.Snapshot.Release.ReleaseTrackTotal = domain.Known(15)
+			if scenario == "unknown_total" {
+				other.Snapshot.Release.ReleaseTrackTotal = domain.Missing[int]()
+			}
+			if scenario == "different_content" {
+				other.Snapshot.Track.Recording = domain.Known(domain.Identity{Provider: "test", Ref: "another-recording"})
+			}
+			if scenario == "explicit_album" {
+				other.Snapshot.Release.Title = domain.Known("Album (Deluxe Edition)")
+			}
+			other.Snapshot.Release.TracklistCompleteness = domain.Complete
+			other.Snapshot.Release.Tracklist = domain.Known([]domain.TracklistEntry{{Track: domain.Known(other.Snapshot.Track.Identity), DiscNumber: 1, TrackNumber: 1, Title: other.Snapshot.Track.Title, Credit: other.Snapshot.Track.Credit, Recording: other.Snapshot.Track.Recording}})
+			added := commit(t, s, prepare(t, s, other), true)
+			item := queueInput(t, st)
+			selected, err := s.PrepareLocalExisting(context.Background(), matching.NewInputProfile("Song", "Artist", "Album"), item.ID, item.Revision)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "unknown_total" || scenario == "different_content" {
+				if selected != nil {
+					t.Fatal("unknown total/content ambiguity chose an owned target", selected)
+				}
+				return
+			}
+			want := added.TrackID
+			if scenario == "explicit_album" {
+				want = id
+			}
+			if selected == nil || selected.Plan.Baseline.ExistingTrackID != want {
+				t.Fatal("preference overrode compatible target subset", selected, want)
 			}
 		})
 	}

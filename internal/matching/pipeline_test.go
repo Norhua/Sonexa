@@ -310,11 +310,6 @@ func TestLogLinesAreDistinguishable(t *testing.T) {
 		}
 	}
 
-	dup := DuplicateLogLine(in, "库中: That Girl · Liu")
-	if !containsSub(dup, "输入信息") || !containsSub(dup, "当前曲目库信息") {
-		t.Errorf("疑似重复提示应同时输出两边信息: %q", dup)
-	}
-
 	errLine := ErrorLogLine(errors.New("503"))
 	if !containsSub(errLine, "[发生错误]") || !containsSub(errLine, "返回队列") {
 		t.Errorf("错误提示 = %q", errLine)

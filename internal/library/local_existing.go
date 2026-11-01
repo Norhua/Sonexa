@@ -126,7 +126,28 @@ func localPositionUnique(input matching.InputProfile, target matching.CandidateT
 		track := &domain.TrackSnapshot{Identity: entry.Track.Value, Release: &release.Identity, Title: entry.Title, Credit: entry.Credit,
 			DiscNumber: domain.Known(entry.DiscNumber), TrackNumber: domain.Known(entry.TrackNumber), DurationMS: entry.DurationMS, Recording: entry.Recording}
 		candidate := matching.SnapshotCandidate(track, release)
-		evidence := matching.CheckMetadataEvidence(input, matching.MetadataFacts{Candidate: candidate, Source: "local:competing_position", AlbumComplete: release.Title.State == domain.Value, PositionVerified: true})
+		// Album correspondence was established for this exact release, possibly
+		// by its current user name. Reusing the old source album name here could
+		// incorrectly exclude every other position in the same release.
+		positionInput := input
+		positionInput.Album = matching.ParseMetadataText("", matching.MetadataAlbum)
+		// Equal recording is not track identity, but it is enough to keep a
+		// repeated position in contention even if one source title is an alias.
+		sameRecording := false
+		for _, fact := range target.Facts {
+			ref := fact.Metadata.Candidate.RecordingRef
+			if ref != nil && *ref != "" && candidate.RecordingRef != nil && *ref == *candidate.RecordingRef {
+				sameRecording = true
+			}
+		}
+		if sameRecording {
+			if input.Disc.State == matching.ValueKnown && input.Disc.Value != int64(entry.DiscNumber) ||
+				input.Track.State == matching.ValueKnown && input.Track.Value != int64(entry.TrackNumber) {
+				continue
+			}
+			return false
+		}
+		evidence := matching.CheckMetadataEvidence(positionInput, matching.MetadataFacts{Candidate: candidate, Source: "local:competing_position", AlbumComplete: release.Title.State == domain.Value, PositionVerified: true})
 		if evidence.Eligibility != matching.MetadataExcluded {
 			return false
 		}

@@ -1,40 +1,31 @@
-# 实施交接：4.2 完成，4.3 发行修订竞态测试阻塞
+# 实施交接：4.3 完成，从 4.4 继续
 
 ## 当前状态
 
 - 变更：`fix-track-identity-and-reduce-import-review`，repo-local，schema `spec-driven`。
-- `tasks.md` 已完成 1.1–1.7、2.1–2.5、3.1–3.6、4.1–4.2，共 **20/48**；CLI 已确认 4.2 完成。4.3 有未验证代码，保持未勾选。
+- `tasks.md` 已完成 1.1–1.7、2.1–2.5、3.1–3.6、4.1–4.3，共 **21/48**；CLI 已确认 4.3 完成，下一项 4.4。
 - 本文件只记录实施与验证事实，不替代规划文件、10 个增量规格或 CLI 任务完成标准。
 - 未同步主规格、未归档、未访问真实来源，未修改或清理用户应用数据。测试使用临时 SQLite、fixture 和浏览器替身。
 
-## 4.3 当前阻塞（未完成）
+## 4.3 已完成
 
-4.2 已提交 `1eaaaf9`，继续了 4.3：
+`22f5a8a` 的测试类型错误和 `47eea41` 的发行 UPDATE 零行测试错误均已修复。发行竞态测试现在按计划来源身份读取真实发行 ID，断言 RowsAffected=1 后，旧 skip 计划确实被拒绝。
 
-- `internal/library/local_existing.go` 新增 `PrepareLocalExisting`，尝试完整本地事实的精确 skip；资料不足返回 nil 让 Runner 查询上游。检查输入专辑、候选证据、清单竞争位置及当前所有权；复用既有组/内容选版函数，不出网。
-- `internal/importer/runner.go` 移除无绑定文本直接复核的调用及描述 helper，先尝试本地 skip；skip 不触发 library/enrichment，并有明确日志。
-- 旧 Runner 文本重复测试改为验证仍请求上游，不制造 owned/skip。
-- `internal/importer/local_existing_test.go` 新增完整本地跳过、稀疏/无专辑/不同专辑/重复位置继续检索、明确位置消歧及删除历史批次后相同结果的初始测试。
+- Runner 删除无绑定文本直接复核短路及其废弃 matching 接口/日志，改走 `PrepareLocalExisting`。完整本地证据可精确 skip，资料不足继续检索；本地查询失败不伪装未匹配。
+- 本地分支消费完整 profile、同一实际本地组与当前所有权，检查完整发行清单及其他可能位置；未知总数、不同内容、重复位置保持上游分支，不靠已收藏吞掉显式专辑/版本限定。
+- 当前用户名称只能关联到已验证位置，不复制进候选快照；用户专辑改名不能误排除同发行其他位置，同 Recording 的文本别名不能消除位置歧义。
+- skip 准备结束后对照证据采用的 track/release revision，不能默默刷新旧证据。提交沿用单行事务 CAS、删除/换绑拒绝、失败回滚和幂等；纯 skip 不写收藏表、不启动补全、不发 library 通知。
+- 新 Runner 用例核对实际请求次数、终态和 track：完整资料无请求跳过、删历史批次仍同结果、稀疏已有先请求一次再按既有分支结束、无绑定文本可正常新建精确上游 track、资料失败保留错误。library 用例覆盖当前改名、多个兼容版本、未知/冲突、准备与提交竞态及无收藏写入。
+- 远程分支仍是旧 `SelectCandidate`；完整本地/远程输入优先选版在 4.4–4.6 接线。无原生或真实网络验收，本轮未改前端。
 
-上个检查点 `22f5a8a` 的测试类型错误已修复：将终态原因读为 `store.ResolutionReason`。原有 importer/library 测试随后通过。
+本轮最终通过：
 
-本轮继续补充：
-
-- 本地准备拒绝过期 profile，要求同一个实际本地组而非跨组名称传递连接；保留选定候选的原始来源字段，只将完整 current 视图与已核验的同一位置建立证据关系。
-- 清单检查拒绝重复身份/重复位置及未知竞争位置；skip 准备结束后对照当次事实的 track/release revision，不能把较新的绑定修订当作旧证据仍有效。
-- Runner 在本地提交被取消时不记录为匹配失败。
-- 新增 `internal/library/local_existing_test.go`，覆盖实际 skip 不写收藏表、当前值改名与有效来源名、取消/旧输入/删除/换绑/失败回滚、未知位置、显式版本/时长/专辑，以及准备期间绑定修订变化。
-
-最新命令 `go test ./internal/library ./internal/importer -count=1`：**importer 通过，library 仅一项失败**：
-
-```text
-TestLocalExistingRejectsStaleOrCancelledScope/release
-local_existing_test.go:84: stale/failed skip succeeded
+```sh
+go test ./internal/matching ./internal/importer ./internal/library ./internal/store ./internal/app ./internal/acceptance ./internal/lyrics
+go test -race ./internal/matching ./internal/importer ./internal/library ./internal/store ./internal/app
+openspec validate fix-track-identity-and-reduce-import-review --strict
+git diff --check
 ```
-
-已定位测试构造错误：轻量 skip 的 `admissionBaselineTx` 在填写 `ExistingReleaseID` 前就返回（只保存既有 track 与 track/release 修订），所以测试 `UPDATE release ... WHERE id=selected.Plan.Baseline.ExistingReleaseID` 使用了 0、没有修改任何行，旧计划自然仍能提交。这不是已证明的生产修订校验问题。下一步通过计划的来源发行身份读取实际发行 ID，并断言 UPDATE RowsAffected=1 后重新验证。尚未修这个测试；按工作流遇错暂停。
-
-4.3 仍未完成、未勾选。后续还须检查本地跳过期间竞争事实/修订、多个本地相容目标、未绑定有上游结果、真实请求次数和错误保留，更新局部说明并回归。远程分支仍旧 SelectCandidate，完整输入优先生产路径待 4.4–4.6；4.4 未开始。下述通过结果仅针对 4.2 提交，不能当作当前 4.3 代码全绿。
 
 ## 4.2 已完成
 
@@ -140,7 +131,7 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 - `review_problem` / `review_problem_item` 基础表保留规则/锚点/证明/查询/候选修订，一行最多一个活跃归属；语义归并和生命周期业务仍待 5.x。
 - **当前新库代际为 `track-identity-v5`**（4.1 增加匹配索引）。旧结构拒绝打开，不迁移、不自动删库。source+track 唯一；同 ISRC/Recording 不同 track 可共存。
 - `ResolveLocal` 仅来源精确身份与 `FindExactBinding` 当前绑定可以返回 owned，核验发行关系、绑定修订；错误/冲突独立表达。
-- 旧文本重复检查拆为独立 `LocalDuplicateLookup`，仍待 4.3 替换；相关 ID 不生成拥有目标。
+- 旧文本重复前置短路及 `LocalDuplicateLookup` 已移除；相关 ID 不生成拥有目标。
 - `AdmissionSeed.Operation` 区分 admit / skip_existing；写实体前重验输入整数修订。`PrepareSkipExisting` 不出网，提交检查目标及 track/release 修订，不需要新增发行批准。
 - 重复接受记 `skipped/existing_track`；精确跳过不写收藏字段、时间、图片、歌词或补全状态。同成功计划幂等，其他旧计划拒绝，Runner/在途改搜使用起始修订 CAS。
 - 纯已有结果不发 library 事件、不启动补全；完整 review/task 事件仍待 7.x。
@@ -151,7 +142,7 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 
 ### 未完成范围
 
-- 4.3–4.7 本地自动分流、输入优先自动选版和最终精确跳过路径。仍有旧文本重复短路、HighConf/跨组与已有发行逻辑。
+- 4.4–4.7 远程输入优先自动选版、统一精确跳过路径及旧测试替换。仍有旧 HighConf/跨组与已有发行逻辑。
 - 5.x 问题等价证明、归并/拆出/关闭业务生命周期与版本化候选持久化。
 - 6.x 多行 scope/hash、原子结果和租约；当前准备入口仍主要支持单行。
 - 7.x 有界重评、独立问题统计、review/task 事件。
@@ -167,4 +158,4 @@ SONEXA_E2E_PREVIEW=1 npm --prefix frontend run test:e2e -- candidate-ownership.s
 - Wails 绑定、dist、node_modules、测试产物均被忽略。
 - 旧编辑器测试基线位于 `tmp/harness/identity-35-baseline-YM4EZk`（忽略目录，不是工作树），没有切换或重置当前仓库。
 
-阶段提交：`5ba0b3c`（3.1）、`981ba20`（3.2）、`8cea84e`（3.3）、`ecff4cb`（3.4）、`4e912d5`（3.5）、`7f7a5c6`（3.6 未完成检查点）、`ca32fcf`（3.6 完成）、`6e09c02`（4.1 未完成检查点）、`47ed362`（4.1 完成）、`da0cea4`（4.2 未完成检查点）、`1eaaaf9`（4.2 完成）。4.3 未完成检查点以 `git log` 为准。
+阶段提交：`5ba0b3c`（3.1）、`981ba20`（3.2）、`8cea84e`（3.3）、`ecff4cb`（3.4）、`4e912d5`（3.5）、`7f7a5c6`（3.6 未完成检查点）、`ca32fcf`（3.6 完成）、`6e09c02`（4.1 未完成检查点）、`47ed362`（4.1 完成）、`da0cea4`（4.2 未完成检查点）、`1eaaaf9`（4.2 完成）、`22f5a8a` / `47eea41`（4.3 未完成检查点）。4.3 完成提交以 `git log` 为准。

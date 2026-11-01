@@ -35,8 +35,6 @@ type Result struct {
 	Scored []ScoredCandidate
 	// TriedVariants 是已尝试的查询变体，供复核队列显示。
 	TriedVariants []string
-	// LocalDuplicate 非零时表示本地去重检查判定为疑似重复。
-	LocalDuplicate int64
 }
 
 // SearchLimit 是每级阶梯向上游要的候选条数上限。
@@ -62,7 +60,7 @@ func NewEngine(m config.MatchingSettings) *Engine {
 
 // Run 对一条输入执行完整的匹配流程。
 //
-//	[1] 旧本地检查由 Runner 单独执行；此入口仅检索和评分
+//	[1] Runner 在此入口外尝试完整本地证据；此入口仅检索和评分
 //	[2] 上游查询 —— 按变体策略执行（默认渐进式）
 //	[3] 置信度评分
 //	[4] 分流
@@ -157,27 +155,6 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 	return res, nil
 }
 
-// LocalDuplicateLookup 仅供旧文本重复检查使用，不提供精确所有权结论。
-// 与候选 LocalLookup 分离，待输入优先本地召回替换旧前置短路。
-type LocalDuplicateLookup interface {
-	FindUnmatchedByText(normTitle, normArtist string, durationMS *int) (int64, error)
-}
-
-// CheckLocalDuplicate 执行本地去重前置检查。
-//
-// 判定为疑似重复时暂进复核，仅保存相关提示，不创建拥有结论或收藏动作。
-func (e *Engine) CheckLocalDuplicate(lookup LocalDuplicateLookup, in Input) (int64, error) {
-	if lookup == nil {
-		return 0, nil
-	}
-	normTitle := Normalize(in.Title)
-	normArtist := Normalize(in.Artist)
-	if normTitle == "" || normArtist == "" {
-		return 0, nil
-	}
-	return lookup.FindUnmatchedByText(normTitle, normArtist, in.DurationMS)
-}
-
 // sortedPool 把候选池按分值降序排列；同分时以标识字典序保证稳定。
 func sortedPool(pool map[string]ScoredCandidate) []ScoredCandidate {
 	out := make([]ScoredCandidate, 0, len(pool))
@@ -219,11 +196,6 @@ func LogLine(outcome Outcome, in Input, sc *ScoredCandidate) string {
 		return fmt.Sprintf("[匹配失败]: %s", inputSummary(in))
 	}
 	return ""
-}
-
-// DuplicateLogLine 返回疑似重复的提示：同时输出输入信息与库中已有曲目的信息。
-func DuplicateLogLine(in Input, existing string) string {
-	return fmt.Sprintf("[疑似重复]: 输入信息: %s；当前曲目库信息: %s", inputSummary(in), existing)
 }
 
 // ErrorLogLine 返回发生错误时的提示。

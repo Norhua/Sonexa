@@ -125,6 +125,71 @@ func TestRunnerSparseOrAmbiguousLocalFactsStillSearch(t *testing.T) {
 	}
 }
 
+func TestRunnerUnboundTextDoesNotBlockUpstreamAdmission(t *testing.T) {
+	st := openStore(t)
+	unbound, err := st.CreateTrackWithProvenance(store.NewTrackInput{Title: "Song", Credit: sptr("Artist")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := mbCandidate("new-exact-track", "Song", "Artist", "Album")
+	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{"Song": {candidate}}}
+	batch := enqueueOne(t, st, "Song", "Artist", "Album")
+	runToCompletion(t, newRunner(st, searcher), batch)
+	stats, err := st.Stats(batch)
+	if err != nil || stats.Imported != 1 || stats.Skipped != 0 || stats.Review != 0 || searcher.queryCount() != 1 {
+		t.Fatal("unbound text blocked exact admission", stats, err, searcher.queryCount())
+	}
+	id, err := st.FindByMatchRef(string(candidate.Provider), candidate.MatchRef)
+	if err != nil || id == 0 || id == unbound {
+		t.Fatal("upstream candidate was bound to the unbound track", id, err)
+	}
+	original, err := st.GetTrack(unbound)
+	if err != nil || original == nil || original.Title != "Song" {
+		t.Fatal(original, err)
+	}
+	var source *string
+	if err := st.DB().QueryRow("SELECT match_source FROM track WHERE id=?", unbound).Scan(&source); err != nil || source != nil {
+		t.Fatal("text similarity assigned provenance", source, err)
+	}
+}
+
+func TestRunnerSparseExactOwnedTargetStillSearchesBeforeSkipping(t *testing.T) {
+	st := openStore(t)
+	id, candidate := seedLocalRunnerTrack(t, st, false, false)
+	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{"Song": {candidate}}}
+	batch := enqueueOne(t, st, "Song", "Artist", "Album")
+	runToCompletion(t, newRunner(st, searcher), batch)
+	stats, err := st.Stats(batch)
+	if err != nil || stats.Skipped != 1 || stats.Imported != 0 || searcher.queryCount() != 1 {
+		t.Fatal("sparse local singleton bypassed upstream", stats, err, searcher.queryCount())
+	}
+	var target int64
+	if err := st.DB().QueryRow("SELECT track_id FROM import_item WHERE batch_id=?", batch).Scan(&target); err != nil || target != id {
+		t.Fatal(target, err)
+	}
+}
+
+func TestRunnerLocalReadFailureDoesNotBecomeNoMatch(t *testing.T) {
+	st := openStore(t)
+	seedLocalRunnerTrack(t, st, true, false)
+	batch := enqueueOne(t, st, "Song", "Artist", "Album")
+	item, err := st.ClaimNextItem(batch)
+	if err != nil || item == nil {
+		t.Fatal(item, err)
+	}
+	if _, err := st.DB().Exec("ALTER TABLE local_match_key RENAME TO unavailable_match_keys"); err != nil {
+		t.Fatal(err)
+	}
+	searcher := &recordingSearcher{}
+	runner := newRunner(st, searcher)
+	runner.retry.MaxAttempts = 1
+	line := runner.processItem(context.Background(), item)
+	got, err := st.GetItem(item.ID)
+	if err != nil || got.Status != store.StatusFailed || got.LastError == nil || got.TrackID != nil || searcher.queryCount() != 0 || !strings.Contains(line, "[发生错误]") {
+		t.Fatal("failed local lookup became an identity decision", got, err, line)
+	}
+}
+
 func TestRunnerLocalKnownPositionCanDisambiguateRepeatedRecording(t *testing.T) {
 	st := openStore(t)
 	id, _ := seedLocalRunnerTrack(t, st, true, true)
