@@ -31,9 +31,14 @@ func (p *summaryProvider) LoadReleaseSummary(ctx context.Context, id domain.Iden
 func (p *summaryProvider) ListVersions(context.Context, domain.Identity, provider.Page) (*provider.VersionPage, error) {
 	return nil, fmt.Errorf("must not enumerate group")
 }
+func selectionProfile() *matching.InputProfile {
+	p := matching.NewInputProfile("Song", "Artist", "Album")
+	return &p
+}
+
 func candidate(release, track string, total *int) provider.Candidate {
 	title, album, artist, group, recording := "Song", "Album", "Artist", "group", "recording"
-	return provider.Candidate{Provider: "test", MatchRef: track, ReleaseRef: &release, ReleaseGroupRef: &group, Title: &title, AlbumTitle: &album, AlbumCredit: &artist, RecordingRef: &recording, ReleaseTrackTotal: total}
+	return provider.Candidate{Provider: "test", MatchRef: track, ReleaseRef: &release, ReleaseGroupRef: &group, Title: &title, ArtistName: &artist, DiscNumber: ptr(1), TrackNumber: ptr(1), AlbumTitle: &album, AlbumCredit: &artist, RecordingRef: &recording, ReleaseTrackTotal: total}
 }
 func high(c ...provider.Candidate) []matching.ScoredCandidate {
 	out := []matching.ScoredCandidate{}
@@ -47,17 +52,17 @@ func TestAutomaticSelectionPrioritizesOwnedReleaseAndKnownTotal(t *testing.T) {
 	p := &summaryProvider{totals: map[string]int{"a": 14, "b": 15}}
 	s.registry.Register(p)
 	a, b := candidate("a", "a1", nil), candidate("b", "b1", nil)
-	selection, err := s.SelectCandidate(context.Background(), high(a, b), 0)
+	selection, err := s.SelectCandidate(context.Background(), high(a, b), 0, selectionProfile())
 	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "b1" || p.calls != 2 {
 		t.Fatalf("total selection: %+v %v calls %d", selection, err, p.calls)
 	}
 	commit(t, s, prepare(t, s, seed("a", "owned", "group", "Album", "Artist")), false)
 	p.calls = 0
-	selection, err = s.SelectCandidate(context.Background(), high(a, b), 0)
+	selection, err = s.SelectCandidate(context.Background(), high(a, b), 0, selectionProfile())
 	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "a1" || p.calls != 0 || selection.Plan.Baseline.RequiresConfirmation {
 		t.Fatalf("owned subset: %+v %v calls %d", selection, err, p.calls)
 	}
-	selection, err = s.SelectCandidate(context.Background(), high(b), 0)
+	selection, err = s.SelectCandidate(context.Background(), high(b), 0, selectionProfile())
 	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "b1" || selection.Reason != ReasonNewRelease || p.calls != 0 {
 		t.Fatalf("unique new version must review: %+v %v", selection, err)
 	}
@@ -71,25 +76,25 @@ func TestAutomaticSelectionAmbiguityUnknownTotalAndWorldTie(t *testing.T) {
 	world, jp := "XW", "JP"
 	a.Country = &world
 	b.Country = &jp
-	selected, err := s.SelectCandidate(context.Background(), high(a, b), 0)
+	selected, err := s.SelectCandidate(context.Background(), high(a, b), 0, selectionProfile())
 	if err != nil || selected.Candidate == nil || selected.Candidate.MatchRef != "b1" {
 		t.Fatal(selected, err)
 	}
 	b.ReleaseTrackTotal = nil
-	selected, err = s.SelectCandidate(context.Background(), high(a, b), 0)
+	selected, err = s.SelectCandidate(context.Background(), high(a, b), 0, selectionProfile())
 	if err != nil || selected.Reason != ReasonUnknownTotal || p.calls != 1 {
 		t.Fatal(selected, err, p.calls)
 	}
 	b.ReleaseTrackTotal = &n
 	b.ReleaseRef = a.ReleaseRef
-	selected, err = s.SelectCandidate(context.Background(), high(a, b), 0)
+	selected, err = s.SelectCandidate(context.Background(), high(a, b), 0, selectionProfile())
 	if err != nil || selected.Reason != ReasonAmbiguous {
 		t.Fatal("same release positions accepted", selected, err)
 	}
 	b = candidate("b", "b1", &n)
 	other := "different recording"
 	b.RecordingRef = &other
-	selected, err = s.SelectCandidate(context.Background(), high(a, b), 0)
+	selected, err = s.SelectCandidate(context.Background(), high(a, b), 0, selectionProfile())
 	if err != nil || selected.Reason != ReasonAmbiguous {
 		t.Fatal("different content accepted", selected, err)
 	}
@@ -124,7 +129,7 @@ func TestDisplayPreferencesDoNotChangeSelectionOrBindings(t *testing.T) {
 		if rep.ID != want {
 			t.Fatalf("representative: %d want %d", rep.ID, want)
 		}
-		selected, err := s.SelectCandidate(context.Background(), candidates, 0)
+		selected, err := s.SelectCandidate(context.Background(), candidates, 0, selectionProfile())
 		if err != nil || selected.Candidate == nil || selected.Candidate.MatchRef != "b-next" {
 			t.Fatalf("preference affected admission: %+v %v", selected, err)
 		}

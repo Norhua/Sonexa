@@ -309,11 +309,18 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	}
 	candidatesJSON, _ := json.Marshal(res.Scored)
 	evidence := ""
+	if len(selection.Reasons) > 0 {
+		raw, _ := json.Marshal(struct {
+			Reasons []matching.DecisionReason `json:"reasons"`
+		}{selection.Reasons})
+		evidence = string(raw)
+	}
 	if selection.Plan != nil {
 		raw, _ := json.Marshal(struct {
 			domain.AdmissionBaseline
-			Proposed *domain.ReleaseSnapshot `json:"proposed"`
-		}{selection.Plan.Baseline, selection.Plan.Seed.Snapshot.Release})
+			Proposed *domain.ReleaseSnapshot   `json:"proposed"`
+			Reasons  []matching.DecisionReason `json:"reasons,omitempty"`
+		}{selection.Plan.Baseline, selection.Plan.Seed.Snapshot.Release, selection.Reasons})
 		evidence = string(raw)
 	}
 	if err := r.store.MarkReviewAtRevision(item.ID, item.Revision, reason, string(candidatesJSON), string(variantsJSON), evidence); err != nil {

@@ -22,6 +22,7 @@ const (
 )
 
 type Selection struct {
+	Reasons            []matching.DecisionReason  `json:"reasons,omitempty"`
 	ResolvedCandidates []matching.ScoredCandidate `json:"resolvedCandidates,omitempty"`
 	Candidate          *provider.Candidate        `json:"candidate"`
 	Reason             string                     `json:"reason"`
@@ -140,32 +141,28 @@ func ptrField[T any](field domain.Field[T]) *T {
 }
 
 // SelectCandidate 只对当前候选中确实缺少决策事实的发行补摘要，不枚举原生组。
-func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredCandidate, itemID int64, profiles ...*matching.InputProfile) (Selection, error) {
-	var profile *matching.InputProfile
-	if len(profiles) > 0 {
-		profile = profiles[0]
+func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredCandidate, itemID int64, profile *matching.InputProfile) (Selection, error) {
+	if profile == nil || profile.RuleVersion != matching.MetadataRuleVersion {
+		return Selection{}, errors.New("缺少当前版本的完整输入证据")
 	}
-	if profile != nil && profile.RuleVersion != matching.MetadataRuleVersion {
-		return Selection{}, errors.New("输入证据版本已失效，需要重新解析")
-	}
-	resolved, unresolved, err := s.resolveSelectionIdentities(ctx, scored, profile)
+	constrained, err := s.constrainSelection(ctx, scored, *profile)
 	if err != nil {
 		return Selection{}, err
 	}
-	if unresolved {
-		return Selection{Reason: ReasonAmbiguous, ResolvedCandidates: resolved}, nil
+	if constrained.pending {
+		return Selection{Reason: ReasonAmbiguous, ResolvedCandidates: constrained.display, Reasons: constrained.reasons}, nil
 	}
-	selection, err := s.selectResolvedCandidates(ctx, resolved, itemID)
-	selection.ResolvedCandidates = resolved
+	selection, err := s.selectResolvedCandidates(ctx, constrained.eligible, itemID, constrained.summaries, *profile)
+	selection.ResolvedCandidates = constrained.display
+	selection.Reasons = append(constrained.reasons, selection.Reasons...)
 	return selection, err
 }
 
-func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matching.ScoredCandidate, itemID int64) (Selection, error) {
+func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matching.ScoredCandidate, itemID int64, summaries map[domain.Identity]domain.ReleaseSummary, input matching.InputProfile) (Selection, error) {
 	prepared := []selectionCandidate{}
-	summaries := map[domain.Identity]domain.ReleaseSummary{}
 	seen := map[string]bool{}
 	for _, sc := range scored {
-		if !sc.Score.HighConf || seen[candidateKey(sc.Candidate)] {
+		if seen[candidateKey(sc.Candidate)] {
 			continue
 		}
 		seen[candidateKey(sc.Candidate)] = true
@@ -177,6 +174,9 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 			return Selection{Reason: ReasonGroupInsufficient}, nil
 		}
 		summary := seed.Snapshot.Release.Summary()
+		if known, ok := summaries[summary.Identity]; ok {
+			summary = known
+		}
 		existing := false
 		if summary.Identity.Ref != "" {
 			release, err := s.store.GetReleaseByRef(string(summary.Identity.Provider), summary.Identity.Ref)
@@ -238,6 +238,9 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 				return Selection{}, err
 			}
 		}
+		// A summary is a new source view, not permission to silently replace
+		// the facts that passed input filtering. Recheck its candidate view.
+		original := c.candidate
 		c.candidate.AlbumTitle = ptrField(c.summary.Title)
 		if c.summary.Credit.State == domain.Value {
 			v := c.summary.Credit.Value.Text
@@ -248,6 +251,12 @@ func (s *Service) selectResolvedCandidates(ctx context.Context, scored []matchin
 		if c.summary.Group != nil {
 			v := c.summary.Group.Ref
 			c.candidate.ReleaseGroupRef = &v
+		}
+		if value(original.AlbumTitle) != value(c.candidate.AlbumTitle) || value(original.AlbumCredit) != value(c.candidate.AlbumCredit) {
+			evidence := matching.CheckMetadataEvidence(input, matching.MetadataFacts{Candidate: c.candidate, Source: "loaded_summary", AlbumComplete: c.candidate.AlbumTitle != nil, PositionVerified: c.candidate.DiscNumber != nil && c.candidate.TrackNumber != nil})
+			if evidence.Eligibility != matching.MetadataEligible {
+				return Selection{Reason: ReasonAmbiguous, Reasons: evidence.Reasons}, nil
+			}
 		}
 		resolution, err := s.store.ResolveGroup(domain.Snapshot{Release: &domain.ReleaseSnapshot{Identity: c.summary.Identity, Group: c.summary.Group, Title: c.summary.Title, Credit: c.summary.Credit}})
 		if err != nil {
