@@ -14,6 +14,7 @@ import (
 
 	"github.com/norhua/sonexa/internal/covers"
 	"github.com/norhua/sonexa/internal/domain"
+	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
 )
@@ -26,15 +27,16 @@ func (systemClock) Now() time.Time { return time.Now() }
 const PlanTTL = 15 * time.Minute
 
 type Service struct {
-	editMu   sync.Mutex
-	mu       sync.Mutex
-	registry *provider.Registry
-	store    *store.Store
-	files    *covers.LibraryImages
-	clock    Clock
-	secret   [32]byte
-	plans    map[string]domain.AdmissionPlan
-	previews map[string]storedEditPreview
+	editMu     sync.Mutex
+	mu         sync.Mutex
+	registry   *provider.Registry
+	identities *matching.CandidateSources
+	store      *store.Store
+	files      *covers.LibraryImages
+	clock      Clock
+	secret     [32]byte
+	plans      map[string]domain.AdmissionPlan
+	previews   map[string]storedEditPreview
 }
 
 func New(registry *provider.Registry, st *store.Store, files *covers.LibraryImages, clock Clock) (*Service, error) {
@@ -50,6 +52,16 @@ func New(registry *provider.Registry, st *store.Store, files *covers.LibraryImag
 	}
 	st.SetAdmissionVerifier(service.verify)
 	return service, nil
+}
+func (s *Service) SetCandidateSources(sources *matching.CandidateSources) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.identities = sources
+}
+func (s *Service) CandidateSources() *matching.CandidateSources {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.identities
 }
 func (s *Service) SetRegistry(registry *provider.Registry) {
 	s.mu.Lock()

@@ -8,6 +8,7 @@ import (
 	"github.com/norhua/sonexa/internal/covers/sources"
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/lyrics"
+	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/provider/caa"
 	"github.com/norhua/sonexa/internal/provider/itunes"
@@ -47,12 +48,13 @@ func configureCoverDefaults(svc *covers.Service) error {
 }
 
 type upstreamServices struct {
-	client   *provider.Client
-	metadata *provider.Registry
-	lyrics   *lyrics.Service
-	covers   *sources.Registry
-	images   *provider.ImagePolicies
-	artwork  []provider.ArtworkStrategy
+	client     *provider.Client
+	metadata   *provider.Registry
+	identities *matching.CandidateSources
+	lyrics     *lyrics.Service
+	covers     *sources.Registry
+	images     *provider.ImagePolicies
+	artwork    []provider.ArtworkStrategy
 }
 
 // assembleUpstreams has no publication, network, disk, or limiter side effects.
@@ -101,7 +103,11 @@ func assembleUpstreams(cur config.Settings, limiters *provider.Limiters, st *sto
 		priority = append(priority, provider.ProviderID(id))
 	}
 	registry.SetPriority(priority)
-	return &upstreamServices{client: client, metadata: registry, lyrics: lyricSvc, covers: coverSources, images: images, artwork: artwork}, nil
+	identities, err := matching.NewCandidateSources(mb, it, qq)
+	if err != nil {
+		return nil, err
+	}
+	return &upstreamServices{client: client, metadata: registry, identities: identities, lyrics: lyricSvc, covers: coverSources, images: images, artwork: artwork}, nil
 }
 
 // publishUpstreamsLocked is the only production publication point. Caller holds a.mu.
@@ -118,8 +124,10 @@ func (a *App) publishUpstreamsLocked(next *upstreamServices) {
 		return p.FetchDetail(ctx, ref)
 	})
 	a.client, a.registry, a.lyricSvc, a.coverSources = next.client, next.metadata, next.lyrics, next.covers
+	a.identitySources = next.identities
 	if a.library != nil {
 		a.library.SetRegistry(next.metadata)
+		a.library.SetCandidateSources(next.identities)
 	}
 }
 

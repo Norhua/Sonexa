@@ -30,6 +30,11 @@ func TestProductionAssemblyListsAndFailedBuildDoesNotPublish(t *testing.T) {
 	if !reflect.DeepEqual(a.ListCoverSources(), []CoverSourceInfo{{"caa", "CAA", false}, {"itunes", "iTunes", true}, {"qq", "QQ", false}, {"163", "网易云", false}}) {
 		t.Fatal(a.ListCoverSources())
 	}
+	beforeIdentities := a.identitySources
+	library, err := a.libraryService()
+	if err != nil || beforeIdentities == nil || library.CandidateSources() != beforeIdentities {
+		t.Fatal("candidate identity capability was not injected", err)
+	}
 	beforeClient, beforeRegistry, beforeLyrics, beforeCovers := a.client, a.registry, a.lyricSvc, a.coverSources
 	svc := a.coverSvc
 	a.coverSvc = nil
@@ -37,16 +42,19 @@ func TestProductionAssemblyListsAndFailedBuildDoesNotPublish(t *testing.T) {
 		t.Fatal("nil catalog dependency accepted")
 	}
 	a.coverSvc = svc
-	if a.client != beforeClient || a.registry != beforeRegistry || a.lyricSvc != beforeLyrics || a.coverSources != beforeCovers {
+	if a.client != beforeClient || a.registry != beforeRegistry || a.lyricSvc != beforeLyrics || a.coverSources != beforeCovers || a.identitySources != beforeIdentities || library.CandidateSources() != beforeIdentities {
 		t.Fatal("failed assembly published partial services")
 	}
 	cur := a.settings.Get()
 	cur.ITunes.DefaultCountry = "jp"
 	a.mu.Lock()
-	err := a.rebuildProviders(cur)
+	err = a.rebuildProviders(cur)
 	a.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if a.identitySources == beforeIdentities || library.CandidateSources() != a.identitySources {
+		t.Fatal("candidate identity capabilities were not republished")
 	}
 	p, _ := a.registry.Get(provider.ITunes)
 	if p.(*itunes.Provider).ResolveCountry("", "") != "jp" || a.client.Limiters != beforeClient.Limiters {

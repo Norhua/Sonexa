@@ -32,6 +32,7 @@ type App struct {
 	store           *store.Store
 	library         *library.Service
 	registry        *provider.Registry
+	identitySources *matching.CandidateSources
 	limiters        *provider.Limiters
 	client          *provider.Client
 	lyricSvc        *lyrics.Service

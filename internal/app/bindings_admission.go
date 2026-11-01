@@ -36,6 +36,7 @@ func (a *App) libraryServiceLocked() (*library.Service, error) {
 			a.library.SetFiles(a.coverSvc.Library())
 		}
 	}
+	a.library.SetCandidateSources(a.identitySources)
 	return a.library, nil
 }
 func (a *App) PrepareAdmission(row CandidateRow, itemID int64) (*AdmissionPlanView, error) {

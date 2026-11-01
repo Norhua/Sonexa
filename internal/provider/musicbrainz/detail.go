@@ -17,6 +17,16 @@ import (
 // 1 req/s 下必须一次拉满（见 detailInc）。响应中已包含该 release 的完整曲目清单，
 // 因此 Detail.Tracklist 一并填好，调用方不需要再花一次配额去取。
 func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider.Detail, error) {
+	rel, err := p.fetchRelease(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return parseDetailTarget(rel, ref.TrackRef)
+}
+
+// fetchRelease shares the existing transport and raw response cache with
+// decision resolution. It does not select a track or create library entities.
+func (p *Provider) fetchRelease(ctx context.Context, ref provider.Ref) (*releaseDetail, error) {
 	if err := p.IsConfigured(); err != nil {
 		return nil, err
 	}
@@ -42,7 +52,7 @@ func (p *Provider) FetchDetail(ctx context.Context, ref provider.Ref) (*provider
 	if err := json.Unmarshal(body, &rel); err != nil {
 		return nil, fmt.Errorf("解析 MusicBrainz 详情响应失败: %w", err)
 	}
-	return parseDetailTarget(&rel, ref.TrackRef)
+	return &rel, nil
 }
 
 func parseDetailTarget(rel *releaseDetail, trackRef string) (*provider.Detail, error) {
