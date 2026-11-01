@@ -19,6 +19,13 @@ test.beforeEach(async ({ page }) => {
       items: queue.items, queueReads: 0, taskReads: 0, actions: [], commits: [], prepares: [],
       failure: '', requiresConfirmation: true,
     }
+    const research = api.ResearchReviewItem
+    api.ResearchReviewItem = async (...args: any[]) => {
+      const rows = await research(...args)
+      const item = state.items.find((item: any) => item.id === args[0])
+      item.candidates = JSON.parse(JSON.stringify(rows)); item.revision++
+      return rows
+    }
     const pending = () => state.items.filter((item: any) => ['review', 'failed'].includes(item.status))
     api.GetReviewQueue = async () => {
       state.queueReads++
@@ -70,7 +77,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 async function expectCounts(page: Page, total: number, pending = total, failed = 0) {
-  await expect(page.locator('main header')).toContainText(`${total} 条待处置 · 待选 ${pending} · 失败 ${failed}`)
+  await expect(page.locator('main header')).toContainText(`${total} 个待处理问题 · 待选 ${pending} · 失败 ${failed} · 涉及 ${total} 行`)
   const navigation = page.locator('nav').getByRole('button', { name: /复核队列/ })
   await expect(navigation).toHaveText(total ? new RegExp(`复核队列\\s*${total}$`) : '复核队列')
 }
@@ -167,7 +174,8 @@ test('failed discard keeps the item and search draft, shows an error and can be 
   await expectCounts(page, 2)
   await expect(page.getByText('ツバサ（羽翼）', { exact: true })).toBeVisible()
   await expect(page.getByLabel('曲名', { exact: true })).toHaveValue('未提交搜索草稿')
-  expect(await page.evaluate(() => (window as any).__review.queueReads)).toBe(1)
+  // A failed mutation now rechecks the problem scope, without clearing the draft.
+  expect(await page.evaluate(() => (window as any).__review.queueReads)).toBe(2)
   await page.evaluate(() => { (window as any).__review.failure = '' })
   await page.getByRole('button', { name: '移出队列', exact: true }).click()
   await expectSecondItem(page)
@@ -242,7 +250,7 @@ test('background refresh preserves item identity, search draft, provider and exp
   await page.getByLabel('曲名', { exact: true }).fill('尚未提交的曲名')
   await page.getByLabel('艺术家', { exact: true }).fill('尚未提交的艺术家')
   await page.getByLabel('专辑', { exact: true }).fill('尚未提交的专辑')
-  await page.getByRole('combobox').click()
+  await page.getByRole('combobox', { name: '上游', exact: true }).click()
   await page.getByRole('option', { name: 'iTunes', exact: true }).click()
   await page.getByRole('button', { name: '显示全部', exact: true }).click()
   await expect(page.getByText('候选 12', { exact: true })).toBeVisible()
@@ -258,7 +266,7 @@ test('background refresh preserves item identity, search draft, provider and exp
   await expect(page.getByLabel('曲名', { exact: true })).toHaveValue('尚未提交的曲名')
   await expect(page.getByLabel('艺术家', { exact: true })).toHaveValue('尚未提交的艺术家')
   await expect(page.getByLabel('专辑', { exact: true })).toHaveValue('尚未提交的专辑')
-  await expect(page.getByRole('combobox').first()).toContainText('iTunes')
+  await expect(page.getByRole('combobox', { name: '上游', exact: true })).toContainText('iTunes')
   await expect(page.getByText('候选 12', { exact: true })).toBeVisible()
   expect(await page.evaluate(() => (window as any).__calls.filter((name: string) => name === 'ResearchReviewItem'))).toEqual([])
   await page.getByRole('button', { name: /下一条/ }).click()
@@ -292,8 +300,11 @@ for (const finishSearchFirst of [false, true]) {
           resolve(structuredClone(item.candidates))
         }
       })
+      let hold = true
       api.GetReviewQueue = async () => {
         const snapshot = await get()
+        if (!hold) return snapshot
+        hold = false
         return new Promise(resolve => { w.__finishQueue = () => resolve(snapshot) })
       }
     })
@@ -312,7 +323,8 @@ for (const finishSearchFirst of [false, true]) {
       await expect(page.getByRole('button', { name: '搜索中…', exact: true })).toBeDisabled()
       await page.evaluate(() => (window as any).__finishResearch())
     }
-    await expect.poll(() => page.evaluate(() => (window as any).__review.taskReads)).toBe(2)
+    // Initial read, progress event, and successful search each refresh tasks.
+    await expect.poll(() => page.evaluate(() => (window as any).__review.taskReads)).toBe(3)
     await expect(page.getByText('最新手动搜索结果', { exact: true })).toBeVisible()
     await expect(page.getByLabel('曲名', { exact: true })).toHaveValue('正在搜索的草稿')
     await expect(page.getByRole('button', { name: '重新搜索', exact: true })).toBeEnabled()
@@ -374,9 +386,9 @@ test('same-item refresh keeps manual-search history and does not trigger extra s
   await page.getByRole('button', { name: '重新搜索', exact: true }).click()
   await expect(page.getByText('手动搜索条件', { exact: true })).toBeVisible()
   await emitProgress(page)
-  await expect.poll(() => page.evaluate(() => (window as any).__review.taskReads)).toBe(2)
+  await expect.poll(() => page.evaluate(() => (window as any).__review.taskReads)).toBe(3)
   expect(await page.evaluate(() => (window as any).__calls.filter((name: string) => name === 'ResearchReviewItem').length)).toBe(1)
-  await page.getByRole('combobox').click()
+  await page.getByRole('combobox', { name: '上游', exact: true }).click()
   await page.getByRole('option', { name: 'QQ 音乐', exact: true }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__lastResearch?.providerID)).toBe('qq')
   await expect(page.getByLabel('曲名', { exact: true })).toHaveValue('手动搜索条件')

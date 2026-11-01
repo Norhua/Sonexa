@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { App, display, duration, Events, EventsOn, type Models } from '@/api'
 import { candidateActionEnabled, invalidateCandidateOwnership } from '@/lib/candidateActions'
 import { createRefreshQueue } from '@/lib/refreshQueue'
+import { useProblemLease } from '@/lib/useProblemLease'
 import CandidateTable from '@/components/CandidateTable.vue'
 import ReviewReasons from '@/components/ReviewReasons.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -22,6 +23,12 @@ import { useAdmissionStore } from '@/stores/admission'
 
 const settings = useSettingsStore(), tasks = useTasksStore(), library = useLibraryStore()
 const search = useSearchStore(), review = useReviewStore(), admission = useAdmissionStore()
+const interaction = useProblemLease()
+let openingLease: Promise<void> = Promise.resolve()
+let draftTimer: ReturnType<typeof setTimeout> | null = null
+let draftWrite: Promise<void> = Promise.resolve()
+let editingRevision = 0
+let draftSaving = false, searchSequence = 0, acquiringProblem: number | null = null
 const emit = defineEmits<{ jumpLocal: [trackId: number]; goSettings: [] }>()
 const problem = ref<Models.app.ReviewProblemView | null>(null)
 const sourceId = ref<number | null>(null)
@@ -45,31 +52,34 @@ const activeCaps = computed(() => [...new Set([
   ...candidates.value.flatMap(row => providerCaps.value[row.provider] ?? []),
 ])])
 const sourceOptions = computed(() => problem.value?.sources.map(row => ({ id: row.id, label: `${row.batchTag} · 第 ${row.rowIndex + 1} 行 · ${display(row.inTitle)}` })) ?? [])
-const blocked = computed(() => busy.value || researching.value || stale.value)
+const blocked = computed(() => busy.value || researching.value || stale.value || interaction.pending.value || !interaction.scope.value)
 const failedIds = computed(() => problem.value?.sources.filter(row => row.status === 'failed').map(row => row.id) ?? [])
-const scopeKey = (p: Models.app.ReviewProblemView) => JSON.stringify(p.scope)
+const scopeKey = (p: Models.app.ReviewProblemView) => JSON.stringify({ ...p.scope, leaseToken: undefined, operationToken: undefined })
 const memberKey = (p: Models.app.ReviewProblemView) => JSON.stringify(p.scope.members.map(m => m.itemId))
 
 watch(() => settings.providers, providers => {
   if (!providers.some(p => p.id === researchProvider.value)) researchProvider.value = providers[0]?.id ?? ''
 }, { immediate: true })
-watch([research, country], () => { if (!restoring) draftDirty.value = true }, { deep: true, flush: 'sync' })
+watch([research, country], () => { if (!restoring) draftChanged() }, { deep: true, flush: 'sync' })
 watch(researchProvider, () => {
   if (restoring) return
-  draftDirty.value = true
+  draftChanged()
   if (searched.value && !blocked.value && settings.outboundAllowed) void doResearch()
 }, { flush: 'sync' })
 
 function adopt(next: Models.app.ReviewProblemView | null, reset = false) {
   problem.value = next
+  if (next && interaction.scope.value?.problemId === next.id) interaction.update(next.scope)
   stale.value = false
   const row = next?.sources.find(row => row.id === sourceId.value)
     ?? next?.sources.find(row => row.status === 'review' && row.candidates.length)
     ?? next?.sources[0]
   sourceId.value = row?.id ?? null
-  candidates.value = row?.candidates ?? []
+  candidates.value = !reset && localError.value
+    ? invalidateCandidateOwnership(row?.candidates ?? [], '本地身份刷新失败，请重试')
+    : row?.candidates ?? []
   if (!reset) return
-  requestRevision++
+  requestRevision++; searchSequence++
   researching.value = false
   expanded.value = false; sourcesExpanded.value = false
   error.value = ''; localError.value = ''; searched.value = false
@@ -83,10 +93,36 @@ function adopt(next: Models.app.ReviewProblemView | null, reset = false) {
   void updateHint()
 }
 
+async function openInteraction(p: Models.app.ReviewProblemView) {
+  const owner = p.id
+  acquiringProblem = owner
+  await interaction.open(p.scope)
+  if (disposed || problem.value?.id !== owner) return
+  if (interaction.scope.value) {
+    problem.value = { ...problem.value, scope: interaction.scope.value } as Models.app.ReviewProblemView
+    stale.value = review.current?.id === owner && review.current.scope.revision > interaction.scope.value.revision
+  }
+  acquiringProblem = null
+}
 watch(() => review.current, next => {
   if (disposed) return
   const old = problem.value
-  if (old?.id !== next?.id || !old) { adopt(next, true); return }
+  if (old?.id !== next?.id || !old) {
+    editingRevision++
+    if (draftTimer) clearTimeout(draftTimer)
+    draftTimer = null
+    adopt(next, true)
+    openingLease = next ? openInteraction(next) : interaction.close()
+    return
+  }
+  if (interaction.pending.value || acquiringProblem === next?.id) return
+  // Own draft/search writes publish events before their responses. Their
+  // responses, not a queue snapshot, own the interactive revision.
+  if (next!.scope.revision < old.scope.revision) return
+  if (scopeKey(old) !== scopeKey(next!)) {
+    const sameFacts = JSON.stringify(old.scope.members) === JSON.stringify(next!.scope.members) && old.scope.candidateRevision === next!.scope.candidateRevision
+    if (sameFacts && (draftSaving || researching.value)) return
+  }
   if (scopeKey(old) !== scopeKey(next!) && (busy.value || researching.value || searched.value || draftDirty.value)) {
     // Do not silently broaden a displayed search/approval. Reopening retains
     // the draft but explicitly replaces the visible source range.
@@ -127,6 +163,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   disposed = true; requestRevision++
   review.unsubscribeAll(); offLibrary(); localRefresh.dispose()
+  if (draftTimer) clearTimeout(draftTimer)
+  editingRevision++
+  void interaction.close()
 })
 
 async function updateHint() {
@@ -148,7 +187,12 @@ function restoreOriginal() {
 async function reopen() {
   if (busy.value || researching.value) return
   await review.refresh()
-  if (review.current?.id === problem.value?.id) { requestRevision++; adopt(review.current); void refreshLocal() }
+  if (review.current?.id === problem.value?.id) {
+    requestRevision++; adopt(review.current)
+    openingLease = openInteraction(review.current)
+    await openingLease
+    void refreshLocal()
+  }
 }
 async function reloadAfter(scope: Models.app.ReviewProblemView, allowRemoved = false) {
   await Promise.all([review.refresh(), tasks.refresh()])
@@ -159,10 +203,55 @@ async function reloadAfter(scope: Models.app.ReviewProblemView, allowRemoved = f
   if (memberKey(scope) !== memberKey(review.current) && !(allowRemoved && onlyRemoved)) { stale.value = true; return }
   adopt(review.current)
 }
+function draftChanged() {
+  draftDirty.value = true; editingRevision++; requestRevision++
+  if (draftTimer) clearTimeout(draftTimer)
+  draftTimer = setTimeout(() => { draftTimer = null; void saveDraft() }, 200)
+}
+function saveDraft(): Promise<void> {
+  const id = problem.value?.id, edit = editingRevision
+  const query = { version: 1, ...research.value, provider: researchProvider.value, country: country.value } as Models.store.ReviewQuery
+  draftWrite = draftWrite.then(async () => {
+    await openingLease
+    if (!id || disposed || problem.value?.id !== id || edit !== editingRevision || stale.value || !interaction.scope.value) return
+    const before = problem.value
+    draftSaving = true
+    try {
+      let token = interaction.scope.value!
+      if (researching.value) {
+        // BeginProblemQuery reserves its query revision before the long I/O.
+        // Read that current token only to invalidate our own in-flight search;
+        // never adopt changed members or candidate facts as part of an edit.
+        const latest = await App.GetReviewProblemScope(id)
+        if (JSON.stringify(latest.members) !== JSON.stringify(token.members) || latest.candidateRevision !== token.candidateRevision) throw new Error('问题范围或候选已变化，请刷新后重试')
+        token = { ...latest, leaseToken: token.leaseToken } as Models.store.ProblemScope
+      }
+      const scope = await App.UpdateReviewProblemDraft(token, query)
+      if (disposed || problem.value?.id !== id) return
+      if (!interaction.update(scope)) return
+      problem.value = { ...problem.value, scope: interaction.scope.value! } as Models.app.ReviewProblemView
+      // A known own-write revision can clear event invalidation, never a new member.
+      if (!review.current || (memberKey(before) === memberKey(review.current) && review.current.scope.revision <= scope.revision)) stale.value = false
+    } catch (e) { if (!disposed && problem.value?.id === id) { stale.value = true; error.value = String(e) } }
+    finally { draftSaving = false }
+  })
+  return draftWrite
+}
+async function flushDraft() {
+  if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; await saveDraft() }
+  await draftWrite
+}
+function actionProblem(): Models.app.ReviewProblemView | null {
+  const p = problem.value, scope = interaction.scope.value
+  if (!p || !scope || stale.value) return null
+  return { ...p, scope } as Models.app.ReviewProblemView
+}
 async function doResearch() {
-  const p = problem.value
-  if (!p || blocked.value || !settings.outboundAllowed) return
-  const owner = ++requestRevision, localAtStart = localRevision
+  if (blocked.value || !settings.outboundAllowed) return
+  await flushDraft()
+  const p = actionProblem()
+  if (!p || blocked.value) return
+  const owner = ++requestRevision, searchOwner = ++searchSequence, localAtStart = localRevision
   searched.value = true; researching.value = true; error.value = ''
   try {
     const rows = await App.ResearchReviewProblem(p.scope, { version: 1, ...research.value, provider: researchProvider.value, country: country.value } as Models.store.ReviewQuery)
@@ -171,10 +260,12 @@ async function doResearch() {
     await reloadAfter(p)
     if (localAtStart !== localRevision) void refreshLocal()
   } catch (e) { if (!disposed && owner === requestRevision) { error.value = String(e); void review.refresh() } }
-  finally { if (owner === requestRevision) researching.value = false }
+  finally { if (!disposed && searchOwner === searchSequence) researching.value = false }
 }
 async function act(action: (p: Models.app.ReviewProblemView) => Promise<void | boolean>) {
-  const p = problem.value
+  if (blocked.value) return
+  await flushDraft()
+  const p = actionProblem()
   if (!p || blocked.value) return
   busy.value = true; error.value = ''
   try {
@@ -319,6 +410,7 @@ function numberText(row: Models.app.ReviewItem, key: 'year' | 'disc' | 'track' |
         <SecondaryButton size="small" @click="library.goTo('importQueue')">查看日志</SecondaryButton>
       </section>
     </div>
+    <Message v-if="interaction.error.value" severity="warn" size="small">交互保护已失效：{{ interaction.error.value }}。请刷新队列重新打开，草稿保留。</Message>
     <Message v-if="error || review.error || localError" severity="error" size="small" class="shrink-0 rounded-none">{{ error || review.error || localError }}</Message>
   </div>
 </template>

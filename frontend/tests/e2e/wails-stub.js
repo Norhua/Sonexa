@@ -239,6 +239,11 @@
           ],
           total: 2, pending: 2, failed: 0,
         }),
+        AcquireReviewProblemLease: async scope => ({ scope: { ...JSON.parse(JSON.stringify(scope)), leaseToken: `lease-${scope.problemId}` }, lease: { problemId: scope.problemId, token: `lease-${scope.problemId}`, expiresAt: Date.now() + 90000 } }),
+        RenewReviewProblemLease: async lease => ({ ...lease, expiresAt: Date.now() + 90000 }),
+        ReleaseReviewProblemLease: async () => {},
+        UpdateReviewProblemDraft: async scope => JSON.parse(JSON.stringify(scope)),
+        GetReviewProblemScope: async id => (await window.go.app.App.GetReviewProblemQueue()).items.find(p => p.id === id)?.scope,
         PrepareProblemNoMatchNeeded: async (_scope, id) => window.go.app.App.PrepareNoMatchNeeded(id),
         ResearchReviewProblem: async (scope, query) => {
           // Legacy single-row tests override these endpoints. Multi-source
