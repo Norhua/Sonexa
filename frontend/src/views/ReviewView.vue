@@ -150,11 +150,13 @@ async function reopen() {
   await review.refresh()
   if (review.current?.id === problem.value?.id) { requestRevision++; adopt(review.current); void refreshLocal() }
 }
-async function reloadAfter(scope: Models.app.ReviewProblemView) {
+async function reloadAfter(scope: Models.app.ReviewProblemView, allowRemoved = false) {
   await Promise.all([review.refresh(), tasks.refresh()])
   if (disposed || problem.value?.id !== scope.id || review.current?.id !== scope.id) return
   // Own successful query can advance revisions, not membership.
-  if (memberKey(scope) !== memberKey(review.current)) { stale.value = true; return }
+  const previousIds = scope.scope.members.map(member => member.itemId)
+  const onlyRemoved = review.current.scope.members.every(member => previousIds.includes(member.itemId))
+  if (memberKey(scope) !== memberKey(review.current) && !(allowRemoved && onlyRemoved)) { stale.value = true; return }
   adopt(review.current)
 }
 async function doResearch() {
@@ -178,7 +180,7 @@ async function act(action: (p: Models.app.ReviewProblemView) => Promise<void | b
   try {
     if (await action(p) !== false) {
       requestRevision++
-      await reloadAfter(p)
+      await reloadAfter(p, true)
     }
   } catch (e) {
     if (!disposed && problem.value?.id === p.id) { error.value = String(e); void review.refresh(); void refreshLocal() }
@@ -203,7 +205,7 @@ function accept(row: Models.app.CandidateRow) {
 }
 function noMatchNeeded() {
   const id = sourceId.value
-  if (id) void act(async () => (await admission.run(() => App.PrepareNoMatchNeeded(id))) !== null)
+  if (id) void act(async p => (await admission.run(() => App.PrepareProblemNoMatchNeeded(p.scope, id))) !== null)
 }
 function discard() {
   const id = sourceId.value
@@ -282,15 +284,15 @@ function numberText(row: Models.app.ReviewItem, key: 'year' | 'disc' | 'track' |
       </section>
       <section class="space-y-3 border-b p-4">
         <label class="block text-xs">来源行（候选事实及单行操作）
-          <Select v-model="sourceId" :options="sourceOptions" option-label="label" option-value="id" size="small" :disabled="busy || researching" class="mt-1 w-full" />
+          <Select v-model="sourceId" aria-label="来源行（候选事实及单行操作）" :options="sourceOptions" option-label="label" option-value="id" size="small" :disabled="busy || researching" class="mt-1 w-full" />
         </label>
         <ReviewReasons :source="source" />
         <div class="flex flex-wrap items-end gap-2">
           <label class="text-xs">曲名<InputText v-model="research.title" size="small" class="mt-1 block w-48" :disabled="busy" /></label>
           <label class="text-xs">艺术家<InputText v-model="research.artist" size="small" class="mt-1 block w-36" :disabled="busy" /></label>
           <label class="text-xs">专辑<InputText v-model="research.album" size="small" class="mt-1 block w-36" :disabled="busy" /></label>
-          <label class="text-xs">上游<Select v-model="researchProvider" :options="settings.providers" option-label="displayName" option-value="id" size="small" class="mt-1 block" :disabled="busy" /></label>
-          <label v-if="showCountry" class="text-xs">地区<Select v-model="country" :options="countryOptions" option-label="name" option-value="code" size="small" class="mt-1 block" :disabled="busy" /></label>
+          <label class="text-xs">上游<Select v-model="researchProvider" aria-label="上游" :options="settings.providers" option-label="displayName" option-value="id" size="small" class="mt-1 block" :disabled="busy" /></label>
+          <label v-if="showCountry" class="text-xs">地区<Select v-model="country" aria-label="地区" :options="countryOptions" option-label="name" option-value="code" size="small" class="mt-1 block" :disabled="busy" /></label>
           <Button size="small" :disabled="blocked || !settings.outboundAllowed" :title="!settings.outboundAllowed ? settings.outboundReason : ''" @click="doResearch">{{ researching ? '搜索中…' : '重新搜索' }}</Button>
         </div>
         <p v-if="showCountry && hint?.detected" class="text-xs text-muted-color">{{ hint.message }}</p>

@@ -151,6 +151,34 @@ func (s *Store) ReadSingleInputScope(itemID, revision int64) (*domain.InputScope
 	return readSingleInputScopeTx(tx, itemID, revision)
 }
 
+// ReadProblemSingleInputScope captures exactly one selected original row while
+// validating the whole displayed problem and the current lease holder.
+func (s *Store) ReadProblemSingleInputScope(scope ProblemScope, itemID int64) (*domain.InputScope, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err := checkProblemScopeTx(tx, scope); err != nil {
+		return nil, err
+	}
+	if err := s.checkProblemAccessTx(tx, scope.ProblemID, scope.LeaseToken); err != nil {
+		return nil, err
+	}
+	for _, member := range scope.Members {
+		if member.ItemID != itemID {
+			continue
+		}
+		out, err := readSingleInputScopeTx(tx, itemID, member.InputRevision)
+		if err != nil {
+			return nil, err
+		}
+		out.LeaseToken = scope.LeaseToken
+		return out, nil
+	}
+	return nil, ErrPlanStale
+}
+
 // ReadProblemInputScope upgrades an already displayed, complete problem token;
 // it never reads the latest membership in place of a stale supplied token.
 func (s *Store) ReadProblemInputScope(scope ProblemScope) (*domain.InputScope, error) {

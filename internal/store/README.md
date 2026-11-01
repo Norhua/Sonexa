@@ -115,7 +115,9 @@ TaskSummary.ReviewPending 现在为全局独立问题数，并返回完整 Probl
 
 `GetReviewProblemQueue` 返回稳定问题 ID、pending/failed 分类、完整 `ProblemScope`、查询草稿及所有活跃来源行；包含 queued/matching 重试成员。原始整行、文件、行索引、数值/profile、失败信息及候选均保留，不将多个来源的冲突快照拼接为一个候选事实。scope、来源和全局问题统计在同一只读事务读取，队列 revision 来自 task_change_state；本地所有权在事务外重算，修改操作仍须重验范围。
 
-前端 review store 以问题 ID 保持选择、合并事件续读，用请求代次、卸载保护及任务 revision 下限拒绝旧响应。tasks store 订阅 review/tasks/library 变化，区分 Problems 和 SourceRows，不用单批行计数覆盖全局问题数。读取不获取租约、不搜索上游。完整问题界面、动作范围和租约生命周期由 8.2–8.4 接线。
+前端 review store 以问题 ID 保持选择、合并事件续读，用请求代次、卸载保护及任务 revision 下限拒绝旧响应。tasks store 订阅 review/tasks/library 变化，区分 Problems 和 SourceRows，不用单批行计数覆盖全局问题数。读取不获取租约、不搜索上游。
+
+8.2–8.3 问题界面已接线：展开完整来源及原文、各行原因与失败信息，按来源查看候选事实；接受/跳过绑定完整问题范围，移出/拆出/无需匹配固定选定行，重试只列明失败成员。`PrepareProblemNoMatchNeeded` 校验已展示完整 scope 和租约访问权，再准备选定行原始值的 single 计划；草稿不替代原文，缺令牌不能绕过租约。确认弹窗显示输入行和问题修订，成员新增不能扩大旧计划。租约的前端获取/续约/释放生命周期仍由 8.4 接线。
 
 ## 本地匹配召回
 

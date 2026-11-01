@@ -216,6 +216,17 @@ func (a *App) prepareLocalAdmission(input LocalAdmissionInput, scope *domain.Inp
 	}
 	return admissionView(service.PrepareAdmission(a.ctx, domain.AdmissionSeed{Snapshot: snapshot, InputScope: scope}))
 }
+func (a *App) PrepareProblemNoMatchNeeded(scope store.ProblemScope, itemID int64) (*AdmissionPlanView, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	input, err := a.store.ReadProblemSingleInputScope(scope, itemID)
+	if err != nil {
+		return nil, err
+	}
+	return a.prepareOriginalInput(itemID, input)
+}
+
 func (a *App) PrepareNoMatchNeeded(itemID int64) (*AdmissionPlanView, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
@@ -224,6 +235,10 @@ func (a *App) PrepareNoMatchNeeded(itemID int64) (*AdmissionPlanView, error) {
 	if err != nil {
 		return nil, err
 	}
+	return a.prepareOriginalInput(itemID, scope)
+}
+
+func (a *App) prepareOriginalInput(itemID int64, scope *domain.InputScope) (*AdmissionPlanView, error) {
 	item, err := a.store.GetItem(itemID)
 	if err != nil {
 		return nil, err

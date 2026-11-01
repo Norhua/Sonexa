@@ -239,6 +239,7 @@
           ],
           total: 2, pending: 2, failed: 0,
         }),
+        PrepareProblemNoMatchNeeded: async (_scope, id) => window.go.app.App.PrepareNoMatchNeeded(id),
         ResearchReviewProblem: async (scope, query) => {
           // Legacy single-row tests override these endpoints. Multi-source
           // transaction/lease behavior uses the dedicated review-problem fixture.

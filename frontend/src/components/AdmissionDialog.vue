@@ -15,6 +15,11 @@ const release = computed(() => admission.plan?.seed.snapshot.release)
     :header="admission.plan?.baseline.conflict ? '归组证据冲突' : '确认发行成员变化'" :style="{ width: 'min(760px, 94vw)' }">
     <div v-if="admission.plan" class="space-y-4 text-sm">
       <p>{{ admission.plan.baseline.conflict ? '证据命中多个专辑组。请选择合组后的目标组，检查成员变化后再确认；也可取消并修正资料。' : '本次将新增发行、身份映射或合并专辑组。确认前不会改变曲库或复核条目。' }}</p>
+      <section v-if="admission.plan.baseline.inputScope" class="rounded border p-3" data-testid="admission-input-scope">
+        <h3 class="font-medium">本次输入范围：{{ admission.plan.baseline.inputScope.members.length }} 行</h3>
+        <p v-if="admission.plan.baseline.inputScope.problem" class="text-xs text-muted-color">问题 #{{ admission.plan.baseline.inputScope.problem.id }} · 修订 {{ admission.plan.baseline.inputScope.problem.revision }}；来源变化后须重新确认，不会自动扩大范围。</p>
+        <p v-for="member in admission.plan.baseline.inputScope.members" :key="member.itemId">批次 #{{ member.batchId }} · 第 {{ member.rowIndex + 1 }} 行 · 输入 #{{ member.itemId }}</p>
+      </section>
       <div class="rounded border p-3">
         <h3 class="font-medium">{{ admission.plan.seed.moveReleaseId ? '拟迁入发行' : '拟加入发行' }}</h3>
         <p>{{ display(release?.title?.value) }} · {{ display(release?.credit?.value?.text) }}</p>
