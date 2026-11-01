@@ -11,7 +11,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createRefreshQueue } from '@/lib/refreshQueue'
 import { Pause, Play, Upload } from 'lucide-vue-next'
-import { App, type Models } from '@/api'
+import { App, Events, EventsOn, type Models } from '@/api'
 import EmptyState from '@/components/EmptyState.vue'
 import Button from '@/volt/Button.vue'
 import Message from '@/volt/Message.vue'
@@ -43,8 +43,9 @@ const percent = computed(() => {
   return Math.round((b.processed / b.totalRows) * 100)
 })
 
+const offTasks = EventsOn(Events.TasksChanged, () => { void load() })
 onMounted(() => void load())
-onBeforeUnmount(() => refreshQueue.dispose())
+onBeforeUnmount(() => { offTasks(); refreshQueue.dispose() })
 
 // 状态、失败、批次及全局汇总也会变化，不能只监听 processed。
 watch(() => tasks.summary, () => void load())
@@ -148,9 +149,9 @@ function basename(path: string): string {
             <p class="mt-0.5 text-xs text-muted-color">
               {{ statusLabel(current.status) }} ·
               {{ current.processed }}/{{ current.totalRows }}
-              <!-- 缺曲名的行在提交时就跳过了，没进队列——说清楚免得对不上文件行数 -->
+              <!-- 无有效映射内容的行不进入进度分母；缺基本信息仍可复核。 -->
               <template v-if="current.fileRows > current.totalRows">
-                （文件 {{ current.fileRows }} 行，{{ current.fileRows - current.totalRows }} 行缺曲名已跳过）
+                （文件 {{ current.fileRows }} 行，{{ current.fileRows - current.totalRows }} 行无有效映射内容未入队）
               </template>
             </p>
           </div>
@@ -174,33 +175,40 @@ function basename(path: string): string {
 
         <ProgressBar :value="percent" :show-value="false" class="mt-2 h-1.5" />
 
+        <p class="mt-2 text-xs text-muted-color">进度以原始入队行为单位；复核 / 失败表示本轮已处理，不表示全部处置完成。</p>
         <dl class="mt-3 grid grid-cols-4 gap-2 text-xs">
           <div class="rounded border px-2 py-1.5">
-            <dt class="text-muted-color">已入库</dt>
+            <dt class="text-muted-color">新增收藏</dt>
             <dd class="text-base tabular-nums">{{ current.stats.imported }}</dd>
           </div>
           <div class="rounded border px-2 py-1.5">
-            <dt class="text-muted-color">待复核</dt>
+            <dt class="text-muted-color">已存在跳过（行）</dt>
+            <dd class="text-base tabular-nums">{{ current.stats.existingSkipped ?? 0 }}</dd>
+          </div>
+          <div class="rounded border px-2 py-1.5">
+            <dt class="text-muted-color">待复核（行）</dt>
             <dd class="text-base tabular-nums">{{ current.stats.review }}</dd>
           </div>
           <div class="rounded border px-2 py-1.5">
-            <dt class="text-muted-color">排队中</dt>
+            <dt class="text-muted-color">排队中（行）</dt>
             <dd class="text-base tabular-nums">{{ current.stats.queued }}</dd>
           </div>
           <div class="rounded border px-2 py-1.5">
-            <dt class="text-muted-color">失败</dt>
+            <dt class="text-muted-color">失败（行）</dt>
             <dd class="text-base tabular-nums">{{ current.stats.failed }}</dd>
           </div>
         </dl>
 
+        <p class="mt-2 text-xs text-muted-color">匹配中 {{ current.stats.matching ?? 0 }} 行 · 其他跳过 {{ Math.max(0, (current.stats.skipped ?? 0) - (current.stats.existingSkipped ?? 0)) }} 行 · 已移出 {{ current.stats.discarded ?? 0 }} 行 · 未匹配 {{ current.stats.unmatched ?? 0 }} 行（待复核子集）</p>
+        <p class="mt-2 text-xs">本批涉及 {{ current.stats.problems?.reviewProblems ?? 0 }} 个问题，{{ current.stats.problems?.sourceRows ?? 0 }} 行来源；全局 {{ tasks.reviewPending }} 个问题，涉及 {{ tasks.reviewSourceRows }} 行（跨批不重复计数）。</p>
         <SecondaryButton
-          v-if="current.stats.review > 0"
+          v-if="(current.stats.problems?.reviewProblems ?? 0) > 0"
           variant="outlined"
           size="small"
           class="mt-2"
           @click="emit('goReview')"
         >
-          到复核队列处置 {{ current.stats.review }} 条
+          到复核队列 · 本批涉及 {{ current.stats.problems?.reviewProblems }} 个问题
         </SecondaryButton>
 
         <!-- 失败条目逐行列出原始输入，供用户核对 -->
@@ -240,18 +248,22 @@ function basename(path: string): string {
             <tr class="border-b text-left text-muted-color">
               <th class="px-2 py-1">文件</th>
               <th class="w-20 px-2 py-1">状态</th>
-              <th class="w-20 px-2 py-1">已入库</th>
-              <th class="w-20 px-2 py-1">待复核</th>
-              <th class="w-16 px-2 py-1">失败</th>
+              <th class="w-20 px-2 py-1">新增收藏</th>
+              <th class="w-24 px-2 py-1">已存在跳过（行）</th>
+              <th class="w-20 px-2 py-1">待复核（行）</th>
+              <th class="w-20 px-2 py-1">问题数</th>
+              <th class="w-16 px-2 py-1">失败（行）</th>
               <th class="w-36 px-2 py-1">时间</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="b in batches" :key="b.id" class="border-b">
+            <tr v-for="b in batches" :key="b.id" class="border-b" :data-batch-id="b.id">
               <td class="max-w-0 truncate px-2 py-1" :title="b.filename">{{ basename(b.filename) }}</td>
               <td class="px-2 py-1">{{ statusLabel(b.status) }}</td>
               <td class="px-2 py-1 tabular-nums">{{ b.stats.imported }}</td>
+              <td class="px-2 py-1 tabular-nums">{{ b.stats.existingSkipped ?? 0 }}</td>
               <td class="px-2 py-1 tabular-nums">{{ b.stats.review }}</td>
+              <td class="px-2 py-1 tabular-nums">{{ b.stats.problems?.reviewProblems ?? 0 }}</td>
               <td class="px-2 py-1 tabular-nums">{{ b.stats.failed }}</td>
               <td class="px-2 py-1">{{ new Date(b.createdAt).toLocaleString() }}</td>
             </tr>

@@ -196,7 +196,7 @@ function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | '
           <div class="flex items-center gap-2">
             <Upload class="size-4 shrink-0" />
             <span class="flex-1">导入队列</span>
-            <span v-if="tasks.progressLabel" class="text-xs tabular-nums text-muted-color">
+            <span v-if="tasks.progressLabel" class="text-xs tabular-nums text-muted-color" title="已处理原始行数 / 实际入队行数">
               {{ tasks.progressLabel }}
             </span>
           </div>
@@ -211,6 +211,7 @@ function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | '
 
         <button
           :class="itemClass(isActive('review'))"
+          :title="`${tasks.reviewPending} 个待处理问题，涉及 ${tasks.reviewSourceRows} 行；待选 ${tasks.problems.pendingProblems}，失败 ${tasks.problems.failedProblems}`"
           @click="library.goTo('review')"
         >
           <ListChecks class="size-4 shrink-0" />

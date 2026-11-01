@@ -406,8 +406,8 @@ func TestF9_ImportSummaryListsFailures(t *testing.T) {
 	summary := lastLine
 	mu.Unlock()
 
-	// 统计四项
-	for _, want := range []string{"本次导入", "进入复核", "未匹配", "失败 1 条"} {
+	// 行数与独立问题分列；子集不重复计入新增。
+	for _, want := range []string{"本次导入", "新增收藏 0 首", "已存在跳过 0 行", "待复核 2 行", "未匹配 2 行", "失败 1 行", "本批涉及 3 个问题 / 3 行来源"} {
 		if !containsStr(summary, want) {
 			t.Errorf("统计缺少 %q:\n%s", want, summary)
 		}

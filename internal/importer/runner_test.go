@@ -224,7 +224,7 @@ func TestRunnerSendsToReview(t *testing.T) {
 
 	var sawFail bool
 	for _, e := range events {
-		if containsStr(e.Line, "没有高置信匹配") {
+		if containsStr(e.Line, "没有足够证据自动确定目标") {
 			sawFail = true
 		}
 	}
@@ -354,7 +354,7 @@ func TestRunnerEmitsProgress(t *testing.T) {
 	}
 
 	// 完成统计文案
-	if !containsStr(last.Line, "本次导入 3 条") {
+	if !containsStr(last.Line, "新增收藏 3 首") || !containsStr(last.Line, "已存在跳过 0 行") || !containsStr(last.Line, "本批涉及 0 个问题 / 0 行来源") {
 		t.Errorf("完成统计 = %q", last.Line)
 	}
 }
@@ -401,7 +401,7 @@ func TestRunnerFailedItemsListedInSummary(t *testing.T) {
 	events := runToCompletion(t, newRunner(st, searcher), batchID)
 	last := events[len(events)-1]
 
-	if !containsStr(last.Line, "失败 1 条") {
+	if !containsStr(last.Line, "失败 1 行") || !containsStr(last.Line, "本批涉及 1 个问题 / 1 行来源") {
 		t.Errorf("统计应含失败计数: %q", last.Line)
 	}
 	// 逐行列出失败条目的原始输入
@@ -470,7 +470,7 @@ func TestPauseEmitsSummary(t *testing.T) {
 	defer mu.Unlock()
 	var sawSummary bool
 	for _, l := range lines {
-		if containsStr(l, "本次导入") && containsStr(l, "进入复核") {
+		if containsStr(l, "本次导入") && containsStr(l, "待复核") && containsStr(l, "已存在跳过") && containsStr(l, "本批涉及") {
 			sawSummary = true
 		}
 	}

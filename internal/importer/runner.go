@@ -352,7 +352,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 func reviewReasonText(reason store.ReviewReason) string {
 	switch string(reason) {
 	case library.ReasonNoMatch:
-		return "没有高置信匹配"
+		return "没有足够证据自动确定目标"
 	case library.ReasonNewRelease:
 		return "新增发行加入已有组，需确认"
 	case library.ReasonGroupInsufficient:
@@ -372,10 +372,12 @@ func (r *Runner) summaryFor(batchID int64) string {
 	if err != nil {
 		return ""
 	}
-	// 四个数互不重叠，相加即本批总数。「进入复核」与「未匹配」都停在复核队列里，
-	// 靠 import_item.review_reason 分开——此前两者都取 stats.Review，永远相同。
-	line := matching.SummaryLine(stats.Imported, stats.ReviewOnly(),
-		stats.Unmatched, stats.Failed, r.retry.MaxAttempts)
+	// Row statuses are disjoint; unmatched/existing are subsets. Problems have
+	// a different unit and are not summed across batches.
+	line := fmt.Sprintf("本次导入：新增收藏 %d 首，已存在跳过 %d 行，其他跳过 %d 行，待复核 %d 行（未匹配 %d 行），失败 %d 行，已移出 %d 行；本批涉及 %d 个问题 / %d 行来源",
+		stats.Imported, stats.ExistingSkipped, stats.Skipped-stats.ExistingSkipped, stats.Review,
+		stats.Unmatched, stats.Failed, stats.Discarded, stats.Problems.ReviewProblems, stats.Problems.SourceRows)
+	line += fmt.Sprintf("\n（累计 %d 次匹配错误后不再返回队列自动重试，可在复核页手动重试）", r.retry.MaxAttempts)
 
 	failed, err := r.store.FailedItems(batchID)
 	if err != nil || len(failed) == 0 {
