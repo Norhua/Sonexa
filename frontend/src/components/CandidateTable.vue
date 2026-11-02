@@ -122,7 +122,6 @@ function onAct(row: Models.app.CandidateRow) {
               class="px-1.5 py-0.5 text-[10px] font-normal"
             />
           </div>
-          <div v-if="data.note" class="mt-0.5 text-[10px] text-muted-color">{{ data.note }}</div>
         </template>
       </Column>
 

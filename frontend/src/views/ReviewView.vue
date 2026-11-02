@@ -62,6 +62,9 @@ const reviewEvidence = computed(() => {
   try { return JSON.parse(current.value?.reviewEvidence || 'null') as (Models.domain.AdmissionBaseline & { proposed?: Models.app.PlanReleaseView }) | null }
   catch { return null }
 })
+const hasReviewEvidence = computed(() => !!(
+  reviewEvidence.value?.resolution?.groups?.length || reviewEvidence.value?.proposed || reviewEvidence.value?.resolution?.evidence?.length
+))
 
 /** 地区下拉仅在选中需要地区参数的上游时出现。 */
 const showCountry = computed(() => settings.anyNeedsCountry([researchProvider.value]))
@@ -311,11 +314,14 @@ function next() {
     />
 
     <div v-else-if="current" class="min-h-0 flex-1 overflow-auto">
-      <!-- 条目标题、来源批次与逐条浏览 -->
+      <!-- 条目标题、入队原因、原始输入与逐条浏览 -->
       <section class="border-b p-4">
         <div class="flex items-start gap-3">
           <div class="min-w-0 flex-1">
-            <p class="text-base font-medium">{{ display(current.inTitle) }}</p>
+            <div class="flex items-baseline gap-3" data-testid="review-heading">
+              <p class="min-w-0 truncate text-base font-medium" :title="display(current.inTitle)">{{ display(current.inTitle) }}</p>
+              <span v-if="reviewReason" class="min-w-0 truncate text-xs text-muted-color" :title="reviewReason" data-testid="review-reason">{{ reviewReason }}</span>
+            </div>
             <div class="mt-1 space-y-1 text-xs text-muted-color" data-testid="original-inputs">
               <p class="font-medium">原始输入</p>
               <p v-for="(cells, i) in current.originalInputs ?? []" :key="i" class="whitespace-pre-wrap break-words">{{ cells.join('，') }}</p>
@@ -328,8 +334,7 @@ function next() {
           />
         </div>
 
-        <div v-if="reviewReason" class="mt-3 space-y-2 rounded border p-3 text-xs">
-          <p class="font-medium">{{ reviewReason }}</p>
+        <div v-if="hasReviewEvidence" class="mt-3 space-y-2 text-xs" data-testid="review-evidence">
           <div v-for="group in reviewEvidence?.resolution?.groups ?? []" :key="group.id">
             <p>已有专辑组：{{ group.title || '未命名专辑' }} · {{ display(group.credit) }}</p>
             <p v-for="member in group.members" :key="member.id" class="text-muted-color">已有发行：{{ member.title || '未命名发行' }} · {{ member.identity?.provider || '本地' }} · {{ display(member.identity?.ref) }} · 收藏 {{ member.trackIds?.length || 0 }} 首</p>

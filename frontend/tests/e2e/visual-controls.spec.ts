@@ -64,7 +64,7 @@ test('already-owned candidate jumps to library without admitting again', async (
   await page.evaluate(() => {
     ;(window as any).go.app.App.SearchUpstream = async () => ({ byProvider: [{
       capabilities: [], rows: [{ provider: 'musicbrainz', matchRef: 'test', badges: ['本地', 'MB'],
-        title: '已有曲目', action: '已在库中', localTrackId: 1, confidence: 90 }],
+        title: '已有曲目', action: '已在库中', localTrackId: 1, confidence: 90, note: '此信息不应显示在来源列' }],
     }] })
     ;(window as any).go.app.App.AddToLibrary = async () => { throw new Error('must not admit twice') }
   })
@@ -72,6 +72,10 @@ test('already-owned candidate jumps to library without admitting again', async (
   await page.getByRole('combobox').click()
   await page.getByRole('option', { name: 'MusicBrainz', exact: true }).click()
   await page.locator('main').getByRole('button', { name: '搜索', exact: true }).click()
+  const source = page.locator('tbody tr').first().getByRole('cell').first()
+  await expect(source).toHaveText('本地MB')
+  await expect(source.locator('[data-pc-name="tag"]')).toHaveCount(2)
+  await expect(page.getByText('此信息不应显示在来源列', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '查看库中曲目：已有曲目' }).click()
   await expect(page.locator('aside')).toBeVisible()
 })

@@ -145,9 +145,14 @@ test('none matched returning null clears candidates but keeps the item and count
 
 test('skip returning null advances the queue without admitting another track', async ({ page }) => {
   await page.evaluate(() => {
-    Object.assign((window as any).__review.items[0].candidates[0], { localTrackId: 7, action: '跳过', badges: ['本地', 'qq'] })
+    Object.assign((window as any).__review.items[0].candidates[0], {
+      localTrackId: 7, action: '跳过', badges: ['本地', 'qq'], note: '精确绑定的已有收藏',
+    })
   })
   await openReview(page)
+  const source = page.locator('tbody tr').first().getByRole('cell').first()
+  await expect(source).toHaveText('本地qq')
+  await expect(source.locator('[data-pc-name="tag"]')).toHaveCount(2)
   await page.getByRole('button', { name: '跳过', exact: true }).click()
   await expectSecondItem(page)
   const state = await page.evaluate(() => (window as any).__review)
@@ -220,7 +225,7 @@ for (const label of ['接受', '无需匹配']) {
   })
 }
 
-test('review-only version candidates remain visible with a warning and require an explicit action', async ({ page }) => {
+test('review-only candidates show only source badges and still require an explicit action', async ({ page }, testInfo) => {
   await page.evaluate(() => {
     const state = (window as any).__review
     const item = state.items[0]
@@ -237,12 +242,88 @@ test('review-only version candidates remain visible with a warning and require a
   })
   await page.locator('nav').getByRole('button', { name: /复核队列/ }).click()
   await expect(page.getByText('悲しくて lulululu -ハーサカ Ver.-', { exact: true })).toHaveCount(4)
-  await expect(page.getByText('仅供人工确认：版本未注明或使用检索异写旁证', { exact: true })).toHaveCount(4)
+  await expect(page.getByText('仅供人工确认：版本未注明或使用检索异写旁证', { exact: true })).toHaveCount(0)
+  const rows = page.locator('tbody tr')
+  await expect(rows).toHaveCount(4)
+  for (const row of await rows.all()) {
+    const source = row.getByRole('cell').first()
+    await expect(source).toHaveText('musicbrainz')
+    await expect(source.locator('[data-pc-name="tag"]')).toHaveCount(1)
+  }
   await expect(page.getByRole('button', { name: '接受', exact: true })).toHaveCount(4)
+  await page.screenshot({ path: testInfo.outputPath('review-source-badges.png') })
   expect(await page.evaluate(() => (window as any).__review.commits)).toEqual([])
   await page.getByRole('button', { name: '接受', exact: true }).last().click()
   await expectSecondItem(page)
   expect(await page.evaluate(() => (window as any).__review.commits)).toEqual(['admit-11'])
+})
+
+test('review reason stays beside the title in small muted borderless text, including long text and both themes', async ({ page }, testInfo) => {
+  await page.evaluate(() => {
+    const items = (window as any).__review.items
+    items[0].reviewReason = 'no_match'
+    items[0].reviewEvidence = JSON.stringify({ resolution: { groups: [], evidence: [] } })
+    items[1].inTitle = '很长的原始曲名（保留完整信息）'.repeat(12)
+    items[1].reviewReason = '较长的待复核原因，需要人工确认候选信息。'.repeat(10)
+  })
+  await openReview(page)
+  const heading = page.getByTestId('review-heading')
+  const title = heading.locator('p')
+  const reason = page.getByTestId('review-reason')
+  for (const dark of [false, true]) {
+    await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), dark)
+    for (const width of [1440, 960]) {
+      await page.setViewportSize({ width, height: 900 })
+      for (const long of [false, true]) {
+        if (long) await page.getByRole('button', { name: /下一条/ }).click()
+        await expect(reason).toHaveText(long ? '较长的待复核原因，需要人工确认候选信息。'.repeat(10) : '没有高置信匹配')
+        await expect(reason).toHaveAttribute('title', (await reason.textContent())!)
+        await expect(title).toHaveAttribute('title', (await title.textContent())!)
+        await expect(reason).toHaveCSS('font-size', '12px')
+        await expect(title).toHaveCSS('font-size', '16px')
+        const muted = await page.getByTestId('original-inputs').evaluate(el => getComputedStyle(el).color)
+        await expect(reason).toHaveCSS('color', muted)
+        const titleBox = (await title.boundingBox())!, reasonBox = (await reason.boundingBox())!
+        expect(reasonBox.x).toBeGreaterThan(titleBox.x + titleBox.width)
+        expect(reasonBox.y).toBeGreaterThanOrEqual(titleBox.y)
+        expect(reasonBox.y + reasonBox.height).toBeLessThanOrEqual(titleBox.y + titleBox.height)
+        expect(reasonBox.width).toBeGreaterThan(0)
+        const status = (await page.getByText('待选', { exact: true }).boundingBox())!
+        expect(reasonBox.x + reasonBox.width).toBeLessThan(status.x)
+        expect(await reason.evaluate(el => {
+          for (let node: Element | null = el; node && node.tagName !== 'SECTION'; node = node.parentElement) {
+            const style = getComputedStyle(node)
+            if ([style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth].some(width => width !== '0px')) return false
+          }
+          return true
+        })).toBe(true)
+        await expect(page.getByTestId('review-evidence')).toHaveCount(0)
+        if (long) {
+          expect(await title.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
+          expect(await reason.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
+        }
+        await page.screenshot({ path: testInfo.outputPath(`review-heading-${dark ? 'dark' : 'light'}-${width}-${long ? 'long' : 'short'}.png`) })
+        if (long) await page.getByRole('button', { name: /上一条/ }).click()
+      }
+    }
+  }
+})
+
+test('missing reason or invalid evidence leaves no empty reason or evidence box', async ({ page }) => {
+  await page.evaluate(() => {
+    const items = (window as any).__review.items
+    items[0].reviewEvidence = '{invalid json'
+    items[1].reviewReason = 'ambiguous'
+    items[1].reviewEvidence = '{}'
+  })
+  await openReview(page)
+  await expect(page.getByTestId('review-reason')).toHaveCount(0)
+  await expect(page.getByTestId('review-evidence')).toHaveCount(0)
+  await page.getByRole('button', { name: /下一条/ }).click()
+  await expect(page.getByTestId('review-reason')).toHaveText('候选存在歧义')
+  await expect(page.getByTestId('review-evidence')).toHaveCount(0)
+  await page.getByRole('button', { name: /上一条/ }).click()
+  await expect(page.getByTestId('review-reason')).toHaveCount(0)
 })
 
 test('original inputs replace file location and retain distinct aliases', async ({ page }) => {
