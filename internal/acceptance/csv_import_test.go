@@ -9,7 +9,9 @@ import (
 	"github.com/norhua/sonexa/internal/provider"
 )
 
-// 这一组用例锁定一次真实的导入：用户那份 10 行的导出表格。
+// 这一组用例锁定历史 10 行输入的检索与 Engine 候选分类，不验证最终入库。
+// 真正的多发行选版/准入在 library，完整重放见 app/release_selection_test.go。
+// 即使这里分类为 review_many_releases，library 仍可能按既定规则选版入库。
 //
 // 候选不是编的——它们是拿真实的 MusicBrainz 跑一遍**原样**抄回来的
 // （track MBID / 曲名 / 署名 / 歌集 / recording MBID / release group MBID /
@@ -136,8 +138,8 @@ func csvRows() []csvRow {
 			},
 			wantOutcome: matching.OutcomeReviewManyReleases,
 			wantScored:  13, // 原版 11 张保留自动资格，off vocal 两条仅供人工确认
-			why: "用户报告的那条：同一条录音挂在 11 张同名 CD 发行上，过滤实体载体后仍剩 11 条，" +
-				"没有任何客观依据能分出高下——不能替用户挑一个",
+			why: "同一录音的 11 个发行由 Engine 保留为多候选分类；本夹具缺少 release 身份和总数，" +
+				"不代表 library 的实际准入结果。真实 11 发行的完整选版见 TestSekaijuuNoAmeReleaseSelection",
 		},
 		{
 			title: "That Girl (DJLIU Remix)", artist: "Liu",
@@ -249,17 +251,16 @@ func (s *csvSearcher) SearchTracks(_ context.Context, q provider.Query) ([]provi
 	return nil, nil
 }
 
-// TestCSVImportEndToEnd 覆盖用户报告的那次导入：10 行输入各自该落到哪里。
+// TestCSVCandidateClassification 验证候选过滤和旧 Engine.Decision 分类。
+// 不执行 library.SelectCandidate、写入数据库或计算真实导入统计。
 //
-// 分流规则没有例外，这组用例把每一条规则各钉住至少一行：
+//	唯一自动候选       綿雪の夢 / 夕立 / Tetra. / By the Seaside / 3253212
+//	同组多发行分类     世界中の雨（11 个原版自动候选，最终需 library 选版）
+//	跨发行组分类       you
+//	无结果            That Girl / Sacred Play / ツバサ
 //
-//	规则 2  唯一自动候选        綿雪の夢 / 夕立 / Tetra. / By the Seaside / 3253212
-//	规则 3  同组多份发行        世界中の雨（11 张同名 CD，过滤后仍剩多条 → 复核）
-//	规则 4  自动集合跨发行组    you
-//	规则 5  无结果 / 全低置信    That Girl / Sacred Play / ツバサ
-//
-// 期望：5 条直接入库，2 条进入复核，3 条未匹配。
-func TestCSVImportEndToEnd(t *testing.T) {
+// 分类计数 5 / 2 / 3 不是最终入库、复核、未匹配统计。
+func TestCSVCandidateClassification(t *testing.T) {
 	engine := matching.NewEngine(config.Defaults().Matching)
 	rows := csvRows()
 	searcher := &csvSearcher{rows: rows}

@@ -1,7 +1,7 @@
 # 代码与主规格差异（共享文档）
 
 本文件汇总尚未合并进 `openspec/specs/` 的实现变化；后续会话共同维护，不按轮次拆分。
-本轮来源：`1-why.md`、`1-tasks.md`、`2-why.md`、`2-tasks.md`、`3-why.md`、`3-tasks.md`。**主规格尚未修改，不代表已经 archive。**
+本轮来源：`1-why.md`、`1-tasks.md`、`2-why.md`、`2-tasks.md`、`3-why.md`、`3-tasks.md`、`4-why.md`、`4-tasks.md`。**主规格尚未修改，不代表已经 archive。**
 
 ## SD-1：输入、活动条目与最终收藏分开，跨批次去重
 
@@ -115,6 +115,14 @@
 场景：截图原始输入在真实 MB 首次锚定请求返回 8 条人工候选，其中 4 条为目标演唱录音、4 条为同署名伴奏；目标 CD 第 2 轨确实可见，自动候选为 0。测试同时覆盖 4 个发行中的罗马字 track 标题、其他版本保护及所有应用入口。
 
 既有队列只保存先前过滤后的快照，修复不自动出网重做它们；旧空结果需用户在新版点击重新搜索，新导入直接走新规则。没有数据库结构变更。
+
+## 轮次 4 核对证据：同组多发行并列的真实选版（无新增行为差异）
+
+- 本轮仅补测试、真实响应和说明，不修改生产选版/去重逻辑。主 `matching/pipeline` 已明确允许总数/非世界国家并列后按稳定身份顺序决定，此项不应在同步时误写为“多条同组发行必须人工”。
+- `internal/app/release_selection_test.go` 重放真实「世界中の雨」搜索：11 个原版发行均 release 总曲数 4、CD、JP、同 recording/group，伴奏候选仅供人工；实际 provider → Engine → library → SubmitImport/Runner → 准入事务在空库选择 `07088ba6-2c40-356a-8d0c-ef72d8a21d93` 的 `5e5f141f-cdaa-3346-9f9a-43b572006e9b`。
+- 该选择的决定性步骤是 `provider + release_ref + match_ref` 字典序，并非总曲数或国家优胜。最小 track MBID 另属 `70e8ff92-...`，不能将排序误解为只按 track ID。每种输入 22 组旋转/反转不改变结果；预置非最小发行、改总数/国家等明确反事实可改变结果，显示各层优先级。
+- 旧 `csv_import_test.go` 只做 Engine 候选分类而不执行 library，现更名为 `TestCSVCandidateClassification` 并纠正必进复核/端到端的误导性说明；保留原分类断言，不将其等同于最终导入结果。matching 对应单测说明也同步纠正。
+- 来源、完整 11 发行身份表、SHA-256 和详细结论见 `testdata/golden/responses/musicbrainz/sekaijuu_no_ame_selection.md`；复现命令和测试结果见 `4-tasks.md`。本轮真实来源取数两次（一次搜索、一次所选发行详情），后续所有回归离线。
 
 ## 验证与待确认边界
 

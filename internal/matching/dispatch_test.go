@@ -50,13 +50,9 @@ func TestDecideSameGroupSolePhysical(t *testing.T) {
 	}
 }
 
-// TestDecideSameGroupManyPhysicalGoesToReview 覆盖规则 3 的收尾：
-// 同一发行组内过滤实体载体后仍剩多条时不自动裁决。
-//
-// 这是用户报告的那条 `世界中の雨`：MusicBrainz 里同一条录音挂在 11 张
-// 同名 CD 发行上，载体、国家、发行日、发行状态全同。优选阶梯只能靠 MBID
-// 字典序收尾，那是「随便挑一个」——必须交人工。
-func TestDecideSameGroupManyPhysicalGoesToReview(t *testing.T) {
+// Engine 不替 library 执行多发行选版；这个分类不等于最终必须复核。
+// 世界中の雨 的真实 11 发行选版/入库见 app.TestSekaijuuNoAmeReleaseSelection。
+func TestDecideRetainsMultipleReleaseClassification(t *testing.T) {
 	cfg := DefaultLadderConfig()
 	rg := sptr("rg-4")
 	var scored []ScoredCandidate
@@ -69,7 +65,7 @@ func TestDecideSameGroupManyPhysicalGoesToReview(t *testing.T) {
 		t.Errorf("分流 = %q, 期望 review_many_releases", got.Outcome)
 	}
 	if got.Selected != nil {
-		t.Errorf("无客观依据时不应自动选择, 却选中了 %+v", got.Selected)
+		t.Errorf("Engine 不应代替 library 选择, 却选中了 %+v", got.Selected)
 	}
 	if len(got.HighConfidence) != 3 {
 		t.Errorf("应把三条高置信都带给复核队列, 得到 %d 条", len(got.HighConfidence))
