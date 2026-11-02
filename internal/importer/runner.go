@@ -234,17 +234,16 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		Artist:     deref(item.InArtist),
 		Album:      deref(item.InAlbum),
 		DurationMS: item.InDurationMS,
+		DiscNo:     item.InDiscNo, TrackNo: item.InTrackNo,
 	}
 
-	// [1] 本地去重检查：疑似重复进复核，库中曲目作为一条候选
-	if dupID, err := r.engine.CheckLocalDuplicate(r.store, in); err == nil && dupID != 0 {
-		existing := r.describeTrack(dupID)
-		candidates := r.localCandidateSnapshot(dupID)
-		r.store.MarkReview(item.ID, store.ReviewDuplicate, candidates, "[]")
-		return matching.DuplicateLogLine(in, existing)
+	// 记录实际执行的来源，不从用户当前选择或文件信息推断。
+	if source, ok := r.searcher.(interface{ ID() provider.ProviderID }); ok {
+		if err := r.store.SetImportSearchSource(item.ID, string(source.ID())); err != nil {
+			return matching.ErrorLogLine(err)
+		}
 	}
-
-	// [2][3] 上游查询与评分
+	// 上游查询与评分；文本疑似和 ISRC 不再提前变成本地候选。
 	res, err := r.engine.Run(ctx, r.searcher, r.store, in)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -261,6 +260,19 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 
 	variantsJSON, _ := json.Marshal(res.TriedVariants)
 
+	// Track resolution is independent from release-group admission: a unique
+	// candidate may still need review for missing grouping facts.
+	var resolved *provider.Candidate
+	if eligible := matching.AutomaticCandidates(res.Scored); len(eligible) == 1 {
+		resolved = &eligible[0].Candidate
+	}
+	if handled, err := r.store.ResolveImport(item.ID, res.Scored, resolved); err != nil {
+		r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
+		return matching.ErrorLogLine(err)
+	} else if handled {
+		return fmt.Sprintf("[跳过/合并重复输入] %s · %s", in.Title, in.Artist)
+	}
+
 	// [4] 同一用例执行按需摘要、自动选版和准入；成员变更始终进入复核。
 	selection, err := r.library.SelectCandidate(ctx, res.Scored, item.ID)
 	if err != nil {
@@ -271,9 +283,24 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts)
 		return matching.ErrorLogLine(err)
 	}
+	if selection.Candidate != nil {
+		if handled, err := r.store.ResolveImport(item.ID, res.Scored, selection.Candidate); err != nil {
+			r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
+			return matching.ErrorLogLine(err)
+		} else if handled {
+			return fmt.Sprintf("[跳过/合并重复输入] %s · %s", in.Title, in.Artist)
+		}
+		// 精确绑定已在库但输入不能证明一致，交给人工，不以已有身份绕过复核。
+		if selection.Plan != nil && selection.Plan.Baseline.ExistingTrackID != 0 {
+			selection.Reason = library.ReasonAmbiguous
+		}
+	}
 	if selection.Candidate != nil && selection.Reason == "" {
 		result, err := r.library.CommitAdmission(ctx, selection.Plan.ID, selection.Plan.Hash, domain.AdmissionApproval{})
 		if err == nil {
+			if result.Existing {
+				return fmt.Sprintf("[跳过已入库] %s · %s", in.Title, in.Artist)
+			}
 			if r.onLibraryChanged != nil {
 				r.onLibraryChanged()
 			}
@@ -282,7 +309,13 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 			}
 			return matching.LogLine(matching.OutcomeImportUnique, in, findScored(res.Scored, selection.Candidate.MatchRef))
 		}
-		if errors.Is(err, store.ErrPlanStale) || errors.Is(err, store.ErrConfirmationRequired) {
+		if errors.Is(err, store.ErrPlanStale) {
+			// 新输入被吸收或库状态变化后重新决策，不伪报成新增发行复核。
+			if retryErr := r.store.RetryItem(item.ID); retryErr != nil {
+				return matching.ErrorLogLine(retryErr)
+			}
+			return "[重新核验] " + in.Title
+		} else if errors.Is(err, store.ErrConfirmationRequired) {
 			selection.Reason = library.ReasonNewRelease
 		} else {
 			r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
@@ -331,10 +364,11 @@ func (r *Runner) summaryFor(batchID int64) string {
 	if err != nil {
 		return ""
 	}
-	// 四个数互不重叠，相加即本批总数。「进入复核」与「未匹配」都停在复核队列里，
+	// 原四类互斥；去重新增 skipped/merged，和移出计数一起覆盖全部终态。
 	// 靠 import_item.review_reason 分开——此前两者都取 stats.Review，永远相同。
 	line := matching.SummaryLine(stats.Imported, stats.ReviewOnly(),
 		stats.Unmatched, stats.Failed, r.retry.MaxAttempts)
+	line += fmt.Sprintf("\n已跳过 %d 条，已合并输入 %d 条，已移出 %d 条", stats.Skipped, stats.Merged, stats.Discarded)
 
 	failed, err := r.store.FailedItems(batchID)
 	if err != nil || len(failed) == 0 {
@@ -366,35 +400,6 @@ func (r *Runner) emitProgress(batchID int64, line string, done, paused bool) {
 	})
 }
 
-// describeTrack 返回库中曲目的可读描述，供疑似重复提示使用。
-func (r *Runner) describeTrack(trackID int64) string {
-	t, err := r.store.GetTrack(trackID)
-	if err != nil || t == nil {
-		return fmt.Sprintf("曲目 #%d", trackID)
-	}
-	return fmt.Sprintf("%s · %s · %s", t.Title, orDash(t.Credit), orDash(t.Album))
-}
-
-// localCandidateSnapshot 把库中曲目作为一条候选写入快照，
-// 使它出现在复核队列的同一个候选列表里。
-func (r *Runner) localCandidateSnapshot(trackID int64) string {
-	t, err := r.store.GetTrack(trackID)
-	if err != nil || t == nil {
-		return "[]"
-	}
-	snapshot := []map[string]any{{
-		"local":   true,
-		"trackId": trackID,
-		"title":   t.Title,
-		"artist":  t.Credit,
-		"album":   t.Album,
-		"action":  "合并",
-		"badges":  []string{"本地?"},
-	}}
-	data, _ := json.Marshal(snapshot)
-	return string(data)
-}
-
 func findScored(scored []matching.ScoredCandidate, ref string) *matching.ScoredCandidate {
 	for i := range scored {
 		if scored[i].Candidate.MatchRef == ref {
@@ -419,13 +424,4 @@ func orDash(s *string) string {
 		return "—"
 	}
 	return *s
-}
-
-// asAlreadyExists 是 errors.As 的小包装，避免在热路径引入额外导入。
-func asAlreadyExists(err error, target **store.ErrAlreadyExists) bool {
-	if e, ok := err.(*store.ErrAlreadyExists); ok {
-		*target = e
-		return true
-	}
-	return false
 }

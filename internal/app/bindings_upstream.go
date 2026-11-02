@@ -249,7 +249,7 @@ func (a *App) matchUpstream(ctx context.Context, p provider.MetadataProvider, in
 
 // rowsFrom 把评分后的候选转为表格行，并预查本地决定动作按钮。
 //
-// 已存在则显示为禁用的「已在库中」（或复核队列里的「合并」）且点击可跳转；
+// 已存在则显示为禁用的「已在库中」（或复核队列里的「跳过」）且点击可跳转；
 // 不存在则显示 defaultAction。
 func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction string) []CandidateRow {
 	rows := make([]CandidateRow, 0, len(scored))

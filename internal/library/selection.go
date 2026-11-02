@@ -143,8 +143,8 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 	prepared := []selectionCandidate{}
 	summaries := map[domain.Identity]domain.ReleaseSummary{}
 	seen := map[string]bool{}
-	for _, sc := range scored {
-		if !sc.Score.HighConf || seen[candidateKey(sc.Candidate)] {
+	for _, sc := range matching.AutomaticCandidates(scored) {
+		if seen[candidateKey(sc.Candidate)] {
 			continue
 		}
 		seen[candidateKey(sc.Candidate)] = true
@@ -247,7 +247,12 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 	if selection.Candidate == nil {
 		return selection, nil
 	}
-	plan, err := s.PrepareCandidate(ctx, *selection.Candidate, itemID)
+	selectedSeed, err := s.CandidateSeed(*selection.Candidate, itemID)
+	if err != nil {
+		return Selection{}, err
+	}
+	selectedSeed.AutomaticImport = itemID != 0
+	plan, err := s.PrepareAdmission(ctx, selectedSeed)
 	if err != nil {
 		return Selection{}, err
 	}

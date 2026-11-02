@@ -171,9 +171,10 @@ func csvRows() []csvRow {
 				mbCand("2b85b4ca-340b-408c-accd-a2dac46a425b", "3253212", "reche", "reche GaLLERy#101 on live 20230407 in Zepp DiverCity TOKYO",
 					"9d2cc5b8-89f2-4c28-a9d3-c2182052893e", "5758dc80-fd8b-4e15-b1ab-7202a21137a1", "Official", "Blu-ray", "JP"),
 			},
-			wantOutcome: matching.OutcomeReviewCrossGroup,
-			wantScored:  3, // 署名都是 reche，三条都有旁证
-			why:         "同名单曲与 live 蓝光跨发行组。只有单曲那条歌集精确，但那也不足以替用户裁决",
+			wantOutcome: matching.OutcomeImportUnique,
+			wantTitle:   "3253212",
+			wantScored:  3, // 人工候选仍包含现场版，自动决策只取三字段精确子集
+			why:         "曲名、艺术家、专辑均精确的单曲优先，艺术家相同的其他专辑不制造跨组歧义",
 		},
 		{
 			title: "Sacred Play SecretPlace_雨夜", artist: "Wiz-H",
@@ -252,12 +253,12 @@ func (s *csvSearcher) SearchTracks(_ context.Context, q provider.Query) ([]provi
 //
 // 分流规则没有例外，这组用例把每一条规则各钉住至少一行：
 //
-//	规则 2  唯一高置信          綿雪の夢 / 夕立 / Tetra. / By the Seaside
+//	规则 2  唯一自动候选        綿雪の夢 / 夕立 / Tetra. / By the Seaside / 3253212
 //	规则 3  同组多份发行        世界中の雨（11 张同名 CD，过滤后仍剩多条 → 复核）
-//	规则 4  跨发行组            you / 3253212
+//	规则 4  自动集合跨发行组    you
 //	规则 5  无结果 / 全低置信    That Girl / Sacred Play / ツバサ
 //
-// 期望：4 条直接入库，3 条进入复核，3 条未匹配。
+// 期望：5 条直接入库，2 条进入复核，3 条未匹配。
 func TestCSVImportEndToEnd(t *testing.T) {
 	engine := matching.NewEngine(config.Defaults().Matching)
 	rows := csvRows()
@@ -306,8 +307,8 @@ func TestCSVImportEndToEnd(t *testing.T) {
 		}
 	}
 
-	if imported != 4 || review != 3 || unmatched != 3 {
-		t.Errorf("入库 %d / 进入复核 %d / 未匹配 %d, 期望 4 / 3 / 3", imported, review, unmatched)
+	if imported != 5 || review != 2 || unmatched != 3 {
+		t.Errorf("入库 %d / 进入复核 %d / 未匹配 %d, 期望 5 / 2 / 3", imported, review, unmatched)
 	}
 }
 

@@ -40,12 +40,7 @@ type Decision struct {
 // Decide 仅保留置信度分类供旧读取 DTO 使用；最终选版及准入由 library 执行。
 // 载体和国家偏好只用于展示代表，不在这里选择入库版本。
 func (cfg LadderConfig) Decide(scored []ScoredCandidate) Decision {
-	var high []ScoredCandidate
-	for _, s := range scored {
-		if s.Score.HighConf {
-			high = append(high, s)
-		}
-	}
+	high := AutomaticCandidates(scored)
 	highCands := make([]provider.Candidate, len(high))
 	for i, s := range high {
 		highCands[i] = s.Candidate

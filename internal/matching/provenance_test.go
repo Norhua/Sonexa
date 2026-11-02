@@ -45,8 +45,8 @@ func TestResolveLocalFourSteps(t *testing.T) {
 		if f.isrcCalled || f.textCalled {
 			t.Error("标识命中后不应继续 ISRC 或文本比对")
 		}
-		if got.Action() != "合并" {
-			t.Errorf("动作 = %q, 期望 合并", got.Action())
+		if got.Action() != "跳过" {
+			t.Errorf("动作 = %q, 期望 跳过", got.Action())
 		}
 	})
 
@@ -59,10 +59,10 @@ func TestResolveLocalFourSteps(t *testing.T) {
 			Provider: provider.ITunes, MatchRef: "jp:1",
 			ISRC: sptr("JPPL00600123"),
 		})
-		if got.Kind != LocalByISRC || got.TrackID != 7 {
-			t.Errorf("结果 = %+v, 期望 by_isrc/7", got)
+		if got.Kind != LocalNone || got.TrackID != 0 || f.isrcCalled {
+			t.Errorf("ISRC 不应证明 track 已存在: %+v", got)
 		}
-		if got.Note() != "经 ISRC 匹配" {
+		if got.Note() != "" {
 			t.Errorf("标注 = %q", got.Note())
 		}
 	})
@@ -73,13 +73,11 @@ func TestResolveLocalFourSteps(t *testing.T) {
 			Provider: provider.MusicBrainz, MatchRef: "trk-x",
 			Title: sptr("God knows"), ArtistName: sptr("平野綾"),
 		})
-		if got.Kind != LocalSuspected || got.TrackID != 9 {
-			t.Errorf("结果 = %+v, 期望 suspected/9", got)
+		if got.Kind != LocalNone || got.TrackID != 0 || f.textCalled {
+			t.Errorf("文本不应冒充精确绑定: %+v", got)
 		}
-		// 疑似必须带问号徽章，需用户确认
-		badges := got.Badges(provider.MusicBrainz)
-		if badges[0] != "本地?" {
-			t.Errorf("徽章 = %v, 疑似应带问号", badges)
+		if badges := got.Badges(provider.MusicBrainz); len(badges) != 1 {
+			t.Errorf("徽章 = %v", badges)
 		}
 	})
 

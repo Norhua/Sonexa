@@ -239,7 +239,7 @@ func (w Weights) ScoreCandidate(q provider.Query, c provider.Candidate) Score {
 	}
 
 	// 歌集
-	s.AlbumMatch = w.CompareText(q.Album, deref(c.AlbumTitle))
+	s.AlbumMatch = w.CompareAlbum(q.Album, deref(c.AlbumTitle))
 	switch s.AlbumMatch {
 	case MatchExact:
 		s.Total += w.AlbumExact

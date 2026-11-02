@@ -22,6 +22,8 @@ type Input struct {
 	Artist     string
 	Album      string
 	DurationMS *int
+	DiscNo     *int
+	TrackNo    *int
 	// Country 供需要地区参数的上游（iTunes）使用；MusicBrainz 忽略。
 	Country string
 }
@@ -33,8 +35,6 @@ type Result struct {
 	Scored []ScoredCandidate
 	// TriedVariants 是已尝试的查询变体，供复核队列显示。
 	TriedVariants []string
-	// LocalDuplicate 非零时表示本地去重检查判定为疑似重复。
-	LocalDuplicate int64
 }
 
 // SearchLimit 是每级阶梯向上游要的候选条数上限。
@@ -60,10 +60,9 @@ func NewEngine(m config.MatchingSettings) *Engine {
 
 // Run 对一条输入执行完整的匹配流程。
 //
-//	[1] 本地去重检查 —— 疑似重复直接进复核，库中曲目作为一条候选
-//	[2] 上游查询 —— 按变体策略执行（默认渐进式）
-//	[3] 置信度评分
-//	[4] 分流
+//	[1] 上游查询 —— 按变体策略执行（默认渐进式）
+//	[2] 置信度评分
+//	[3] 自动候选证据分类（最终选版、去重与准入由 importer/library 执行）
 //
 // 同一个上游只有这一条检索路径：导入匹配、搜索页、复核队列的「改搜」、
 // 编辑页的「重新匹配」全部经由它。变体阶梯、剥离规则、两道闸门与评分
@@ -155,22 +154,6 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 	return res, nil
 }
 
-// CheckLocalDuplicate 执行本地去重前置检查。
-//
-// 判定为疑似重复时该条目进复核队列，且库中那首曲目作为一条候选
-// 出现在同一列表里——不新建曲目。
-func (e *Engine) CheckLocalDuplicate(lookup LocalLookup, in Input) (int64, error) {
-	if lookup == nil {
-		return 0, nil
-	}
-	normTitle := Normalize(in.Title)
-	normArtist := Normalize(in.Artist)
-	if normTitle == "" || normArtist == "" {
-		return 0, nil
-	}
-	return lookup.FindUnmatchedByText(normTitle, normArtist, in.DurationMS)
-}
-
 // sortedPool 把候选池按分值降序排列；同分时以标识字典序保证稳定。
 func sortedPool(pool map[string]ScoredCandidate) []ScoredCandidate {
 	out := make([]ScoredCandidate, 0, len(pool))
@@ -236,7 +219,7 @@ func ExhaustedLogLine(in Input, attempts int, err error) string {
 
 // SummaryLine 返回完成或暂停时的统计文案。
 //
-// 四个数互不重叠，相加即本批总数——只有这样用户才对得上账：
+// 四个数互不重叠；调用方另附 skipped/merged/discarded 计数以覆盖全部终态。
 //
 //	导入      规则 2、3 直接入库
 //	进入复核  规则 1 疑似重复 + 规则 4 跨发行组 + 规则 3 同组多义

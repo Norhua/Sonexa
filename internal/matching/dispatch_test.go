@@ -162,12 +162,8 @@ func TestLadderFromSettings(t *testing.T) {
 	}
 }
 
-// TestCrossGroupNeverAutoSelects 守住规则 4 没有例外。
-//
-// 曾经为跨发行组开过两个就地裁决的口子：全部候选同属一条 recording、
-// 恰好一条候选的歌集精确匹配。它们把 `you`、`3253212` 两行从复核提到了入库，
-// 代价是规则不再可预期——用户读到「多条高置信 → 复核」，实现却替他做了决定。
-// 两个口子都已撤销，这条用例是它们不会被重新打开的守卫。
+// TestCrossGroupNeverAutoSelects protects candidates without complete three-axis
+// evidence: a shared recording or an album match alone is not sufficient.
 func TestCrossGroupNeverAutoSelects(t *testing.T) {
 	cfg := DefaultLadderConfig()
 	rec := "2283ceda-0000-0000-0000-000000000000"

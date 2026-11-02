@@ -273,10 +273,19 @@ CREATE TABLE import_item (
   tried_variants TEXT,
   track_id       INTEGER,
   merged_into    INTEGER,
+  merged_item_id INTEGER REFERENCES import_item(id),
+  resolved_source TEXT,
+  resolved_ref   TEXT,
+  search_revision INTEGER NOT NULL DEFAULT 0,
+  search_provider TEXT NOT NULL DEFAULT '',
+  search_country TEXT NOT NULL DEFAULT '',
+  search_manual INTEGER NOT NULL DEFAULT 0,
   updated_at     DATETIME NOT NULL
 );
 CREATE INDEX idx_import_item_queue ON import_item(status, next_retry_at);
 CREATE INDEX idx_import_item_batch ON import_item(batch_id, row_index);
+CREATE INDEX idx_import_item_merged ON import_item(merged_item_id);
+CREATE INDEX idx_import_item_resolved ON import_item(resolved_source, resolved_ref);
 
 -- ========== 上游响应缓存：先落盘后解析 ==========
 CREATE TABLE provider_cache (

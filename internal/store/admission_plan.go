@@ -96,6 +96,15 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		}
 		// 精确歌曲已经被另一入口写入，仍原子结束当前导入条目，且不再改变任何成员。
 		if baseline.ExistingTrackID != 0 {
+			if plan.Seed.AutomaticImport {
+				consistent, err := importMatchesTrackTx(tx, plan.Seed.ImportItemID, baseline.ExistingTrackID)
+				if err != nil {
+					return err
+				}
+				if !consistent {
+					return ErrPlanStale
+				}
+			}
 			var releaseID, groupID *int64
 			if err := tx.QueryRow("SELECT t.release_id,r.release_group_id FROM track t LEFT JOIN release r ON r.id=t.release_id WHERE t.id=?", baseline.ExistingTrackID).Scan(&releaseID, &groupID); err != nil {
 				return err
@@ -160,6 +169,9 @@ func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result domain.Admi
 		status := plan.Seed.ItemStatus
 		if status == "" {
 			status = "imported"
+		}
+		if plan.Seed.AutomaticImport && result.Existing {
+			status = "skipped"
 		}
 		if status != "imported" && status != "skipped" {
 			return fmt.Errorf("无效导入终态")

@@ -100,7 +100,7 @@ test('unchanged processed counts still update completion, pause, failures and ba
     await expect(page.getByText(`${{ done: '已完成', paused: '已暂停', running: '进行中' }[status]} · 10/10`, { exact: true })).toBeVisible()
     await expect(page.locator('nav').getByRole('button', { name: /复核队列/ })).toHaveText(/复核队列\s*8$/)
   }
-  await expect(page.getByText('second.csv', { exact: true })).toBeVisible()
+  await expect(page.getByText('导入批次 #2', { exact: true })).toBeVisible()
   await expect(page.getByText('失败歌曲', { exact: true })).toHaveCount(0)
 })
 
@@ -110,7 +110,7 @@ test('import queue coalesces progress bursts and never applies older responses a
     w.__pending = []; w.__reads = 0
     api.GetImportQueue = async () => {
       w.__reads++
-      return new Promise(resolve => w.__pending.push((title: string) => resolve([{ id: 1, filename: title, status: 'running', running: true, processed: 1, totalRows: 10, fileRows: 10, stats: { imported: 1 }, failedTitles: [] }])))
+      return new Promise(resolve => w.__pending.push((id: number) => resolve([{ id, filename: '', status: 'running', running: true, processed: 1, totalRows: 10, fileRows: 10, stats: { imported: 1 }, failedTitles: [] }])))
     }
   })
   await page.locator('nav').getByRole('button', { name: /导入队列/ }).click()
@@ -120,11 +120,11 @@ test('import queue coalesces progress bursts and never applies older responses a
     for (let i = 0; i < 10; i++) w.runtime.EventsEmit('import:progress', { batchId: 1, processed: i, total: 10, stats: {}, done: false, paused: false })
   })
   expect(await page.evaluate(() => (window as any).__reads)).toBe(1)
-  await page.evaluate(() => (window as any).__pending[0]('旧批次.csv'))
+  await page.evaluate(() => (window as any).__pending[0](1))
   await expect.poll(() => page.evaluate(() => (window as any).__reads)).toBe(2)
-  await expect(page.getByText('旧批次.csv', { exact: true })).toHaveCount(0)
-  await page.evaluate(() => (window as any).__pending[1]('最新批次.csv'))
-  await expect(page.getByText('最新批次.csv', { exact: true })).toBeVisible()
+  await expect(page.getByText('导入批次 #1', { exact: true })).toHaveCount(0)
+  await page.evaluate(() => (window as any).__pending[1](2))
+  await expect(page.getByText('导入批次 #2', { exact: true })).toBeVisible()
 })
 
 test('committed background changes refresh visible library, drawer and album without reentry', async ({ page }) => {

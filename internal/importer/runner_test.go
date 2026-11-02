@@ -217,13 +217,12 @@ func TestRunnerSendsToReview(t *testing.T) {
 	}
 }
 
-// TestRunnerLocalDuplicateGoesToReview 覆盖 11.3：
-// 疑似重复送入复核，且不新建曲目；库中曲目作为一条候选出现。
-func TestRunnerLocalDuplicateGoesToReview(t *testing.T) {
+// 无上游绑定的疑似文本不能冒充精确候选。
+func TestRunnerLocalTextDoesNotBecomeBoundCandidate(t *testing.T) {
 	st := openStore(t)
 
 	// 库中已有一首无溯源的曲目（「无需匹配」入库的那种）
-	existing, err := st.CreateTrackWithProvenance(store.NewTrackInput{
+	_, err := st.CreateTrackWithProvenance(store.NewTrackInput{
 		Title: "God knows...", Credit: sptr("平野綾"),
 	})
 	if err != nil {
@@ -256,25 +255,16 @@ func TestRunnerLocalDuplicateGoesToReview(t *testing.T) {
 	if err := json.Unmarshal([]byte(*items[0].Candidates), &snapshot); err != nil {
 		t.Fatalf("候选快照无法解析: %v", err)
 	}
-	if len(snapshot) != 1 || snapshot[0]["local"] != true {
-		t.Errorf("候选快照 = %v, 期望含本地候选", snapshot)
+	if len(snapshot) != 0 {
+		t.Errorf("未绑定本地曲目不应成为候选: %v", snapshot)
 	}
-	if snapshot[0]["action"] != "合并" {
-		t.Errorf("本地候选的动作 = %v, 期望 合并", snapshot[0]["action"])
+	if searcher.queryCount() == 0 {
+		t.Fatal("应继续检索上游")
 	}
-	if int64(snapshot[0]["trackId"].(float64)) != existing {
-		t.Error("候选应指向库中已有的那首曲目")
-	}
-
-	// 疑似重复的提示同时输出两边信息
-	var sawDup bool
 	for _, e := range events {
-		if containsStr(e.Line, "[疑似重复]") && containsStr(e.Line, "当前曲目库信息") {
-			sawDup = true
+		if containsStr(e.Line, "[疑似重复]") {
+			t.Fatal("不应以前置疑似重复阻断搜索")
 		}
-	}
-	if !sawDup {
-		t.Error("应输出疑似重复的提示并含库中曲目信息")
 	}
 }
 

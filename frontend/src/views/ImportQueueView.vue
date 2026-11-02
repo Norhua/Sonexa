@@ -107,9 +107,6 @@ function statusLabel(status: string): string {
   return { running: '进行中', paused: '已暂停', done: '已完成' }[status] ?? status
 }
 
-function basename(path: string): string {
-  return path.split('/').pop() ?? path
-}
 </script>
 
 <template>
@@ -142,15 +139,13 @@ function basename(path: string): string {
       <section v-if="current" class="border-b p-4">
         <div class="flex items-center gap-3">
           <div class="min-w-0 flex-1">
-            <p class="truncate text-sm font-medium" :title="current.filename">
-              {{ basename(current.filename) }}
-            </p>
+            <p class="truncate text-sm font-medium">导入批次 #{{ current.id }}</p>
             <p class="mt-0.5 text-xs text-muted-color">
               {{ statusLabel(current.status) }} ·
               {{ current.processed }}/{{ current.totalRows }}
-              <!-- 缺曲名的行在提交时就跳过了，没进队列——说清楚免得对不上文件行数 -->
+              <!-- 只有无有效映射内容的行未入队，缺基本字段仍保留。 -->
               <template v-if="current.fileRows > current.totalRows">
-                （文件 {{ current.fileRows }} 行，{{ current.fileRows - current.totalRows }} 行缺曲名已跳过）
+                （输入 {{ current.fileRows }} 行，{{ current.fileRows - current.totalRows }} 行无有效内容已跳过）
               </template>
             </p>
           </div>
@@ -192,6 +187,9 @@ function basename(path: string): string {
             <dd class="text-base tabular-nums">{{ current.stats.failed }}</dd>
           </div>
         </dl>
+        <p class="mt-2 text-xs text-muted-color">
+          已跳过 {{ current.stats.skipped ?? 0 }} · 已合并输入 {{ current.stats.merged ?? 0 }} · 已移出 {{ current.stats.discarded ?? 0 }}
+        </p>
 
         <SecondaryButton
           v-if="current.stats.review > 0"
@@ -238,7 +236,7 @@ function basename(path: string): string {
         <table class="w-full border-collapse text-xs">
           <thead>
             <tr class="border-b text-left text-muted-color">
-              <th class="px-2 py-1">文件</th>
+              <th class="px-2 py-1">批次</th>
               <th class="w-20 px-2 py-1">状态</th>
               <th class="w-20 px-2 py-1">已入库</th>
               <th class="w-20 px-2 py-1">待复核</th>
@@ -248,7 +246,7 @@ function basename(path: string): string {
           </thead>
           <tbody>
             <tr v-for="b in batches" :key="b.id" class="border-b">
-              <td class="max-w-0 truncate px-2 py-1" :title="b.filename">{{ basename(b.filename) }}</td>
+              <td class="max-w-0 truncate px-2 py-1">导入批次 #{{ b.id }}</td>
               <td class="px-2 py-1">{{ statusLabel(b.status) }}</td>
               <td class="px-2 py-1 tabular-nums">{{ b.stats.imported }}</td>
               <td class="px-2 py-1 tabular-nums">{{ b.stats.review }}</td>

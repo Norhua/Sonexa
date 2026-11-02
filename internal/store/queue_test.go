@@ -374,7 +374,13 @@ func TestStatsAndFailedItems(t *testing.T) {
 func TestAllReviewItemsAcrossBatches(t *testing.T) {
 	s := openTestStore(t)
 	b1 := seedBatch(t, s, 2)
-	b2 := seedBatch(t, s, 2)
+	b2, err := s.CreateBatch(&ImportBatch{TotalRows: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnqueueItems(b2, []ImportItem{{RawRow: `["另一首"]`, InTitle: ptr("另一首")}}); err != nil {
+		t.Fatal(err)
+	}
 
 	i1, _ := s.ClaimNextItem(b1)
 	s.MarkReview(i1.ID, ReviewAmbiguous, `[]`, `[]`)

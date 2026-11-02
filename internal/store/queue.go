@@ -70,7 +70,8 @@ const (
 
 // ImportBatch 是一次导入。
 type ImportBatch struct {
-	ID         int64       `json:"id"`
+	ID int64 `json:"id"`
+	// Filename 不再保存源文件名；保留空字段供批次 DTO 读取。
 	Filename   string      `json:"filename"`
 	Encoding   *string     `json:"encoding"`
 	Delimiter  *string     `json:"delimiter"`
@@ -83,9 +84,10 @@ type ImportBatch struct {
 
 // ImportItem 是队列中的一个条目。
 type ImportItem struct {
-	ID       int64 `json:"id"`
-	BatchID  int64 `json:"batchId"`
-	RowIndex int   `json:"rowIndex"`
+	ID      int64 `json:"id"`
+	BatchID int64 `json:"batchId"`
+	// 条目始终保存不可变原始内容；row_index 仅为内部入队序号，不是源文件行号。
+	RowIndex int `json:"rowIndex"`
 	// RawRow 是原始整行 JSON，永不修改——
 	// 用户在复核队列改搜只影响查询，不动原值。
 	RawRow        string     `json:"rawRow"`
@@ -118,7 +120,7 @@ func (s *Store) CreateBatch(b *ImportBatch) (int64, error) {
 		res, err := tx.Exec(`
 			INSERT INTO import_batch (filename, encoding, delimiter, column_map, total_rows, status, created_at)
 			VALUES (?,?,?,?,?,?,?)`,
-			b.Filename, b.Encoding, b.Delimiter, b.ColumnMap, b.TotalRows, string(BatchRunning), now)
+			"", b.Encoding, b.Delimiter, b.ColumnMap, b.TotalRows, string(BatchRunning), now)
 		if err != nil {
 			return fmt.Errorf("建立导入批次失败: %w", err)
 		}
@@ -145,12 +147,20 @@ func (s *Store) EnqueueItems(batchID int64, items []ImportItem) error {
 		defer stmt.Close()
 
 		now := time.Now().UTC()
-		for _, it := range items {
-			if _, err := stmt.Exec(batchID, it.RowIndex, it.RawRow,
+		for ordinal, it := range items {
+			res, err := stmt.Exec(batchID, ordinal, it.RawRow,
 				it.InTitle, it.InArtist, it.InAlbum,
 				it.InYear, it.InTrackNo, it.InDiscNo, it.InDurationMS,
-				string(StatusQueued), now); err != nil {
-				return fmt.Errorf("写入第 %d 行失败: %w", it.RowIndex, err)
+				string(StatusQueued), now)
+			if err != nil {
+				return fmt.Errorf("写入输入失败: %w", err)
+			}
+			it.ID, err = res.LastInsertId()
+			if err != nil {
+				return err
+			}
+			if err := mergeTextInputTx(tx, it); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -224,6 +234,11 @@ func (s *Store) MarkImported(itemID, trackID int64) error {
 // reason 为 ReviewReasonUnchanged 时不改写已有成因。
 func (s *Store) MarkReview(itemID int64, reason ReviewReason, candidatesJSON, variantsJSON string, evidence ...string) error {
 	return s.setStatus(itemID, StatusReview, func(tx *sql.Tx) error {
+		if candidatesJSON == "" {
+			if _, err := tx.Exec(`UPDATE import_item SET resolved_source=NULL,resolved_ref=NULL WHERE id=?`, itemID); err != nil {
+				return err
+			}
+		}
 		if len(evidence) > 0 {
 			if _, err := tx.Exec("UPDATE import_item SET review_evidence=? WHERE id=?", evidence[0], itemID); err != nil {
 				return err
@@ -265,10 +280,14 @@ func (s *Store) MarkSkipped(itemID int64) error {
 // setStatus 在事务内更新状态并执行附加操作。
 func (s *Store) setStatus(itemID int64, status ItemStatus, extra func(*sql.Tx) error) error {
 	return s.withTx(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(
-			`UPDATE import_item SET status = ?, updated_at = ? WHERE id = ?`,
-			string(status), time.Now().UTC(), itemID); err != nil {
+		res, err := tx.Exec(
+			`UPDATE import_item SET status = ?, search_revision=search_revision+1, updated_at = ? WHERE id = ? AND status IN ('queued','matching','review','failed')`,
+			string(status), time.Now().UTC(), itemID)
+		if err != nil {
 			return err
+		}
+		if n, _ := res.RowsAffected(); n != 1 {
+			return ErrItemNotActive
 		}
 		if extra != nil {
 			return extra(tx)
@@ -284,6 +303,13 @@ func (s *Store) setStatus(itemID int64, status ItemStatus, extra func(*sql.Tx) e
 func (s *Store) RecordFailure(itemID int64, errMsg string, backoff time.Duration, maxAttempts int) (ItemStatus, error) {
 	var final ItemStatus
 	err := s.withTx(func(tx *sql.Tx) error {
+		var state ItemStatus
+		if err := tx.QueryRow(`SELECT status FROM import_item WHERE id=?`, itemID).Scan(&state); err != nil {
+			return err
+		}
+		if state.IsTerminal() {
+			return ErrItemNotActive
+		}
 		var attempts int
 		if err := tx.QueryRow(
 			`SELECT attempt_count FROM import_item WHERE id = ?`, itemID).Scan(&attempts); err != nil {
@@ -316,10 +342,8 @@ func (s *Store) RecordFailure(itemID int64, errMsg string, backoff time.Duration
 
 // RetryItem 让失败条目重新进入匹配（复核队列的「立即重试」）。
 func (s *Store) RetryItem(itemID int64) error {
-	return s.withTx(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`
-			UPDATE import_item SET status = ?, next_retry_at = NULL, updated_at = ?
-			WHERE id = ?`, string(StatusQueued), time.Now().UTC(), itemID)
+	return s.setStatus(itemID, StatusQueued, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE import_item SET next_retry_at=NULL WHERE id=?`, itemID)
 		return err
 	})
 }

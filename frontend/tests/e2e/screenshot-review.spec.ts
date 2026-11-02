@@ -132,7 +132,8 @@ test('review removes marked text, moves actions below inputs and restores only t
   }
   await expect(page.getByRole('heading', { name: '重新搜索', exact: true })).toHaveCount(0)
   await expect(page.getByText('4円（ヨエン） · side-c', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('来自 music_extracted.csv')).toBeVisible()
+  await expect(page.getByTestId('original-inputs')).toContainText('ツバサ（羽翼），4円（ヨエン），side-c')
+  await expect(page.getByText('来自 music_extracted.csv')).toHaveCount(0)
   for (const name of ['第几曲', '厂牌', '目录号', '动作']) await expect(page.getByRole('columnheader', { name, exact: true })).toHaveCount(0)
   await expect(page.getByRole('columnheader', { name: '音轨', exact: true })).toBeVisible()
   await expect(page.getByRole('cell', { name: '2/12', exact: true })).toBeVisible()

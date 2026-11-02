@@ -197,13 +197,13 @@
             {
               id: 11, batchId: 1, status: 'review',
               inTitle: 'ツバサ（羽翼）', inArtist: '4円（ヨエン）', inAlbum: 'side-c',
-              batchTag: 'music_extracted.csv', triedVariants: ['ツバサ', '羽翼'],
+              originalInputs: [['ツバサ（羽翼）', '4円（ヨエン）', 'side-c']], searchProvider: '', searchCountry: '', triedVariants: ['ツバサ', '羽翼'],
               candidates: [], attemptCount: 0, lastError: null, lastErrorAt: null,
             },
             {
               id: 12, batchId: 1, status: 'review',
               inTitle: 'you', inArtist: '茅野愛衣（かやの あい）', inAlbum: '冴えない彼女の育てかた 第4巻 特典C...',
-              batchTag: 'music_extracted.csv', triedVariants: ['you'],
+              originalInputs: [['you', '茅野愛衣（かやの あい）', '冴えない彼女の育てかた 第4巻 特典C...']], searchProvider: '', searchCountry: '', triedVariants: ['you'],
               candidates: [], attemptCount: 0, lastError: null, lastErrorAt: null,
             },
           ],

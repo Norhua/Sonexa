@@ -8,6 +8,7 @@ const admission = useAdmissionStore()
  * 待选 / 匹配中 / 失败只是状态标签，界面结构完全一致。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { LoaderCircle } from 'lucide-vue-next'
 import { App, display, Events, EventsOn, type Models } from '@/api'
 import CandidateTable from '@/components/CandidateTable.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -71,8 +72,13 @@ const providerCaps = computed(() => {
   return map
 })
 
-/** 当前选中上游的能力决定候选列表的列显示。 */
-const activeCaps = computed(() => settings.providerById(researchProvider.value)?.capabilities ?? [])
+/** 列能力来自实际结果；切换搜索来源但尚未搜索时不伪装旧结果。 */
+const activeCaps = computed(() => {
+  const sources = new Set(current.value?.candidates.map(row => row.provider).filter(Boolean))
+  if (!sources.size) sources.add(researchProvider.value)
+  return [...new Set([...sources].flatMap(id => settings.providerById(id)?.capabilities ?? []))]
+})
+const drafts = new Map<number, { research: typeof research.value; provider: string; country: string; searched: boolean; expanded: boolean }>()
 
 onMounted(async () => {
   void load()
@@ -88,12 +94,9 @@ onMounted(async () => {
  * 只在真的搜过一次之后才自动重搜：刚打开一个条目就因为默认值触发一次出网，
  * 会把 1 req/s 的配额花在用户还没提出的请求上。
  */
-watch(researchProvider, async () => {
-  if (!current.value) return
-  if (!settings.outboundAllowed) return
-  if (!searched.value) return
-  await doResearch()
-})
+function changeProvider() {
+  if (current.value && settings.outboundAllowed && searched.value) void doResearch()
+}
 
 let researchRequest = 0
 let queueRevision = 0
@@ -110,13 +113,25 @@ onBeforeUnmount(() => {
   offProgress()
 })
 
-watch(() => current.value?.id, (id) => {
+watch(() => current.value?.id, (id, previousId) => {
+  if (previousId !== undefined) drafts.set(previousId, {
+    research: { ...research.value }, provider: researchProvider.value, country: country.value,
+    searched: searched.value, expanded: expanded.value,
+  })
   researchRequest++
   researching.value = false
-  expanded.value = false
-  searched.value = false
+  hint.value = null
+  error.value = ''
   if (id === undefined) return
-  restoreOriginal()
+  const draft = drafts.get(id)
+  const item = current.value!
+  expanded.value = draft?.expanded ?? false
+  searched.value = draft?.searched ?? item.searched ?? false
+  const source = draft?.provider || item.searchProvider || item.candidates[0]?.provider
+  researchProvider.value = settings.providers.some(p => p.id === source) ? source! : settings.providers[0]?.id || ''
+  country.value = draft?.country ?? item.searchCountry ?? ''
+  if (draft) research.value = { ...draft.research }
+  else restoreOriginal()
   void updateHint()
 })
 
@@ -156,6 +171,7 @@ async function reloadQueue() {
         // 搜索中或此快照之后完成了搜索：不以旧快照盖掉交互结果。
         next.items[position].candidates = item.candidates
       }
+      for (const id of drafts.keys()) if (!next.items.some(row => row.id === id)) drafts.delete(id)
       queueError.value = ''
       queue.value = next
       index.value = position >= 0 ? position : Math.max(0, Math.min(index.value, next.items.length - 1))
@@ -176,7 +192,11 @@ const countryOptions = computed(() => [{ code: '', name: '跟随默认' }, ...co
 async function updateHint() {
   const text = `${research.value.title} ${research.value.artist}`.trim()
   if (!text) return
-  hint.value = await App.SuggestCountry(text)
+  const itemId = current.value?.id
+  const request = researchRequest
+  const result = await App.SuggestCountry(text)
+  if (disposed || current.value?.id !== itemId || request !== researchRequest) return
+  hint.value = result
   if (hint.value?.detected && !country.value) country.value = hint.value.country
 }
 
@@ -205,6 +225,9 @@ async function doResearch() {
     )
     if (request !== researchRequest || current.value?.id !== item.id) return
     current.value.candidates = rows ?? []
+    current.value.searchProvider = researchProvider.value
+    current.value.searchCountry = country.value
+    current.value.searched = true
   } catch (e) {
     if (request === researchRequest) error.value = String(e)
   } finally {
@@ -233,9 +256,10 @@ async function act(fn: () => Promise<void | boolean>) {
 /** 接受：采用该上游候选入库并写入溯源。 */
 function accept(row: Models.app.CandidateRow) {
   if (!current.value) return
-  // 带本地徽章的候选走「合并」：不新建曲目
+  // 只有精确上游 track 绑定才可跳过；后端再次核验绑定是否仍存在。
   if (row.localTrackId) {
-    void act(() => App.MergeCandidate(current.value!.id, row.localTrackId))
+    const itemId = current.value.id
+    void act(() => App.SkipReviewCandidate(itemId, row))
     return
   }
   const itemId = current.value.id
@@ -290,7 +314,10 @@ function next() {
         <div class="flex items-start gap-3">
           <div class="min-w-0 flex-1">
             <p class="text-base font-medium">{{ display(current.inTitle) }}</p>
-            <p class="mt-0.5 text-xs text-muted-color">来自 {{ current.batchTag }}</p>
+            <div class="mt-1 space-y-1 text-xs text-muted-color" data-testid="original-inputs">
+              <p class="font-medium">原始输入</p>
+              <p v-for="(cells, i) in current.originalInputs ?? []" :key="i" class="whitespace-pre-wrap break-words">{{ cells.join('，') }}</p>
+            </div>
           </div>
           <Tag
             class="shrink-0"
@@ -344,6 +371,7 @@ function next() {
           <label class="text-xs">上游
             <Select
               v-model="researchProvider"
+              @update:model-value="changeProvider"
               :options="settings.providers"
               option-label="displayName"
               option-value="id"
@@ -365,8 +393,10 @@ function next() {
             size="small"
             :disabled="researching || !settings.outboundAllowed"
             :title="!settings.outboundAllowed ? settings.outboundReason : ''"
+            :aria-busy="researching"
             @click="doResearch"
           >
+            <LoaderCircle v-if="researching" class="size-4 animate-spin" aria-hidden="true" />
             {{ researching ? '搜索中…' : '重新搜索' }}
           </Button>
         </div>

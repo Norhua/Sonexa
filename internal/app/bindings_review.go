@@ -21,10 +21,13 @@ type ReviewItem struct {
 	BatchID        int64   `json:"batchId"`
 	Status         string  `json:"status"`
 	// 原始导入文本，上半区展示；改搜不改动它
-	InTitle  *string `json:"inTitle"`
-	InArtist *string `json:"inArtist"`
-	InAlbum  *string `json:"inAlbum"`
-	BatchTag string  `json:"batchTag"`
+	InTitle        *string    `json:"inTitle"`
+	InArtist       *string    `json:"inArtist"`
+	InAlbum        *string    `json:"inAlbum"`
+	OriginalInputs [][]string `json:"originalInputs"`
+	SearchProvider string     `json:"searchProvider"`
+	SearchCountry  string     `json:"searchCountry"`
+	Searched       bool       `json:"searched"`
 
 	// TriedVariants 供「已尝试变体」提示行。
 	TriedVariants []string `json:"triedVariants"`
@@ -67,8 +70,13 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 			AttemptCount: it.AttemptCount,
 			LastError:    it.LastError, LastErrorAt: formatTime(it.LastErrorAt),
 		}
-		if b, _ := a.store.GetBatch(it.BatchID); b != nil {
-			r.BatchTag = b.Filename
+		r.OriginalInputs, err = a.store.OriginalInputs(it.ID)
+		if err != nil {
+			return nil, err
+		}
+		r.SearchProvider, r.SearchCountry, r.Searched, err = a.store.ReviewSearchSource(it.ID)
+		if err != nil {
+			return nil, err
 		}
 		if it.TriedVariants != nil {
 			json.Unmarshal([]byte(*it.TriedVariants), &r.TriedVariants)
@@ -93,22 +101,17 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 
 // parseCandidateSnapshot 解析候选快照。
 //
-// 快照可能是管线写入的 ScoredCandidate 数组，
-// 也可能是本地疑似重复写入的简化结构。
+// 快照使用管线 ScoredCandidate 或手动搜索 CandidateRow；本地状态实时重判。
 func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 	// 先按管线的评分候选解析
 	var scored []matching.ScoredCandidate
 	if err := json.Unmarshal([]byte(raw), &scored); err == nil && len(scored) > 0 && scored[0].Candidate.MatchRef != "" {
 		// 复核队列的候选必须与上游搜索一样做本地判定，
-		// 否则库里已有的那首不会显示双徽章、动作也不会变成「合并」。
+		// 否则库里已有的那首不会显示双徽章、动作也不会变成「跳过」。
 		return a.rowsFrom(scored, "接受")
 	}
 
-	// 再按 CandidateRow 解析：ResearchReviewItem 写快照时存的就是这个形状。
-	//
-	// 没有这一支时它会掉到下面的「本地候选」分支——那个分支只认
-	// badges/action/title/artist/album 五个字段，于是用户改搜出来的候选
-	// 一旦经过一次队列重载，置信度、年份、时长、厂牌等列全部变成占位短横线。
+	// 手动搜索快照须完整保留字段，不能降级为简化本地候选。
 	var stored []CandidateRow
 	if err := json.Unmarshal([]byte(raw), &stored); err == nil &&
 		len(stored) > 0 && stored[0].MatchRef != "" {
@@ -120,27 +123,6 @@ func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 		return stored
 	}
 
-	// 最后按本地疑似重复的简化快照解析
-	var local []struct {
-		Local   bool     `json:"local"`
-		TrackID int64    `json:"trackId"`
-		Title   string   `json:"title"`
-		Artist  *string  `json:"artist"`
-		Album   *string  `json:"album"`
-		Action  string   `json:"action"`
-		Badges  []string `json:"badges"`
-	}
-	if err := json.Unmarshal([]byte(raw), &local); err == nil {
-		out := make([]CandidateRow, 0, len(local))
-		for _, l := range local {
-			title := l.Title
-			out = append(out, CandidateRow{
-				Badges: l.Badges, Action: l.Action, LocalTrackID: l.TrackID,
-				Title: &title, Artist: l.Artist, Album: l.Album,
-			})
-		}
-		return out
-	}
 	return nil
 }
 
@@ -163,6 +145,11 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 		return nil, err
 	}
 
+	revision, err := a.store.BeginReviewSearch(itemID)
+	if err != nil {
+		return nil, err
+	}
+
 	// 用户在等这次结果：交互式优先级，插到后台补全的队列之前
 	done := a.beginInteractive()
 	defer done()
@@ -179,10 +166,9 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 
 	// 把本次候选写入快照，但不动原始导入值
 	snapshot, _ := json.Marshal(rows)
-	item, err := a.store.GetItem(itemID)
-	if err == nil && item != nil {
-		tried, _ := json.Marshal(variants)
-		a.store.MarkReview(itemID, store.ReviewReasonUnchanged, string(snapshot), string(tried))
+	tried, _ := json.Marshal(variants)
+	if err := a.store.FinishReviewSearch(itemID, revision, providerID, country, string(snapshot), string(tried)); err != nil {
+		return nil, err
 	}
 	return rows, nil
 }
@@ -193,8 +179,7 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 // 而 ResolveLocal 每次最多查三张表。一个 200 条的复核队列因此会打出
 // 上千次本来只需三分之一的查询。
 //
-// 库中已有且上游也存在时同时标注两个徽章；经 ISRC 桥接命中的标注
-// 「经 ISRC 匹配」；文本模糊比对的疑似命中带问号。
+// 仅来源 + track 精确绑定命中时同时标注本地和上游；ISRC 不表示 track 已在库。
 func (a *App) applyLocalMatch(row *CandidateRow, c provider.Candidate) {
 	if c.ReleaseRef != nil {
 		if release, err := a.store.GetReleaseByRef(string(c.Provider), *c.ReleaseRef); err == nil && release != nil {
@@ -246,14 +231,12 @@ func (a *App) AcceptCandidate(itemID int64, row CandidateRow) (int64, error) {
 	return a.commitUnconfirmedAdmission(plan)
 }
 
-// MergeCandidate 把条目标记为与库中已有曲目相同。
-//
-// 不新建曲目：标记合并目标后条目从队列中消失，库中曲目数不变。
-func (a *App) MergeCandidate(itemID, targetTrackID int64) error {
+// SkipReviewCandidate ends the item only if the exact upstream track is still bound.
+func (a *App) SkipReviewCandidate(itemID int64, row CandidateRow) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	return a.store.MarkMerged(itemID, targetTrackID)
+	return a.store.SkipReviewCandidate(itemID, row.Provider, row.MatchRef)
 }
 
 // NoMatchNeeded 按原始输入入库，丰富信息为空，溯源置空。

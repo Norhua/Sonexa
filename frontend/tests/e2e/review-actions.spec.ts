@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url'
 // 否则直接修改桩件对象也会刷新 Vue，掩盖动作完成后没有重载队列的问题。
 test.beforeEach(async ({ page }) => {
   await page.addInitScript({ path: fileURLToPath(new URL('./wails-stub.js', import.meta.url)) })
+  await page.addInitScript(() => {
+    const api = (window as any).go.app.App
+    const original = api.ListProviders
+    api.ListProviders = async () => (await original()).map((p: any) => ({ ...p, capabilities: p.id === 'musicbrainz' ? ['MediumFormat'] : [] }))
+  })
   await page.goto('/')
   await expect(page.locator('.track-list [data-row-key]')).toHaveCount(7)
   await page.evaluate(async () => {
@@ -42,7 +47,7 @@ test.beforeEach(async ({ page }) => {
     }
     api.DiscardReviewItem = action('discard', 'discarded')
     api.NoneMatched = action('none')
-    api.MergeCandidate = action('merge', 'merged')
+    api.SkipReviewCandidate = async (itemId: number, row: any) => action('skip', 'skipped')(itemId, row.localTrackId)
     api.RetryReviewItem = action('retry', 'queued')
     const prepare = (itemId: number) => {
       state.prepares.push(itemId)
@@ -123,15 +128,15 @@ test('none matched returning null clears candidates but keeps the item and count
   expect(await page.evaluate(() => (window as any).__review.queueReads)).toBe(2)
 })
 
-test('merge returning null advances the queue without admitting another track', async ({ page }) => {
+test('skip returning null advances the queue without admitting another track', async ({ page }) => {
   await page.evaluate(() => {
-    Object.assign((window as any).__review.items[0].candidates[0], { localTrackId: 7, action: '合并', badges: ['本地', 'qq'] })
+    Object.assign((window as any).__review.items[0].candidates[0], { localTrackId: 7, action: '跳过', badges: ['本地', 'qq'] })
   })
   await openReview(page)
-  await page.getByRole('button', { name: '合并', exact: true }).click()
+  await page.getByRole('button', { name: '跳过', exact: true }).click()
   await expectSecondItem(page)
   const state = await page.evaluate(() => (window as any).__review)
-  expect(state.actions).toEqual([{ name: 'merge', itemId: 11, targetTrackId: 7 }])
+  expect(state.actions).toEqual([{ name: 'skip', itemId: 11, targetTrackId: 7 }])
   expect(state.commits).toEqual([])
   expect(state.prepares).toEqual([])
 })
@@ -199,6 +204,61 @@ for (const label of ['接受', '无需匹配']) {
     expect(await page.evaluate(() => (window as any).__review.commits)).toEqual(['admit-11'])
   })
 }
+
+test('original inputs replace file location and retain distinct aliases', async ({ page }) => {
+  await page.evaluate(() => {
+    const item = (window as any).__review.items[0]
+    item.originalInputs = [['ツバサ', '4円', 'side-c'], ['ツバサ（羽翼）', '4円（ヨエン）', 'side-c（译名）']]
+  })
+  await openReview(page)
+  const inputs = page.getByTestId('original-inputs')
+  await expect(inputs.locator('p')).toHaveCount(3)
+  await expect(inputs).toContainText('ツバサ，4円，side-c')
+  await expect(inputs).toContainText('ツバサ（羽翼），4円（ヨエン），side-c（译名）')
+  await expect(page.getByText(/music_extracted.csv/)).toHaveCount(0)
+})
+
+test('each item restores its own provider, country and draft without automatic search on navigation', async ({ page }) => {
+  await page.evaluate(() => {
+    const state = (window as any).__review
+    state.items[0].searchProvider = 'musicbrainz'
+    state.items[0].candidates[0].provider = 'musicbrainz'
+    state.items[1].searchProvider = 'musicbrainz'
+    state.items[1].candidates = [{ ...state.items[0].candidates[0], matchRef: 'second', title: '第二条候选' }]
+  })
+  await openReview(page)
+  await page.getByLabel('曲名', { exact: true }).fill('第一条草稿')
+  await page.getByRole('combobox').click()
+  await page.getByRole('option', { name: 'QQ 音乐', exact: true }).click()
+  // Until search finishes, old MB rows keep their actual supported columns.
+  await expect(page.getByRole('columnheader', { name: '载体', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '重新搜索', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__lastResearch.providerID)).toBe('qq')
+  await expect(page.getByRole('columnheader', { name: '载体', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: /下一条/ }).click()
+  await expect(page.getByRole('combobox')).toContainText('MusicBrainz')
+  await expect(page.getByLabel('曲名', { exact: true })).toHaveValue('you')
+  await expect(page.getByRole('columnheader', { name: '载体', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /上一条/ }).click()
+  await expect(page.getByRole('combobox')).toContainText('QQ 音乐')
+  await expect(page.getByLabel('曲名', { exact: true })).toHaveValue('第一条草稿')
+  expect(await page.evaluate(() => (window as any).__calls.filter((name: string) => name === 'ResearchReviewItem').length)).toBe(1)
+})
+
+test('country selection and search draft are isolated between items', async ({ page }) => {
+  await openReview(page)
+  await page.getByRole('combobox').click()
+  await page.getByRole('option', { name: 'iTunes', exact: true }).click()
+  await page.getByRole('combobox').nth(1).click()
+  await page.getByRole('option', { name: '日本', exact: true }).click()
+  await page.getByRole('button', { name: /下一条/ }).click()
+  await expect(page.getByRole('combobox')).toHaveCount(1)
+  await expect(page.getByRole('combobox')).toContainText('MusicBrainz')
+  await page.getByRole('button', { name: /上一条/ }).click()
+  await expect(page.getByRole('combobox').first()).toContainText('iTunes')
+  await expect(page.getByRole('combobox').nth(1)).toContainText('日本')
+  expect(await page.evaluate(() => (window as any).__calls.filter((name: string) => name === 'ResearchReviewItem'))).toEqual([])
+})
 
 /** 真实导入逐条推送进度；包括失败数和完成事件，不借由重新进入页面刷新。 */
 async function emitProgress(page: Page) {
@@ -292,6 +352,7 @@ for (const finishSearchFirst of [false, true]) {
     await page.getByLabel('曲名', { exact: true }).fill('正在搜索的草稿')
     await page.getByRole('button', { name: '重新搜索', exact: true }).click()
     await expect(page.getByRole('button', { name: '搜索中…', exact: true })).toBeDisabled()
+    await expect(page.getByRole('button', { name: '搜索中…', exact: true }).locator('svg.animate-spin')).toBeVisible()
     await emitProgress(page)
     await expect.poll(() => page.evaluate(() => typeof (window as any).__finishQueue)).toBe('function')
     if (finishSearchFirst) {

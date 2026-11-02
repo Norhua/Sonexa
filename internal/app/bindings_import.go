@@ -174,7 +174,6 @@ func (a *App) SubmitImport(path, sheetName string, columnMap []string,
 	mapJSON, _ := json.Marshal(res.ColumnMap)
 
 	batchID, err := a.store.CreateBatch(&store.ImportBatch{
-		Filename:  path,
 		Encoding:  &res.Detection.Encoding,
 		Delimiter: &res.Detection.Delimiter,
 		ColumnMap: strPtr(string(mapJSON)),
@@ -192,7 +191,7 @@ func (a *App) SubmitImport(path, sheetName string, columnMap []string,
 		}
 		raw, _ := json.Marshal(r.Raw)
 		items = append(items, store.ImportItem{
-			RowIndex: r.Index, RawRow: string(raw),
+			RawRow:  string(raw),
 			InTitle: &r.Title, InArtist: r.Artist, InAlbum: r.Album,
 			InYear: r.Year, InTrackNo: r.TrackNo, InDiscNo: r.DiscNo, InDurationMS: r.DurationMS,
 		})
