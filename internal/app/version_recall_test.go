@@ -172,6 +172,62 @@ func TestMusicBrainzVersionRecallAcrossEntrypoints(t *testing.T) {
 	if err != nil || stored != accepted {
 		t.Fatal(stored, accepted, err)
 	}
+	// A previous human decision resolves the missing-version ambiguity. Repeated
+	// import must reuse that exact decision instead of comparing the incomplete
+	// source text to the chosen version again. Clear HTTP cache so the request
+	// counter proves this does not merely run the same search from cache.
+	if err = a.store.ClearCache(); err != nil {
+		t.Fatal(err)
+	}
+	batch, err = a.SubmitImport(path, "", []string{"title", "artist", "album"}, "UTF-8", ",", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "confirmed input reimport", func() bool { return !a.runner.IsRunning(batch) })
+	stats, err := a.store.Stats(batch)
+	if err != nil || stats.Skipped != 1 || stats.Review != 0 || stats.Imported != 0 {
+		t.Fatalf("confirmed input repeated: %+v %v", stats, err)
+	}
+
+	// The confirmation must survive harmless enrichment and retain its exact
+	// target even while the original input still omits the chosen version.
+	var chosen provider.Candidate
+	for _, candidate := range raw {
+		if candidate.MatchRef == target {
+			chosen = candidate
+			break
+		}
+	}
+	snapshot, err := p.SnapshotFromCandidate(chosen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev, err := a.store.TrackRevision(accepted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.store.ApplySnapshot(accepted, snapshot, rev); err != nil {
+		t.Fatal(err)
+	}
+	batch, err = a.SubmitImport(path, "", []string{"title", "artist", "album"}, "UTF-8", ",", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "reimport after enrichment", func() bool { return !a.runner.IsRunning(batch) })
+	stats, err = a.store.Stats(batch)
+	if err != nil || stats.Skipped != 1 || stats.Review != 0 {
+		t.Fatal(stats, err)
+	}
+	original, err := a.store.GetItem(item.ID)
+	if err != nil || original.InTitle == nil || *original.InTitle != title {
+		t.Fatal(original, err)
+	}
+	meta, err := a.store.GetMetadata(accepted)
+	if err != nil || meta.MatchRef == nil || *meta.MatchRef != target || meta.Title != wanted[target] {
+		t.Fatal(meta, err)
+	}
+
+	t.Logf("首次复核人工接受后与补全后重导均 skipped=1；目标 track=%s，清缓存后没有新增上游请求", target)
 	mu.Lock()
 	defer mu.Unlock()
 	if len(queries) != 3 {

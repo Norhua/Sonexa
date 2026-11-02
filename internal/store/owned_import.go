@@ -14,6 +14,7 @@ import (
 type ownedImportTrack struct {
 	id                                     int64
 	current, snapshot                      matching.Input
+	snapshotValid                          bool
 	source, ref, releaseSource, releaseRef string
 	releaseID                              *int64
 	bindingKey                             string
@@ -50,6 +51,7 @@ func ownedImportTracksTx(tx *sql.Tx, ids ...int64) ([]ownedImportTrack, error) {
 		t.source, t.ref, t.releaseSource, t.releaseRef = stringValue(source), stringValue(ref), stringValue(releaseSource), stringValue(releaseRef)
 		t.current.Title, t.current.Artist, t.current.Album = stringValue(title), stringValue(artist), stringValue(album)
 		if snapshot != nil {
+			t.snapshotValid = true
 			var fields struct {
 				Title, Artist, Album  string
 				Duration, Disc, Track *int
@@ -70,10 +72,11 @@ type confirmedImport struct {
 	input      ImportItem
 	trackID    int64
 	bindingKey string
+	context    *confirmationContext
 }
 
 func confirmedImportsTx(tx *sql.Tx) ([]confirmedImport, error) {
-	rows, err := tx.Query(`SELECT i.id,i.raw_row,i.in_title,i.in_artist,i.in_album,i.in_duration_ms,i.in_disc_no,i.in_track_no,c.track_id,c.binding_key FROM import_confirmation c JOIN import_item i ON i.id=c.item_id ORDER BY i.id`)
+	rows, err := tx.Query(`SELECT i.id,i.raw_row,i.in_title,i.in_artist,i.in_album,i.in_duration_ms,i.in_disc_no,i.in_track_no,c.track_id,c.binding_key,c.target_context FROM import_confirmation c JOIN import_item i ON i.id=c.item_id ORDER BY i.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +84,16 @@ func confirmedImportsTx(tx *sql.Tx) ([]confirmedImport, error) {
 	var out []confirmedImport
 	for rows.Next() {
 		var c confirmedImport
-		if err = rows.Scan(&c.input.ID, &c.input.RawRow, &c.input.InTitle, &c.input.InArtist, &c.input.InAlbum, &c.input.InDurationMS, &c.input.InDiscNo, &c.input.InTrackNo, &c.trackID, &c.bindingKey); err != nil {
+		var raw *string
+		if err = rows.Scan(&c.input.ID, &c.input.RawRow, &c.input.InTitle, &c.input.InArtist, &c.input.InAlbum, &c.input.InDurationMS, &c.input.InDiscNo, &c.input.InTrackNo, &c.trackID, &c.bindingKey, &raw); err != nil {
 			return nil, err
+		}
+		if raw != nil {
+			var context confirmationContext
+			if err = json.Unmarshal([]byte(*raw), &context); err != nil {
+				return nil, err
+			}
+			c.context = &context
 		}
 		out = append(out, c)
 	}
@@ -98,7 +109,7 @@ type ownedImportDecision struct {
 // Every input must independently resolve to the SAME unique best-evidence
 // collection. A weak ambiguous alias must not be disambiguated by a neighbour.
 func decideOwnedImport(inputs []ImportItem, tracks []ownedImportTrack, confirmed []confirmedImport, exact map[int64]bool) ownedImportDecision {
-	decision := ownedImportDecision{Rule: "owned-import-v2"}
+	decision := ownedImportDecision{Rule: "owned-import-v3"}
 	byTrack := map[int64][]confirmedImport{}
 	for _, c := range confirmed {
 		byTrack[c.trackID] = append(byTrack[c.trackID], c)
@@ -123,8 +134,12 @@ func decideOwnedImport(inputs []ImportItem, tracks []ownedImportTrack, confirmed
 				evidence = other
 			}
 			for _, c := range byTrack[track.id] {
-				if c.trackID == track.id && c.bindingKey == track.bindingKey && equivalentImport(input, c.input) && confirmedContextCompatible(importInput(input), track) {
+				if c.trackID == track.id && equivalentImport(input, c.input) && confirmedContextCompatible(c, track) &&
+					(!track.snapshotValid || matching.CompatibleImportPosition(importInput(input), track.snapshot)) {
 					evidence = matching.ImportEvidence{Kind: "confirmed_input", Rank: 3, Facts: []string{"previously_accepted_input", "unchanged_track_binding", "no_position_or_duration_conflict"}}
+					if c.context != nil {
+						evidence.Facts = append(evidence.Facts, "approved_target_context")
+					}
 					break
 				}
 			}
@@ -141,14 +156,6 @@ func decideOwnedImport(inputs []ImportItem, tracks []ownedImportTrack, confirmed
 		decision.Inputs = append(decision.Inputs, best)
 	}
 	return decision
-}
-
-// A learned input cannot silently bridge an explicit new version conflict.
-func confirmedContextCompatible(in matching.Input, track ownedImportTrack) bool {
-	compatible := func(view matching.Input) bool {
-		return matching.ImportVersionCompatible(in, view) && matching.CompatibleImportPosition(in, view)
-	}
-	return compatible(track.current) || (track.snapshot.Title != "" && compatible(track.snapshot))
 }
 
 func ownedImportDecisionTx(tx *sql.Tx, itemID int64, candidates []matching.ScoredCandidate) (ownedImportDecision, error) {
@@ -196,9 +203,11 @@ func rememberImportConfirmationTx(tx *sql.Tx, itemID, trackID int64, evidence an
 		return err
 	}
 	key := ""
+	var context confirmationContext
 	for _, track := range tracks {
 		if track.id == trackID {
 			key = track.bindingKey
+			context = trackConfirmationContext(track)
 			break
 		}
 	}
@@ -209,9 +218,13 @@ func rememberImportConfirmationTx(tx *sql.Tx, itemID, trackID int64, evidence an
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(`INSERT INTO import_confirmation(item_id,track_id,binding_key,evidence_json,created_at)
- SELECT id,?,?,?,? FROM import_item WHERE id=? OR merged_item_id=?
- ON CONFLICT(item_id) DO UPDATE SET track_id=excluded.track_id,binding_key=excluded.binding_key,evidence_json=excluded.evidence_json,created_at=excluded.created_at`, trackID, key, string(raw), time.Now().UTC(), itemID, itemID)
+	contextJSON, err := json.Marshal(context)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`INSERT INTO import_confirmation(item_id,track_id,binding_key,evidence_json,created_at,target_context)
+ SELECT id,?,?,?,?,? FROM import_item WHERE id=? OR merged_item_id=?
+ ON CONFLICT(item_id) DO UPDATE SET track_id=excluded.track_id,binding_key=excluded.binding_key,evidence_json=excluded.evidence_json,created_at=excluded.created_at,target_context=excluded.target_context`, trackID, key, string(raw), time.Now().UTC(), string(contextJSON), itemID, itemID)
 	return err
 }
 

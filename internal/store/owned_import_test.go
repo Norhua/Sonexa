@@ -70,6 +70,8 @@ func TestOwnedConfirmationIsAtomicAndInvalidatesOnIdentityChanges(t *testing.T) 
 		t.Run(change, func(t *testing.T) {
 			s := openTestStore(t)
 			c := ownedCandidate("qq", "ref", "Canonical", "Artist", "Long Album")
+			c.DiscNumber = ptr(1)
+			c.TrackNumber = ptr(2) // Known position changes invalidate; unknown enrichment is tested separately.
 			id, err := s.AdmitCandidate(c)
 			if err != nil {
 				t.Fatal(err)

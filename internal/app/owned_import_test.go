@@ -120,6 +120,30 @@ func (*neverSearchOwned) SearchTracks(context.Context, provider.Query) ([]provid
 	panic("owned track must not query MB")
 }
 
+func TestOwnedReviewOnlyResultWithoutInputConfirmationStaysReview(t *testing.T) {
+	// Owning a similarly named version alone is not a user decision about this
+	// incomplete input. In particular, this must not turn review-only recall
+	// into automatic version selection when the song was added from search.
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.enricher.Pause()
+	candidate := fullCandidate("already-owned-review-version")
+	candidate.Title = strPtr("Song -Singer Ver.-")
+	candidate.ArtistName = strPtr("Artist")
+	candidate.AlbumTitle = strPtr("Soundtrack")
+	if _, err := a.AddToLibrary(rowFrom(matching.ScoredCandidate{Candidate: candidate, Score: matching.Score{ReviewOnly: true}})); err != nil {
+		t.Fatal(err)
+	}
+	item := enqueueOwnedInput(t, a, "Song", "Artist", "Soundtrack")
+	scored := []matching.ScoredCandidate{{Candidate: candidate, Score: matching.Score{ReviewOnly: true}}}
+	if handled, err := a.store.ResolveImport(item, scored, nil); err != nil || handled {
+		t.Fatal("unconfirmed version was skipped", handled, err)
+	}
+	if got := matching.AutomaticCandidates(scored); len(got) != 0 {
+		t.Fatal("automatic selection changed", got)
+	}
+}
+
 func TestAcceptedAliasRetainsInputsUntilBindingChanges(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()

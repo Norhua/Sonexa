@@ -25,6 +25,7 @@ var migrations = []Migration{
 	{Version: 1, Name: "snapshot_model", SQL: migration0001Init},
 	{Version: 2, Name: "cover_catalog", SQL: migration0002CoverCatalog},
 	{Version: 3, Name: "import_evidence", SQL: migration0003ImportEvidence},
+	{Version: 4, Name: "confirmation_context", SQL: migration0004ConfirmationContext},
 }
 
 const ModelGeneration = "upstream-snapshot-v1"
