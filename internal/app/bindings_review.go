@@ -56,6 +56,9 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 		return nil, err
 	}
 
+	if err := a.store.ReconcileReviewDuplicates(); err != nil {
+		return nil, err
+	}
 	items, err := a.store.AllReviewItems()
 	if err != nil {
 		return nil, err

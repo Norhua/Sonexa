@@ -88,6 +88,21 @@ async function expectSecondItem(page: Page) {
   await expect(page.getByRole('button', { name: /下一条/ })).toBeDisabled()
 }
 
+test('library changes reconcile duplicates in the open review queue and update task counts', async ({ page }) => {
+  await openReview(page)
+  await page.evaluate(() => {
+    const w = window as any
+    // Backend reconciliation leaves only the still-actionable item.
+    w.__review.items[0].status = 'skipped'
+    w.runtime.EventsEmit('library:changed')
+  })
+  await expectSecondItem(page)
+  await page.locator('nav').getByRole('button', { name: '全部曲目', exact: true }).click()
+  const reads = await page.evaluate(() => (window as any).__review.queueReads)
+  await page.evaluate(() => (window as any).runtime.EventsEmit('library:changed'))
+  await expect.poll(() => page.evaluate(() => (window as any).__review.queueReads)).toBe(reads)
+})
+
 test('discard returning null immediately advances the queue, updates counts and reaches the empty state', async ({ page }) => {
   await openReview(page)
   await page.getByRole('button', { name: '移出队列', exact: true }).click()

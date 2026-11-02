@@ -143,65 +143,16 @@ func (s *Store) ResolveImport(itemID int64, candidates []matching.ScoredCandidat
 			handled = true
 			return nil
 		}
+		decision, err := ownedImportDecisionTx(tx, itemID, candidates)
+		if err != nil {
+			return err
+		}
+		if decision.TrackID != 0 {
+			handled = true
+			return skipOwnedImportTx(tx, itemID, decision)
+		}
 		inputs, err := readImportInputsTx(tx, `id=? OR merged_item_id=?`, itemID, itemID)
 		if err != nil {
-			return err
-		}
-		owned := map[int64]bool{}
-		// Local-only collections have no upstream identity to resolve. Require
-		// complete strict input equality, never just title/artist or an ISRC.
-		localRows, err := tx.Query(`SELECT t.id,t.title,t.credit,r.title,t.duration_ms,t.disc_number,t.track_number FROM track_read t LEFT JOIN release_read r ON r.id=t.release_id WHERE t.match_source IS NULL`)
-		if err != nil {
-			return err
-		}
-		for localRows.Next() {
-			var local ImportItem
-			if err := localRows.Scan(&local.ID, &local.InTitle, &local.InArtist, &local.InAlbum, &local.InDurationMS, &local.InDiscNo, &local.InTrackNo); err != nil {
-				localRows.Close()
-				return err
-			}
-			consistent := len(inputs) > 0
-			for _, input := range inputs {
-				if !matching.SameImportText(importInput(input), importInput(local)) {
-					consistent = false
-					break
-				}
-			}
-			if consistent {
-				owned[local.ID] = true
-			}
-		}
-		if err := localRows.Err(); err != nil {
-			localRows.Close()
-			return err
-		}
-		localRows.Close()
-		for _, sc := range candidates {
-			c := sc.Candidate
-			if c.MatchRef == "" {
-				continue
-			}
-			var trackID int64
-			err := tx.QueryRow(`SELECT id FROM track WHERE match_source=? AND match_ref=?`, c.Provider, c.MatchRef).Scan(&trackID)
-			if errors.Is(err, sql.ErrNoRows) {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			consistent, err := importMatchesTrackTx(tx, itemID, trackID)
-			if err != nil {
-				return err
-			}
-			if consistent {
-				owned[trackID] = true
-			}
-		}
-		if len(owned) == 1 {
-			for id := range owned {
-				_, err = tx.Exec(`UPDATE import_item SET status='skipped',track_id=?,review_reason=NULL,next_retry_at=NULL,updated_at=? WHERE id=?`, id, time.Now().UTC(), itemID)
-			}
-			handled = true
 			return err
 		}
 		if selected == nil || selected.MatchRef == "" {
@@ -243,24 +194,6 @@ func (s *Store) ResolveImport(itemID int64, candidates []matching.ScoredCandidat
 	return handled, err
 }
 
-func importMatchesTrackTx(tx *sql.Tx, itemID, trackID int64) (bool, error) {
-	inputs, err := readImportInputsTx(tx, `id=? OR merged_item_id=?`, itemID, itemID)
-	if err != nil {
-		return false, err
-	}
-	var track ImportItem
-	err = tx.QueryRow(`SELECT t.title,t.credit,r.title,t.duration_ms,t.disc_number,t.track_number FROM track_read t LEFT JOIN release_read r ON r.id=t.release_id WHERE t.id=?`, trackID).Scan(&track.InTitle, &track.InArtist, &track.InAlbum, &track.InDurationMS, &track.InDiscNo, &track.InTrackNo)
-	if err != nil {
-		return false, err
-	}
-	for _, input := range inputs {
-		if !matching.SameTrackContext(importInput(input), importInput(track)) {
-			return false, nil
-		}
-	}
-	return len(inputs) > 0, nil
-}
-
 // SkipReviewCandidate rechecks the exact binding, not a client-supplied local ID.
 func (s *Store) SkipReviewCandidate(itemID int64, source, ref string) error {
 	return s.withTx(func(tx *sql.Tx) error {
@@ -282,7 +215,7 @@ func (s *Store) SkipReviewCandidate(itemID int64, source, ref string) error {
 		if n != 1 {
 			return ErrItemNotActive
 		}
-		return nil
+		return rememberImportConfirmationTx(tx, itemID, id, map[string]string{"kind": "manual_skip"})
 	})
 }
 
@@ -290,7 +223,7 @@ func (s *Store) SkipReviewCandidate(itemID int64, source, ref string) error {
 func (s *Store) BeginReviewSearch(itemID int64) (int64, error) {
 	var revision int64
 	err := s.withTx(func(tx *sql.Tx) error {
-		res, err := tx.Exec(`UPDATE import_item SET search_revision=search_revision+1,resolved_source=NULL,resolved_ref=NULL WHERE id=? AND status IN ('review','failed')`, itemID)
+		res, err := tx.Exec(`UPDATE import_item SET search_revision=search_revision+1,search_manual=1,resolved_source=NULL,resolved_ref=NULL WHERE id=? AND status IN ('review','failed')`, itemID)
 		if err != nil {
 			return err
 		}

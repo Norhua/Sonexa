@@ -24,6 +24,7 @@ var ErrDatabaseNewer = errors.New("数据库版本高于当前程序支持的版
 var migrations = []Migration{
 	{Version: 1, Name: "snapshot_model", SQL: migration0001Init},
 	{Version: 2, Name: "cover_catalog", SQL: migration0002CoverCatalog},
+	{Version: 3, Name: "import_evidence", SQL: migration0003ImportEvidence},
 }
 
 const ModelGeneration = "upstream-snapshot-v1"

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/norhua/sonexa/internal/domain"
+	"github.com/norhua/sonexa/internal/matching"
+	"github.com/norhua/sonexa/internal/provider"
 )
 
 var ErrPlanStale = errors.New("plan_stale: 计划已失效，请重新预览")
@@ -94,17 +96,21 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		if err != nil {
 			return err
 		}
-		// 精确歌曲已经被另一入口写入，仍原子结束当前导入条目，且不再改变任何成员。
-		if baseline.ExistingTrackID != 0 {
-			if plan.Seed.AutomaticImport {
-				consistent, err := importMatchesTrackTx(tx, plan.Seed.ImportItemID, baseline.ExistingTrackID)
-				if err != nil {
-					return err
-				}
-				if !consistent {
-					return ErrPlanStale
-				}
+		if plan.Seed.AutomaticImport {
+			identity := plan.Seed.Snapshot.Track.Identity
+			decision, err := ownedImportDecisionTx(tx, plan.Seed.ImportItemID, []matching.ScoredCandidate{{Candidate: provider.Candidate{Provider: identity.Provider, MatchRef: identity.Ref}}})
+			if err != nil {
+				return err
 			}
+			if baseline.ExistingTrackID != 0 && decision.TrackID != baseline.ExistingTrackID {
+				return ErrPlanStale
+			}
+			if decision.TrackID != 0 {
+				baseline.ExistingTrackID = decision.TrackID
+			}
+		}
+		// 精确身份或其他来源的已有收藏：事务内使用相同证据结束导入，不修改绑定。
+		if baseline.ExistingTrackID != 0 {
 			var releaseID, groupID *int64
 			if err := tx.QueryRow("SELECT t.release_id,r.release_group_id FROM track t LEFT JOIN release r ON r.id=t.release_id WHERE t.id=?", baseline.ExistingTrackID).Scan(&releaseID, &groupID); err != nil {
 				return err
@@ -186,6 +192,13 @@ func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result domain.Admi
 		}
 		if n != 1 {
 			return ErrPlanStale
+		}
+		kind := "manual_accept"
+		if plan.Seed.AutomaticImport {
+			kind = "automatic_admission"
+		}
+		if err := rememberImportConfirmationTx(tx, plan.Seed.ImportItemID, result.TrackID, map[string]string{"kind": kind}); err != nil {
+			return err
 		}
 	}
 	raw, err := json.Marshal(result)

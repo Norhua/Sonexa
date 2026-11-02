@@ -237,6 +237,14 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		DiscNo:     item.InDiscNo, TrackNo: item.InTrackNo,
 	}
 
+	// 全库离线证据先于默认上游；QQ 收藏或历史接受不依赖 MB 搜得到。
+	if handled, err := r.store.ResolveImport(item.ID, nil, nil); err != nil {
+		r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
+		return matching.ErrorLogLine(err)
+	} else if handled {
+		return fmt.Sprintf("[跳过已入库] %s · %s", in.Title, in.Artist)
+	}
+
 	// 记录实际执行的来源，不从用户当前选择或文件信息推断。
 	if source, ok := r.searcher.(interface{ ID() provider.ProviderID }); ok {
 		if err := r.store.SetImportSearchSource(item.ID, string(source.ID())); err != nil {

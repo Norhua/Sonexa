@@ -106,11 +106,13 @@ let queueLoad: Promise<void> | null = null
 let disposed = false
 // 直接订阅事件而非待复核计数：计数相同时也可能有失败、候选或条目变化。
 const offProgress = EventsOn(Events.ImportProgress, () => { void load(true) })
+const offLibrary = EventsOn(Events.LibraryChanged, () => { refreshTasks = true; void load(true) })
 onBeforeUnmount(() => {
   disposed = true
   researchRequest++
   queueRevision++
   offProgress()
+  offLibrary()
 })
 
 watch(() => current.value?.id, (id, previousId) => {
