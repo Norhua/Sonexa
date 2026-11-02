@@ -49,8 +49,8 @@ func TestMatchUpstreamSharesImportTextProcessing(t *testing.T) {
 	if q.Artist != "原田瞳" {
 		t.Errorf("艺术家 = %q, 期望剥成主干 原田瞳", q.Artist)
 	}
-	if q.Album != "心の羽根" {
-		t.Errorf("歌集 = %q, 期望去掉截断与注释后的 心の羽根", q.Album)
+	if q.Album != "心の羽根（ドラゴンボール改ver.）" {
+		t.Errorf("歌集 = %q, 应去掉截断注释但保留已知版本", q.Album)
 	}
 	if len(q.ArtistAlternates) == 0 || q.ArtistAlternates[0] != "原田ひとみ" {
 		t.Errorf("备选写法 = %v, 期望含 原田ひとみ", q.ArtistAlternates)

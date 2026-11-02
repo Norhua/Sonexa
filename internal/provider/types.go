@@ -50,6 +50,10 @@ type Candidate struct {
 	// 匹配标识：MB 用 track MBID，iTunes 用 {country}:{trackId}。
 	MatchRef string
 
+	// SearchTitles are source-attested alternate titles for recall only. They do
+	// not replace the release track title or prove automatic identity equivalence.
+	SearchTitles []string `json:",omitempty"`
+
 	// 展示与评分字段
 	Title             *string
 	ArtistName        *string // 曲目级主要艺术家署名（扁平串）

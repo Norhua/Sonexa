@@ -212,21 +212,29 @@ type Score struct {
 	// 它与 HighConf 是两道不同的闸，不是同一判断的两个档位：
 	// 前者管「给不给人看」，后者管「要不要经人手」。
 	Plausible bool
+	// ReviewOnly marks metadata recall evidence that must never authorize an
+	// automatic import, even when the numeric score is high.
+	ReviewOnly bool `json:",omitempty"`
 }
 
-// ScoreCandidate 按候选来源选择评分算法，返回统一满分 100 的分值。
-//
-// 曲名不匹配即丢弃是所有上游共同的准入门槛。
+// ScoreCandidate performs strict scoring without metadata-only recall exceptions.
+// Lyrics and identity checks do not inherit the manual metadata candidate policy.
+// Missing query titles do not earn title points or high confidence.
 func (w Weights) ScoreCandidate(q provider.Query, c provider.Candidate) Score {
-	s := Score{TitleMatch: MatchNone}
-	// 曲名留空时（搜索页只按艺术家或歌集找）曲名闸不参与：没填的字段不是
-	// 「对不上」而是「没这个信息」。此时它也拿不到曲名分，且永远不会高置信。
+	degree := MatchNone
 	if Normalize(q.Title) != "" {
-		s.TitleMatch = w.CompareTitle(q.Title, deref(c.Title))
-		if s.TitleMatch == MatchNone {
+		degree = w.CompareTitle(q.Title, deref(c.Title))
+		if degree == MatchNone {
 			return Score{Rejected: true, TitleMatch: MatchNone}
 		}
-		s.Total += w.Title // 曲名匹配即得满额（准入已保证匹配）
+	}
+	return w.scoreCandidate(q, c, degree)
+}
+
+func (w Weights) scoreCandidate(q provider.Query, c provider.Candidate, degree MatchDegree) Score {
+	s := Score{TitleMatch: degree}
+	if degree != MatchNone {
+		s.Total += w.Title
 	}
 
 	// 署名
@@ -287,7 +295,7 @@ func durationBonus(a, b int) float64 {
 // 55+12+12=79 分但署名与歌集都只是模糊匹配 → 不算高置信（最容易搞错的那种）；
 // 而最低的高置信是 55+20=75 分（署名精确）。分数高不等于高置信。
 func (w Weights) IsHighConfidence(s Score) bool {
-	if s.TitleMatch == MatchNone {
+	if s.TitleMatch == MatchNone || s.ReviewOnly {
 		return false
 	}
 	return s.CreditMatch == MatchExact || s.AlbumMatch == MatchExact

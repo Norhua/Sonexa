@@ -3,6 +3,8 @@ package matching
 import (
 	"regexp"
 	"strings"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // 从「导出表格里的一行」到「上游那条录音」之间隔着两层噪音：
@@ -114,7 +116,7 @@ func buildVersionMarkerRe() *regexp.Regexp {
 		}
 	}
 	return regexp.MustCompile(
-		`(?i)(?:^|[\s\-_/（(［\[【])(` + strings.Join(kept, "|") + `)(?:$|[\s\-_/0-9）)］\]】])`)
+		`(?i)(?:^|[\s\-_/（(［\[【\p{Han}\p{Hiragana}\p{Katakana}])(` + strings.Join(kept, "|") + `)(?:$|[\s\-_/0-9）)］\]】\p{Han}\p{Hiragana}\p{Katakana}])`)
 }
 
 // VersionMarkers 返回串中出现的版本标记词集合（标准化后）。
@@ -123,7 +125,7 @@ func buildVersionMarkerRe() *regexp.Regexp {
 // 是两条不同的录音。
 func VersionMarkers(s string) map[string]bool {
 	out := map[string]bool{}
-	for _, m := range versionMarkerRe.FindAllStringSubmatch(s, -1) {
+	for _, m := range versionMarkerRe.FindAllStringSubmatch(norm.NFKC.String(s), -1) {
 		if key := Normalize(m[1]); key != "" {
 			out[key] = true
 		}

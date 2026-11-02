@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // BracketKind 是括号内容的语义分类。
@@ -81,7 +83,7 @@ func (r *Rules) compile() {
 	// CV 前缀后可跟分隔符：(CV:平野綾) / (CV.平野綾) / (声優：平野綾)
 	r.cvRe = regexp.MustCompile(`(?i)^\s*(?:` + join(r.CVPrefixes) + `)\s*` + separatorPattern + `?\s*(.+)$`)
 	// 版本关键词出现在内层任意位置即命中：(DJLIU Remix) 的关键词在末尾
-	r.versionRe = regexp.MustCompile(`(?i)(?:^|[\s\-_/])(?:` + join(r.VersionKeywords) + `)(?:$|[\s\-_/0-9])`)
+	r.versionRe = regexp.MustCompile(`(?i)(?:^|[\s\-_/\p{Han}\p{Hiragana}\p{Katakana}])(?:` + join(r.VersionKeywords) + `)(?:$|[\s\-_/0-9\p{Han}\p{Hiragana}\p{Katakana}])`)
 	r.translationRe = regexp.MustCompile(`(?i)(?:` + join(r.TranslationHints) + `)`)
 	r.featureRe = regexp.MustCompile(`(?i)^\s*(?:` + join(r.FeatureKeywords) + `)\s+(.+)$`)
 	r.disambigRe = regexp.MustCompile(`(?i)` + join(r.DisambiguationPat))
@@ -117,7 +119,7 @@ func (r *Rules) Classify(seg Segment) Classification {
 	}
 
 	// [2] 版本标识——必须先于文字系统差异判定
-	if r.versionRe.MatchString(inner) {
+	if r.versionRe.MatchString(norm.NFKC.String(inner)) {
 		// feat. 类虽在版本关键词表中，但语义是「附加艺术家」：
 		// 从曲名剥离并并入艺术家条件，而不是保留为曲名的一部分。
 		if m := r.featureRe.FindStringSubmatch(inner); m != nil {

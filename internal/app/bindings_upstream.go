@@ -62,6 +62,7 @@ type CandidateRow struct {
 	Confidence    float64 `json:"confidence"`
 	// MatchedVariant 供复核队列显示该分值来自哪个变体。
 	MatchedVariant string `json:"matchedVariant"`
+	ReviewOnly     bool   `json:"reviewOnly,omitempty"`
 
 	/** ArtworkURL 保留候选元信息；后端将其登记为受控图片目录。 */
 	ArtworkURL *string `json:"artworkUrl"`
@@ -315,6 +316,7 @@ func rowFrom(sc matching.ScoredCandidate) CandidateRow {
 		Year: c.Year, MediumFormat: c.MediumFormat, Country: c.Country,
 		Label: c.Label, CatalogNumber: c.CatalogNumber,
 		Confidence: sc.Score.Total, MatchedVariant: sc.MatchedVariant,
+		ReviewOnly: sc.Score.ReviewOnly, Note: candidateReviewNote(sc.Score.ReviewOnly),
 		ReleaseRef: c.ReleaseRef, ReleaseGroupRef: c.ReleaseGroupRef,
 		RecordingRef: c.RecordingRef, ISRC: c.ISRC,
 		ReleaseStatus: c.ReleaseStatus, FirstReleaseDate: c.FirstReleaseDate,

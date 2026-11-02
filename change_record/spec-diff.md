@@ -1,7 +1,7 @@
 # 代码与主规格差异（共享文档）
 
 本文件汇总尚未合并进 `openspec/specs/` 的实现变化；后续会话共同维护，不按轮次拆分。
-本轮来源：`1-why.md`、`1-tasks.md`、`2-why.md`、`2-tasks.md`。**主规格尚未修改，不代表已经 archive。**
+本轮来源：`1-why.md`、`1-tasks.md`、`2-why.md`、`2-tasks.md`、`3-why.md`、`3-tasks.md`。**主规格尚未修改，不代表已经 archive。**
 
 ## SD-1：输入、活动条目与最终收藏分开，跨批次去重
 
@@ -91,6 +91,31 @@
 - 复核页监听库变化，后台新增收藏时重读队列与汇总；卸载取消订阅。规则修复前遗留的未改搜重复复核可在再次打开时整理，不必重导文件。
 - 判定实现：`matching/owned_import.go`（纯业务证据）、`store/owned_import.go`（全库读模型、确认关系、事务整理）、`migration_import_evidence.go`；不新增上游分发分支或为去重调用其他上游。
 
+## SD-7：元数据人工召回与自动身份证据分离（轮次 3）
+
+待同步：
+- `openspec/specs/matching/confidence/spec.md`：曲名与辅助字段检查、评分与高置信、独立歌词边界
+- `openspec/specs/matching/text-processing/spec.md`：版本识别、执行与去重
+- `openspec/specs/matching/pipeline/spec.md`：共用检索规则、自动入库判定
+- `openspec/specs/upstream/musicbrainz/spec.md`：查询与结果粒度
+- `openspec/specs/review/review-queue/spec.md`：候选说明及快照
+- `openspec/design.md`：OpenCC 公共字典位置更新为 `internal/textmatch/data/opencc/`
+
+实现：`matching/metadata_recall.go`、`matching/confidence.go`、`provider/musicbrainz/musicbrainz.go`、`textmatch/han.go`、`app/bindings_{upstream,review}.go`。
+
+- **替换主规格“版本集合不同即从元数据候选列表删除”**：严格 `CompareTitle/ScoreCandidate` 仍用于身份和歌词，元数据四入口改用 `ScoreMetadataCandidate`，在严格匹配失败时有受限的人工召回路径。
+- 输入未注明版本时，可从候选的括号或破折号版本描述中识别主体；主体须精确相同（允许既有非版本译名），不能凭任意子串、宽松相似度或截断扩展。输入明确写了版本时不放宽为裸曲或另一版本；普通标题中的 Live 等词不任意删除。
+- 上游可提供 `Candidate.SearchTitles` 检索异写旁证。MB 用当前 track 所属 recording 的实际标题，避免罗马字 track 标题丢掉日文搜索依据；不替换 track 标题、发行或身份，不把同 recording 的四个位置去重成一个。该旁证只用于召回，不作自动身份事实。
+- 艺术家比较增加直接、唯一的简繁单字对应作为人工召回的模糊旁证。复用并迁移既有 OpenCC v1.1.9 字典及许可证到 `internal/textmatch`；多义映射与两个繁体同归一个简体不判等；原始字符串、全局 Normalize、身份判重均不改写。歌词复用公共字符函数，保留原有禁止含假名/谚文等局部限制。
+- 辅助字段检查仍保留：可比较的艺术家/专辑至少一处相符，或两处都不可比。不能只凭标题相同把不相关艺术家/专辑全部放进池子；没有为截图专辑翻译建立特例。
+- 新召回候选 `Score.ReviewOnly=true`，强制 `HighConf=false`，`AutomaticCandidates` 再次排除。即使数字分数很高也不能自动入库；已有严格候选的自动优先规则不变。候选继续按来源 + track 标识去重，渐进检索有可展示候选即可停止。
+- `CandidateRow.reviewOnly` 和现有 note 显示“仅供人工确认：版本未注明或使用检索异写旁证”；导入快照、手搜快照、队列重读、本地徽章刷新及编辑结果保持提示。人工接受/跳过仍执行原有精确身份、发行成员准入和事务检查，不因 ReviewOnly 禁止用户选择。
+- 版本识别先 NFKC 并接受汉字/假名与英文词的相邻边界，`ハーサカver.` 与全角 `Ｖｅｒ．` 可识别，括号分类同样保留；英文单词子串（Never/Silver 等）仍不误判。
+
+场景：截图原始输入在真实 MB 首次锚定请求返回 8 条人工候选，其中 4 条为目标演唱录音、4 条为同署名伴奏；目标 CD 第 2 轨确实可见，自动候选为 0。测试同时覆盖 4 个发行中的罗马字 track 标题、其他版本保护及所有应用入口。
+
+既有队列只保存先前过滤后的快照，修复不自动出网重做它们；旧空结果需用户在新版点击重新搜索，新导入直接走新规则。没有数据库结构变更。
+
 ## 验证与待确认边界
 
-详细命令及结果见 `1-tasks.md`、`2-tasks.md`。使用空测试数据库、离线上游桩和 Chromium/WebKit Wails 替身验证；未运行真实 MusicBrainz/QQ 请求和原生窗口人工测试。不承诺从无证据、任意完全不同名称猜出相同 track，不能确认时保留独立条目供复核。大批量输入性能尚未专门测量。
+轮次 1–2 详细命令及结果见 `1-tasks.md`、`2-tasks.md`；其验证使用空测试数据库、离线上游桩和 Chromium/WebKit Wails 替身，未请求真实上游。轮次 3 见 `3-tasks.md`：新增真实 MB 响应及真实 Engine 联网验证（两次请求总计），离线四入口/快照/人工接受回归，全量 Go race、vet、前端构建/单测及双浏览器回归通过。均未读取或修改用户运行中的应用数据库，也未运行原生窗口人工测试。不承诺从无证据、任意完全不同名称猜出相同 track，不能确认时保留人工处理；大批量输入性能尚未专门测量。

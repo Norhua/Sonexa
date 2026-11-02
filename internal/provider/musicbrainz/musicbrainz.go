@@ -280,6 +280,9 @@ func buildCandidate(rec recording, rel release, med medium, trk track, credit st
 		RecordingRef: strPtr(rec.ID),
 		ReleaseRef:   strPtr(rel.ID),
 	}
+	if rec.Title != "" && rec.Title != firstNonEmpty(trk.Title, rec.Title) {
+		c.SearchTitles = []string{rec.Title}
+	}
 	if credit != "" {
 		c.ArtistName = &credit
 	}

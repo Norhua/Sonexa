@@ -25,7 +25,7 @@ func sameImportEdition(a, b string) bool {
 func AutomaticCandidates(scored []ScoredCandidate) []ScoredCandidate {
 	var high, exact []ScoredCandidate
 	for _, sc := range scored {
-		if !sc.Score.HighConf {
+		if !sc.Score.HighConf || sc.Score.ReviewOnly {
 			continue
 		}
 		high = append(high, sc)

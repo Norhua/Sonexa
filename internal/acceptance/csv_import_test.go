@@ -98,15 +98,15 @@ func csvRows() []csvRow {
 			},
 			wantOutcome: matching.OutcomeImportUnique,
 			wantTitle:   "Tetra.",
-			wantScored:  1, // off vocal / movie ver. 三条被曲名闸挡掉
-			why:         "括号里是另一种写法，署名精确；off vocal / movie ver. 三条必须被曲名闸挡掉",
+			wantScored:  4, // 三条其他版本仅供人工确认，不参与自动选择
+			why:         "括号异写使原版署名精确；其他版本可展示，但不能冒充原版自动入库",
 		},
 		{
 			title: "世界中の雨（世间之雨）", artist: "チームドラゴン from AKB48",
 			album: "心の羽根（ドラゴンボール改ver.）（心...",
 			candidates: []provider.Candidate{
 				// 真实返回 22 条（同一录音 11 张同名 CD 发行 × 2 条录音）。
-				// 这里留 11 + 2：11 张发行是判定的全部依据，off vocal 留两条够证明曲名闸生效。
+				// 这里留 11 + 2：11 张发行是自动判定的全部依据，off vocal 两条仅供人工确认。
 				mbCand("5d444cdf-25d7-3177-81aa-07f39d46af6f", "世界中の雨", "チームドラゴン from AKB48", "心の羽根",
 					"fea2d6f4-0957-4090-baba-b013ae3dfbcd", "9b793f9f-12fd-45f6-9e2e-50ad4ac7389d", "Official", "CD", "JP"),
 				mbCand("146fd64b-3fa5-338e-9853-51b7a1939466", "世界中の雨", "チームドラゴン from AKB48", "心の羽根",
@@ -135,7 +135,7 @@ func csvRows() []csvRow {
 					"6789cb93-5b4d-4156-a29a-921ff32a9281", "9b793f9f-12fd-45f6-9e2e-50ad4ac7389d", "Official", "CD", "JP"),
 			},
 			wantOutcome: matching.OutcomeReviewManyReleases,
-			wantScored:  11, // off vocal 两条被曲名闸挡掉，11 张同名 CD 全部过闸
+			wantScored:  13, // 原版 11 张保留自动资格，off vocal 两条仅供人工确认
 			why: "用户报告的那条：同一条录音挂在 11 张同名 CD 发行上，过滤实体载体后仍剩 11 条，" +
 				"没有任何客观依据能分出高下——不能替用户挑一个",
 		},

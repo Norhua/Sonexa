@@ -105,7 +105,7 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 		for _, c := range candidates {
 			// 评分用**原始输入**而不是剥离后的变体：变体是为了查得到，
 			// 判定「查对了没有」要拿用户给的那一行去比。
-			score := e.Weights.ScoreCandidate(provider.Query{
+			score := e.Weights.ScoreMetadataCandidate(provider.Query{
 				Title: in.Title, Artist: in.Artist, Album: in.Album, DurationMS: in.DurationMS,
 			}, c)
 			if score.Rejected {

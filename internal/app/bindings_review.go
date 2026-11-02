@@ -194,14 +194,21 @@ func (a *App) applyLocalMatch(row *CandidateRow, c provider.Candidate) {
 	if err != nil || local.Kind == matching.LocalNone {
 		row.Badges = []string{string(c.Provider)}
 		row.Action = "接受"
-		row.Note = ""
+		row.Note = candidateReviewNote(row.ReviewOnly)
 		row.LocalTrackID = 0
 		return
 	}
 	row.Badges = local.Badges(c.Provider)
 	row.Action = local.Action()
-	row.Note = local.Note()
+	row.Note = candidateReviewNote(row.ReviewOnly)
 	row.LocalTrackID = local.TrackID
+}
+
+func candidateReviewNote(reviewOnly bool) string {
+	if reviewOnly {
+		return "仅供人工确认：版本未注明或使用检索异写旁证"
+	}
+	return ""
 }
 
 func sortRowsByConfidence(rows []CandidateRow) {

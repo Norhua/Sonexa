@@ -220,6 +220,31 @@ for (const label of ['接受', '无需匹配']) {
   })
 }
 
+test('review-only version candidates remain visible with a warning and require an explicit action', async ({ page }) => {
+  await page.evaluate(() => {
+    const state = (window as any).__review
+    const item = state.items[0]
+    item.inTitle = '悲しくて lulululu (难忍的悲伤)'
+    item.inArtist = '早坂爱'
+    item.searchProvider = 'musicbrainz'
+    item.candidates = Array.from({ length: 4 }, (_, i) => ({
+      ...item.candidates[0], provider: 'musicbrainz', badges: ['musicbrainz'],
+      matchRef: `version-track-${i}`, title: '悲しくて lulululu -ハーサカ Ver.-',
+      album: `发行 ${i + 1}`, reviewOnly: true, confidence: 72,
+      note: '仅供人工确认：版本未注明或使用检索异写旁证',
+    }))
+    state.requiresConfirmation = false
+  })
+  await page.locator('nav').getByRole('button', { name: /复核队列/ }).click()
+  await expect(page.getByText('悲しくて lulululu -ハーサカ Ver.-', { exact: true })).toHaveCount(4)
+  await expect(page.getByText('仅供人工确认：版本未注明或使用检索异写旁证', { exact: true })).toHaveCount(4)
+  await expect(page.getByRole('button', { name: '接受', exact: true })).toHaveCount(4)
+  expect(await page.evaluate(() => (window as any).__review.commits)).toEqual([])
+  await page.getByRole('button', { name: '接受', exact: true }).last().click()
+  await expectSecondItem(page)
+  expect(await page.evaluate(() => (window as any).__review.commits)).toEqual(['admit-11'])
+})
+
 test('original inputs replace file location and retain distinct aliases', async ({ page }) => {
   await page.evaluate(() => {
     const item = (window as any).__review.items[0]

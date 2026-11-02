@@ -1,0 +1,939 @@
+{
+  "created": "2026-11-02T08:19:42.529Z",
+  "count": 3,
+  "offset": 0,
+  "recordings": [
+    {
+      "id": "a9cd51c0-0550-44b9-8592-3e9a4b823d06",
+      "score": 100,
+      "artist-credit-id": "aa815079-b7b4-4871-98fe-8055229b29a7",
+      "title": "悲しくて lulululu -Instrumental-",
+      "length": 247000,
+      "video": null,
+      "artist-credit": [
+        {
+          "joinphrase": "(CV.",
+          "name": "早坂 愛",
+          "artist": {
+            "id": "214c8cc7-0060-480c-9045-21df6f147864",
+            "name": "早坂愛",
+            "sort-name": "Hayasaka, Ai",
+            "disambiguation": "かぐや様は告らせたい"
+          }
+        },
+        {
+          "joinphrase": ")",
+          "name": "花守ゆみり",
+          "artist": {
+            "id": "0809863b-7d5e-4e53-804d-78ed1d8e9e92",
+            "name": "花守ゆみり",
+            "sort-name": "Hanamori, Yumiri",
+            "aliases": [
+              {
+                "sort-name": "はなもり ゆみり",
+                "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+                "name": "花守ゆみり",
+                "locale": "ja",
+                "type": "Artist name",
+                "primary": true,
+                "begin-date": null,
+                "end-date": null
+              }
+            ]
+          }
+        }
+      ],
+      "first-release-date": "2022-06-29",
+      "releases": [
+        {
+          "id": "55ea9b20-17af-4717-8af2-ca1bb0872922",
+          "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+          "artist-credit-id": "949a7fd5-fe73-3e8f-922e-01ff4ca958f7",
+          "count": 1,
+          "title": "Kaguya-sama: Love Is War -Ultra Romantic- Original Soundtrack vol.1",
+          "status": "Pseudo-Release",
+          "disambiguation": "Romaji",
+          "artist-credit": [
+            {
+              "name": "Various Artists",
+              "artist": {
+                "id": "89ad4ac3-39f7-470e-963a-56509c546377",
+                "name": "Various Artists",
+                "sort-name": "Various Artists",
+                "disambiguation": "add compilations to this artist"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "bc630404-e54b-486b-b2b4-a2528b7c203a",
+            "type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "title": "かぐや様は告らせたい-ウルトラロマンティック- オリジナル・サウンドトラック vol.1",
+            "primary-type": "Single"
+          },
+          "track-count": 5,
+          "media": [
+            {
+              "id": "49aed00a-254f-3815-8924-e3bb6c84c29e",
+              "position": 1,
+              "track": [
+                {
+                  "id": "48f9185d-99a4-41b2-8361-983b929b0689",
+                  "number": "5",
+                  "title": "Kanashikute lulululu -Instrumental-",
+                  "length": 248000
+                }
+              ],
+              "track-count": 5,
+              "track-offset": 4
+            }
+          ]
+        },
+        {
+          "id": "c42c6df9-35b9-4de7-a637-724c8ea8df29",
+          "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+          "artist-credit-id": "1a807b5e-a8b6-49bc-b687-74e6cc40664c",
+          "count": 1,
+          "title": "KAGUYA Music Collection Season3",
+          "status": "Pseudo-Release",
+          "artist-credit": [
+            {
+              "joinphrase": " & ",
+              "name": "Haneoka Kei",
+              "artist": {
+                "id": "256b4219-8e79-40be-8373-ecc0967f1e40",
+                "name": "羽岡佳",
+                "sort-name": "Haneoka, Kei"
+              }
+            },
+            {
+              "joinphrase": " & ",
+              "name": "Nishida Keiki",
+              "artist": {
+                "id": "a61ddc09-8150-4b95-804f-750290e4d6eb",
+                "name": "西田圭稀",
+                "sort-name": "Nishida, Keiki"
+              }
+            },
+            {
+              "name": "Mizuno Yoshiki",
+              "artist": {
+                "id": "778ebe69-8f62-4b62-b164-4532e243ec46",
+                "name": "水野良樹",
+                "sort-name": "Mizuno, Yoshiki"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "891c9a07-952b-411b-b391-e2beb10c7c6c",
+            "type-id": "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+            "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+            "title": "KAGUYA Music Collection Season3",
+            "primary-type": "Album",
+            "secondary-types": [
+              "Compilation",
+              "Soundtrack"
+            ],
+            "secondary-type-ids": [
+              "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+              "22a628ad-c082-3c4f-b1b6-d41665107b88"
+            ]
+          },
+          "track-count": 53,
+          "media": [
+            {
+              "id": "e4a2a1b4-3eec-3ea1-b5b8-048b83376358",
+              "position": 1,
+              "track": [
+                {
+                  "id": "cf08058b-3411-4735-8ba1-f414c7d365aa",
+                  "number": "5",
+                  "title": "Kanashikute lulululu -Instrumental-",
+                  "length": 247000
+                }
+              ],
+              "track-count": 53,
+              "track-offset": 4
+            }
+          ]
+        },
+        {
+          "id": "4f6c983c-dbfa-4177-9d23-b5f83d89542a",
+          "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+          "artist-credit-id": "3f40d7ff-0f56-4f0b-bb51-b3fd5298dc45",
+          "count": 1,
+          "title": "KAGUYA Music Collection Season3",
+          "status": "Official",
+          "artist-credit": [
+            {
+              "joinphrase": " & ",
+              "name": "羽岡佳",
+              "artist": {
+                "id": "256b4219-8e79-40be-8373-ecc0967f1e40",
+                "name": "羽岡佳",
+                "sort-name": "Haneoka, Kei"
+              }
+            },
+            {
+              "joinphrase": " & ",
+              "name": "西田圭稀",
+              "artist": {
+                "id": "a61ddc09-8150-4b95-804f-750290e4d6eb",
+                "name": "西田圭稀",
+                "sort-name": "Nishida, Keiki"
+              }
+            },
+            {
+              "name": "水野良樹",
+              "artist": {
+                "id": "778ebe69-8f62-4b62-b164-4532e243ec46",
+                "name": "水野良樹",
+                "sort-name": "Mizuno, Yoshiki"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "891c9a07-952b-411b-b391-e2beb10c7c6c",
+            "type-id": "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+            "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+            "title": "KAGUYA Music Collection Season3",
+            "primary-type": "Album",
+            "secondary-types": [
+              "Compilation",
+              "Soundtrack"
+            ],
+            "secondary-type-ids": [
+              "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+              "22a628ad-c082-3c4f-b1b6-d41665107b88"
+            ]
+          },
+          "date": "2023-03-31",
+          "country": "XW",
+          "release-events": [
+            {
+              "date": "2023-03-31",
+              "area": {
+                "id": "525d4e18-3d00-31b9-a58b-a146a916de8f",
+                "name": "[Worldwide]",
+                "sort-name": "[Worldwide]",
+                "iso-3166-1-codes": [
+                  "XW"
+                ]
+              }
+            }
+          ],
+          "track-count": 53,
+          "media": [
+            {
+              "id": "57519184-59d3-3101-9d87-173eb1f03925",
+              "position": 1,
+              "format": "Digital Media",
+              "track": [
+                {
+                  "id": "8e5911a9-ed99-435d-ab82-aa8937856278",
+                  "number": "5",
+                  "title": "悲しくて lulululu -Instrumental-",
+                  "length": 247000
+                }
+              ],
+              "track-count": 53,
+              "track-offset": 4
+            }
+          ]
+        },
+        {
+          "id": "24da5eb0-ac4b-4298-b827-6c0cbef391f7",
+          "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+          "artist-credit-id": "949a7fd5-fe73-3e8f-922e-01ff4ca958f7",
+          "count": 1,
+          "title": "かぐや様は告らせたい-ウルトラロマンティック- オリジナル・サウンドトラック vol.1",
+          "status": "Official",
+          "artist-credit": [
+            {
+              "name": "Various Artists",
+              "artist": {
+                "id": "89ad4ac3-39f7-470e-963a-56509c546377",
+                "name": "Various Artists",
+                "sort-name": "Various Artists",
+                "disambiguation": "add compilations to this artist"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "bc630404-e54b-486b-b2b4-a2528b7c203a",
+            "type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "title": "かぐや様は告らせたい-ウルトラロマンティック- オリジナル・サウンドトラック vol.1",
+            "primary-type": "Single"
+          },
+          "date": "2022-06-29",
+          "country": "JP",
+          "release-events": [
+            {
+              "date": "2022-06-29",
+              "area": {
+                "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+                "name": "Japan",
+                "sort-name": "Japan",
+                "iso-3166-1-codes": [
+                  "JP"
+                ]
+              }
+            }
+          ],
+          "track-count": 5,
+          "media": [
+            {
+              "id": "a27245a8-71d1-3f0b-929e-849e5b6b1034",
+              "position": 1,
+              "format": "CD",
+              "track": [
+                {
+                  "id": "6cca48fa-b1f7-4aaf-81b5-4129851a0a08",
+                  "number": "5",
+                  "title": "悲しくて lulululu -Instrumental-",
+                  "length": 247866
+                }
+              ],
+              "track-count": 5,
+              "track-offset": 4
+            }
+          ]
+        }
+      ],
+      "isrcs": [
+        "JPE302200702"
+      ]
+    },
+    {
+      "id": "c62b67ba-53b0-4fbf-88f8-040cf7f9a55d",
+      "score": 90,
+      "artist-credit-id": "aa815079-b7b4-4871-98fe-8055229b29a7",
+      "title": "悲しくて lulululu -ハーサカ Ver.-",
+      "length": 249000,
+      "video": null,
+      "artist-credit": [
+        {
+          "joinphrase": "(CV.",
+          "name": "早坂 愛",
+          "artist": {
+            "id": "214c8cc7-0060-480c-9045-21df6f147864",
+            "name": "早坂愛",
+            "sort-name": "Hayasaka, Ai",
+            "disambiguation": "かぐや様は告らせたい"
+          }
+        },
+        {
+          "joinphrase": ")",
+          "name": "花守ゆみり",
+          "artist": {
+            "id": "0809863b-7d5e-4e53-804d-78ed1d8e9e92",
+            "name": "花守ゆみり",
+            "sort-name": "Hanamori, Yumiri",
+            "aliases": [
+              {
+                "sort-name": "はなもり ゆみり",
+                "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+                "name": "花守ゆみり",
+                "locale": "ja",
+                "type": "Artist name",
+                "primary": true,
+                "begin-date": null,
+                "end-date": null
+              }
+            ]
+          }
+        }
+      ],
+      "first-release-date": "2022-06-29",
+      "releases": [
+        {
+          "id": "55ea9b20-17af-4717-8af2-ca1bb0872922",
+          "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+          "artist-credit-id": "949a7fd5-fe73-3e8f-922e-01ff4ca958f7",
+          "count": 1,
+          "title": "Kaguya-sama: Love Is War -Ultra Romantic- Original Soundtrack vol.1",
+          "status": "Pseudo-Release",
+          "disambiguation": "Romaji",
+          "artist-credit": [
+            {
+              "name": "Various Artists",
+              "artist": {
+                "id": "89ad4ac3-39f7-470e-963a-56509c546377",
+                "name": "Various Artists",
+                "sort-name": "Various Artists",
+                "disambiguation": "add compilations to this artist"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "bc630404-e54b-486b-b2b4-a2528b7c203a",
+            "type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "title": "かぐや様は告らせたい-ウルトラロマンティック- オリジナル・サウンドトラック vol.1",
+            "primary-type": "Single"
+          },
+          "track-count": 5,
+          "media": [
+            {
+              "id": "49aed00a-254f-3815-8924-e3bb6c84c29e",
+              "position": 1,
+              "track": [
+                {
+                  "id": "4b0067e8-88f2-450f-af2c-a773b76130a6",
+                  "number": "2",
+                  "title": "Kanashikute lulululu -Hayasaka ver.-",
+                  "length": 250000
+                }
+              ],
+              "track-count": 5,
+              "track-offset": 1
+            }
+          ]
+        },
+        {
+          "id": "c42c6df9-35b9-4de7-a637-724c8ea8df29",
+          "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+          "artist-credit-id": "1a807b5e-a8b6-49bc-b687-74e6cc40664c",
+          "count": 1,
+          "title": "KAGUYA Music Collection Season3",
+          "status": "Pseudo-Release",
+          "artist-credit": [
+            {
+              "joinphrase": " & ",
+              "name": "Haneoka Kei",
+              "artist": {
+                "id": "256b4219-8e79-40be-8373-ecc0967f1e40",
+                "name": "羽岡佳",
+                "sort-name": "Haneoka, Kei"
+              }
+            },
+            {
+              "joinphrase": " & ",
+              "name": "Nishida Keiki",
+              "artist": {
+                "id": "a61ddc09-8150-4b95-804f-750290e4d6eb",
+                "name": "西田圭稀",
+                "sort-name": "Nishida, Keiki"
+              }
+            },
+            {
+              "name": "Mizuno Yoshiki",
+              "artist": {
+                "id": "778ebe69-8f62-4b62-b164-4532e243ec46",
+                "name": "水野良樹",
+                "sort-name": "Mizuno, Yoshiki"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "891c9a07-952b-411b-b391-e2beb10c7c6c",
+            "type-id": "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+            "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+            "title": "KAGUYA Music Collection Season3",
+            "primary-type": "Album",
+            "secondary-types": [
+              "Compilation",
+              "Soundtrack"
+            ],
+            "secondary-type-ids": [
+              "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+              "22a628ad-c082-3c4f-b1b6-d41665107b88"
+            ]
+          },
+          "track-count": 53,
+          "media": [
+            {
+              "id": "e4a2a1b4-3eec-3ea1-b5b8-048b83376358",
+              "position": 1,
+              "track": [
+                {
+                  "id": "f978b91f-8ccb-40c1-a4b7-d54a29ef697e",
+                  "number": "2",
+                  "title": "Kanashikute lulululu -Hayasaka Version-",
+                  "length": 249000
+                }
+              ],
+              "track-count": 53,
+              "track-offset": 1
+            }
+          ]
+        },
+        {
+          "id": "4f6c983c-dbfa-4177-9d23-b5f83d89542a",
+          "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+          "artist-credit-id": "3f40d7ff-0f56-4f0b-bb51-b3fd5298dc45",
+          "count": 1,
+          "title": "KAGUYA Music Collection Season3",
+          "status": "Official",
+          "artist-credit": [
+            {
+              "joinphrase": " & ",
+              "name": "羽岡佳",
+              "artist": {
+                "id": "256b4219-8e79-40be-8373-ecc0967f1e40",
+                "name": "羽岡佳",
+                "sort-name": "Haneoka, Kei"
+              }
+            },
+            {
+              "joinphrase": " & ",
+              "name": "西田圭稀",
+              "artist": {
+                "id": "a61ddc09-8150-4b95-804f-750290e4d6eb",
+                "name": "西田圭稀",
+                "sort-name": "Nishida, Keiki"
+              }
+            },
+            {
+              "name": "水野良樹",
+              "artist": {
+                "id": "778ebe69-8f62-4b62-b164-4532e243ec46",
+                "name": "水野良樹",
+                "sort-name": "Mizuno, Yoshiki"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "891c9a07-952b-411b-b391-e2beb10c7c6c",
+            "type-id": "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+            "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+            "title": "KAGUYA Music Collection Season3",
+            "primary-type": "Album",
+            "secondary-types": [
+              "Compilation",
+              "Soundtrack"
+            ],
+            "secondary-type-ids": [
+              "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+              "22a628ad-c082-3c4f-b1b6-d41665107b88"
+            ]
+          },
+          "date": "2023-03-31",
+          "country": "XW",
+          "release-events": [
+            {
+              "date": "2023-03-31",
+              "area": {
+                "id": "525d4e18-3d00-31b9-a58b-a146a916de8f",
+                "name": "[Worldwide]",
+                "sort-name": "[Worldwide]",
+                "iso-3166-1-codes": [
+                  "XW"
+                ]
+              }
+            }
+          ],
+          "track-count": 53,
+          "media": [
+            {
+              "id": "57519184-59d3-3101-9d87-173eb1f03925",
+              "position": 1,
+              "format": "Digital Media",
+              "track": [
+                {
+                  "id": "08c69ced-4a7e-4e3c-8893-957e27620817",
+                  "number": "2",
+                  "title": "悲しくて lulululu -ハーサカver.-",
+                  "length": 249000
+                }
+              ],
+              "track-count": 53,
+              "track-offset": 1
+            }
+          ]
+        },
+        {
+          "id": "24da5eb0-ac4b-4298-b827-6c0cbef391f7",
+          "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+          "artist-credit-id": "949a7fd5-fe73-3e8f-922e-01ff4ca958f7",
+          "count": 1,
+          "title": "かぐや様は告らせたい-ウルトラロマンティック- オリジナル・サウンドトラック vol.1",
+          "status": "Official",
+          "artist-credit": [
+            {
+              "name": "Various Artists",
+              "artist": {
+                "id": "89ad4ac3-39f7-470e-963a-56509c546377",
+                "name": "Various Artists",
+                "sort-name": "Various Artists",
+                "disambiguation": "add compilations to this artist"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "bc630404-e54b-486b-b2b4-a2528b7c203a",
+            "type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "title": "かぐや様は告らせたい-ウルトラロマンティック- オリジナル・サウンドトラック vol.1",
+            "primary-type": "Single"
+          },
+          "date": "2022-06-29",
+          "country": "JP",
+          "release-events": [
+            {
+              "date": "2022-06-29",
+              "area": {
+                "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+                "name": "Japan",
+                "sort-name": "Japan",
+                "iso-3166-1-codes": [
+                  "JP"
+                ]
+              }
+            }
+          ],
+          "track-count": 5,
+          "media": [
+            {
+              "id": "a27245a8-71d1-3f0b-929e-849e5b6b1034",
+              "position": 1,
+              "format": "CD",
+              "track": [
+                {
+                  "id": "d2895728-1e49-42e6-81fd-75e1be292099",
+                  "number": "2",
+                  "title": "悲しくて lulululu -ハーサカ Ver.-",
+                  "length": 249680
+                }
+              ],
+              "track-count": 5,
+              "track-offset": 1
+            }
+          ]
+        }
+      ],
+      "isrcs": [
+        "JPE302200699"
+      ],
+      "tags": [
+        {
+          "count": 1,
+          "name": "j-pop"
+        }
+      ]
+    },
+    {
+      "id": "c6b72a85-8cf8-474f-95a8-aaab193cf7ec",
+      "score": 90,
+      "artist-credit-id": "62d567fe-d584-31a9-b4a4-6b98201bf9be",
+      "title": "悲しくて lulululu -Original Ver.-",
+      "length": 250000,
+      "video": null,
+      "artist-credit": [
+        {
+          "name": "草野華余子",
+          "artist": {
+            "id": "91490a39-cae7-4388-982c-f194d2379b2e",
+            "name": "草野華余子",
+            "sort-name": "Kusano, Kayoko",
+            "disambiguation": "J-pop singer/songwriter and producer, FKA カヨコ",
+            "aliases": [
+              {
+                "sort-name": "クサノカヨコ",
+                "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+                "name": "草野華余子",
+                "locale": "ja",
+                "type": "Artist name",
+                "primary": true,
+                "begin-date": "2019-02-25",
+                "end-date": null
+              },
+              {
+                "sort-name": "カヨコ",
+                "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+                "name": "カヨコ",
+                "locale": "ja",
+                "type": "Artist name",
+                "primary": null,
+                "begin-date": null,
+                "end-date": "2019-02-25"
+              },
+              {
+                "sort-name": "Kusano, Kayoko",
+                "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+                "name": "Kayoko Kusano",
+                "locale": "en",
+                "type": "Artist name",
+                "primary": true,
+                "begin-date": "2019-02-25",
+                "end-date": null
+              },
+              {
+                "sort-name": "Kayoko",
+                "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+                "name": "Kayoko",
+                "locale": "en",
+                "type": "Artist name",
+                "primary": null,
+                "begin-date": null,
+                "end-date": "2019-02-25"
+              }
+            ]
+          }
+        }
+      ],
+      "first-release-date": "2022-06-29",
+      "releases": [
+        {
+          "id": "55ea9b20-17af-4717-8af2-ca1bb0872922",
+          "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+          "artist-credit-id": "949a7fd5-fe73-3e8f-922e-01ff4ca958f7",
+          "count": 1,
+          "title": "Kaguya-sama: Love Is War -Ultra Romantic- Original Soundtrack vol.1",
+          "status": "Pseudo-Release",
+          "disambiguation": "Romaji",
+          "artist-credit": [
+            {
+              "name": "Various Artists",
+              "artist": {
+                "id": "89ad4ac3-39f7-470e-963a-56509c546377",
+                "name": "Various Artists",
+                "sort-name": "Various Artists",
+                "disambiguation": "add compilations to this artist"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "bc630404-e54b-486b-b2b4-a2528b7c203a",
+            "type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "title": "かぐや様は告らせたい-ウルトラロマンティック- オリジナル・サウンドトラック vol.1",
+            "primary-type": "Single"
+          },
+          "track-count": 5,
+          "media": [
+            {
+              "id": "49aed00a-254f-3815-8924-e3bb6c84c29e",
+              "position": 1,
+              "track": [
+                {
+                  "id": "6dbad799-11bb-46a0-b7f7-6ccbe6ada84c",
+                  "number": "3",
+                  "title": "Kanashikute lulululu -Original ver.-",
+                  "length": 251000
+                }
+              ],
+              "track-count": 5,
+              "track-offset": 2
+            }
+          ]
+        },
+        {
+          "id": "c42c6df9-35b9-4de7-a637-724c8ea8df29",
+          "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+          "artist-credit-id": "1a807b5e-a8b6-49bc-b687-74e6cc40664c",
+          "count": 1,
+          "title": "KAGUYA Music Collection Season3",
+          "status": "Pseudo-Release",
+          "artist-credit": [
+            {
+              "joinphrase": " & ",
+              "name": "Haneoka Kei",
+              "artist": {
+                "id": "256b4219-8e79-40be-8373-ecc0967f1e40",
+                "name": "羽岡佳",
+                "sort-name": "Haneoka, Kei"
+              }
+            },
+            {
+              "joinphrase": " & ",
+              "name": "Nishida Keiki",
+              "artist": {
+                "id": "a61ddc09-8150-4b95-804f-750290e4d6eb",
+                "name": "西田圭稀",
+                "sort-name": "Nishida, Keiki"
+              }
+            },
+            {
+              "name": "Mizuno Yoshiki",
+              "artist": {
+                "id": "778ebe69-8f62-4b62-b164-4532e243ec46",
+                "name": "水野良樹",
+                "sort-name": "Mizuno, Yoshiki"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "891c9a07-952b-411b-b391-e2beb10c7c6c",
+            "type-id": "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+            "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+            "title": "KAGUYA Music Collection Season3",
+            "primary-type": "Album",
+            "secondary-types": [
+              "Compilation",
+              "Soundtrack"
+            ],
+            "secondary-type-ids": [
+              "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+              "22a628ad-c082-3c4f-b1b6-d41665107b88"
+            ]
+          },
+          "track-count": 53,
+          "media": [
+            {
+              "id": "e4a2a1b4-3eec-3ea1-b5b8-048b83376358",
+              "position": 1,
+              "track": [
+                {
+                  "id": "558775ad-d867-4242-9e29-24b56605dec4",
+                  "number": "3",
+                  "title": "Kanashikute lulululu -Original Version-",
+                  "length": 250000
+                }
+              ],
+              "track-count": 53,
+              "track-offset": 2
+            }
+          ]
+        },
+        {
+          "id": "4f6c983c-dbfa-4177-9d23-b5f83d89542a",
+          "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+          "artist-credit-id": "3f40d7ff-0f56-4f0b-bb51-b3fd5298dc45",
+          "count": 1,
+          "title": "KAGUYA Music Collection Season3",
+          "status": "Official",
+          "artist-credit": [
+            {
+              "joinphrase": " & ",
+              "name": "羽岡佳",
+              "artist": {
+                "id": "256b4219-8e79-40be-8373-ecc0967f1e40",
+                "name": "羽岡佳",
+                "sort-name": "Haneoka, Kei"
+              }
+            },
+            {
+              "joinphrase": " & ",
+              "name": "西田圭稀",
+              "artist": {
+                "id": "a61ddc09-8150-4b95-804f-750290e4d6eb",
+                "name": "西田圭稀",
+                "sort-name": "Nishida, Keiki"
+              }
+            },
+            {
+              "name": "水野良樹",
+              "artist": {
+                "id": "778ebe69-8f62-4b62-b164-4532e243ec46",
+                "name": "水野良樹",
+                "sort-name": "Mizuno, Yoshiki"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "891c9a07-952b-411b-b391-e2beb10c7c6c",
+            "type-id": "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+            "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+            "title": "KAGUYA Music Collection Season3",
+            "primary-type": "Album",
+            "secondary-types": [
+              "Compilation",
+              "Soundtrack"
+            ],
+            "secondary-type-ids": [
+              "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+              "22a628ad-c082-3c4f-b1b6-d41665107b88"
+            ]
+          },
+          "date": "2023-03-31",
+          "country": "XW",
+          "release-events": [
+            {
+              "date": "2023-03-31",
+              "area": {
+                "id": "525d4e18-3d00-31b9-a58b-a146a916de8f",
+                "name": "[Worldwide]",
+                "sort-name": "[Worldwide]",
+                "iso-3166-1-codes": [
+                  "XW"
+                ]
+              }
+            }
+          ],
+          "track-count": 53,
+          "media": [
+            {
+              "id": "57519184-59d3-3101-9d87-173eb1f03925",
+              "position": 1,
+              "format": "Digital Media",
+              "track": [
+                {
+                  "id": "20b67ac9-9e40-47d3-b0e8-004b4e0adf13",
+                  "number": "3",
+                  "title": "悲しくて lulululu -Original ver.-",
+                  "length": 250000
+                }
+              ],
+              "track-count": 53,
+              "track-offset": 2
+            }
+          ]
+        },
+        {
+          "id": "24da5eb0-ac4b-4298-b827-6c0cbef391f7",
+          "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+          "artist-credit-id": "949a7fd5-fe73-3e8f-922e-01ff4ca958f7",
+          "count": 1,
+          "title": "かぐや様は告らせたい-ウルトラロマンティック- オリジナル・サウンドトラック vol.1",
+          "status": "Official",
+          "artist-credit": [
+            {
+              "name": "Various Artists",
+              "artist": {
+                "id": "89ad4ac3-39f7-470e-963a-56509c546377",
+                "name": "Various Artists",
+                "sort-name": "Various Artists",
+                "disambiguation": "add compilations to this artist"
+              }
+            }
+          ],
+          "release-group": {
+            "id": "bc630404-e54b-486b-b2b4-a2528b7c203a",
+            "type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+            "title": "かぐや様は告らせたい-ウルトラロマンティック- オリジナル・サウンドトラック vol.1",
+            "primary-type": "Single"
+          },
+          "date": "2022-06-29",
+          "country": "JP",
+          "release-events": [
+            {
+              "date": "2022-06-29",
+              "area": {
+                "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+                "name": "Japan",
+                "sort-name": "Japan",
+                "iso-3166-1-codes": [
+                  "JP"
+                ]
+              }
+            }
+          ],
+          "track-count": 5,
+          "media": [
+            {
+              "id": "a27245a8-71d1-3f0b-929e-849e5b6b1034",
+              "position": 1,
+              "format": "CD",
+              "track": [
+                {
+                  "id": "d52891f1-e8c1-4c27-aef9-dae0524c0af7",
+                  "number": "3",
+                  "title": "悲しくて lulululu -Original Ver.-",
+                  "length": 250680
+                }
+              ],
+              "track-count": 5,
+              "track-offset": 2
+            }
+          ]
+        }
+      ],
+      "isrcs": [
+        "JPE302200700"
+      ]
+    }
+  ]
+}
