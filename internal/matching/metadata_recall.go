@@ -42,6 +42,15 @@ func (w Weights) ScoreMetadataCandidate(q provider.Query, c provider.Candidate) 
 		s.CreditMatch = MatchFuzzy
 		s.Total += w.CreditFuzzy
 	}
+	// A complete album name embedded in a longer platform description can
+	// corroborate an exact title. Do not compound this weaker hint with a
+	// fuzzy/alternate title or an unspecified recording version.
+	if s.AlbumMatch == MatchNone && s.TitleMatch == MatchExact &&
+		!IsTruncated(q.Title) && !IsTruncated(deref(c.Title)) &&
+		metadataAlbumPhrase(q.Album, deref(c.AlbumTitle)) {
+		s.AlbumMatch = MatchFuzzy
+		s.Total += w.AlbumFuzzy
+	}
 	s.Plausible = w.IsPlausible(q, c, s)
 	s.ReviewOnly = true
 	s.HighConf = false

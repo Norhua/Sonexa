@@ -1,7 +1,7 @@
 # 代码与主规格差异（共享文档）
 
 本文件汇总尚未合并进 `openspec/specs/` 的实现变化；后续会话共同维护，不按轮次拆分。
-本轮来源：`1-why.md`、`1-tasks.md`、`2-why.md`、`2-tasks.md`、`3-why.md`、`3-tasks.md`、`4-why.md`、`4-tasks.md`、`5-why.md`、`5-tasks.md`、`6-why.md`、`6-tasks.md`。**主规格尚未修改，不代表已经 archive。**
+本轮来源：`1-why.md`、`1-tasks.md`、`2-why.md`、`2-tasks.md`、`3-why.md`、`3-tasks.md`、`4-why.md`、`4-tasks.md`、`5-why.md`、`5-tasks.md`、`6-why.md`、`6-tasks.md`、`7-why.md`、`7-tasks.md`。**主规格尚未修改，不代表已经 archive。**
 
 ## SD-1：输入、活动条目与最终收藏分开，跨批次去重
 
@@ -154,6 +154,24 @@
 - v3 历史确认没有接受时目标上下文，不从今天的数据伪造过去的批准，迁移后沿用旧保守检查；已经被旧 trigger 删除的关系不恢复。受影响条目可能需要在新版明确接受/跳过一次，之后重导不再因同一已确认版本差异进入复核。
 
 验证：`6-tasks.md` 记录三条修复前失败与修复后通过；真实 MB 样例首次仍复核，人工接受后立即重导/补全后重导均 skipped=1，清 HTTP 缓存后不新增请求；迁移、回滚、重开、并发、多目标及身份/版本/位置失效反例通过。第 4 轮 11 发行选版结果保持不变，无公网或原生窗口测试。
+
+## SD-10：完整专辑名位于长平台描述中的人工召回（轮次 7）
+
+待同步：
+- `openspec/specs/matching/confidence/spec.md`：曲名与辅助字段检查、评分与高置信、独立歌词边界
+- `openspec/specs/matching/text-processing/spec.md`：执行与去重
+- `openspec/specs/matching/pipeline/spec.md`：共用检索规则与持久化
+
+实现：`matching/album_recall.go`、`matching/metadata_recall.go`。补充 SD-7 的人工辅助字段旁证，不替换 SD-4 自动决策或 SD-9 已确认关系。
+
+- 严格评分原本不可展示时，**原始曲名严格精确且两侧曲名未截断**，可用完整专辑名位于另一方长描述内的连续文本作为人工召回旁证。先 NFKC/既有字符归一，保留原始分隔边界；东亚文字允许无空格相邻，拉丁词不从内部截取，直接相邻数字不截成无编号名称。
+- 双方专辑不可截断，完整版本描述须无冲突；至少有四个非泛称字母/文字字符，数字不贡献长度。BEST/OST/Soundtrack/ベストアルバム 等类型词单独不能成为旁证。不是任意共有子串、片段拼接或专辑相似度降阈值，也不通过同 recording 将旁证传播到其他发行。
+- 新路径只补 `AlbumMatch=MatchFuzzy` 及既有模糊专辑分值；`ReviewOnly=true`、`HighConf=false`。不能叠加模糊曲名、SearchTitles 或未注明录音版本召回以绕过精确曲名条件。可比辅助字段的其他规则仍保留。
+- 原有严格可展示候选原样返回，不变更 `Normalize/Tokens`、`CompareAlbum/ScoreCandidate`、自动身份/去重/发行选择或歌词匹配。未推测日文艺术家汉字/假名身份，无歌曲/专辑名称白名单，无上游专属业务分发。MB 请求组合、限额、缓存规则不变。
+- 真实 `portamento / 川田麻美 / TVアニメ「灼眼のシャナ」ベストアルバム灼眼のシャナ-BEST-`：锚定返回 0，但仅曲名第一页已解析 36 个 track，旧本地旁证过滤为空。修复保留 `灼眼のシャナ -BEST-` 与 `灼眼のシャナ-BEST-` 两个 CD 第 2 碟第 4 轨；不扩展至 SAVIA、MAMI KAWADA BEST “F” 或无关联同名录音，自动候选为 0。
+- 四个元数据入口共用规则；原始输入、上游名称与真实 track/release/位置不改写，既有候选快照保持 ReviewOnly，人工接受仍执行发行成员准入。旧空候选快照需新版点击“重新搜索”，可复用原始 HTTP 缓存重新评分，不自动出网、无须清库。
+
+验证：`7-tasks.md`；真实请求和原始 JSON 的 SHA-256 见 `testdata/golden/responses/musicbrainz/search_portamento.md`。公网取证仅两次，离线实际 provider → Engine → 四入口/空库/旧快照/人工接受回归通过；Go 全量、race、vet 通过，无前端或数据库结构变更，未操作用户应用数据或执行原生窗口人工测试。
 
 ## 验证与待确认边界
 
