@@ -14,7 +14,7 @@ MusicBrainz 请求 SHALL 携带含应用名、版本、联系方式的 User-Agen
 - **THEN** 按共享令牌桶和交互优先级放行，均携带配置的请求标识
 
 ### Requirement: 查询与结果粒度
-有曲名的组合查询 SHALL 使用 recording AND (release OR artist OR artist alternates)，仅包含已填条件，艺术家备选最多两个；仅曲名级不带辅助条件。搜索结果按录音、发行、碟、位置展开，使用响应中的真实 track 标识；没有位置时保留合成候选。
+有曲名的组合查询 SHALL 使用 recording AND (release OR artist OR artist alternates)，仅包含已填条件，艺术家备选最多两个；仅曲名级不带辅助条件。搜索结果按录音、发行、碟、位置展开，使用响应中的真实 track 标识；没有位置时保留合成候选。各 track 可通过 Candidate.SearchTitles 提供其所属 recording 的实际标题作为检索异写旁证，不替换 track 标题、具体发行或身份，也不按 recording 合并位置；旁证只供[受限人工召回](../../matching/confidence/spec.md#requirement-受限元数据人工召回)，不作为自动身份证据。
 
 #### Scenario: 歌集和艺术家条件
 - **WHEN** 曲名和歌集相符，但录音署名与输入不同
@@ -23,6 +23,10 @@ MusicBrainz 请求 SHALL 携带含应用名、版本、联系方式的 User-Agen
 #### Scenario: 搜索响应解析
 - **WHEN** 响应使用 media.track 或 media.tracks
 - **THEN** 均解析位置及已知曲序、载体等字段；纯数字 number 可回退为位置，A1 等编号不推断为数字位置
+
+#### Scenario: track 与 recording 标题异写
+- **WHEN** 同一 recording 的多个发行中部分 track 使用罗马字标题，而 recording 保留日文标题
+- **THEN** 各位置保留真实 track 名称与标识，并提供该 recording 标题供人工召回核验；不把四个发行位置去重为一个，也不自动入库新增召回候选
 
 ### Requirement: 精确详情与署名角色
 详情 SHALL 通过一个发行请求获取可用字段、作品关系和清单。指定目标时必须精确命中 track MBID；曲目署名优先于录音、再回退发行署名，原文与成员使用同一来源。作曲作词从作品关系取得，演唱演奏等来自实际关系，来源解析不因署名补造角色；可靠 CV 演唱兜底只在当前值投影层按[艺术家规格](../../library/artists/spec.md)处理。
