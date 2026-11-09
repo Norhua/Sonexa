@@ -51,7 +51,13 @@ func capabilityViolations(path string, file *ast.File) []string {
 		}
 		if business {
 			switch imported {
-			case "encoding/json", "encoding/base64", "crypto/aes", "crypto/des", "crypto/rsa", "compress/zlib":
+			case "encoding/json":
+				// Playlist plans serialize typed business values for seals and
+				// retention accounting. Decoding remains forbidden below.
+				if !strings.HasPrefix(path, "playlists/") || name == "." {
+					problems = append(problems, "上游响应解析应在适配器: "+imported)
+				}
+			case "encoding/base64", "crypto/aes", "crypto/des", "crypto/rsa", "compress/zlib":
 				problems = append(problems, "上游响应解析/加密应在适配器: "+imported)
 			}
 		}
@@ -64,6 +70,9 @@ func capabilityViolations(path string, file *ast.File) []string {
 		// Catch direct calls and aliases such as finish := doc.Build. The
 		// only allowed consumer-side construction is the local file adapter.
 		if selector, ok := n.(*ast.SelectorExpr); ok && business {
+			if pkg, ok := selector.X.(*ast.Ident); ok && imports[pkg.Name] == "encoding/json" && selector.Sel.Name != "Marshal" {
+				problems = append(problems, "歌单业务只能序列化计划，不能解码上游响应: "+selector.Sel.Name)
+			}
 			if pkg, ok := selector.X.(*ast.Ident); ok && imports[pkg.Name] == internalModule+"lyricdoc" {
 				switch selector.Sel.Name {
 				case "Build", "BuildOnline", "Input", "TextChannel", "TrackChannel", "AbsentChannel", "UnknownChannel", "FailedChannel", "PreferredChannel", "SerializeTrack", "SerializeXLRC", "ParseXLRC", "DecodeInline", "RenderTimed", "ParseText":
@@ -230,6 +239,10 @@ func TestCapabilityBoundaryCheckerRejectsRegressions(t *testing.T) {
 		path, source string
 		bad          bool
 	}{
+		{"playlists/service.go", `import "encoding/json"; var encode = json.Marshal`, false},
+		{"playlists/service.go", `import j "encoding/json"; var decode = j.Unmarshal`, true},
+		{"playlists/service.go", `import "encoding/json"; var decode = json.NewDecoder`, true},
+		{"playlists/service.go", `import . "encoding/json"`, true},
 		{"playlists/service.go", `import "os/exec"`, true},
 		{"app/bindings_playlists.go", `import "os/exec"`, true},
 		{"store/synced_playlists.go", `import "os/exec"`, true},

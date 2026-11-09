@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -126,7 +127,13 @@ func (s *Store) DeleteTrack(id int64) error {
 // withTx 在事务中执行 fn，出错时回滚。
 
 func (s *Store) withTx(fn func(*sql.Tx) error) error {
-	tx, err := s.db.Begin()
+	return s.withTxContext(context.Background(), fn)
+}
+func (s *Store) withTxContext(ctx context.Context, fn func(*sql.Tx) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -138,6 +145,9 @@ func (s *Store) withTx(fn func(*sql.Tx) error) error {
 		if err := s.beforeCommit(tx); err != nil {
 			return err
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

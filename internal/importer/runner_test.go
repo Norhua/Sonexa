@@ -175,12 +175,12 @@ func TestRunnerImportsHighConfidence(t *testing.T) {
 	// 日志行可辨认
 	var sawImport bool
 	for _, e := range events {
-		if containsStr(e.Line, "[直接入库]") {
+		if containsStr(e.Line, "[完成导入]") {
 			sawImport = true
 		}
 	}
 	if !sawImport {
-		t.Error("应输出直接入库的提示")
+		t.Error("应输出完成导入的提示")
 	}
 }
 

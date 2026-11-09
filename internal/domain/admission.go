@@ -34,6 +34,7 @@ type GroupResolution struct {
 // AdmissionSeed 同时承载已归一化的上游事实和本地当前值；空身份层仅用于本地创建。
 // 保存本地层时不将它伪装成上游快照。
 type AdmissionSeed struct {
+	Destinations    []ImportTarget   `json:"destinations"`
 	CurrentRelease  *ReleaseSnapshot `json:"currentRelease,omitempty"`
 	EditJSON        string           `json:"editJson,omitempty"`
 	MoveReleaseID   int64            `json:"moveReleaseId"`
@@ -44,7 +45,17 @@ type AdmissionSeed struct {
 	ItemStatus      string           `json:"itemStatus"`
 	MergeTargetID   int64            `json:"mergeTargetId"`
 }
+type ImportTarget struct {
+	InputID          int64  `json:"inputId"`
+	Kind             string `json:"kind"`
+	EntryID          int64  `json:"entryId"`
+	PlaylistID       int64  `json:"playlistId"`
+	Revision         int64  `json:"revision"`
+	EntryRevision    int64  `json:"entryRevision"`
+	PlaylistRevision int64  `json:"playlistRevision"`
+}
 type AdmissionBaseline struct {
+	Destinations         []ImportTarget  `json:"destinations"`
 	NewNativeMapping     bool            `json:"newNativeMapping"`
 	ItemRevision         string          `json:"itemRevision"`
 	Resolution           GroupResolution `json:"resolution"`
@@ -69,8 +80,9 @@ type AdmissionApproval struct {
 	Credential string `json:"credential"`
 }
 type AdmissionResult struct {
-	TrackID   int64 `json:"trackId"`
-	ReleaseID int64 `json:"releaseId"`
-	GroupID   int64 `json:"groupId"`
-	Existing  bool  `json:"existing"`
+	PlaylistIDs []int64 `json:"playlistIds"`
+	TrackID     int64   `json:"trackId"`
+	ReleaseID   int64   `json:"releaseId"`
+	GroupID     int64   `json:"groupId"`
+	Existing    bool    `json:"existing"`
 }

@@ -105,10 +105,12 @@ func (s *Service) PrepareAdmission(ctx context.Context, seed domain.AdmissionSee
 	if err != nil {
 		return nil, err
 	}
+	seed.Destinations = nil // never accept caller-supplied destinations
 	baseline, err := s.store.PreviewAdmission(seed)
 	if err != nil {
 		return nil, err
 	}
+	seed.Destinations = baseline.Destinations
 	id, err := token()
 	if err != nil {
 		return nil, err

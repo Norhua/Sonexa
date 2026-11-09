@@ -136,7 +136,7 @@ func (a *App) PrepareNoMatchNeeded(itemID int64) (*AdmissionPlanView, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
-	item, err := a.store.GetItem(itemID)
+	item, err := a.store.EffectiveImportItem(itemID)
 	if err != nil {
 		return nil, err
 	}

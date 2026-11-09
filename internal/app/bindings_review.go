@@ -15,11 +15,12 @@ import (
 // 待选、匹配中、失败只是状态标签，界面结构保持一致——
 // 不按进入原因分成结构不同的多种界面。
 type ReviewItem struct {
-	ReviewReason   *string `json:"reviewReason"`
-	ReviewEvidence *string `json:"reviewEvidence"`
-	ID             int64   `json:"id"`
-	BatchID        int64   `json:"batchId"`
-	Status         string  `json:"status"`
+	ImportDestinations []store.ImportDestination `json:"importDestinations"`
+	ReviewReason       *string                   `json:"reviewReason"`
+	ReviewEvidence     *string                   `json:"reviewEvidence"`
+	ID                 int64                     `json:"id"`
+	BatchID            int64                     `json:"batchId"`
+	Status             string                    `json:"status"`
 	// 原始导入文本，上半区展示；改搜不改动它
 	InTitle        *string    `json:"inTitle"`
 	InArtist       *string    `json:"inArtist"`
@@ -72,6 +73,17 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 			InTitle: it.InTitle, InArtist: it.InArtist, InAlbum: it.InAlbum,
 			AttemptCount: it.AttemptCount,
 			LastError:    it.LastError, LastErrorAt: formatTime(it.LastErrorAt),
+		}
+		effective, effectiveErr := a.store.EffectiveImportItem(it.ID)
+		if effectiveErr != nil {
+			return nil, effectiveErr
+		}
+		if effective != nil {
+			r.InTitle, r.InArtist, r.InAlbum = effective.InTitle, effective.InArtist, effective.InAlbum
+		}
+		r.ImportDestinations, err = a.store.ActiveImportDestinations(it.ID)
+		if err != nil {
+			return nil, err
 		}
 		r.OriginalInputs, err = a.store.OriginalInputs(it.ID)
 		if err != nil {
@@ -246,7 +258,11 @@ func (a *App) SkipReviewCandidate(itemID int64, row CandidateRow) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	return a.store.SkipReviewCandidate(itemID, row.Provider, row.MatchRef)
+	if err := a.store.SkipReviewCandidate(itemID, row.Provider, row.MatchRef); err != nil {
+		return err
+	}
+	a.notifyLibraryChanged()
+	return nil
 }
 
 // NoMatchNeeded 按原始输入入库，丰富信息为空，溯源置空。
@@ -270,7 +286,11 @@ func (a *App) DiscardReviewItem(itemID int64) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	return a.store.MarkDiscarded(itemID)
+	if err := a.store.MarkDiscarded(itemID); err != nil {
+		return err
+	}
+	a.notifyLibraryChanged()
+	return nil
 }
 
 // NoneMatched 不接受当前结果但把条目保留在队列中。

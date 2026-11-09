@@ -96,6 +96,10 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		if err != nil {
 			return err
 		}
+		if plan.Seed.ImportItemID != 0 && (plan.Baseline.ItemRevision != baseline.ItemRevision ||
+			!sameImportTargets(plan.Baseline.Destinations, baseline.Destinations) || !sameImportTargets(plan.Seed.Destinations, baseline.Destinations)) {
+			return ErrPlanStale
+		}
 		if plan.Seed.AutomaticImport {
 			identity := plan.Seed.Snapshot.Track.Identity
 			decision, err := ownedImportDecisionTx(tx, plan.Seed.ImportItemID, []matching.ScoredCandidate{{Candidate: provider.Candidate{Provider: identity.Provider, MatchRef: identity.Ref}}})
@@ -122,7 +126,7 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 			if groupID != nil {
 				result.GroupID = *groupID
 			}
-			return finishAdmissionTx(tx, plan, *result)
+			return finishAdmissionTx(tx, plan, result)
 		}
 		if !sameAdmissionBaseline(plan.Baseline, baseline) {
 			return ErrPlanStale
@@ -153,14 +157,14 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		if err := rebuildGroupKeysTx(tx); err != nil {
 			return err
 		}
-		return finishAdmissionTx(tx, plan, *result)
+		return finishAdmissionTx(tx, plan, result)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
 }
-func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result domain.AdmissionResult) error {
+func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result *domain.AdmissionResult) error {
 	if plan.Seed.ProposalID != 0 {
 		row, err := tx.Exec("UPDATE group_change_proposal SET status='accepted',updated_at=? WHERE id=? AND release_id=? AND status='pending'", time.Now().UTC(), plan.Seed.ProposalID, plan.Seed.MoveReleaseID)
 		if err != nil {
@@ -182,24 +186,15 @@ func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result domain.Admi
 		if status != "imported" && status != "skipped" {
 			return fmt.Errorf("无效导入终态")
 		}
-		row, err := tx.Exec("UPDATE import_item SET status=?,track_id=?,review_reason=NULL,next_retry_at=NULL,last_error=NULL,updated_at=? WHERE id=? AND status IN ('queued','matching','review','failed')", status, result.TrackID, time.Now().UTC(), plan.Seed.ImportItemID)
-		if err != nil {
-			return err
-		}
-		n, err := row.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if n != 1 {
-			return ErrPlanStale
-		}
 		kind := "manual_accept"
 		if plan.Seed.AutomaticImport {
 			kind = "automatic_admission"
 		}
-		if err := rememberImportConfirmationTx(tx, plan.Seed.ImportItemID, result.TrackID, map[string]string{"kind": kind}); err != nil {
+		ids, err := deliverImportTx(tx, plan.Seed.ImportItemID, result.TrackID, ItemStatus(status), map[string]string{"kind": kind})
+		if err != nil {
 			return err
 		}
+		result.PlaylistIDs = ids
 	}
 	raw, err := json.Marshal(result)
 	if err != nil {

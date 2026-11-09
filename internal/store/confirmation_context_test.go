@@ -135,13 +135,16 @@ func TestConfirmedTargetContextRejectsChanges(t *testing.T) {
 					// First establish a known baseline, then make an incompatible change.
 					track.DurationMS = domain.Known(200000)
 					applyConfirmationSnapshot(t, s, id, &track)
-					var confirmedItem int64
-					if err = s.DB().QueryRow(`SELECT item_id FROM import_confirmation WHERE track_id=?`, id).Scan(&confirmedItem); err != nil {
+					// A new explicit acceptance establishes the known baseline;
+					// delivered historical inputs cannot be rewritten as active.
+					if _, err := s.DB().Exec(`DELETE FROM import_confirmation WHERE track_id=?`, id); err != nil {
 						t.Fatal(err)
 					}
-					if err = s.withTx(func(tx *sql.Tx) error {
-						return rememberImportConfirmationTx(tx, confirmedItem, id, map[string]string{"kind": "manual_skip"})
-					}); err != nil {
+					confirmedItem := activeInput(t, s, original)
+					if err = s.MarkReview(confirmedItem.ID, ReviewNoMatch, "[]", "[]"); err != nil {
+						t.Fatal(err)
+					}
+					if err = s.SkipReviewCandidate(confirmedItem.ID, "musicbrainz", "version-track"); err != nil {
 						t.Fatal(err)
 					}
 					track.DurationMS = domain.Known(240000)

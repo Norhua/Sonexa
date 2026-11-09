@@ -213,6 +213,17 @@ func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.Admissio
 		if err := tx.QueryRow("SELECT status,CAST(revision AS TEXT)||':'||CAST(search_revision AS TEXT)||':'||updated_at FROM import_item WHERE id=?", seed.ImportItemID).Scan(&baseline.ItemState, &baseline.ItemRevision); err != nil {
 			return baseline, err
 		}
+		if ItemStatus(baseline.ItemState).IsTerminal() {
+			return baseline, ErrPlanStale
+		}
+		var err error
+		baseline.Destinations, err = importTargetsTx(tx, seed.ImportItemID)
+		if err != nil {
+			return baseline, err
+		}
+		if len(baseline.Destinations) == 0 {
+			return baseline, ErrPlanStale
+		}
 	}
 	if r := seed.Snapshot.Release; r != nil {
 		if (r.Identity.Provider == "") != (r.Identity.Ref == "") {

@@ -138,7 +138,7 @@ func createImportBatchTx(tx *sql.Tx, b *ImportBatch, source, kind, name string) 
 // EnqueueItems only accepts file batches. Sync inputs are created in the same
 // transaction as their snapshot and destinations, without a temporary file.
 func (s *Store) EnqueueItems(batchID int64, items []ImportItem) error {
-	return s.withTx(func(tx *sql.Tx) error {
+	err := s.withTx(func(tx *sql.Tx) error {
 		var source string
 		if err := tx.QueryRow(`SELECT source_kind FROM import_batch WHERE id=?`, batchID).Scan(&source); err != nil {
 			return err
@@ -153,6 +153,10 @@ func (s *Store) EnqueueItems(batchID int64, items []ImportItem) error {
 		}
 		return nil
 	})
+	if err == nil {
+		s.notifyImportInvalidation()
+	}
+	return err
 }
 
 // ClaimNextItem 取出下一个待处理条目并置为匹配中。
@@ -214,8 +218,8 @@ func scanItem(row interface{ Scan(...any) error }) (*ImportItem, error) {
 
 // MarkImported 把条目置为完成导入并记录曲目 id。
 func (s *Store) MarkImported(itemID, trackID int64) error {
-	return s.setStatus(itemID, StatusImported, func(tx *sql.Tx) error {
-		_, err := tx.Exec(`UPDATE import_item SET track_id = ? WHERE id = ?`, trackID, itemID)
+	return s.withTx(func(tx *sql.Tx) error {
+		_, err := deliverImportTx(tx, itemID, trackID, StatusImported, map[string]string{"kind": "imported"})
 		return err
 	})
 }
@@ -258,9 +262,13 @@ func (s *Store) MarkMerged(itemID, targetTrackID int64) error {
 	})
 }
 
-// MarkDiscarded 丢弃条目且不入库。
+// MarkDiscarded 丢弃当前显示的全部目标；同步目标进入忽略。
 func (s *Store) MarkDiscarded(itemID int64) error {
-	return s.setStatus(itemID, StatusDiscarded, nil)
+	err := s.withTx(func(tx *sql.Tx) error { return discardImportTx(tx, itemID) })
+	if err == nil {
+		s.notifyImportInvalidation()
+	}
+	return err
 }
 
 // MarkSkipped 把条目置为已跳过。
@@ -339,6 +347,15 @@ func (s *Store) RetryItem(itemID int64) error {
 	})
 }
 
+// ReleaseImportClaim returns only still-active matching work after cancellation.
+// A terminal/removed shell is never made queued again.
+func (s *Store) ReleaseImportClaim(itemID int64) error {
+	_, err := s.db.Exec(`UPDATE import_item SET status='queued',updated_at=? WHERE id=? AND status='matching'
+ AND EXISTS(SELECT 1 FROM import_item i JOIN import_destination d ON d.input_id=i.id
+ WHERE (i.id=import_item.id OR i.merged_item_id=import_item.id) AND d.state='active')`, time.Now().UTC(), itemID)
+	return err
+}
+
 // ResetStaleMatching 把中断时停留在「匹配中」的条目退回排队。
 //
 // 应用重启后调用：这些条目上次未跑完，需要重新处理，
@@ -379,7 +396,8 @@ func (b BatchStats) Processed() int {
 // Stats 统计某批次各状态的条目数。
 func (s *Store) Stats(batchID int64) (BatchStats, error) {
 	rows, err := s.db.Query(
-		`SELECT status, COUNT(*) FROM import_item WHERE batch_id = ? GROUP BY status`, batchID)
+		`SELECT CASE WHEN d.state='cancelled' AND i.status<>'merged' THEN 'discarded' ELSE i.status END AS effective_status,COUNT(*)
+ FROM import_item i LEFT JOIN import_destination d ON d.input_id=i.id WHERE i.batch_id=? GROUP BY effective_status`, batchID)
 	if err != nil {
 		return BatchStats{}, err
 	}
@@ -418,7 +436,8 @@ func (s *Store) Stats(batchID int64) (BatchStats, error) {
 
 	// 「未匹配」是待复核里的一个子集，取不到状态分组里，单独数一次
 	if err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM import_item WHERE batch_id = ? AND status = ? AND review_reason = ?`,
+		`SELECT COUNT(*) FROM import_item i JOIN import_destination d ON d.input_id=i.id
+ WHERE i.batch_id=? AND i.status=? AND i.review_reason=? AND d.state<>'cancelled'`,
 		batchID, string(StatusReview), string(ReviewNoMatch)).Scan(&st.Unmatched); err != nil {
 		return BatchStats{}, err
 	}

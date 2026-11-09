@@ -313,6 +313,10 @@ func TestSyncInputImmutableAndMainDestinationRevoked(t *testing.T) {
 			t.Fatal(stats, err)
 		}
 	}
+	shellStats, err := s.Stats(b1)
+	if err != nil || shellStats.Discarded != 1 || shellStats.Review != 0 || shellStats.Total != 1 {
+		t.Fatal("cancelled shell input must count as removed", shellStats, err)
+	}
 	// A new matching input can still merge into the shell whose own demand is gone.
 	b3 := identityBatch(t, s, identityItem("Song (译名)", "Artist", "Album"))
 	stats, err := s.Stats(b3)

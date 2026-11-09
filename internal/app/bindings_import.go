@@ -278,8 +278,11 @@ func strPtr(s string) *string { return &s }
 
 // ImportBatchView 是导入队列页面上的一个批次。
 type ImportBatchView struct {
-	ID       int64  `json:"id"`
-	Filename string `json:"filename"`
+	SourceKind      string `json:"sourceKind"`
+	DestinationKind string `json:"destinationKind"`
+	DestinationName string `json:"destinationName"`
+	ID              int64  `json:"id"`
+	Filename        string `json:"filename"`
 	// Status 为 running | paused | done。
 	Status string `json:"status"`
 	// FileRows 是文件里的总行数，含空白或无有效映射内容而跳过的行。
@@ -326,6 +329,7 @@ func (a *App) GetImportQueue() ([]ImportBatchView, error) {
 			return nil, err
 		}
 		v := ImportBatchView{
+			SourceKind: b.SourceKind, DestinationKind: b.DestinationKind, DestinationName: b.DestinationName,
 			ID: b.ID, Filename: b.Filename, Status: string(b.Status),
 			FileRows: b.TotalRows, TotalRows: stats.Total,
 			Processed: stats.Processed(), Stats: stats,

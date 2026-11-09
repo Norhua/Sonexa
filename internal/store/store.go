@@ -19,6 +19,7 @@ import (
 type Store struct {
 	planMu            sync.RWMutex
 	admissionVerifier func(domain.AdmissionPlan, domain.AdmissionApproval) bool
+	importInvalidated func()
 	lyricsRoot        string
 	fileMu            *sync.Mutex
 	closeOnce         sync.Once

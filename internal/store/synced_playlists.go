@@ -97,7 +97,13 @@ func (s *Store) GetSyncedPlaylist(id int64) (*playlists.Binding, error) {
 // SyncedPlaylistState returns pending/ignored as well as imported occurrences.
 // It is for planning; it is not the visible track list API.
 func (s *Store) SyncedPlaylistState(id int64) ([]playlists.StoredEntry, error) {
-	rows, err := s.db.Query(`SELECT id,playlist_id,entry_key,track_ref,position,title,artists_json,album,duration_ms,upstream_present,local_state,track_id,revision
+	return readSyncedEntries(s.db, id)
+}
+
+func readSyncedEntries(q interface {
+	Query(string, ...any) (*sql.Rows, error)
+}, id int64) ([]playlists.StoredEntry, error) {
+	rows, err := q.Query(`SELECT id,playlist_id,entry_key,track_ref,position,title,artists_json,album,duration_ms,upstream_present,local_state,track_id,revision
  FROM synced_playlist_entry WHERE playlist_id=? ORDER BY upstream_present DESC,position,id`, id)
 	if err != nil {
 		return nil, err

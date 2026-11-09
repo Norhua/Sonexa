@@ -177,14 +177,14 @@ func sortedPool(pool map[string]ScoredCandidate) []ScoredCandidate {
 func LogLine(outcome Outcome, in Input, sc *ScoredCandidate) string {
 	switch outcome {
 	case OutcomeImportUnique:
-		return fmt.Sprintf("[直接入库] %s %s %s 置信率: %.0f%%",
+		return fmt.Sprintf("[完成导入] %s %s %s 置信率: %.0f%%",
 			describe(sc.Candidate.Title, in.Title),
 			describe(sc.Candidate.ArtistName, in.Artist),
 			describe(sc.Candidate.AlbumTitle, in.Album),
 			sc.Score.Total)
 	case OutcomeImportLadder:
 		// 与唯一高置信的情形可区分：明确标出它是优选出的发行
-		return fmt.Sprintf("[直接入库] %s %s %s 实体release 置信率: %.0f%%",
+		return fmt.Sprintf("[完成导入] %s %s %s 实体release 置信率: %.0f%%",
 			describe(sc.Candidate.Title, in.Title),
 			describe(sc.Candidate.ArtistName, in.Artist),
 			describe(sc.Candidate.AlbumTitle, in.Album),
@@ -221,7 +221,7 @@ func ExhaustedLogLine(in Input, attempts int, err error) string {
 //
 // 四个数互不重叠；调用方另附 skipped/merged/discarded 计数以覆盖全部终态。
 //
-//	导入      规则 2、3 直接入库
+//	导入      规则 2、3 创建曲目并完成目标投递，不代表已入库
 //	进入复核  规则 1 疑似重复 + 规则 4 跨发行组 + 规则 3 同组多义
 //	未匹配    规则 5 无结果 / 全部低置信
 //	失败      规则 6 连续出错达上限，不再返回队列

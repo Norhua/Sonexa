@@ -57,6 +57,11 @@ type Runner struct {
 
 	mu      sync.Mutex
 	running map[int64]context.CancelFunc
+	items   map[int64]runningImport
+}
+type runningImport struct {
+	revision int64
+	cancel   context.CancelFunc
 }
 
 // NewRunner 建立队列驱动器。
@@ -73,6 +78,7 @@ func NewRunner(st *store.Store, engine *matching.Engine, searcher matching.Searc
 		retry:        retry,
 		fetchOnMatch: fetchOnMatch,
 		running:      map[int64]context.CancelFunc{},
+		items:        map[int64]runningImport{},
 	}
 	if len(services) > 0 {
 		r.library = services[0]
@@ -84,6 +90,7 @@ func NewRunner(st *store.Store, engine *matching.Engine, searcher matching.Searc
 	if r.library == nil && r.initErr == nil {
 		r.initErr = fmt.Errorf("导入准入服务未装配")
 	}
+	st.SetImportInvalidationHandler(r.cancelInvalidatedImports)
 	return r
 
 }
@@ -208,8 +215,12 @@ func (r *Runner) loop(ctx context.Context, batchID int64) {
 		}
 		if item == nil {
 			// 队列空了：可能全部处理完，也可能都在退避等待
-			stats, _ := r.store.Stats(batchID)
-			if stats.Queued == 0 && stats.Matching == 0 {
+			pending, err := r.store.HasScheduledImportWork(batchID)
+			if err != nil {
+				r.emitProgress(batchID, matching.ErrorLogLine(err), false, false)
+				return
+			}
+			if !pending {
 				r.store.SetBatchStatus(batchID, store.BatchDone)
 				return
 			}
@@ -227,8 +238,47 @@ func (r *Runner) loop(ctx context.Context, batchID int64) {
 	}
 }
 
+func (r *Runner) cancelInvalidatedImports() {
+	r.mu.Lock()
+	items := make(map[int64]runningImport, len(r.items))
+	for id, item := range r.items {
+		items[id] = item
+	}
+	r.mu.Unlock()
+	for id, item := range items {
+		revision, active, err := r.store.ImportWorkRevision(id)
+		if err != nil || !active || revision != item.revision {
+			item.cancel()
+		}
+	}
+}
+
 // processItem 处理一个条目并返回其日志行。
 func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string {
+	revision, active, err := r.store.ImportWorkRevision(item.ID)
+	if err != nil || !active {
+		return "[目标已移出] 不再处理失效输入"
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	r.mu.Lock()
+	r.items[item.ID] = runningImport{revision: revision, cancel: cancel}
+	r.mu.Unlock()
+	defer func() { r.mu.Lock(); delete(r.items, item.ID); r.mu.Unlock(); cancel() }()
+	r.cancelInvalidatedImports()
+	if ctx.Err() != nil {
+		_ = r.store.ReleaseImportClaim(item.ID)
+		return "[重新核验] 导入目标已变化"
+	}
+	current, err := r.store.EffectiveImportItem(item.ID)
+	if err != nil || current == nil {
+		return "[目标已移出] 不再处理失效输入"
+	}
+	item = current
+	defer func() {
+		if ctx.Err() != nil {
+			_ = r.store.ReleaseImportClaim(item.ID)
+		}
+	}()
 	in := matching.Input{
 		Title:      deref(item.InTitle),
 		Artist:     deref(item.InArtist),
@@ -242,7 +292,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
 		return matching.ErrorLogLine(err)
 	} else if handled {
-		return fmt.Sprintf("[跳过已入库] %s · %s", in.Title, in.Artist)
+		return r.handledImportLine(item.ID, in)
 	}
 
 	// 记录实际执行的来源，不从用户当前选择或文件信息推断。
@@ -278,7 +328,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
 		return matching.ErrorLogLine(err)
 	} else if handled {
-		return fmt.Sprintf("[跳过/合并重复输入] %s · %s", in.Title, in.Artist)
+		return r.handledImportLine(item.ID, in)
 	}
 
 	// [4] 同一用例执行按需摘要、自动选版和准入；成员变更始终进入复核。
@@ -296,7 +346,10 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 			r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
 			return matching.ErrorLogLine(err)
 		} else if handled {
-			return fmt.Sprintf("[跳过/合并重复输入] %s · %s", in.Title, in.Artist)
+			return r.handledImportLine(item.ID, in)
+		}
+		if ctx.Err() != nil {
+			return ""
 		}
 		// 精确绑定已在库但输入不能证明一致，交给人工，不以已有身份绕过复核。
 		if selection.Plan != nil && selection.Plan.Baseline.ExistingTrackID != 0 {
@@ -306,11 +359,11 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	if selection.Candidate != nil && selection.Reason == "" {
 		result, err := r.library.CommitAdmission(ctx, selection.Plan.ID, selection.Plan.Hash, domain.AdmissionApproval{})
 		if err == nil {
-			if result.Existing {
-				return fmt.Sprintf("[跳过已入库] %s · %s", in.Title, in.Artist)
-			}
 			if r.onLibraryChanged != nil {
 				r.onLibraryChanged()
+			}
+			if result.Existing {
+				return fmt.Sprintf("[复用本地] %s · %s，未自动入库", in.Title, in.Artist)
 			}
 			if r.fetchOnMatch && r.enricher != nil {
 				r.enricher(result.TrackID, string(selection.Candidate.Provider), deref(selection.Candidate.ReleaseRef))
@@ -349,6 +402,17 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 
 	return fmt.Sprintf("%s · %s：%s", in.Title, in.Artist, reviewReasonText(reason))
 }
+func (r *Runner) handledImportLine(itemID int64, in matching.Input) string {
+	item, err := r.store.GetItem(itemID)
+	if err == nil && item != nil && item.Status == store.StatusSkipped {
+		if r.onLibraryChanged != nil {
+			r.onLibraryChanged()
+		}
+		return fmt.Sprintf("[复用本地] %s · %s，未自动入库", in.Title, in.Artist)
+	}
+	return fmt.Sprintf("[合并/移出输入] %s · %s", in.Title, in.Artist)
+}
+
 func reviewReasonText(reason store.ReviewReason) string {
 	switch string(reason) {
 	case library.ReasonNoMatch:

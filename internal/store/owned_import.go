@@ -229,18 +229,8 @@ func rememberImportConfirmationTx(tx *sql.Tx, itemID, trackID int64, evidence an
 }
 
 func skipOwnedImportTx(tx *sql.Tx, itemID int64, decision ownedImportDecision) error {
-	raw, err := json.Marshal(decision)
-	if err != nil {
-		return err
-	}
-	res, err := tx.Exec(`UPDATE import_item SET status='skipped',track_id=?,review_reason=NULL,review_evidence=?,next_retry_at=NULL,last_error=NULL,search_revision=search_revision+1,updated_at=? WHERE id=? AND status IN ('queued','matching','review','failed')`, decision.TrackID, string(raw), time.Now().UTC(), itemID)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n != 1 {
-		return ErrItemNotActive
-	}
-	return rememberImportConfirmationTx(tx, itemID, decision.TrackID, decision)
+	_, err := deliverImportTx(tx, itemID, decision.TrackID, StatusSkipped, decision)
+	return err
 }
 
 // ReconcileReviewDuplicates uses only original inputs and current local facts.

@@ -201,6 +201,9 @@ func (s *Store) ResolveImport(itemID int64, candidates []matching.ScoredCandidat
 		handled = true
 		return mergeImportTx(tx, itemID, target)
 	})
+	if err == nil {
+		s.notifyImportInvalidation()
+	}
 	return handled, err
 }
 
@@ -214,18 +217,15 @@ func (s *Store) SkipReviewCandidate(itemID int64, source, ref string) error {
 		if err := tx.QueryRow(`SELECT id FROM track WHERE match_source=? AND match_ref=?`, source, ref).Scan(&id); err != nil {
 			return err
 		}
-		res, err := tx.Exec(`UPDATE import_item SET status='skipped',track_id=?,review_reason=NULL,next_retry_at=NULL,updated_at=? WHERE id=? AND status IN ('review','failed')`, id, time.Now().UTC(), itemID)
-		if err != nil {
+		var status ItemStatus
+		if err := tx.QueryRow(`SELECT status FROM import_item WHERE id=?`, itemID).Scan(&status); err != nil {
 			return err
 		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if n != 1 {
+		if status != StatusReview && status != StatusFailed {
 			return ErrItemNotActive
 		}
-		return rememberImportConfirmationTx(tx, itemID, id, map[string]string{"kind": "manual_skip"})
+		_, err := deliverImportTx(tx, itemID, id, StatusSkipped, map[string]string{"kind": "manual_skip"})
+		return err
 	})
 }
 

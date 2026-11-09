@@ -242,7 +242,7 @@ CREATE INDEX idx_release_track_ref ON release_track(track_ref)
 
 -- ========== 只读同步歌单：成员按上游出现身份，不按本地 track 去重 ==========
 CREATE TABLE synced_playlist (
- id INTEGER PRIMARY KEY,
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
  provider TEXT NOT NULL CHECK(provider<>'' AND provider=trim(provider)),
  playlist_ref TEXT NOT NULL CHECK(playlist_ref<>'' AND playlist_ref=trim(playlist_ref)),
  upstream_name TEXT NOT NULL CHECK(trim(upstream_name)<>''), alias TEXT NOT NULL DEFAULT '',
@@ -254,7 +254,7 @@ CREATE TABLE synced_playlist (
  UNIQUE(provider,playlist_ref)
 );
 CREATE TABLE synced_playlist_entry (
- id INTEGER PRIMARY KEY,
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
  playlist_id INTEGER NOT NULL REFERENCES synced_playlist(id) ON DELETE CASCADE,
  entry_key TEXT NOT NULL CHECK(entry_key<>'' AND entry_key=trim(entry_key)),
  track_ref TEXT NOT NULL CHECK(track_ref<>'' AND track_ref=trim(track_ref)),
