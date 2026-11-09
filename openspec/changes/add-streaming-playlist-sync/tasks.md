@@ -10,22 +10,22 @@
 
 ## 2. 歌单消费契约与单能力装配
 
-- [ ] 2.1 新增 `internal/playlists/` 的 Provider、规范身份/快照/条目、完整性与统一错误契约；用契约单测验证缺失字段、重复出现、零条目、无身份/不完整拒绝和来源重复登记。
-- [ ] 2.2 在 `internal/app/upstreams.go` 扩展歌单集合与原子发布，复用 QQ 实例并登记仅歌单能力的 Spotify；用装配测试验证 Spotify 不出现在元数据/歌词/封面选项，helper 不可用不阻断 QQ 与本地功能。
-- [ ] 2.3 扩展 `internal/acceptance/upstream_boundaries_test.go` 与前端边界检查，禁止业务/绑定/存储按平台解释协议或直接启动 Python；以仅歌单替身通过业务契约测试，并在 `internal/playlists/README.md` 记录依赖方向、能力边界和完整性责任。
+- [x] 2.1 新增 `internal/playlists/` 的 Provider、规范身份/快照/条目、完整性与统一错误契约；用契约单测验证缺失字段、重复出现、零条目、无身份/不完整拒绝和来源重复登记。
+- [x] 2.2 在 `internal/app/upstreams.go` 扩展歌单集合与原子发布，复用 QQ 实例并登记仅歌单能力的 Spotify；用装配测试验证 Spotify 不出现在元数据/歌词/封面选项，helper 不可用不阻断 QQ 与本地功能。
+- [x] 2.3 扩展 `internal/acceptance/upstream_boundaries_test.go` 与前端边界检查，禁止业务/绑定/存储按平台解释协议或直接启动 Python；以仅歌单替身通过业务契约测试，并在 `internal/playlists/README.md` 记录依赖方向、能力边界和完整性责任。
 
 ## 3. QQ 与 Spotify 上游读取实现
 
-- [ ] 3.1 在 `internal/provider/qqmusic/` 实现官方歌单链接/数字 ID 规范化及公开读取，复用已有请求/块状态解析和 QQ 实例；单测覆盖 demo 中官方链接形态、分享参数、错误平台、非歌单、非法 ID 和拒绝任意用户 URL。
-- [ ] 3.2 实现 QQ 歌单分页、基础字段与 Ref/occurrence 标识，使用 NoStore 和既有 QQ 平台桶；fixture/HTTP 替身测试覆盖完整大歌单、明确空歌单、重排/重复、缺字段、变化总数、重复页、错误码与限制停止，证明失败不返回可提交快照；在上游 README 记录采用端点及禁止宽泛回退的规则。
-- [ ] 3.3 实现 Spotify helper 的局部库适配及完整性校验，使用锁定库完成所有页读取/解析与同 track 缺失字段补取；Python 离线测试覆盖普通项与排除项计数核对、未知身份、截断回退、重复出现、缺专辑/时长及总数变化，不复制 demo 的 CSV/默认歌单流程。
-- [ ] 3.4 实现 `internal/provider/spotify/` 的官方 URL/ID 解析、统一结果和错误映射；Go/Python 共用协议 fixture 验证毫秒时长、署名顺序、缺失状态、请求标识、空歌单和结构化失败，不把 Spotify Ref 写成元数据绑定。
-- [ ] 3.5 完成 Spotify transport bridge；需要时扩展 provider 通用传输以提供受限状态/响应头而不反向依赖业务；使用 HTTP 替身验证所有会话/分页/详情/重试/重定向都经过 Go 门禁、允许目标和预算，Python socket 拦截测试证明无隐藏直连。
-- [ ] 3.6 为新抓取链实现设计中的时间、分页、发送、响应字节和并发上限，Spotify 桶跨进程复用、QQ 共用原桶；Go 测试覆盖执行中禁网、取消、429/鉴权停止、暂时错误有限重试、超限返回不完整，并确认旧元数据/歌词配额行为未改变。
+- [x] 3.1 在 `internal/provider/qqmusic/` 实现官方歌单链接/数字 ID 规范化及公开读取，复用已有请求/块状态解析和 QQ 实例；单测覆盖 demo 中官方链接形态、分享参数、错误平台、非歌单、非法 ID 和拒绝任意用户 URL。
+- [x] 3.2 实现 QQ 歌单分页、基础字段与 Ref/occurrence 标识，使用 NoStore 和既有 QQ 平台桶；fixture/HTTP 替身测试覆盖完整大歌单、明确空歌单、重排/重复、缺字段、变化总数、重复页、错误码与限制停止，证明失败不返回可提交快照；在上游 README 记录采用端点及禁止宽泛回退的规则。
+- [x] 3.3 实现 Spotify helper 的局部库适配及完整性校验，使用锁定库完成所有页读取/解析与同 track 缺失字段补取；Python 离线测试覆盖普通项与排除项计数核对、未知身份、截断回退、重复出现、缺专辑/时长及总数变化，不复制 demo 的 CSV/默认歌单流程。
+- [x] 3.4 实现 `internal/provider/spotify/` 的官方 URL/ID 解析、统一结果和错误映射；Go/Python 共用协议 fixture 验证毫秒时长、署名顺序、缺失状态、请求标识、空歌单和结构化失败，不把 Spotify Ref 写成元数据绑定。
+- [x] 3.5 完成 Spotify transport bridge；需要时扩展 provider 通用传输以提供受限状态/响应头而不反向依赖业务；使用 HTTP 替身验证所有会话/分页/详情/重试/重定向都经过 Go 门禁、允许目标和预算，Python socket 拦截测试证明无隐藏直连。
+- [x] 3.6 为新抓取链实现设计中的时间、分页、发送、响应字节和并发上限，Spotify 桶跨进程复用、QQ 共用原桶；Go 测试覆盖执行中禁网、取消、429/鉴权停止、暂时错误有限重试、超限返回不完整，并确认旧元数据/歌词配额行为未改变。
 
 ## 4. 辅助程序生命周期与完整发行包
 
-- [ ] 4.1 实现固定资源路径定位、清单/版本/架构检查和参数数组启动，过滤 Python 注入环境；Go 替身进程测试覆盖缺失、损坏、错误架构、恶意参数及错误 PATH，确认不执行 shell、不调用用户 Python、不自动安装。
+- [x] 4.1 实现固定资源路径定位、清单/版本/架构检查和参数数组启动，过滤 Python 注入环境；Go 替身进程测试覆盖缺失、损坏、错误架构、恶意参数及错误 PATH，确认不执行 shell、不调用用户 Python、不自动安装。
 - [ ] 4.2 实现带长度 JSON 帧读写、限长 stderr、超时和进程树取消，完善 Windows/Unix 退出处理；测试错误帧、错误请求 ID、过量输出、进程崩溃、阻塞、取消和应用退出，验证有限等待后无遗留进程/句柄。
 - [ ] 4.3 增加按目标平台冻结及 Wails 资源装配脚本，将 helper/native 依赖、版本和许可证纳入 macOS bundle、Windows 安装器及实际发布的 Linux 包；每个声称支持的产物通过无外部 Python self-test、资源缺失检查和可用平台签名校验。
 - [ ] 4.4 更新 `build/README.md` 与开发 README 的 helper 准备、开发运行、发行构建、完整性检查及故障说明；按文档从干净检出执行构建/自检，确认生成绑定、dist、依赖目录和冻结二进制未纳入 Git。

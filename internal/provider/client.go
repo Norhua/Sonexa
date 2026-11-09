@@ -82,6 +82,8 @@ func CacheModeForRefresh(refresh bool) CacheMode {
 type RedirectPolicy struct {
 	Hosts        []string
 	MaxRedirects int
+	// Validate optionally restricts each redirected target beyond its host.
+	Validate func(*url.URL) error
 }
 
 // GetRequest 描述一次 GET 或带请求体的 POST 请求。
@@ -105,6 +107,16 @@ type GetRequest struct {
 	// MaxResponseBytes bounds opt-in text endpoints; zero preserves existing callers.
 	MaxResponseBytes int64
 	Redirects        *RedirectPolicy
+	// ResponseInfo is optional per-call output for adapters that need status or
+	// selected headers. It must not be shared by concurrent requests.
+	ResponseInfo *ResponseInfo
+}
+
+// ResponseInfo contains only the explicitly selected response headers.
+type ResponseInfo struct {
+	StatusCode  int
+	ContentType string
+	RetryAfter  string
 }
 
 // Get 按缓存模式处理响应，再经共享配额发起 GET/POST 请求。
@@ -151,6 +163,9 @@ func (c *Client) getWithRetry(ctx context.Context, req GetRequest) ([]byte, erro
 	attempts := c.Retry.MaxAttempts
 	if attempts <= 0 {
 		attempts = TransportMaxAttempts
+	}
+	if limits := limitsFor(ctx); limits != nil && limits.MaxAttempts > 0 {
+		attempts = min(attempts, limits.MaxAttempts)
 	}
 
 	var lastErr error
@@ -239,13 +254,25 @@ func (c *Client) do(ctx context.Context, req GetRequest) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if req.ResponseInfo != nil {
+		*req.ResponseInfo = ResponseInfo{StatusCode: resp.StatusCode, ContentType: resp.Header.Get("Content-Type"), RetryAfter: resp.Header.Get("Retry-After")}
+	}
 
+	limit := req.MaxResponseBytes
+	if limits := limitsFor(ctx); limits != nil && limits.ResponseBytes > 0 && (limit <= 0 || limits.ResponseBytes < limit) {
+		limit = limits.ResponseBytes
+	}
 	reader := io.Reader(resp.Body)
-	if req.MaxResponseBytes > 0 {
-		reader = io.LimitReader(resp.Body, req.MaxResponseBytes+1)
+	if limit > 0 {
+		reader = io.LimitReader(resp.Body, limit+1)
 	}
 	body, readErr := io.ReadAll(reader)
-	if req.MaxResponseBytes > 0 && int64(len(body)) > req.MaxResponseBytes {
+	if limits := limitsFor(ctx); limits != nil {
+		if err := limits.consume(int64(len(body))); err != nil {
+			return nil, err
+		}
+	}
+	if limit > 0 && int64(len(body)) > limit {
 		return nil, ErrResponseTooLarge
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -292,6 +319,11 @@ func (c *Client) httpForRequest(policy *RedirectPolicy) *http.Client {
 			}
 			if len(via) > limit || req.URL.Scheme != "https" || req.URL.User != nil || !allowed {
 				return fmt.Errorf("上游重定向超出允许范围")
+			}
+			if policy.Validate != nil {
+				if err := policy.Validate(req.URL); err != nil {
+					return err
+				}
 			}
 		}
 		if previous != nil {

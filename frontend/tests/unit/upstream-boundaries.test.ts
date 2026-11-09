@@ -1,11 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { expect, it } from 'vitest'
 import ts from 'typescript'
 
 // This supplements behavior tests: no second list or source-ID branch belongs
 // in lyric/cover orchestration. Adapter settings are intentionally out of scope.
 it('keeps platform IDs out of cover and lyric business scripts and templates', () => {
-  const ids = new Set(['qq', '163', 'itunes', 'musicbrainz', 'caa', 'kugou', 'kuwo'])
+  const ids = new Set(['spotify', 'qq', '163', 'itunes', 'musicbrainz', 'caa', 'kugou', 'kuwo'])
   for (const path of ['stores/coverSearch.ts', 'stores/lyricsSearch.ts', 'lib/sourceSelection.ts', 'views/CoverSearchView.vue', 'views/LyricsSearchView.vue']) {
     const body = readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8')
     const check = (source: string) => {
@@ -24,4 +24,20 @@ it('keeps platform IDs out of cover and lyric business scripts and templates', (
       for (const attribute of template.matchAll(/(?:v-[\w:-]+|[:@][\w:-]+)="([^"]*)"/g)) check(attribute[1]!)
     } else check(body)
   }
+})
+
+it('keeps playlist protocols and helper execution out of all frontend code', () => {
+  const visit = (directory: URL) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = new URL(entry.name + (entry.isDirectory() ? '/' : ''), directory)
+      if (entry.isDirectory()) { visit(path); continue }
+      if (!/\.(vue|ts)$/.test(entry.name)) continue
+      const source = readFileSync(path, 'utf8')
+      expect(source, path.pathname).not.toMatch(/CgiGetDiss|playlistV2|api-partner\.spotify\.com|child_process|spawn\s*\([^)]*python/i)
+      if (/syncedPlaylist|playlistBinding|playlistSync/i.test(entry.name)) {
+        expect(source, path.pathname).not.toMatch(/(?:[=!]==?\s*['"](?:qq|spotify)['"]|case\s+['"](?:qq|spotify)['"])/)
+      }
+    }
+  }
+  visit(new URL('../../src/', import.meta.url))
 })

@@ -17,7 +17,8 @@ import (
 const internalModule = "github.com/norhua/sonexa/internal/"
 
 func capabilityBusiness(path string) bool {
-	return strings.HasPrefix(path, "lyrics/") || strings.HasPrefix(path, "covers/") ||
+	return strings.HasPrefix(path, "lyrics/") || strings.HasPrefix(path, "covers/") || strings.HasPrefix(path, "playlists/") ||
+		strings.HasPrefix(path, "app/bindings_playlists") ||
 		strings.HasPrefix(path, "app/bindings_lyrics") || path == "app/bindings_cover_search.go"
 }
 
@@ -42,6 +43,9 @@ func capabilityViolations(path string, file *ast.File) []string {
 			(formatTool && (strings.Contains(imported, ".") || imported == "net" || strings.HasPrefix(imported, "net/") || imported == "os")) {
 			problems = append(problems, "反向依赖: "+imported)
 		}
+		if imported == "os/exec" && !strings.HasPrefix(path, "provider/spotify/") {
+			problems = append(problems, "辅助进程只能由 Spotify 上游管理")
+		}
 		if business && imported == internalModule+"lyricdoc" && name == "." {
 			problems = append(problems, "业务不能点导入格式工具")
 		}
@@ -52,7 +56,8 @@ func capabilityViolations(path string, file *ast.File) []string {
 			}
 		}
 	}
-	if !business && !formatTool {
+	playlistStorage := strings.HasPrefix(path, "store/") && strings.Contains(path, "playlist")
+	if !business && !formatTool && !playlistStorage {
 		return problems
 	}
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -72,7 +77,7 @@ func capabilityViolations(path string, file *ast.File) []string {
 			if literal, ok := n.(*ast.BasicLit); ok && literal.Kind == token.STRING {
 				value, _ := strconv.Unquote(literal.Value)
 				lower := strings.ToLower(value)
-				for _, protocol := range []string{"https://", "http://", "musicu.fcg", "fcg_query_lyric", "dosearchforqqmusicdesktop", "getplaylyricinfo", "weapi/", "encseckey", "accesskey", "json:\"songmid", "json:\"qrc", "release-group", "纯音乐请欣赏", "纯音乐，请欣赏", "此歌曲暂无歌词"} {
+				for _, protocol := range []string{"spotify:track:", "playlistv2", "cgigetdiss", "http.request", "https://", "http://", "musicu.fcg", "fcg_query_lyric", "dosearchforqqmusicdesktop", "getplaylyricinfo", "weapi/", "encseckey", "accesskey", "json:\"songmid", "json:\"qrc", "release-group", "纯音乐请欣赏", "纯音乐，请欣赏", "此歌曲暂无歌词"} {
 					if strings.Contains(lower, protocol) {
 						problems = append(problems, "上游协议字符串: "+protocol)
 					}
@@ -102,7 +107,7 @@ func sourceBranchViolations(node ast.Node) []string {
 		if literal, ok := n.(*ast.BasicLit); ok && literal.Kind == token.STRING {
 			value, _ := strconv.Unquote(literal.Value)
 			switch value {
-			case "qq", "163", "kugou", "kuwo", "itunes", "musicbrainz", "caa":
+			case "spotify", "qq", "163", "kugou", "kuwo", "itunes", "musicbrainz", "caa":
 				problems = append(problems, "来源专有分支: "+value)
 			}
 		}
@@ -146,7 +151,7 @@ func TestUpstreamCapabilityDependencyBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, area := range []string{"lyrics", "lyricdoc", "covers", "provider", "app"} {
+	for _, area := range []string{"playlists", "lyrics", "lyricdoc", "covers", "provider", "app"} {
 		if counts[area] == 0 {
 			t.Errorf("未扫描 %s 生产源码", area)
 		}
@@ -225,6 +230,13 @@ func TestCapabilityBoundaryCheckerRejectsRegressions(t *testing.T) {
 		path, source string
 		bad          bool
 	}{
+		{"playlists/service.go", `import "os/exec"`, true},
+		{"app/bindings_playlists.go", `import "os/exec"`, true},
+		{"store/synced_playlists.go", `import "os/exec"`, true},
+		{"provider/spotify/runner.go", `import "os/exec"`, false},
+		{"playlists/service.go", `func f(source string) { if source == "spotify" {} }`, true},
+		{"app/bindings_playlists.go", `var operation = "CgiGetDiss"`, true},
+		{"playlists/provider.go", `import "github.com/norhua/sonexa/internal/provider"`, false},
 		{"lyrics/service.go", `import "github.com/norhua/sonexa/internal/provider/qqmusic"`, true},
 		{"covers/sources/search.go", `import "encoding/json"`, true},
 		{"provider/new.go", `import "github.com/norhua/sonexa/internal/lyrics"`, true},

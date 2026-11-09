@@ -1,0 +1,19 @@
+{
+  "protocol": 1,
+  "requestId": "shared-fixture",
+  "playlistRef": "0000000000000000000001",
+  "cases": [
+    {
+      "name": "normal",
+      "raw": {"__typename": "Track", "uri": "spotify:track:0000000000000000000001", "name": "曲名", "artists": {"items": [{"profile": {"name": "署名一"}}, {"profile": {"name": "署名二"}}]}, "albumOfTrack": {"uri": "spotify:album:0000000000000000000001", "name": "专辑"}, "trackDuration": {"totalMilliseconds": 123456}},
+      "entry": {"entryKey": "0000000000000000000001:1", "trackRef": "0000000000000000000001", "position": 1, "title": "曲名", "artists": ["署名一", "署名二"], "album": "专辑", "durationMS": 123456}
+    },
+    {
+      "name": "missing",
+      "raw": {"__typename": "Track", "uri": "spotify:track:0000000000000000000001"},
+      "entry": {"entryKey": "0000000000000000000001:1", "trackRef": "0000000000000000000001", "position": 1, "title": null, "artists": null, "album": null, "durationMS": null}
+    }
+  ],
+  "empty": {"protocol": 1, "requestId": "shared-fixture", "kind": "result", "snapshot": {"playlistRef": "0000000000000000000001", "name": "空歌单", "fetchedAt": "2026-11-09T00:00:00Z", "entries": [], "excluded": [], "completeness": {"complete": true, "rawSeen": 0, "declaredTotal": 0, "pages": 1, "trackCount": 0, "excludedCount": 0}}},
+  "failure": {"protocol": 1, "requestId": "shared-fixture", "kind": "error", "code": "incomplete", "message": "无法取得可核对的完整歌单"}
+}

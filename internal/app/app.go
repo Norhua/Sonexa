@@ -17,6 +17,7 @@ import (
 	"github.com/norhua/sonexa/internal/library"
 	"github.com/norhua/sonexa/internal/lyrics"
 	"github.com/norhua/sonexa/internal/matching"
+	"github.com/norhua/sonexa/internal/playlists"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -36,6 +37,8 @@ type App struct {
 	client          *provider.Client
 	lyricSvc        *lyrics.Service
 	coverSources    *sources.Registry
+	playlistSources *playlists.Registry
+	playlistFetcher *playlists.Fetcher
 	coverSvc        *covers.Service
 	coverSessions   map[string]*coverSession
 	coverWorkers    sync.WaitGroup
@@ -326,6 +329,9 @@ func (a *App) shutdown(ctx context.Context) {
 		session.cancel()
 	}
 	a.mu.Unlock()
+	if a.playlistFetcher != nil {
+		a.playlistFetcher.Close()
+	}
 	a.coverWorkers.Wait()
 	a.lyricWorkers.Wait()
 	a.mu.Lock()

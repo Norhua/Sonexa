@@ -6,7 +6,8 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
-from adapter import ReadError, read_playlist
+from adapter import ReadError, parse_track, read_playlist
+from pathlib import Path
 from protocol import MAX_FRAME, BridgeTransport, envelope, read_frame, write_frame
 from tests.fixture_peer import FixturePeer
 
@@ -104,6 +105,18 @@ class AdapterTests(unittest.TestCase):
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_shared_go_python_protocol_fixture(self):
+        fixture = json.loads((Path(__file__).parents[2] / "testdata" / "protocol.json").read_text())
+        for case in fixture["cases"]:
+            entry = parse_track(case["raw"])
+            entry.update(entryKey=entry["trackRef"] + ":1", position=1)
+            self.assertEqual(entry, case["entry"])
+        for name in ("empty", "failure"):
+            stream = io.BytesIO()
+            write_frame(stream, fixture[name])
+            stream.seek(0)
+            self.assertEqual(read_frame(stream), fixture[name])
+
     def test_utf8_round_trip(self):
         stream = io.BytesIO()
         data = envelope("hello", "自检", name="带 空格")

@@ -8,6 +8,7 @@ import (
 	"github.com/norhua/sonexa/internal/covers/sources"
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/lyrics"
+	"github.com/norhua/sonexa/internal/playlists"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/provider/caa"
 	"github.com/norhua/sonexa/internal/provider/itunes"
@@ -15,6 +16,7 @@ import (
 	"github.com/norhua/sonexa/internal/provider/musicbrainz"
 	"github.com/norhua/sonexa/internal/provider/netease"
 	"github.com/norhua/sonexa/internal/provider/qqmusic"
+	"github.com/norhua/sonexa/internal/provider/spotify"
 	"github.com/norhua/sonexa/internal/store"
 	"time"
 )
@@ -22,7 +24,7 @@ import (
 // Even local upstream defaults are wired here. Binding code consumes the
 // injected data/functions without importing a concrete provider.
 func newAppWithUpstreamDefaults(version string) *App {
-	a := &App{version: version, registry: provider.NewRegistry(), countries: []CountryOption{}}
+	a := &App{version: version, registry: provider.NewRegistry(), countries: []CountryOption{}, playlistFetcher: playlists.NewFetcher()}
 	for _, code := range itunes.SupportedCountries() {
 		a.countries = append(a.countries, CountryOption{Code: code, Name: itunes.CountryDisplayName(code)})
 	}
@@ -47,12 +49,13 @@ func configureCoverDefaults(svc *covers.Service) error {
 }
 
 type upstreamServices struct {
-	client   *provider.Client
-	metadata *provider.Registry
-	lyrics   *lyrics.Service
-	covers   *sources.Registry
-	images   *provider.ImagePolicies
-	artwork  []provider.ArtworkStrategy
+	client    *provider.Client
+	metadata  *provider.Registry
+	lyrics    *lyrics.Service
+	covers    *sources.Registry
+	playlists *playlists.Registry
+	images    *provider.ImagePolicies
+	artwork   []provider.ArtworkStrategy
 }
 
 // assembleUpstreams has no publication, network, disk, or limiter side effects.
@@ -64,6 +67,10 @@ func assembleUpstreams(cur config.Settings, limiters *provider.Limiters, st *sto
 	mb := musicbrainz.New(client, musicbrainz.Config{Contact: cur.MusicBrainz.Contact, ServerURL: cur.MusicBrainz.ServerURL, RatePerSec: cur.MusicBrainz.RatePerSec, CacheTTL: time.Duration(cur.Cache.ProviderCacheTTLh) * time.Hour}, store.ParamsHash)
 	it := itunes.New(client, itunes.Config{DefaultCountry: cur.ITunes.DefaultCountry, RatePerMin: cur.ITunes.RatePerMin}, store.ParamsHash)
 	qq := qqmusic.New(client, qqmusic.Config{RatePerMin: cur.QQMusic.RatePerMin}, store.ParamsHash)
+	playlistSources, err := playlists.NewRegistry(qq, spotify.New(client))
+	if err != nil {
+		return nil, err
+	}
 	lyricSvc, err := buildLyricsService(client, qq)
 	if err != nil {
 		return nil, err
@@ -101,7 +108,7 @@ func assembleUpstreams(cur config.Settings, limiters *provider.Limiters, st *sto
 		priority = append(priority, provider.ProviderID(id))
 	}
 	registry.SetPriority(priority)
-	return &upstreamServices{client: client, metadata: registry, lyrics: lyricSvc, covers: coverSources, images: images, artwork: artwork}, nil
+	return &upstreamServices{client: client, metadata: registry, lyrics: lyricSvc, covers: coverSources, playlists: playlistSources, images: images, artwork: artwork}, nil
 }
 
 // publishUpstreamsLocked is the only production publication point. Caller holds a.mu.
@@ -118,6 +125,7 @@ func (a *App) publishUpstreamsLocked(next *upstreamServices) {
 		return p.FetchDetail(ctx, ref)
 	})
 	a.client, a.registry, a.lyricSvc, a.coverSources = next.client, next.metadata, next.lyrics, next.covers
+	a.playlistSources = next.playlists
 	if a.library != nil {
 		a.library.SetRegistry(next.metadata)
 	}

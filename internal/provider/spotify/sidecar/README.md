@@ -12,7 +12,7 @@ SpotifyScraper `3.9.2` 通过局部适配提供原始分页读取/解析，helpe
 - `tests/`：合成原始响应 fixture、HTTP 对端替身、分页/协议保护测试。
 - `collect_licenses.py / freeze.py / verify_frozen.py`：仅开发/构建使用；产物统一位于 Git 忽略的 `build/spotify-helper/`。
 
-协议版本为 1，消息携带 `requestId / kind`；HTTP 交换另有递增 sequence。响应 body 使用 Base64，status / headers 单独传递；错误为有限 code 和脱敏信息。当前限制：单帧/最终结果 32 MiB，单响应 8 MiB，累计响应 256 MiB，最多 500 次请求、200 页、20,000 原始项。Go 仍须独立实施超时、每次实际发送计数、允许目标、动态门禁、共享桶和进程取消，Python 检查不能代替任务 3.5–4.2 的生产保护。
+协议版本为 1，消息携带 `requestId / kind`；HTTP 交换另有递增 sequence。响应 body 使用 Base64，status / headers 单独传递；错误为有限 code 和脱敏信息。当前限制：单帧/最终结果 32 MiB，单响应 8 MiB，累计响应 256 MiB，最多 500 次请求、200 页、20,000 原始项。Go 通过 `provider/spotify` 独立实施超时、每次实际发送计数、允许目标、动态门禁、共享桶和进程取消，Python 检查不代替 Go 保护；Windows 实际进程与发行包验收仍未完成。
 
 `helper.py` 的 audit hook 拒绝 Python socket 出网及外部进程启动。这是防误调用的附加保护，不是针对恶意 native 扩展的完整沙箱；本机冻结验证另用 OS sandbox 禁网并禁止访问外部解释器。
 
@@ -85,9 +85,9 @@ S=internal/provider/spotify/sidecar
 2026-11-09，macOS 27.2 / arm64：
 
 - 两次离线 hash-locked 安装一致，依赖完整性检查通过。
-- 13 项单测通过：205 项三页、非歌曲原始位置、缺字段及同身份补取、重复出现、明确空列表、截断/重复页/变化总数/未知身份/embed 降级拒绝、鉴权限制无重试、错误帧/请求标识。
+- 初次前置组 13 项单测通过；随后加入 Go/Python 共用协议 fixture，现为 14 项：205 项三页、非歌曲原始位置、缺字段及同身份补取、重复出现、明确空列表、截断/重复页/变化总数/未知身份/embed 降级拒绝、鉴权限制无重试、错误帧/请求标识。
 - 单测拦截 socket connect 与 DNS；生产 helper 另有禁止 socket/外部进程的 audit hook。
 - one-folder 冻结及版本握手通过；OS sandbox 禁止网络、构建目录、Nix/uv 外部 Python，PATH 指向不存在目录，HOME 为空，Python 注入变量无效，中文/空格路径正常。自检读取 205 项，产物文件无改变；主 helper 与解释器 ad-hoc 签名校验通过。
 - 初次读取 zstd 归档时系统 tar 缺 zstd，改用开发机 Python 3.14 的标准库仅解包构建元数据；helper 本身没有该依赖。
 
-未请求真实 QQ/Spotify 歌单，未完成生产 Go transport、进程生命周期、安装包或原生 UI 验收。Windows/Linux/其他 macOS 架构未验证；当前结果只解除本机前置可行性阻塞，不代表功能已交付。
+未请求真实 QQ/Spotify 歌单；Go 受控传输、资源定位、进程封装和只读能力装配已实现，并用真实冻结 helper + Go HTTP 替身验证空歌单及 205 项分页/补取往返。尚未完成同步业务、Windows 进程运行、安装包或原生 UI 验收。Windows 仅交叉编译，Linux/其他 macOS 架构未验证；当前结果不代表功能已交付。
