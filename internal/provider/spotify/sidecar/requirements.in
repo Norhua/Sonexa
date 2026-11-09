@@ -1,0 +1,4 @@
+# 运行依赖；不启用 CLI、浏览器、登录、媒体或 MCP extras。
+SpotifyScraper==3.9.2
+# 构建依赖；仅在构建环境使用，用户环境不安装。
+PyInstaller==6.22.3
