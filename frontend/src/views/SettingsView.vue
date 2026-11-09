@@ -248,7 +248,7 @@ defineExpose({ active })
                 class="mt-1 block w-24"
               />
             </label>
-            <p class="text-xs text-muted-color">默认 45 请求/分钟；1–60 内可主动降低。元数据、封面查询与歌词请求合计共用此配额，不含图片下载。</p>
+            <p class="text-xs text-muted-color">默认 45 请求/分钟；1–60 内可主动降低。元数据、封面查询、歌词与公开歌单请求合计共用此配额，不含图片下载。</p>
             <p class="text-xs text-muted-color">使用非公开接口，应用侧限制不保证上游可用；遇到风控或鉴权提示时报告不可用。</p>
           </template>
 

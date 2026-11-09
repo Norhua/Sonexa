@@ -210,8 +210,13 @@ func (a *App) About() AboutInfo {
 				URL:  "https://www.apple.com/itunes/",
 			},
 			{
+				Name: "Spotify 公开歌单",
+				Text: "仅提供公开歌单读取，不是元数据搜索来源，不需要账号或密钥。非官方依赖 SpotifyScraper 3.9.2（MIT），随附 CPython 3.12.13 与 PyInstaller 6.22.3 冻结运行环境；完整第三方许可见发行资源 LICENSES。运行环境缺失时拒绝调用，不要求用户安装 Python。此说明不构成服务条款合规结论。",
+				URL:  "https://github.com/AliAkhtari78/SpotifyScraper",
+			},
+			{
 				Name: "QQ 音乐",
-				Text: "部分元数据、歌词与封面来自 QQ 音乐（非公开接口），保留来源信息；歌词与封面图片不随导出分发。",
+				Text: "部分元数据、歌词、封面与公开歌单来自 QQ 音乐（非公开接口），保留来源信息；歌词与封面图片不随导出分发。",
 				URL:  "https://y.qq.com/",
 			},
 			{

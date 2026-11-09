@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** 唯一曲目表格：Volt 提供结构，useListSelection 独占选择与焦点。 */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { Check, Pause, Play } from 'lucide-vue-next'
+import { Check, CircleCheck, Pause, Play } from 'lucide-vue-next'
 import Column from 'primevue/column'
 import type { DataTableSortEvent } from 'primevue/datatable'
 import type { MenuItem } from 'primevue/menuitem'
@@ -11,7 +11,7 @@ import ContextMenu from '@/volt/ContextMenu.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import CoverArt from '@/components/CoverArt.vue'
 import { addedTime, display, duration } from '@/api'
-import { trackColumns, useTrackColumnsStore, type TrackColumnContext, type TrackColumnKey } from '@/stores/trackColumns'
+import { columnsFor, useTrackColumnsStore, type TrackColumnContext, type TrackColumnKey } from '@/stores/trackColumns'
 import { useEnrichStore } from '@/stores/enrich'
 import { listRows, sortRows, uniqueTracks, type ListRow, type Row } from '@/lib/trackRows'
 import { useListSelection } from '@/lib/useListSelection'
@@ -33,6 +33,7 @@ const sortDesc = defineModel<boolean>('sortDesc', { default: false })
 const emit = defineEmits<{
   open: [row: Row]
   edit: [row: Row]
+  addToLibrary: [rows: Row[]]
   addToCollection: [rows: Row[], kind: 'playlist' | 'tag']
   viewArtist: [row: Row]
   copyInfo: [rows: Row[]]
@@ -46,7 +47,7 @@ const emit = defineEmits<{
 const columns = useTrackColumnsStore()
 const hasColumn = (key: TrackColumnKey) => columns.has(key, props.columnContext)
 const headerMenu = ref<InstanceType<typeof ContextMenu> | null>(null)
-const headerMenuModel = computed<MenuItem[]>(() => trackColumns.map(column => ({
+const headerMenuModel = computed<MenuItem[]>(() => columnsFor(props.columnContext).map(column => ({
   label: column.label,
   checked: hasColumn(column.key),
   disabled: hasColumn(column.key) && columns.visibleFor(props.columnContext).length === 1,
@@ -68,7 +69,7 @@ const orderedRows = computed(() => sortRows(listRows(props.rows), props.fixedOrd
 const selection = useListSelection(orderedRows)
 const selectedRows = computed(() => uniqueTracks(selection.selectedRows.value))
 const selectedCount = computed(() => selectedRows.value.length)
-const trackCount = computed(() => uniqueTracks(props.rows).length)
+const trackCount = computed(() => props.columnContext === 'syncedPlaylist' ? props.rows.length : uniqueTracks(props.rows).length)
 const sortField = computed(() => props.fixedOrder || sortKey.value === 'default' ? undefined : sortKey.value === 'duration' ? 'durationMs' : sortKey.value)
 const tablePT = computed(() => ({
   table: { 'aria-label': '曲目列表', 'aria-multiselectable': 'true' },
@@ -76,6 +77,7 @@ const tablePT = computed(() => ({
     const row = orderedRows.value[context.index]
     return row ? {
       'data-row-key': row.key,
+      'data-upstream-missing': !!row.upstreamMissing,
       'data-ghost': !!row.ghost,
       'aria-selected': !row.ghost && selection.selected.value.has(row.key),
       tabindex: !row.ghost && selection.focused.value === row.key ? 0 : -1,
@@ -216,6 +218,12 @@ const menuModel = computed<MenuItem[]>(() => {
     { label: '加入曲库', command: () => emit('addGhostToLibrary', row) },
     { label: '查看上游', command: () => emit('viewUpstream', row) },
   ]
+  if (props.columnContext === 'syncedPlaylist') return [
+    { label: '打开详情', command: () => emit('open', row) },
+    { label: '编辑', command: () => emit('edit', row) },
+    { label: '复制信息', command: () => emit('copyInfo', selectedRows.value) },
+    { label: '添加到我的音乐库', command: () => emit('addToLibrary', selectedRows.value) },
+  ]
   return [
     { label: '打开详情', command: () => emit('open', row) },
     { label: '编辑', command: () => emit('edit', row) },
@@ -241,7 +249,7 @@ defineExpose({ selectedCount, trackCount, selectedRows })
     @mousedown.capture="onMouseDown" @click="onClick" @dblclick="onDoubleClick"
     @contextmenu="onContextMenu" @keydown="onKeyDown">
     <div data-track-toolbar class="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs text-muted-color">
-      <span role="status"><template v-if="loading">正在加载曲目…</template><template v-else>{{ trackCount }} 首曲目<span v-if="selectedCount"> · 已选 {{ selectedCount }} 项</span></template></span>
+      <span role="status"><template v-if="loading">正在加载曲目…</template><template v-else>{{ trackCount }} {{ columnContext === 'syncedPlaylist' ? '个已导入项' : '首曲目' }}<span v-if="selectedCount"> · 已选 {{ selectedCount }} 项</span></template></span>
       <div class="flex-1" />
       <div v-if="showEnrichment && !enrich.idleEmpty" class="flex items-center gap-1.5" :title="enrich.hint" data-testid="enrichment-progress">
         <span>补全信息匹配</span>
@@ -256,6 +264,7 @@ defineExpose({ selectedCount, trackCount, selectedRows })
       :selection="selection.selectedRows.value" :pt="tablePT" :loading="loading"
       :sort-field="sortField" :sort-order="sortDesc ? -1 : 1"
       :table-style="{ minWidth: `${columns.widthFor(columnContext)}px`, tableLayout: 'fixed' }" @sort="onSort">
+      <Column v-if="hasColumn('inLibrary')" header="" style="width: 48px"><template #body="{ data }"><span :aria-label="data.inLibrary ? '已入库' : '未入库'" :title="data.inLibrary ? '已入库' : '未入库'"><CircleCheck v-if="data.inLibrary" class="size-4 text-green-600" aria-hidden="true" /></span></template></Column>
       <Column v-if="hasColumn('trackNumber')" header="音轨号" style="width: 72px"><template #body="{ data }"><span class="select-text tabular-nums">{{ display(data.trackNumber) }}</span></template></Column>
       <Column v-if="hasColumn('cover')" header="封面" style="width: 48px"><template #body="{ data }"><CoverArt :source="data.coverSource" usage="thumbnail" class="size-8 rounded" /></template></Column>
       <Column v-for="column in textColumns"
@@ -288,5 +297,6 @@ defineExpose({ selectedCount, trackCount, selectedRows })
 .track-list :deep(.track-row:not([data-ghost="true"]):hover) { background: var(--p-content-hover-background); }
 .track-list :deep(.track-row[aria-selected="true"]) { background: var(--p-highlight-background) !important; color: var(--p-highlight-color); }
 .track-list :deep(.track-row:focus-visible) { outline: 1px solid var(--p-primary-color); outline-offset: -1px; }
+.track-list :deep(.track-row[data-upstream-missing="true"]),
 .track-list :deep(.track-row[data-ghost="true"]) { color: var(--p-ghost-color); }
 </style>

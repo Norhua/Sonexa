@@ -7,6 +7,7 @@ const admission = useAdmissionStore()
  * 单一界面处置全部人工判断——疑似重复、跨发行组的多个高置信、无结果、失败。
  * 待选 / 匹配中 / 失败只是状态标签，界面结构完全一致。
  */
+import ImportDestinations from '@/components/ImportDestinations.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { LoaderCircle } from 'lucide-vue-next'
 import { App, display, Events, EventsOn, type Models } from '@/api'
@@ -108,12 +109,14 @@ let refreshTasks = false
 let queueLoad: Promise<void> | null = null
 let disposed = false
 // 直接订阅事件而非待复核计数：计数相同时也可能有失败、候选或条目变化。
+const offQueue = EventsOn(Events.ImportQueueChanged, () => { refreshTasks = true; void load(true) })
 const offProgress = EventsOn(Events.ImportProgress, () => { void load(true) })
 const offLibrary = EventsOn(Events.LibraryChanged, () => { refreshTasks = true; void load(true) })
 onBeforeUnmount(() => {
   disposed = true
   researchRequest++
   queueRevision++
+  offQueue()
   offProgress()
   offLibrary()
 })
@@ -420,6 +423,7 @@ function next() {
           <SecondaryButton variant="outlined" size="small" @click="act(() => App.DiscardReviewItem(current!.id))">
             移出队列
           </SecondaryButton>
+          <ImportDestinations :targets="current.importDestinations ?? []" />
         </div>
       </section>
 

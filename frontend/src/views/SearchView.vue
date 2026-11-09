@@ -11,6 +11,7 @@ const admission = useAdmissionStore()
  * 范围单选还解决了一个实际问题：多上游并发时结果落进同一个列表，
  * 来源难分、排序也不可比（各家的 relevance 不同源）。
  */
+import LibraryAdditionDialog from '@/components/LibraryAdditionDialog.vue'
 import { computed, onMounted, ref } from 'vue'
 import { Search as SearchIcon } from 'lucide-vue-next'
 import { App, type Models } from '@/api'
@@ -123,12 +124,18 @@ async function run() {
   await search.run()
 }
 
+const addition = ref<Row[] | null>(null)
 async function addToLibrary(row: Models.app.CandidateRow) {
+  if (row.localTrackId && !row.inLibrary) {
+    addition.value = [{ id: row.localTrackId, title: row.title ?? '', artist: row.artist, album: row.album }]
+    return
+  }
   try {
     const result = await admission.run(() => App.PrepareAdmission(row, 0))
     if (!result) return
     const id = result.trackId
     row.localTrackId = id
+    row.inLibrary = true
     row.action = '已在库中'
     if (!row.badges.includes('本地')) row.badges = ['本地', ...row.badges]
     await search.refreshResults()
@@ -260,6 +267,7 @@ async function addToLibrary(row: Models.app.CandidateRow) {
       </div>
     </div>
 
+    <LibraryAdditionDialog :rows="addition" @close="addition = null" @added="search.refreshResults()" />
     <Message v-if="search.error || search.refreshError" severity="error" size="small" class="shrink-0 rounded-none">
       {{ search.error || search.refreshError }}
     </Message>

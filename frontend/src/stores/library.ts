@@ -9,6 +9,7 @@ export type ViewKind =
   | 'recent'
   | 'artists'
   | 'albums'
+  | 'syncedPlaylist'
   | 'playlist'
   | 'tag'
   | 'artist'

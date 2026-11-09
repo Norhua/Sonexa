@@ -6,7 +6,7 @@ import { useEnrichStore } from '../../src/stores/enrich'
 
 vi.mock('../../src/api', () => ({
   App: { GetTaskSummary: vi.fn(), GetEnrichStatus: vi.fn() },
-  Events: { ImportProgress: 'import:progress', EnrichProgress: 'enrich:progress' }, EventsOn: vi.fn(),
+  Events: { ImportQueueChanged: 'import:queue-changed', ImportProgress: 'import:progress', EnrichProgress: 'enrich:progress' }, EventsOn: vi.fn(),
 }))
 function deferred<T>() {
   let resolve!: (value: T) => void

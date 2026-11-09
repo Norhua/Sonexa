@@ -17,6 +17,9 @@ export interface Row {
   country?: string | null
   coverSource?: CoverSource | null
   adoptedCoverPath?: string | null
+  inLibrary?: boolean
+  /** 上游缺席但已导入，不是不可选的专辑占位。 */
+  upstreamMissing?: boolean
   ghost?: boolean
   trackRef?: string | null
   recordingRef?: string | null

@@ -23,6 +23,7 @@ export interface LogLine {
 export const useTasksStore = defineStore('tasks', () => {
   const summary = ref<TaskState | null>(null)
   const log = ref<LogLine[]>([])
+  let unsubscribeQueue: (() => void) | null = null
   let unsubscribe: (() => void) | null = null
 
   const hasActiveImport = computed(
@@ -41,6 +42,7 @@ export const useTasksStore = defineStore('tasks', () => {
   /** 开始监听后端推送的进度事件。 */
   function subscribe() {
     if (unsubscribe) return
+    unsubscribeQueue = EventsOn(Events.ImportQueueChanged, () => { void refresh() })
     unsubscribe = EventsOn(Events.ImportProgress, (p: ImportProgress) => {
       summary.value = {
         activeBatch: p.batchId,
@@ -62,6 +64,8 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   function unsubscribeAll() {
+    unsubscribeQueue?.()
+    unsubscribeQueue = null
     unsubscribe?.()
     unsubscribe = null
     refreshQueue.dispose()

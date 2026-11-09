@@ -82,6 +82,11 @@
         ],
         CheckOutbound: async () => ({ allowed: !!settings.musicbrainz.contact.trim(), reason: settings.musicbrainz.contact.trim() ? '' : '需要设置联系方式', settingsAnchor: 'upstream' }),
         CheckReachable: async () => true,
+        ListSyncedPlaylists: async () => [],
+        ListPlaylistSources: async () => [],
+        GetSyncedPlaylistEntries: async () => [],
+        CancelPlaylistOperation: async () => null,
+        CancelLibraryAddition: async () => null,
         ListCollections: async kind => kind === 'playlist' ? [{ id: 10, kind, name: '测试歌单', trackCount: tracks.length }] : [],
         ListTracks: async filter => {
           const list = filter?.query ? tracks.filter(t => t.title.includes(filter.query)) : tracks

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
-import { trackColumns, useTrackColumnsStore } from '../../src/stores/trackColumns'
+import { columnsFor, trackColumns, useTrackColumnsStore } from '../../src/stores/trackColumns'
 
 let storage: Map<string, string>
 beforeEach(() => {
@@ -17,7 +17,7 @@ afterEach(() => vi.unstubAllGlobals())
 describe('track column preferences', () => {
   it.each(['broken', '[]', '["status"]', '["position"]', '{}'])('invalid preferences %s restore existing columns', saved => {
     storage.set('sonexa.trackColumns', saved)
-    expect(useTrackColumnsStore().visible).toEqual(trackColumns.filter(column => column.key !== 'trackNumber' && column.key !== 'addedAt').map(column => column.key))
+    expect(useTrackColumnsStore().visible).toEqual(columnsFor('library').filter(column => column.key !== 'trackNumber' && column.key !== 'addedAt').map(column => column.key))
   })
   it('filters unknown keys and duplicates; last column cannot be hidden', async () => {
     storage.set('sonexa.trackColumns', '["title","status","position","title"]')
@@ -51,7 +51,7 @@ describe('track column preferences', () => {
   })
   it('added time is opt-in in both contexts and track number precedes cover', async () => {
     const columns = useTrackColumnsStore()
-    expect(trackColumns.slice(0, 2).map(column => column.key)).toEqual(['trackNumber', 'cover'])
+    expect(columnsFor('library').slice(0, 2).map(column => column.key)).toEqual(['trackNumber', 'cover'])
     for (const context of ['library', 'album'] as const) {
       expect(columns.has('addedAt', context)).toBe(false)
       columns.toggle('addedAt', context)
@@ -61,6 +61,20 @@ describe('track column preferences', () => {
     const reloaded = useTrackColumnsStore()
     expect(reloaded.has('addedAt')).toBe(true)
     expect(reloaded.has('addedAt', 'album')).toBe(true)
+  })
+  it('synced library status is opt-in and persists without changing existing contexts', async () => {
+    const columns = useTrackColumnsStore()
+    const ordinary = [...columns.visible], album = [...columns.albumVisible]
+    expect(columns.has('inLibrary', 'syncedPlaylist')).toBe(false)
+    columns.toggle('inLibrary', 'syncedPlaylist')
+    columns.toggle('inLibrary', 'library')
+    await nextTick()
+    setActivePinia(createPinia())
+    const reloaded = useTrackColumnsStore()
+    expect(reloaded.has('inLibrary', 'syncedPlaylist')).toBe(true)
+    expect(reloaded.visible).toEqual(ordinary)
+    expect(reloaded.albumVisible).toEqual(album)
+    expect(trackColumns.find(c => c.key === 'inLibrary')?.width).toBe(48)
   })
   it('unavailable storage does not prevent toggles', async () => {
     vi.stubGlobal('localStorage', {

@@ -20,7 +20,7 @@ test('QQ settings preserve 30, share the API budget and validate bounded saves',
   await expect(rate).toHaveAttribute('min', '1')
   await expect(rate).toHaveAttribute('max', '60')
   await expect(dialog).toContainText('默认 45 请求/分钟')
-  await expect(dialog).toContainText('元数据、封面查询与歌词请求合计共用此配额，不含图片下载')
+  await expect(dialog).toContainText('元数据、封面查询、歌词与公开歌单请求合计共用此配额，不含图片下载')
   for (const value of ['', '0', '-1', '0.5', '60.1', '90']) {
     await rate.fill(value)
     await rate.press('Tab')

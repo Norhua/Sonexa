@@ -118,6 +118,7 @@ function onAct(row: Models.app.CandidateRow) {
               v-for="badge in data.badges"
               :key="badge"
               severity="secondary"
+              :title="badge === '本地' ? '精确本地绑定；不代表已加入音乐库' : badge"
               :value="badge"
               class="px-1.5 py-0.5 text-[10px] font-normal"
             />

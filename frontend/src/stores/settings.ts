@@ -28,7 +28,9 @@ export const useSettingsStore = defineStore('settings', () => {
     () => settings.value !== null && !settings.value.onboardingDone && !gate.value.allowed,
   )
 
+  let request = 0
   async function load() {
+    const token = ++request
     loading.value = true
     error.value = ''
     try {
@@ -37,13 +39,14 @@ export const useSettingsStore = defineStore('settings', () => {
         App.ListProviders(),
         App.CheckOutbound(),
       ])
+      if (token !== request) return
       settings.value = s
       providers.value = p ?? []
       gate.value = g
     } catch (e) {
-      error.value = String(e)
+      if (token === request) error.value = String(e)
     } finally {
-      loading.value = false
+      if (token === request) loading.value = false
     }
   }
 

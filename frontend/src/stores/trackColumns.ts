@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 
 /** 只控制既有列的可见性；不影响排序、选择、导出字段或歌单顺序。 */
 export const trackColumns = [
+  { key: 'inLibrary', label: '已入库', width: 48 },
   { key: 'trackNumber', label: '音轨号', width: 72 },
   { key: 'cover', label: '封面', width: 48 },
   { key: 'title', label: '标题', width: 150 },
@@ -15,18 +16,19 @@ export const trackColumns = [
   { key: 'addedAt', label: '加入时间', width: 112 },
 ] as const
 export type TrackColumnKey = typeof trackColumns[number]['key']
-export type TrackColumnContext = 'library' | 'album'
+export type TrackColumnContext = 'library' | 'album' | 'syncedPlaylist'
+export const columnsFor = (context: TrackColumnContext) => trackColumns.filter(c => context === 'syncedPlaylist' || c.key !== 'inLibrary')
 const storageKey = 'sonexa.trackColumns'
 const defaults = (context: TrackColumnContext) => trackColumns
-  .filter(column => column.key !== 'addedAt' && (context === 'album' || column.key !== 'trackNumber'))
+  .filter(column => column.key !== 'inLibrary' && column.key !== 'addedAt' && (context === 'album' || column.key !== 'trackNumber'))
   .map(column => column.key)
 
 function load(context: TrackColumnContext): TrackColumnKey[] {
   try {
-    const key = context === 'album' ? `${storageKey}.album` : storageKey
+    const key = context === 'library' ? storageKey : `${storageKey}.${context}`
     const saved: unknown = JSON.parse(localStorage.getItem(key) ?? 'null')
     if (Array.isArray(saved)) {
-      const keys = trackColumns.map(column => column.key).filter(key => saved.includes(key))
+      const keys = columnsFor(context).map(column => column.key).filter(key => saved.includes(key))
       if (keys.length) return keys
     }
   } catch { /* 损坏或不可用的本地存储不阻止浏览。 */ }
@@ -36,18 +38,20 @@ function load(context: TrackColumnContext): TrackColumnKey[] {
 export const useTrackColumnsStore = defineStore('trackColumns', () => {
   const visible = ref(load('library'))
   const albumVisible = ref(load('album'))
-  const visibleFor = (context: TrackColumnContext = 'library') => context === 'album' ? albumVisible.value : visible.value
+  const syncedVisible = ref(load('syncedPlaylist'))
+  const visibleFor = (context: TrackColumnContext = 'library') => context === 'syncedPlaylist' ? syncedVisible.value : context === 'album' ? albumVisible.value : visible.value
   const widthFor = (context: TrackColumnContext = 'library') => trackColumns
     .filter(column => visibleFor(context).includes(column.key)).reduce((width, column) => width + column.width, 0)
   const minWidth = computed(() => widthFor())
   const has = (key: TrackColumnKey, context: TrackColumnContext = 'library') => visibleFor(context).includes(key)
   function toggle(key: TrackColumnKey, context: TrackColumnContext = 'library') {
-    const target = context === 'album' ? albumVisible : visible
+    if (!columnsFor(context).some(c => c.key === key)) return
+    const target = context === 'syncedPlaylist' ? syncedVisible : context === 'album' ? albumVisible : visible
     if (has(key, context)) {
       if (target.value.length > 1) target.value = target.value.filter(value => value !== key)
     } else target.value = [...target.value, key]
   }
-  for (const [key, target] of [[storageKey, visible], [`${storageKey}.album`, albumVisible]] as const) {
+  for (const [key, target] of [[storageKey, visible], [`${storageKey}.album`, albumVisible], [`${storageKey}.syncedPlaylist`, syncedVisible]] as const) {
     watch(target, value => {
       try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* 当前会话仍生效。 */ }
     })

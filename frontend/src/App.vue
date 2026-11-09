@@ -11,6 +11,9 @@ import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } fr
 import { App as Api, Events, EventsOn, display } from '@/api'
 import { createRefreshQueue } from '@/lib/refreshQueue'
 import type { Models } from '@/api'
+import SyncedPlaylistView from '@/views/SyncedPlaylistView.vue'
+import PlaylistBindingDialog from '@/components/PlaylistBindingDialog.vue'
+import { useSyncedPlaylistsStore } from '@/stores/syncedPlaylists'
 import AppSidebar from '@/components/AppSidebar.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import AdmissionDialog from '@/components/AdmissionDialog.vue'
@@ -41,6 +44,8 @@ import { useTasksStore } from '@/stores/tasks'
 import { useThemeStore } from '@/stores/theme'
 import { useUiStore } from '@/stores/ui'
 
+const synced = useSyncedPlaylistsStore()
+const bindingOpen = ref(false)
 const library = useLibraryStore()
 const settings = useSettingsStore()
 const tasks = useTasksStore()
@@ -63,6 +68,7 @@ const selectedIds = ref<number[]>([])
 const sortKey = ref('default')
 const sortDesc = ref(false)
 
+let offSettings: (() => void) | null = null
 let offLibrary: (() => void) | null = null
 let offCover: (() => void) | null = null
 watch(() => [library.view, library.contextId], () => {
@@ -83,11 +89,14 @@ const libraryRefresh = createRefreshQueue(async () => {
 onMounted(async () => {
   // 先订阅再读初值，启动加载期间的导入/补全通知也不丢失。
   tasks.subscribe()
+  synced.subscribe()
+  void synced.refresh()
   search.subscribe()
   enrich.subscribe()
   offCover = EventsOn(Events.CoverChanged, async (event: { releaseId: number }) => {
     if (detail.value?.track.releaseId === event.releaseId && drawerOpen.value) await onCoverAdopted()
   })
+  offSettings = EventsOn(Events.SettingsSaved, () => { void settings.load() })
   offLibrary = EventsOn(Events.LibraryChanged, () => { void libraryRefresh.request().catch(markFailure) })
   await settings.load()
   await library.loadCollections()
@@ -108,9 +117,11 @@ onUnmounted(() => {
   detailRequest++
   detailTrackId = null
   tasks.unsubscribeAll()
+  synced.dispose()
   search.unsubscribeAll()
   libraryRefresh.dispose()
   enrich.unsubscribeAll()
+  offSettings?.()
   offLibrary?.()
   offCover?.()
   void coverSearch.close()
@@ -398,11 +409,26 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
     notice.value = String(e)
   }
 }
+async function openSynced(id: number) {
+  await synced.refresh()
+  const p = synced.playlists.find(p => p.id === id)
+  await library.goTo('syncedPlaylist', { id, title: p?.name ?? '同步歌单' })
+}
+async function deleteSynced(id: number) {
+  if (!await ui.confirm({ title: '删除同步歌单绑定？', message: '撤销本歌单导入需求。已入库或其他同步歌单仍引用的曲目会保留，其余未入库曲目将清理。', confirmLabel: '删除绑定', danger: true })) return
+  try {
+    await Api.DeleteSyncedPlaylist(id)
+    if (library.view === 'syncedPlaylist' && library.contextId === id) await library.goTo('all')
+    await synced.refresh()
+  } catch (e) { markFailure(e) }
+}
 </script>
 
 <template>
   <div class="flex h-full bg-app text-color" :inert="!!coverSearch.target || !!lyricsSearch.target">
     <AppSidebar
+      @bind-playlist="bindingOpen = true"
+      @delete-synced-playlist="deleteSynced"
       @new-collection="newCollection"
       @rename-collection="renameCollection"
       @delete-collection="deleteCollection"
@@ -450,6 +476,9 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
             @action="onEmptyAction"
           />
         </template>
+
+        <SyncedPlaylistView v-else-if="library.view === 'syncedPlaylist'" :drawer-open="drawerOpen"
+          @open="openDetail" @edit="r => editing = r.id" @copy-info="copyInfo" />
 
         <SearchView
           :drawer-open="drawerOpen"
@@ -538,6 +567,7 @@ async function deleteCollection(id: number, kind: 'playlist' | 'tag') {
     <CoverSearchView v-if="coverSearch.target" />
     <LyricsSearchView v-if="lyricsSearch.target" />
     <SettingsDialog v-if="ui.settingsOpen" />
+    <PlaylistBindingDialog v-model:visible="bindingOpen" @bound="openSynced" />
     <PromptDialog />
     <ConfirmDialog />
     <AdmissionDialog />

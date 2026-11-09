@@ -20,13 +20,17 @@ import ProgressBar from '@/volt/ProgressBar.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
 import { useLibraryStore, type ViewKind } from '@/stores/library'
 import { useTasksStore } from '@/stores/tasks'
+import { useSyncedPlaylistsStore } from '@/stores/syncedPlaylists'
 import { useUiStore } from '@/stores/ui'
 
 const library = useLibraryStore()
 const tasks = useTasksStore()
+const synced = useSyncedPlaylistsStore()
 const ui = useUiStore()
 
 const emit = defineEmits<{
+  bindPlaylist: []
+  deleteSyncedPlaylist: [id: number]
   newCollection: [kind: 'playlist' | 'tag']
   renameCollection: [id: number, kind: 'playlist' | 'tag']
   deleteCollection: [id: number, kind: 'playlist' | 'tag']
@@ -70,22 +74,24 @@ function isLibraryItemActive(kind: ViewKind) {
 
 /** 歌单与标签的右键菜单。重命名与删除是两个动作，不该挤进一个确认框里二选一。 */
 const menu = ref<InstanceType<typeof ContextMenu> | null>(null)
-const target = ref<{ id: number; kind: 'playlist' | 'tag' } | null>(null)
+const target = ref<{ id: number; kind: 'playlist' | 'tag' | 'syncedPlaylist' } | null>(null)
 
 const menuModel = computed<MenuItem[]>(() => {
   const t = target.value
   if (!t) return []
+  if (t.kind === 'syncedPlaylist') return [{ label: '删除绑定', class: 'text-danger-color', command: () => emit('deleteSyncedPlaylist', t.id) }]
+  const kind = t.kind
   return [
-    { label: '重命名…', command: () => emit('renameCollection', t.id, t.kind) },
+    { label: '重命名…', command: () => emit('renameCollection', t.id, kind) },
     {
       label: '删除',
       class: 'text-danger-color',
-      command: () => emit('deleteCollection', t.id, t.kind),
+      command: () => emit('deleteCollection', t.id, kind),
     },
   ]
 })
 
-function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | 'tag') {
+function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | 'tag' | 'syncedPlaylist') {
   target.value = { id, kind }
   menu.value?.show(event)
 }
@@ -148,6 +154,19 @@ function onCollectionContext(event: MouseEvent, id: number, kind: 'playlist' | '
         <p v-if="library.playlists.length === 0" class="pl-6 pr-4 py-1 text-xs text-muted-color">
           还没有歌单
         </p>
+      </section>
+
+      <section class="mt-4" aria-label="同步歌单">
+        <div class="sidebar-section-header flex items-center justify-between px-4 pb-1">
+          <h2 class="text-xs font-medium text-muted-color">同步歌单</h2>
+          <SecondaryButton class="sidebar-section-action" variant="text" rounded size="small" title="绑定同步歌单" aria-label="绑定同步歌单" @click="($event.currentTarget as HTMLElement).focus(); emit('bindPlaylist')"><Plus class="size-3.5" /></SecondaryButton>
+        </div>
+        <button v-for="p in synced.playlists" :key="p.id" :class="itemClass(isActive('syncedPlaylist', p.id))"
+          @click="library.goTo('syncedPlaylist', { id: p.id, title: p.name })"
+          @contextmenu.prevent="onCollectionContext($event, p.id, 'syncedPlaylist')">
+          <ListMusic class="size-4 shrink-0" /><span class="flex-1 truncate" :title="p.name">{{ p.name }}</span><span class="text-xs text-muted-color" title="已导入出现项数">{{ p.importedCount }}</span>
+        </button>
+        <p v-if="!synced.playlists.length" class="pl-6 pr-4 py-1 text-xs text-muted-color">还没有同步歌单</p>
       </section>
 
       <!-- 标签 -->

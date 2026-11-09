@@ -47,6 +47,8 @@ test('sidebar actions reveal only for their heading row, keep layout and support
   await expect(page.getByRole('dialog', { name: '新建歌单', exact: true })).toHaveCount(0)
   await nav.getByRole('button', { name: /测试歌单/ }).focus()
   await page.keyboard.press(nextControl)
+  await expect(nav.getByRole('button', { name: '绑定同步歌单', exact: true })).toBeFocused()
+  await page.keyboard.press(nextControl)
   await expect(tag).toBeFocused()
   await expect(tag).toHaveCSS('opacity', '1')
   await page.keyboard.press('Enter')

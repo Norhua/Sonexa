@@ -8,6 +8,7 @@
  * 日志来自后端推送的进度事件（tasks store），不轮询——
  * 17 分钟的导入任务上轮询会产生数千次无谓的 IPC 调用。
  */
+import ImportDestinations from '@/components/ImportDestinations.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createRefreshQueue } from '@/lib/refreshQueue'
 import { Pause, Play, Upload } from 'lucide-vue-next'
@@ -140,6 +141,7 @@ function statusLabel(status: string): string {
         <div class="flex items-center gap-3">
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium">导入批次 #{{ current.id }}</p>
+            <ImportDestinations :targets="[{ kind: current.destinationKind || 'library', displayName: current.destinationName || '音乐库' }]" />
             <p class="mt-0.5 text-xs text-muted-color">
               {{ statusLabel(current.status) }} ·
               {{ current.processed }}/{{ current.totalRows }}
@@ -171,7 +173,7 @@ function statusLabel(status: string): string {
 
         <dl class="mt-3 grid grid-cols-4 gap-2 text-xs">
           <div class="rounded border px-2 py-1.5">
-            <dt class="text-muted-color">已入库</dt>
+            <dt class="text-muted-color">完成导入</dt>
             <dd class="text-base tabular-nums">{{ current.stats.imported }}</dd>
           </div>
           <div class="rounded border px-2 py-1.5">
@@ -238,7 +240,7 @@ function statusLabel(status: string): string {
             <tr class="border-b text-left text-muted-color">
               <th class="px-2 py-1">批次</th>
               <th class="w-20 px-2 py-1">状态</th>
-              <th class="w-20 px-2 py-1">已入库</th>
+              <th class="w-20 px-2 py-1">完成导入</th>
               <th class="w-20 px-2 py-1">待复核</th>
               <th class="w-16 px-2 py-1">失败</th>
               <th class="w-36 px-2 py-1">时间</th>
@@ -246,7 +248,7 @@ function statusLabel(status: string): string {
           </thead>
           <tbody>
             <tr v-for="b in batches" :key="b.id" class="border-b">
-              <td class="max-w-0 truncate px-2 py-1">导入批次 #{{ b.id }}</td>
+              <td class="max-w-0 truncate px-2 py-1">导入批次 #{{ b.id }}<ImportDestinations :targets="[{ kind: b.destinationKind || 'library', displayName: b.destinationName || '音乐库' }]" /></td>
               <td class="px-2 py-1">{{ statusLabel(b.status) }}</td>
               <td class="px-2 py-1 tabular-nums">{{ b.stats.imported }}</td>
               <td class="px-2 py-1 tabular-nums">{{ b.stats.review }}</td>
