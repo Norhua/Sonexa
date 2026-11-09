@@ -496,7 +496,10 @@ func (a *App) ListAlbumsForTag(tagID int64) ([]store.AlbumListItem, error) {
 	return a.store.ListAlbumsForTag(tagID)
 }
 
-// notifyLibraryChanged 通知前端曲库已变更。
+// notifyLibraryChanged invalidates all local entities, including uncollected
+// synced tracks. Consumers must not interpret this event as an admission count.
 func (a *App) notifyLibraryChanged() {
 	a.emitEvent(EventLibraryChanged)
+	a.notifySyncedPlaylistsChanged()
+	a.emitEvent(EventImportQueueChanged)
 }

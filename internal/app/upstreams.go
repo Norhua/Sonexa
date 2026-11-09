@@ -126,6 +126,9 @@ func (a *App) publishUpstreamsLocked(next *upstreamServices) {
 	})
 	a.client, a.registry, a.lyricSvc, a.coverSources = next.client, next.metadata, next.lyrics, next.covers
 	a.playlistSources = next.playlists
+	if a.playlistService != nil {
+		a.playlistService.SetRegistry(next.playlists)
+	}
 	if a.library != nil {
 		a.library.SetRegistry(next.metadata)
 	}

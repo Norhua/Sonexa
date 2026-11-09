@@ -236,7 +236,15 @@ func skipOwnedImportTx(tx *sql.Tx, itemID int64, decision ownedImportDecision) e
 // ReconcileReviewDuplicates uses only original inputs and current local facts.
 // Reading the review queue never launches searches or consumes manual drafts.
 func (s *Store) ReconcileReviewDuplicates() error {
-	return s.withTx(func(tx *sql.Tx) error {
+	_, err := s.ReconcileReviewDuplicatesChanged()
+	return err
+}
+
+// ReconcileReviewDuplicatesChanged reports only committed deliveries, so reads
+// can notify other views without creating an endless read/event loop.
+func (s *Store) ReconcileReviewDuplicatesChanged() (bool, error) {
+	changed := false
+	err := s.withTx(func(tx *sql.Tx) error {
 		rows, err := tx.Query(`SELECT id,candidates FROM import_item WHERE status IN ('review','failed') AND search_manual=0 ORDER BY id`)
 		if err != nil {
 			return err
@@ -286,8 +294,10 @@ func (s *Store) ReconcileReviewDuplicates() error {
 				if err = skipOwnedImportTx(tx, item.id, decision); err != nil {
 					return err
 				}
+				changed = true
 			}
 		}
 		return nil
 	})
+	return changed && err == nil, err
 }

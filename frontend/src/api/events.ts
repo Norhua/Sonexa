@@ -3,6 +3,12 @@
 // 这些类型不出现在任何绑定方法的签名中，因此不在生成的 models.ts 里，
 // 需要在前端单独声明并与 Go 侧的结构保持一致。
 
+/** 同步歌单失效通知，不是状态快照；all 包含已删除绑定及跨歌单入库变化。 */
+export interface SyncedPlaylistsChanged {
+  all: boolean
+  playlists: { id: number; revision: number }[]
+}
+
 /** 匹配队列各状态的条目数。对应 store.BatchStats。 */
 export interface BatchStats {
   total: number

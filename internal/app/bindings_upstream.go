@@ -33,14 +33,16 @@ type CandidateRow struct {
 	HasCover           bool                    `json:"hasCover"`
 	Provider           string                  `json:"provider"`
 	MatchRef           string                  `json:"matchRef"`
-	// Badges 可叠加，如 [本地][MB]；疑似命中时为 [本地?]。
+	// Badges only marks exact current local binding, not library membership.
 	Badges []string `json:"badges"`
-	// Note 给出附加说明，如「经 ISRC 匹配」。
+	// Note gives review-only context, never speculative local identity.
 	Note string `json:"note"`
-	// Action 为 加入曲库 | 已在库中 | 接受 | 合并。
+	// Action 为 加入曲库 | 已在库中 | 接受 | 跳过。
 	Action string `json:"action"`
-	// LocalTrackID 非零时表示库中已有对应曲目，可跳转。
+	// LocalTrackID covers every exact local binding. Only InLibrary permits
+	// navigating to a library row; uncollected entities still have details.
 	LocalTrackID int64 `json:"localTrackId"`
+	InLibrary    bool  `json:"inLibrary"`
 
 	// 封面目标仅按同一发行身份关联，不能借文本疑似命中跨歌集取图。
 	ReleaseID     int64 `json:"releaseId"`
@@ -262,7 +264,7 @@ func (a *App) rowsFrom(scored []matching.ScoredCandidate, defaultAction string) 
 		}
 		row := rowFrom(sc)
 		a.applyLocalMatch(&row, sc.Candidate)
-		if row.LocalTrackID == 0 {
+		if row.LocalTrackID == 0 || (defaultAction == "加入曲库" && !row.InLibrary) {
 			row.Action = defaultAction
 		} else if defaultAction == "加入曲库" {
 			row.Action = "已在库中"
@@ -283,7 +285,7 @@ func (a *App) RefreshSearchCandidates(rows []CandidateRow) ([]CandidateRow, erro
 		row.ReleaseID, row.CoverRevision = 0, 0
 		a.applyLocalMatch(&row, row.toCandidate())
 		row.Action = "加入曲库"
-		if row.LocalTrackID != 0 {
+		if row.InLibrary {
 			row.Action = "已在库中"
 		}
 		out[i] = row

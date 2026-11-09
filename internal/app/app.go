@@ -28,31 +28,37 @@ type App struct {
 	ctx     context.Context
 	version string
 
-	paths           config.Paths
-	settings        *config.Store
-	store           *store.Store
-	library         *library.Service
-	registry        *provider.Registry
-	limiters        *provider.Limiters
-	client          *provider.Client
-	lyricSvc        *lyrics.Service
-	coverSources    *sources.Registry
-	playlistSources *playlists.Registry
-	playlistFetcher *playlists.Fetcher
-	coverSvc        *covers.Service
-	coverSessions   map[string]*coverSession
-	coverWorkers    sync.WaitGroup
-	coverClosing    bool
-	coverLife       context.Context
-	cancelCoverWork context.CancelFunc
-	pickCoverFile   func(context.Context, runtime.OpenDialogOptions) (string, error)
-	pickLyricsFile  func(context.Context, runtime.OpenDialogOptions) (string, error)
-	lyricSessions   map[string]*lyricSession
-	lyricWorkers    sync.WaitGroup
-	lyricRetention  *lyrics.RetentionBudget
-	countries       []CountryOption
-	countryHint     func(string) CountryHint
-	runner          *importer.Runner
+	paths              config.Paths
+	settings           *config.Store
+	store              *store.Store
+	library            *library.Service
+	registry           *provider.Registry
+	limiters           *provider.Limiters
+	client             *provider.Client
+	lyricSvc           *lyrics.Service
+	coverSources       *sources.Registry
+	playlistSources    *playlists.Registry
+	playlistFetcher    *playlists.Fetcher
+	playlistService    *playlists.Service
+	playlistLife       context.Context
+	cancelPlaylistWork context.CancelFunc
+	playlistWorkers    sync.WaitGroup
+	runnerLifeMu       sync.Mutex
+	importRunners      []*importer.Runner
+	coverSvc           *covers.Service
+	coverSessions      map[string]*coverSession
+	coverWorkers       sync.WaitGroup
+	coverClosing       bool
+	coverLife          context.Context
+	cancelCoverWork    context.CancelFunc
+	pickCoverFile      func(context.Context, runtime.OpenDialogOptions) (string, error)
+	pickLyricsFile     func(context.Context, runtime.OpenDialogOptions) (string, error)
+	lyricSessions      map[string]*lyricSession
+	lyricWorkers       sync.WaitGroup
+	lyricRetention     *lyrics.RetentionBudget
+	countries          []CountryOption
+	countryHint        func(string) CountryHint
+	runner             *importer.Runner
 	// enricher 是后台的「补全信息匹配」任务：入库不再同步补详情，
 	// 详情由它在空闲时按条补上（见 enrichWorker）。
 	enricher *enrichWorker
@@ -256,6 +262,10 @@ func (a *App) rebuildRunner(cur config.Settings) {
 		return
 	}
 	a.runner = importer.NewRunner(a.store, engine, mb, retry, fetchOnMatch, a.emitProgress, service)
+	a.runnerLifeMu.Lock()
+	a.importRunners = append(a.importRunners, a.runner)
+	a.runnerLifeMu.Unlock()
+	a.store.SetImportInvalidationHandler(a.cancelInvalidatedImports)
 	a.runner.SetLibraryChanged(a.notifyLibraryChanged)
 	if fetchOnMatch {
 		// 走后台优先级与同一套补全状态机：这是导入循环内部的一次取数，
@@ -303,9 +313,11 @@ func (a *App) emitProgress(p importer.Progress) {
 
 // 前端订阅的事件名。
 const (
-	EventImportProgress = "import:progress"
-	EventSettingsSaved  = "settings:saved"
-	EventLibraryChanged = "library:changed"
+	EventImportProgress         = "import:progress"
+	EventSettingsSaved          = "settings:saved"
+	EventLibraryChanged         = "library:changed"
+	EventSyncedPlaylistsChanged = "synced-playlists:changed"
+	EventImportQueueChanged     = "import:queue-changed"
 	// EventEnrichProgress 是后台「补全信息匹配」的状态。
 	EventEnrichProgress = "enrich:progress"
 	// EventProviderResults 在每个上游完成时单独推送，
@@ -319,6 +331,13 @@ func (a *App) shutdown(ctx context.Context) {
 	defer a.settingsMu.Unlock()
 	a.mu.Lock()
 	a.coverClosing = true
+	playlistService := a.playlistService
+	a.runnerLifeMu.Lock()
+	runners := append([]*importer.Runner{}, a.importRunners...)
+	a.runnerLifeMu.Unlock()
+	if a.cancelPlaylistWork != nil {
+		a.cancelPlaylistWork()
+	}
 	if a.cancelCoverWork != nil {
 		a.cancelCoverWork()
 	}
@@ -329,8 +348,15 @@ func (a *App) shutdown(ctx context.Context) {
 		session.cancel()
 	}
 	a.mu.Unlock()
+	if playlistService != nil {
+		playlistService.Close()
+	}
 	if a.playlistFetcher != nil {
 		a.playlistFetcher.Close()
+	}
+	a.playlistWorkers.Wait()
+	for _, runner := range runners {
+		runner.Close()
 	}
 	a.coverWorkers.Wait()
 	a.lyricWorkers.Wait()

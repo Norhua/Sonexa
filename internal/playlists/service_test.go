@@ -48,6 +48,11 @@ type memoryRepository struct {
 	hash   string
 }
 
+func (r *memoryRepository) DeleteSyncedPlaylist(id int64) error {
+	r.state = nil
+	return nil
+}
+
 func (r *memoryRepository) ReadPlaylistState(id int64) (*State, error) { return r.state, nil }
 func (r *memoryRepository) FindSyncedPlaylist(ref Ref) (*Binding, error) {
 	if r.state != nil && r.state.Binding.Ref == ref {

@@ -131,6 +131,14 @@ func (a *App) SaveSettings(next config.Settings) error {
 	a.rebuildRunner(next)
 	a.store.SetLadderConfig(a.ladderConfig())
 	a.mu.Unlock()
+	if !a.CheckOutbound().Allowed {
+		a.mu.RLock()
+		playlists := a.playlistService
+		a.mu.RUnlock()
+		if playlists != nil {
+			playlists.CancelFetches()
+		}
+	}
 	a.emitEvent(EventSettingsSaved, next)
 	return nil
 }

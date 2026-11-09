@@ -56,6 +56,8 @@ type Runner struct {
 	onLibraryChanged func()
 
 	mu      sync.Mutex
+	closed  bool
+	work    sync.WaitGroup
 	running map[int64]context.CancelFunc
 	items   map[int64]runningImport
 }
@@ -113,12 +115,17 @@ func (r *Runner) Start(ctx context.Context, batchID int64) error {
 		return r.initErr
 	}
 	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return fmt.Errorf("导入服务已关闭")
+	}
 	if _, already := r.running[batchID]; already {
 		r.mu.Unlock()
 		return nil
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	r.running[batchID] = cancel
+	r.work.Add(1)
 	r.mu.Unlock()
 
 	if err := r.store.SetBatchStatus(batchID, store.BatchRunning); err != nil {
@@ -126,11 +133,13 @@ func (r *Runner) Start(ctx context.Context, batchID int64) error {
 		delete(r.running, batchID)
 		r.mu.Unlock()
 		cancel()
+		r.work.Done()
 		return err
 	}
 	r.emitProgress(batchID, "", false, false)
 
 	go func() {
+		defer r.work.Done()
 		defer func() {
 			r.mu.Lock()
 			delete(r.running, batchID)
@@ -236,6 +245,21 @@ func (r *Runner) loop(ctx context.Context, batchID int64) {
 		line := r.processItem(ctx, item)
 		r.emitProgress(batchID, line, false, false)
 	}
+}
+
+func (r *Runner) CancelInvalidatedImports() {
+	r.cancelInvalidatedImports()
+}
+
+// Close stops both active batches and their callbacks before storage is closed.
+func (r *Runner) Close() {
+	r.mu.Lock()
+	r.closed = true
+	for _, cancel := range r.running {
+		cancel()
+	}
+	r.mu.Unlock()
+	r.work.Wait()
 }
 
 func (r *Runner) cancelInvalidatedImports() {

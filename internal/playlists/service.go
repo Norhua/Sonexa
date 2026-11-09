@@ -61,6 +61,7 @@ type Repository interface {
 	FindSyncedPlaylist(Ref) (*Binding, error)
 	ApplyPlaylist(context.Context, Plan, []int64) (*CommitResult, error)
 	PlaylistOperationResult(string, string) (*CommitResult, error)
+	DeleteSyncedPlaylist(int64) error
 }
 type Clock interface{ Now() time.Time }
 type wallClock struct{}
@@ -236,6 +237,17 @@ func (s *Service) prepare(ctx context.Context, operationID string, p Provider, r
 		s.mu.Unlock()
 		return nil, Failure(Cancelled, "歌单服务已关闭")
 	}
+	if state != nil {
+		current, err := s.repository.ReadPlaylistState(state.Binding.ID)
+		if err != nil {
+			s.mu.Unlock()
+			return nil, err
+		}
+		if current == nil || current.Binding.Revision != state.Binding.Revision {
+			s.mu.Unlock()
+			return nil, ErrPlanStale
+		}
+	}
 	if s.keys[key] {
 		s.mu.Unlock()
 		return nil, ErrBusy
@@ -355,6 +367,52 @@ func (s *Service) Cancel(id string) {
 		}
 	}
 }
+
+// CancelFetches stops in-flight reads when outbound access is disabled. Confirmed
+// database state and already prepared offline confirmation plans are untouched.
+func (s *Service) CancelFetches() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, op := range s.operations {
+		op.cancel()
+	}
+}
+
+// Delete serializes against commits and registration of reads for this binding.
+// A preparation that read its baseline before deletion cannot register afterward.
+func (s *Service) Delete(ctx context.Context, id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return Failure(Cancelled, "歌单服务已关闭")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	state, err := s.repository.ReadPlaylistState(id)
+	if err != nil {
+		return err
+	}
+	if state == nil {
+		return ErrPlanStale
+	}
+	if err := s.repository.DeleteSyncedPlaylist(id); err != nil {
+		return err
+	}
+	key := string(state.Binding.Ref.Provider) + "\x00" + state.Binding.Ref.ID
+	for _, op := range s.operations {
+		if op.key == key {
+			op.cancel()
+		}
+	}
+	for id, p := range s.plans {
+		if p.key == key {
+			s.forgetLocked(id)
+		}
+	}
+	return nil
+}
+
 func (s *Service) Close() {
 	s.mu.Lock()
 	s.closed = true

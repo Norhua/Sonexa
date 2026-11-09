@@ -57,7 +57,7 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 		return nil, err
 	}
 
-	if err := a.store.ReconcileReviewDuplicates(); err != nil {
+	if err := a.reconcileReviewDuplicates(); err != nil {
 		return nil, err
 	}
 	items, err := a.store.AllReviewItems()
@@ -196,6 +196,7 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 //
 // 仅来源 + track 精确绑定命中时同时标注本地和上游；ISRC 不表示 track 已在库。
 func (a *App) applyLocalMatch(row *CandidateRow, c provider.Candidate) {
+	row.InLibrary = false
 	if c.ReleaseRef != nil {
 		if release, err := a.store.GetReleaseByRef(string(c.Provider), *c.ReleaseRef); err == nil && release != nil {
 			row.ReleaseID = release.ID
@@ -214,6 +215,9 @@ func (a *App) applyLocalMatch(row *CandidateRow, c provider.Candidate) {
 	row.Action = local.Action()
 	row.Note = candidateReviewNote(row.ReviewOnly)
 	row.LocalTrackID = local.TrackID
+	if track, err := a.store.GetTrackView(local.TrackID); err == nil && track != nil {
+		row.InLibrary = track.InLibrary
+	}
 }
 
 func candidateReviewNote(reviewOnly bool) string {
@@ -305,7 +309,11 @@ func (a *App) NoneMatched(itemID int64) error {
 		return err
 	}
 	// 保持 review 状态，仅清空候选快照
-	return a.store.MarkReview(itemID, store.ReviewReasonUnchanged, "", derefOr(item.TriedVariants, ""))
+	if err := a.store.MarkReview(itemID, store.ReviewReasonUnchanged, "", derefOr(item.TriedVariants, "")); err != nil {
+		return err
+	}
+	a.emitEvent(EventImportQueueChanged)
+	return nil
 }
 
 // RetryReviewItem 让失败条目重新进入匹配。
@@ -316,6 +324,8 @@ func (a *App) RetryReviewItem(itemID int64) error {
 	if err := a.store.RetryItem(itemID); err != nil {
 		return err
 	}
+	// 重排已提交，立即通知，不等待匹配请求完成。
+	a.emitEvent(EventImportQueueChanged)
 	// 重新排队后由对应批次的驱动器继续处理
 	item, err := a.store.GetItem(itemID)
 	if err != nil || item == nil {

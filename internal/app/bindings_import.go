@@ -228,7 +228,7 @@ func (a *App) GetTaskSummary() (*TaskSummary, error) {
 		return nil, err
 	}
 
-	if err := a.store.ReconcileReviewDuplicates(); err != nil {
+	if err := a.reconcileReviewDuplicates(); err != nil {
 		return nil, err
 	}
 	out := &TaskSummary{}

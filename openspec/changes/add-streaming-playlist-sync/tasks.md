@@ -68,10 +68,10 @@
 
 ## 9. 应用绑定、事件和前端 DTO
 
-- [ ] 9.1 新增歌单来源/绑定/差异/列表/取消/删除与批量入库绑定，DTO 明确 entryId/trackId、upstreamPresent、inLibrary、时间和目标列表；app 绑定测试验证参数校验、伪造计划/目标拒绝和现有 Wails 序列化约定。
-- [ ] 9.2 将 helper 获取和歌单事务整合到 App 生命周期、当前门禁与设置发布；app 测试覆盖执行中禁网、更新来源、删除绑定、退出等待与 Store 关闭顺序。
-- [ ] 9.3 所有新建/跳过投递、忽略、同步确认、入库/移出和物理删除成功后发布目标/队列/本地实体刷新事件；使用替换 emitEvent 的测试验证成功即时通知、失败不伪报和本地候选/复核离线整理能响应同步专属 track。
-- [ ] 9.4 扩展候选 DTO，分开精确 localTrackId 与 inLibrary，并生成 Wails 绑定更新 `frontend/src/api/`/事件类型；运行 `wails generate module` 和前端类型构建，确认生成目录未暂存，记录 API/事件的用途与失效范围。
+- [x] 9.1 新增歌单来源/绑定/差异/列表/取消/删除与批量入库绑定，DTO 明确 entryId/trackId、upstreamPresent、inLibrary、时间和目标列表；app 绑定测试验证参数校验、伪造计划/目标拒绝和现有 Wails 序列化约定。
+- [x] 9.2 将 helper 获取和歌单事务整合到 App 生命周期、当前门禁与设置发布；app 测试覆盖执行中禁网、更新来源、删除绑定、退出等待与 Store 关闭顺序。
+- [x] 9.3 所有新建/跳过投递、忽略、同步确认、入库/移出和物理删除成功后发布目标/队列/本地实体刷新事件；使用替换 emitEvent 的测试验证成功即时通知、失败不伪报和本地候选/复核离线整理能响应同步专属 track。
+- [x] 9.4 扩展候选 DTO，分开精确 localTrackId 与 inLibrary，并生成 Wails 绑定更新 `frontend/src/api/`/事件类型；运行 `wails generate module` 和前端类型构建，确认生成目录未暂存，记录 API/事件的用途与失效范围。
 
 ## 10. 同步歌单界面与操作
 

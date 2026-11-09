@@ -13,6 +13,8 @@ export const Events = {
   EnrichProgress: 'enrich:progress',
   SettingsSaved: 'settings:saved',
   LibraryChanged: 'library:changed',
+  SyncedPlaylistsChanged: 'synced-playlists:changed',
+  ImportQueueChanged: 'import:queue-changed',
   CoverChanged: 'cover:changed',
   CoverResults: 'cover:results',
   LyricsProgress: 'lyrics:progress',
