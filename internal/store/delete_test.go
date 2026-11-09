@@ -15,7 +15,7 @@ func TestDeleteTrackKeepsTracklist(t *testing.T) {
 
 	// 溯源存在 track 上——曲目是单表，没有第二张表要连带清理
 	ref := "track-mbid-4"
-	trackID, err := s.CreateTrackWithProvenance(NewTrackInput{
+	trackID, err := s.CreateTrackWithProvenance(NewTrackInput{InLibrary: true,
 		Title:       "さようなら",
 		MatchSource: ptr("musicbrainz"), MatchRef: &ref,
 	})

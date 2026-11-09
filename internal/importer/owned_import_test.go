@@ -45,7 +45,7 @@ func TestOwnedTetraAlbumAbbreviationSkips(t *testing.T) {
 func TestOwnedOtherProviderExcludedBeforeDefaultSearch(t *testing.T) {
 	st := openStore(t)
 	source, ref := "qq", "qq-tsubasa"
-	_, err := st.CreateTrackWithProvenance(store.NewTrackInput{Title: "ツバサ (羽翼)", Credit: sptr("4円"), Album: sptr("side-c"), MatchSource: &source, MatchRef: &ref})
+	_, err := st.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true, Title: "ツバサ (羽翼)", Credit: sptr("4円"), Album: sptr("side-c"), MatchSource: &source, MatchRef: &ref})
 	if err != nil {
 		t.Fatal(err)
 	}

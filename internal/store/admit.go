@@ -23,6 +23,7 @@ func (s *Store) AdmitCandidate(c provider.Candidate) (int64, error) {
 	source := string(c.Provider)
 
 	return s.CreateTrackWithProvenance(NewTrackInput{
+		InLibrary:   true,
 		Title:       deref(c.Title),
 		Credit:      c.ArtistName,
 		Album:       c.AlbumTitle,

@@ -6,10 +6,13 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // NewTrackInput 是创建曲目的输入。
 type NewTrackInput struct {
+	// 必须由创建入口明确决定；零值不会意外入库。
+	InLibrary         bool
 	ExistingReleaseID *int64
 	Title             string
 	// Credit 是曲目级署名原串。
@@ -173,9 +176,12 @@ func isUniqueViolation(err error) bool {
 //
 // 歌集侧的字段由 join 带出，便于详情抽屉一次取齐；它们不存在 track 表上。
 type TrackMetadata struct {
-	TrackID int64   `json:"trackId"`
-	Title   string  `json:"title"`
-	Credit  *string `json:"credit"`
+	InLibrary bool    `json:"inLibrary"`
+	CreatedAt string  `json:"createdAt"`
+	AddedAt   string  `json:"addedAt"`
+	TrackID   int64   `json:"trackId"`
+	Title     string  `json:"title"`
+	Credit    *string `json:"credit"`
 
 	DiscNumber      *int    `json:"discNumber"`
 	TrackNumber     *int    `json:"trackNumber"`
@@ -221,9 +227,11 @@ func (s *Store) GetMetadata(trackID int64) (*TrackMetadata, error) {
 	s.fileMu.Lock()
 	defer s.fileMu.Unlock()
 	var m TrackMetadata
+	var createdAt time.Time
+	var addedAt *time.Time
 	var releaseDate, firstReleaseDate *string
 	err := s.db.QueryRow(`
-		SELECT t.id, t.title, t.credit,
+		SELECT t.id, t.title, t.credit, t.in_library, t.created_at, t.library_added_at,
 		       t.disc_number, t.track_number, t.track_number_text, t.duration_ms,
 		       t.genre, t.comment, t.lyrics,
 		       t.match_source, t.match_ref, t.recording_ref, t.work_ref, t.isrc,
@@ -236,7 +244,7 @@ func (s *Store) GetMetadata(trackID int64) (*TrackMetadata, error) {
 		       (SELECT rg.provider_ref FROM release_group_read rg WHERE rg.id = r.release_group_id)
 		FROM track_read t LEFT JOIN release_read r ON r.id = t.release_id
 		WHERE t.id = ?`, trackID).Scan(
-		&m.TrackID, &m.Title, &m.Credit,
+		&m.TrackID, &m.Title, &m.Credit, &m.InLibrary, &createdAt, &addedAt,
 		&m.DiscNumber, &m.TrackNumber, &m.TrackNumberText, &m.DurationMS,
 		&m.Genre, &m.Comment, &m.Lyrics,
 		&m.MatchSource, &m.MatchRef, &m.RecordingRef, &m.WorkRef, &m.ISRC,
@@ -252,6 +260,8 @@ func (s *Store) GetMetadata(trackID int64) (*TrackMetadata, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	m.AddedAt = formatOptionalTime(addedAt)
 	m.ReleaseDate, m.FirstReleaseDate = releaseDate, firstReleaseDate
 
 	var lyricsID *int64

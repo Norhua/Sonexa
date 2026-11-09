@@ -21,7 +21,7 @@ import (
 
 func lyricTrack(t *testing.T, a *App) int64 {
 	t.Helper()
-	id, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{Title: "歌", Credit: strPtrOrNil("人")})
+	id, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true, Title: "歌", Credit: strPtrOrNil("人")})
 	if err != nil {
 		t.Fatal(err)
 	}

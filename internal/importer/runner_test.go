@@ -222,7 +222,7 @@ func TestRunnerLocalTextDoesNotBecomeBoundCandidate(t *testing.T) {
 	st := openStore(t)
 
 	// 库中已有一首无溯源的曲目（「无需匹配」入库的那种）
-	_, err := st.CreateTrackWithProvenance(store.NewTrackInput{
+	_, err := st.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true,
 		Title: "God knows...", Credit: sptr("平野綾"),
 	})
 	if err != nil {

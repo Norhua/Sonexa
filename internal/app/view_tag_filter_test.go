@@ -29,7 +29,7 @@ func TestViewTagFilterScopesAndAlbumRepresentative(t *testing.T) {
 	vocal := mustID(s.UpsertArtist(&store.Artist{Name: "Vocal"}))
 	composer := mustID(s.UpsertArtist(&store.Artist{Name: "Composer"}))
 	create := func(ref, release, format string) int64 {
-		return mustID(s.CreateTrackWithProvenance(store.NewTrackInput{
+		return mustID(s.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true,
 			Title: ref, Album: strPtrOrNil("Album"), MatchSource: strPtrOrNil("musicbrainz"), MatchRef: &ref,
 			Release: &store.ReleaseInput{Provider: strPtrOrNil("musicbrainz"), ProviderRef: &release,
 				ReleaseGroupRef: strPtrOrNil("group"), MediumFormat: &format},

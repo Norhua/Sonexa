@@ -397,9 +397,9 @@ func TestConfirmationContextMigrationKeepsLegacyBaselineUnknown(t *testing.T) {
 		}
 	}
 	for _, query := range []string{
-		`INSERT INTO import_batch(id,filename,created_at) VALUES(1,'',datetime('now'))`,
+		`INSERT INTO import_batch(id,filename,source_kind,destination_kind,destination_name,created_at) VALUES(1,'','file','library','音乐库',datetime('now'))`,
 		`INSERT INTO import_item(id,batch_id,row_index,raw_row,status,updated_at) VALUES(1,1,0,'[]','imported',datetime('now'))`,
-		`INSERT INTO track(id,created_at,updated_at) VALUES(1,datetime('now'),datetime('now'))`,
+		`INSERT INTO track(id,in_library,created_at,updated_at) VALUES(1,0,datetime('now'),datetime('now'))`,
 		`INSERT INTO track_current(track_id) VALUES(1)`,
 		`INSERT INTO import_confirmation VALUES(1,1,'["","",null,"","",null,null]','{}',datetime('now'))`,
 	} {

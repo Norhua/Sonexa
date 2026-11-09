@@ -46,7 +46,7 @@ func TestF3_CombinedCVCredit(t *testing.T) {
 	if parsed.Uncertain || len(parsed.Artists) != 1 {
 		t.Fatalf("CV must be one identity: %+v", parsed)
 	}
-	trackID, err := s.CreateTrackWithProvenance(store.NewTrackInput{Title: "God knows...", Credit: ptr(credit)})
+	trackID, err := s.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true, Title: "God knows...", Credit: ptr(credit)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestF4_GhostRowsAndCount(t *testing.T) {
 	var trackIDs []int64
 	for i := 1; i <= 8; i++ {
 		id, err := s.CreateTrackWithProvenance(store.NewTrackInput{
-			Title: fmt.Sprintf("第 %d 首", i), Album: ptr("十二首专辑"),
+			InLibrary: true, Title: fmt.Sprintf("第 %d 首", i), Album: ptr("十二首专辑"),
 			MatchSource: ptr("musicbrainz"), MatchRef: ptr(fmt.Sprintf("trk-%02d", i)),
 			Metadata: &store.MetadataInput{
 				TrackNumber: ptr(i), DiscNumber: ptr(1),
@@ -432,7 +432,7 @@ func TestF11_UserEditedYearSurvivesRematch(t *testing.T) {
 	s := openStore(t)
 
 	trackID, err := s.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: "That Girl", Credit: ptr("Natalia Lesz"),
+		InLibrary: true, Title: "That Girl", Credit: ptr("Natalia Lesz"),
 		Album:       ptr("That Girl"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
 		Release: &store.ReleaseInput{
@@ -486,7 +486,7 @@ func TestF11_UserEditedYearSurvivesRematch(t *testing.T) {
 func TestF14_DuplicateAddIsIdempotent(t *testing.T) {
 	s := openStore(t)
 	input := store.NewTrackInput{
-		Title: "God knows...", Credit: ptr("平野綾"),
+		InLibrary: true, Title: "God knows...", Credit: ptr("平野綾"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-unique"),
 	}
 
@@ -622,7 +622,7 @@ func TestF1_NoMatchNeededTrackRendersFine(t *testing.T) {
 
 	// 「无需匹配」：按原值入库、丰富信息为空、溯源置空
 	trackID, err := s.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: "某首无名曲", Credit: ptr("未知艺术家"),
+		InLibrary: true, Title: "某首无名曲", Credit: ptr("未知艺术家"),
 	})
 	if err != nil {
 		t.Fatalf("入库失败: %v", err)

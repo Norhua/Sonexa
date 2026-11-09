@@ -14,14 +14,16 @@ var ErrTitleRequired = errors.New("曲名是必填项")
 
 // Track 是曲目当前值的读取投影；基本信息可空，Album 由所属发行带出。
 type Track struct {
-	ID        int64           `json:"id"`
-	ReleaseID *int64          `json:"releaseId"`
-	Title     string          `json:"title"`
-	Credit    *string         `json:"credit"`
-	Album     *string         `json:"album"`
-	Locked    map[string]bool `json:"locked"`
-	CreatedAt time.Time       `json:"-"`
-	UpdatedAt time.Time       `json:"-"`
+	InLibrary      bool            `json:"inLibrary"`
+	LibraryAddedAt *time.Time      `json:"-"`
+	ID             int64           `json:"id"`
+	ReleaseID      *int64          `json:"releaseId"`
+	Title          string          `json:"title"`
+	Credit         *string         `json:"credit"`
+	Album          *string         `json:"album"`
+	Locked         map[string]bool `json:"locked"`
+	CreatedAt      time.Time       `json:"-"`
+	UpdatedAt      time.Time       `json:"-"`
 }
 
 // CreateTrack 创建一首曲目并同步 FTS 索引。
@@ -29,7 +31,7 @@ type Track struct {
 // 有歌集名时曲目会被挂到一条本地歌集上——没有上游标识的曲目也要有归属，
 // 否则专辑视图要为它们单独走一条派生分组的代码路径。
 func (s *Store) CreateTrack(t *Track) (int64, error) {
-	return s.CreateTrackWithProvenance(NewTrackInput{ExistingReleaseID: t.ReleaseID, Title: t.Title, Credit: t.Credit, Album: t.Album, AlbumCredit: t.Credit})
+	return s.CreateTrackWithProvenance(NewTrackInput{InLibrary: true, ExistingReleaseID: t.ReleaseID, Title: t.Title, Credit: t.Credit, Album: t.Album, AlbumCredit: t.Credit})
 }
 
 func marshalLocks(locks map[string]bool) (*string, error) {
@@ -50,11 +52,11 @@ func (s *Store) GetTrack(id int64) (*Track, error) {
 	var lockedJSON *string
 	err := s.db.QueryRow(`
 		SELECT t.id, t.release_id, t.title, t.credit, r.title, t.locked_json,
-		       t.created_at, t.updated_at
+		       t.created_at, t.updated_at, t.in_library, t.library_added_at
 		FROM track_read t LEFT JOIN release_read r ON r.id = t.release_id
 		WHERE t.id = ?`, id).Scan(
 		&t.ID, &t.ReleaseID, &t.Title, &t.Credit, &t.Album, &lockedJSON,
-		&t.CreatedAt, &t.UpdatedAt)
+		&t.CreatedAt, &t.UpdatedAt, &t.InLibrary, &t.LibraryAddedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

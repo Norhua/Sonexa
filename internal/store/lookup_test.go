@@ -13,7 +13,7 @@ func TestFuzzyScopeExcludesMatchedTracks(t *testing.T) {
 
 	// 一首有溯源的曲目
 	matched, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "God knows...", Credit: ptr("平野綾"),
+		InLibrary: true, Title: "God knows...", Credit: ptr("平野綾"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-1"),
 		Metadata: &MetadataInput{DurationMS: ptr(332000)},
 	})
@@ -23,7 +23,7 @@ func TestFuzzyScopeExcludesMatchedTracks(t *testing.T) {
 
 	// 一首无溯源的曲目（「无需匹配」入库的那种）
 	unmatched, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "ハレ晴レユカイ", Credit: ptr("平野綾"),
+		InLibrary: true, Title: "ハレ晴レユカイ", Credit: ptr("平野綾"),
 		Metadata: &MetadataInput{DurationMS: ptr(242000)},
 	})
 	if err != nil {
@@ -55,7 +55,7 @@ func TestFuzzyScopeExcludesMatchedTracks(t *testing.T) {
 // 本地输入不产生无来源的只读时长快照；未知时长不作否决证据。
 func TestUnboundInputDoesNotInventDuration(t *testing.T) {
 	s := openTestStore(t)
-	id, err := s.CreateTrackWithProvenance(NewTrackInput{Title: "That Girl", Credit: ptr("Natalia Lesz"), Metadata: &MetadataInput{DurationMS: ptr(221000)}})
+	id, err := s.CreateTrackWithProvenance(NewTrackInput{InLibrary: true, Title: "That Girl", Credit: ptr("Natalia Lesz"), Metadata: &MetadataInput{DurationMS: ptr(221000)}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestUnboundInputDoesNotInventDuration(t *testing.T) {
 func TestDuplicateAddIsSilentRedirect(t *testing.T) {
 	s := openTestStore(t)
 	input := NewTrackInput{
-		Title: "God knows...", Credit: ptr("平野綾"),
+		InLibrary: true, Title: "God knows...", Credit: ptr("平野綾"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-dup"),
 	}
 
@@ -106,7 +106,7 @@ func TestDuplicateAddIsSilentRedirect(t *testing.T) {
 func TestConcurrentAddSameResult(t *testing.T) {
 	s := openTestStore(t)
 	input := NewTrackInput{
-		Title: "並发曲目", MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-race"),
+		InLibrary: true, Title: "並发曲目", MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-race"),
 	}
 
 	const n = 8
@@ -152,7 +152,7 @@ func TestResolveTracklistExactIdentityOnly(t *testing.T) {
 
 	// 用户从 CD 版入库了第 2 首
 	_, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title:       "God knows...",
+		InLibrary: true, Title: "God knows...",
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-cd-02"),
 		Metadata: &MetadataInput{RecordingRef: ptr("rec-god-knows")},
 	})
@@ -161,7 +161,7 @@ func TestResolveTracklistExactIdentityOnly(t *testing.T) {
 	}
 	// 又入库了第 1 首（同版本）
 	ownedID, _ := s.CreateTrackWithProvenance(NewTrackInput{
-		Title:       "冒険でしょでしょ?",
+		InLibrary: true, Title: "冒険でしょでしょ?",
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-digital-01"),
 		Release: &ReleaseInput{Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-digital")},
 	})
@@ -272,7 +272,7 @@ func TestNoMatchNeededTrack(t *testing.T) {
 	s := openTestStore(t)
 
 	id, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "无名曲", Credit: ptr("未知艺术家"),
+		InLibrary: true, Title: "无名曲", Credit: ptr("未知艺术家"),
 	})
 	if err != nil {
 		t.Fatalf("无需匹配入库失败: %v", err)
@@ -292,7 +292,7 @@ func TestNoMatchNeededTrack(t *testing.T) {
 
 	// 多条无溯源曲目可以并存（部分唯一索引不约束它们）
 	for i := 0; i < 3; i++ {
-		if _, err := s.CreateTrackWithProvenance(NewTrackInput{Title: "另一首无名曲"}); err != nil {
+		if _, err := s.CreateTrackWithProvenance(NewTrackInput{InLibrary: true, Title: "另一首无名曲"}); err != nil {
 			t.Fatalf("第 %d 条无溯源曲目写入失败: %v", i+1, err)
 		}
 	}

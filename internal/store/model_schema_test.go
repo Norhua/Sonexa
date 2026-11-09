@@ -27,7 +27,7 @@ func TestSnapshotModelSchema(t *testing.T) {
 		`INSERT INTO release_group_ref VALUES(1,'musicbrainz','group-a'),(1,'qq','group-b')`,
 		`INSERT INTO release(id,release_group_id,provider,provider_ref,created_at,updated_at) VALUES(1,1,'musicbrainz','a',datetime('now'),datetime('now')),(2,1,'musicbrainz','b',datetime('now'),datetime('now'))`,
 		`INSERT INTO release_current(release_id) VALUES(1),(2)`,
-		`INSERT INTO track(id,created_at,updated_at) VALUES(1,datetime('now'),datetime('now'))`,
+		`INSERT INTO track(id,in_library,created_at,updated_at) VALUES(1,0,datetime('now'),datetime('now'))`,
 		`INSERT INTO track_current(track_id) VALUES(1)`,
 	} {
 		if _, err := s.db.Exec(query); err != nil {
@@ -43,7 +43,7 @@ func TestSnapshotModelSchema(t *testing.T) {
 		`INSERT INTO release_group_ref VALUES(1,'musicbrainz','group-a')`,
 		`INSERT INTO release(release_group_id,provider,provider_ref,created_at,updated_at) VALUES(1,'musicbrainz','a',datetime('now'),datetime('now'))`,
 		`INSERT INTO release(provider,provider_ref,created_at,updated_at) VALUES('qq','a',datetime('now'),datetime('now'))`,
-		`INSERT INTO track(match_source,created_at,updated_at) VALUES('qq',datetime('now'),datetime('now'))`,
+		`INSERT INTO track(match_source,in_library,created_at,updated_at) VALUES('qq',0,datetime('now'),datetime('now'))`,
 	} {
 		if _, err := s.db.Exec(query); err == nil {
 			t.Fatalf("accepted inconsistent identity: %s", query)

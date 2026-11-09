@@ -228,7 +228,7 @@ func TestLyricsRestartWriteFailureAndConcurrentReferences(t *testing.T) {
 func TestGroupSnapshotsAndAlbumCreditProjection(t *testing.T) {
 	s := openTestStore(t)
 	provider, groupRef, releaseRef, trackRef := "test", "native-group", "release", "track"
-	id, err := s.CreateTrackWithProvenance(NewTrackInput{Title: "Song", Album: ptr("Release title"), AlbumCredit: ptr("Album Artist"), MatchSource: &provider, MatchRef: &trackRef, Release: &ReleaseInput{Provider: &provider, ProviderRef: &releaseRef, ReleaseGroupRef: &groupRef}})
+	id, err := s.CreateTrackWithProvenance(NewTrackInput{InLibrary: true, Title: "Song", Album: ptr("Release title"), AlbumCredit: ptr("Album Artist"), MatchSource: &provider, MatchRef: &trackRef, Release: &ReleaseInput{Provider: &provider, ProviderRef: &releaseRef, ReleaseGroupRef: &groupRef}})
 	if err != nil {
 		t.Fatal(err)
 	}

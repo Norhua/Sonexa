@@ -23,6 +23,14 @@ func TestRunnerCompleteEvidenceImportsStudioAndRepeatedImportSkips(t *testing.T)
 	if stats.Imported != 1 {
 		t.Fatal(stats)
 	}
+	batchInfo, err := st.GetBatch(batch)
+	if err != nil || batchInfo.SourceKind != "file" || batchInfo.DestinationKind != "library" || batchInfo.Filename != "" {
+		t.Fatal(batchInfo, err)
+	}
+	var inLibrary bool
+	if err := st.DB().QueryRow(`SELECT in_library FROM track`).Scan(&inLibrary); err != nil || !inLibrary {
+		t.Fatal("file creation must join library", inLibrary, err)
+	}
 	again := enqueueOne(t, st, "3253212（译名）", "reche（注音）", "3253212（译名）")
 	runToCompletion(t, runner, again)
 	stats, _ = st.Stats(again)
@@ -38,7 +46,7 @@ func TestRunnerCompleteEvidenceImportsStudioAndRepeatedImportSkips(t *testing.T)
 
 func TestRunnerLocalCompleteInputSkipsWithoutPretendingUpstreamBinding(t *testing.T) {
 	st := openStore(t)
-	_, err := st.CreateTrackWithProvenance(store.NewTrackInput{Title: "Song", Credit: sptr("Artist"), Album: sptr("Album")})
+	_, err := st.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true, Title: "Song", Credit: sptr("Artist"), Album: sptr("Album")})
 	if err != nil {
 		t.Fatal(err)
 	}

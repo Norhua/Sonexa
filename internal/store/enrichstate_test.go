@@ -13,7 +13,7 @@ func TestEnrichStateCountsPartitionAllRows(t *testing.T) {
 	// 有上游身份 + 有发行标识 → 待补。
 	// 发行标识归歌集，因此它走 Release 而不是曲目侧的 Metadata。
 	pendingID, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "待补", MatchSource: &source, MatchRef: &ref,
+		InLibrary: true, Title: "待补", MatchSource: &source, MatchRef: &ref,
 		Album:   ptr("某专辑"),
 		Release: &ReleaseInput{Provider: &source, ProviderRef: &release},
 	})
@@ -23,13 +23,13 @@ func TestEnrichStateCountsPartitionAllRows(t *testing.T) {
 	// 有上游身份但没有发行标识 → 无从取起，记 absent（算已匹配）
 	ref2 := "trk-2"
 	absentID, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "无从取起", MatchSource: &source, MatchRef: &ref2,
+		InLibrary: true, Title: "无从取起", MatchSource: &source, MatchRef: &ref2,
 	})
 	if err != nil {
 		t.Fatalf("建曲目失败: %v", err)
 	}
 	// 无需匹配入库：溯源置空
-	skippedID, err := s.CreateTrackWithProvenance(NewTrackInput{Title: "无需匹配"})
+	skippedID, err := s.CreateTrackWithProvenance(NewTrackInput{InLibrary: true, Title: "无需匹配"})
 	if err != nil {
 		t.Fatalf("建曲目失败: %v", err)
 	}

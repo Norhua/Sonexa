@@ -22,7 +22,7 @@ func TestVocaloidAndCreditedComposerReachArtistView(t *testing.T) {
 	defer cleanup()
 
 	credit := "DECO*27"
-	trackID, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{
+	trackID, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true,
 		Title: "愛言葉", Credit: &credit,
 		MatchSource: strPtrOrNil("musicbrainz"), MatchRef: strPtrOrNil("trk-aikotoba"),
 	})

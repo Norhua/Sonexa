@@ -23,7 +23,7 @@ func TestAlbumVersionsKeepEveryCollectionAndOwnFacts(t *testing.T) {
 	digital := makeRelease("digital", "Digital Media", "2014")
 	sacd := makeRelease("sacd", "SACD", "2015")
 	add := func(ref, title, release string) int64 {
-		id, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{Title: title, MatchSource: strPtrOrNil("musicbrainz"), MatchRef: strPtrOrNil(ref), Release: &store.ReleaseInput{Provider: strPtrOrNil("musicbrainz"), ProviderRef: strPtrOrNil(release)}, Metadata: &store.MetadataInput{RecordingRef: strPtrOrNil("same-recording")}})
+		id, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true, Title: title, MatchSource: strPtrOrNil("musicbrainz"), MatchRef: strPtrOrNil(ref), Release: &store.ReleaseInput{Provider: strPtrOrNil("musicbrainz"), ProviderRef: strPtrOrNil(release)}, Metadata: &store.MetadataInput{RecordingRef: strPtrOrNil("same-recording")}})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -69,7 +69,7 @@ func TestTetraCoverHandlerReplaysMediumOnlyIndex(t *testing.T) {
 func TestAlbumDetailDoesNotRedirectSameRecording(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
-	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{Title: "CD track", MatchSource: strPtrOrNil("musicbrainz"), MatchRef: strPtrOrNil("cd-track"), Metadata: &store.MetadataInput{RecordingRef: strPtrOrNil("recording")}})
+	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true, Title: "CD track", MatchSource: strPtrOrNil("musicbrainz"), MatchRef: strPtrOrNil("cd-track"), Metadata: &store.MetadataInput{RecordingRef: strPtrOrNil("recording")}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -119,15 +119,17 @@ func (s *Store) ResolveTracklist(releaseID int64, provider string) ([]ResolvedPo
 		// 已入库：标识等值比对（要求来源一致）
 		if t.TrackRef != nil && *t.TrackRef != "" {
 			var id int64
-			var createdAt time.Time
-			err := s.db.QueryRow(`SELECT id, created_at FROM track_read WHERE match_source = ? AND match_ref = ? AND release_id = ?`,
-				provider, *t.TrackRef, releaseID).Scan(&id, &createdAt)
+			var addedAt *time.Time
+			err := s.db.QueryRow(`SELECT id, library_added_at FROM track_read WHERE match_source = ? AND match_ref = ? AND release_id = ?`,
+				provider, *t.TrackRef, releaseID).Scan(&id, &addedAt)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return nil, err
 			}
 			if err == nil {
-				addedAt := createdAt.UTC().Format(time.RFC3339)
-				pos.AddedAt = &addedAt
+				if addedAt != nil {
+					value := formatOptionalTime(addedAt)
+					pos.AddedAt = &value
+				}
 				pos.State, pos.TrackID = PositionOwned, id
 				out = append(out, pos)
 				continue

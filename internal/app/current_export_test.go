@@ -14,7 +14,7 @@ func TestExportAndSearchReadCurrentWithoutLyrics(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
 	year := 2014
-	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{Title: "", Credit: strPtrOrNil("旧署名"), Album: strPtrOrNil("专辑"), Metadata: &store.MetadataInput{Year: &year}})
+	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true, Title: "", Credit: strPtrOrNil("旧署名"), Album: strPtrOrNil("专辑"), Metadata: &store.MetadataInput{Year: &year}})
 	if err != nil {
 		t.Fatal(err)
 	}

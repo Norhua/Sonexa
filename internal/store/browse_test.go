@@ -19,7 +19,7 @@ func TestAlbumGroupingMergesVersions(t *testing.T) {
 		{"trk-digital-02", "rel-digital", "Digital Media"},
 	} {
 		if _, err := s.CreateTrackWithProvenance(NewTrackInput{
-			Title: "曲目-" + tc.ref, Album: ptr("涼宮ハルヒの詰合"),
+			InLibrary: true, Title: "曲目-" + tc.ref, Album: ptr("涼宮ハルヒの詰合"),
 			MatchSource: ptr("musicbrainz"), MatchRef: ptr(tc.ref),
 			Release: &ReleaseInput{
 				Provider: ptr("musicbrainz"), ProviderRef: ptr(tc.relRef),
@@ -77,7 +77,7 @@ func TestLocalAlbumHasNoTotal(t *testing.T) {
 	var trackIDs []int64
 	for i := 0; i < 3; i++ {
 		id, err := s.CreateTrackWithProvenance(NewTrackInput{
-			Title: "无名曲" + string(rune('A'+i)), Credit: ptr("某艺术家"),
+			InLibrary: true, Title: "无名曲" + string(rune('A'+i)), Credit: ptr("某艺术家"),
 			Album: ptr("そんな私に"), AlbumCredit: ptr("某艺术家"),
 		})
 		if err != nil {
@@ -128,7 +128,7 @@ func TestAlbumDisappearsWhenLastTrackDeleted(t *testing.T) {
 	s := openTestStore(t)
 
 	trackID, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "唯一一首", Album: ptr("某专辑"),
+		InLibrary: true, Title: "唯一一首", Album: ptr("某专辑"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-1"),
 		Release: &ReleaseInput{
 			Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-1"),
@@ -180,7 +180,7 @@ func TestLocalAlbumDisappearsWithLastTrack(t *testing.T) {
 	s := openTestStore(t)
 
 	trackID, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "唯一一首", Album: ptr("本地专辑"), AlbumCredit: ptr("某艺术家"),
+		InLibrary: true, Title: "唯一一首", Album: ptr("本地专辑"), AlbumCredit: ptr("某艺术家"),
 	})
 	if err != nil {
 		t.Fatalf("入库失败: %v", err)
@@ -640,7 +640,7 @@ func TestRepresentativeReleaseHonoursUserLadder(t *testing.T) {
 		{"rel-de", "DE"},
 	} {
 		if _, err := s.CreateTrackWithProvenance(NewTrackInput{
-			Title: "一首歌-" + tc.ref, Album: ptr("同一张专辑"),
+			InLibrary: true, Title: "一首歌-" + tc.ref, Album: ptr("同一张专辑"),
 			MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-" + tc.ref),
 			Release: &ReleaseInput{
 				Provider: ptr("musicbrainz"), ProviderRef: ptr(tc.ref),
@@ -711,7 +711,7 @@ func TestRepresentativeReleaseCountsAdoptedCover(t *testing.T) {
 	ids := map[string]int64{}
 	for _, ref := range []string{"rel-a", "rel-b"} {
 		if _, err := s.CreateTrackWithProvenance(NewTrackInput{
-			Title: "一首歌-" + ref, Album: ptr("同一张专辑"),
+			InLibrary: true, Title: "一首歌-" + ref, Album: ptr("同一张专辑"),
 			MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-" + ref),
 			Release: &ReleaseInput{
 				Provider: ptr("musicbrainz"), ProviderRef: ptr(ref), ReleaseGroupRef: ptr("rg-cover"),
@@ -805,7 +805,7 @@ func TestRepresentativeSurvivesUnownedPick(t *testing.T) {
 
 	// 用户只有数字版那一首（CD 版那首已被删，release 行作为清单缓存保留）
 	if _, err := s.CreateTrackWithProvenance(NewTrackInput{
-		Title: "第一首", Album: ptr("某专辑"),
+		InLibrary: true, Title: "第一首", Album: ptr("某专辑"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-d1"),
 		Release: &ReleaseInput{
 			Provider: ptr("musicbrainz"), ProviderRef: ptr("rel-digital"),

@@ -14,7 +14,7 @@ type ItemStatus string
 const (
 	StatusQueued    ItemStatus = "queued"    // 排队中
 	StatusMatching  ItemStatus = "matching"  // 匹配中
-	StatusImported  ItemStatus = "imported"  // 已入库
+	StatusImported  ItemStatus = "imported"  // 完成导入（不等于已入库）
 	StatusReview    ItemStatus = "review"    // 待复核
 	StatusFailed    ItemStatus = "failed"    // 失败
 	StatusSkipped   ItemStatus = "skipped"   // 已跳过
@@ -70,7 +70,10 @@ const (
 
 // ImportBatch 是一次导入。
 type ImportBatch struct {
-	ID int64 `json:"id"`
+	SourceKind      string `json:"sourceKind"`
+	DestinationKind string `json:"destinationKind"`
+	DestinationName string `json:"destinationName"`
+	ID              int64  `json:"id"`
 	// Filename 不再保存源文件名；保留空字段供批次 DTO 读取。
 	Filename   string      `json:"filename"`
 	Encoding   *string     `json:"encoding"`
@@ -112,54 +115,39 @@ type ImportItem struct {
 	MergedInto     *int64  `json:"mergedInto"`
 }
 
-// CreateBatch 建立一个导入批次。
+// CreateBatch 建立文件导入批次，目标固定为音乐库。
 func (s *Store) CreateBatch(b *ImportBatch) (int64, error) {
 	var id int64
 	err := s.withTx(func(tx *sql.Tx) error {
-		now := time.Now().UTC()
-		res, err := tx.Exec(`
-			INSERT INTO import_batch (filename, encoding, delimiter, column_map, total_rows, status, created_at)
-			VALUES (?,?,?,?,?,?,?)`,
-			"", b.Encoding, b.Delimiter, b.ColumnMap, b.TotalRows, string(BatchRunning), now)
-		if err != nil {
-			return fmt.Errorf("建立导入批次失败: %w", err)
-		}
-		id, err = res.LastInsertId()
+		var err error
+		id, err = createImportBatchTx(tx, b, "file", "library", "音乐库")
 		return err
 	})
 	return id, err
 }
 
-// EnqueueItems 把一批条目写入队列。
-//
-// 队列持久化到 SQLite：1000 行 × 1 req/s ≈ 17 分钟，用户必然会中途关窗口，
-// 内存队列意味着重启即丢。
+func createImportBatchTx(tx *sql.Tx, b *ImportBatch, source, kind, name string) (int64, error) {
+	res, err := tx.Exec(`INSERT INTO import_batch(filename,source_kind,destination_kind,destination_name,encoding,delimiter,column_map,total_rows,status,created_at)
+ VALUES('',?,?,?,?,?,?,?,?,?)`, source, kind, name, b.Encoding, b.Delimiter, b.ColumnMap, b.TotalRows, string(BatchRunning), time.Now().UTC())
+	if err != nil {
+		return 0, fmt.Errorf("建立导入批次失败: %w", err)
+	}
+	return res.LastInsertId()
+}
+
+// EnqueueItems only accepts file batches. Sync inputs are created in the same
+// transaction as their snapshot and destinations, without a temporary file.
 func (s *Store) EnqueueItems(batchID int64, items []ImportItem) error {
 	return s.withTx(func(tx *sql.Tx) error {
-		stmt, err := tx.Prepare(`
-			INSERT INTO import_item (
-				batch_id, row_index, raw_row, in_title, in_artist, in_album,
-				in_year, in_track_no, in_disc_no, in_duration_ms, status, attempt_count, updated_at
-			) VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?)`)
-		if err != nil {
+		var source string
+		if err := tx.QueryRow(`SELECT source_kind FROM import_batch WHERE id=?`, batchID).Scan(&source); err != nil {
 			return err
 		}
-		defer stmt.Close()
-
-		now := time.Now().UTC()
+		if source != "file" {
+			return fmt.Errorf("同步输入必须随快照事务创建")
+		}
 		for ordinal, it := range items {
-			res, err := stmt.Exec(batchID, ordinal, it.RawRow,
-				it.InTitle, it.InArtist, it.InAlbum,
-				it.InYear, it.InTrackNo, it.InDiscNo, it.InDurationMS,
-				string(StatusQueued), now)
-			if err != nil {
-				return fmt.Errorf("写入输入失败: %w", err)
-			}
-			it.ID, err = res.LastInsertId()
-			if err != nil {
-				return err
-			}
-			if err := mergeTextInputTx(tx, it); err != nil {
+			if _, err := enqueueImportInputTx(tx, batchID, ordinal, it, ImportDestination{Kind: "library", DisplayName: "音乐库"}); err != nil {
 				return err
 			}
 		}
@@ -199,6 +187,9 @@ func (s *Store) ClaimNextItem(batchID int64) (*ImportItem, error) {
 			return err
 		}
 		it.Status = StatusMatching
+		if err := effectiveImportItemTx(tx, it); err != nil {
+			return err
+		}
 		item = it
 		return nil
 	})
@@ -221,7 +212,7 @@ func scanItem(row interface{ Scan(...any) error }) (*ImportItem, error) {
 	return &it, nil
 }
 
-// MarkImported 把条目置为已入库并记录曲目 id。
+// MarkImported 把条目置为完成导入并记录曲目 id。
 func (s *Store) MarkImported(itemID, trackID int64) error {
 	return s.setStatus(itemID, StatusImported, func(tx *sql.Tx) error {
 		_, err := tx.Exec(`UPDATE import_item SET track_id = ? WHERE id = ?`, trackID, itemID)
@@ -533,9 +524,9 @@ func (s *Store) GetBatch(batchID int64) (*ImportBatch, error) {
 	var b ImportBatch
 	var status string
 	err := s.db.QueryRow(`
-		SELECT id, filename, encoding, delimiter, column_map, total_rows, status, created_at, finished_at
+		SELECT id, filename, source_kind, destination_kind, destination_name, encoding, delimiter, column_map, total_rows, status, created_at, finished_at
 		FROM import_batch WHERE id = ?`, batchID).Scan(
-		&b.ID, &b.Filename, &b.Encoding, &b.Delimiter, &b.ColumnMap,
+		&b.ID, &b.Filename, &b.SourceKind, &b.DestinationKind, &b.DestinationName, &b.Encoding, &b.Delimiter, &b.ColumnMap,
 		&b.TotalRows, &status, &b.CreatedAt, &b.FinishedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -550,7 +541,7 @@ func (s *Store) GetBatch(batchID int64) (*ImportBatch, error) {
 // ActiveBatches 返回尚未完成的批次，供重启后继续。
 func (s *Store) ActiveBatches() ([]ImportBatch, error) {
 	rows, err := s.db.Query(`
-		SELECT id, filename, encoding, delimiter, column_map, total_rows, status, created_at, finished_at
+		SELECT id, filename, source_kind, destination_kind, destination_name, encoding, delimiter, column_map, total_rows, status, created_at, finished_at
 		FROM import_batch WHERE status != ? ORDER BY created_at`, string(BatchDone))
 	if err != nil {
 		return nil, err
@@ -561,7 +552,7 @@ func (s *Store) ActiveBatches() ([]ImportBatch, error) {
 	for rows.Next() {
 		var b ImportBatch
 		var status string
-		if err := rows.Scan(&b.ID, &b.Filename, &b.Encoding, &b.Delimiter, &b.ColumnMap,
+		if err := rows.Scan(&b.ID, &b.Filename, &b.SourceKind, &b.DestinationKind, &b.DestinationName, &b.Encoding, &b.Delimiter, &b.ColumnMap,
 			&b.TotalRows, &status, &b.CreatedAt, &b.FinishedAt); err != nil {
 			return nil, err
 		}
@@ -599,7 +590,7 @@ func (s *Store) RecentBatches(limit int) ([]ImportBatch, error) {
 		limit = 20
 	}
 	rows, err := s.db.Query(`
-		SELECT id, filename, encoding, delimiter, column_map, total_rows, status, created_at, finished_at
+		SELECT id, filename, source_kind, destination_kind, destination_name, encoding, delimiter, column_map, total_rows, status, created_at, finished_at
 		FROM import_batch ORDER BY created_at DESC, id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -610,7 +601,7 @@ func (s *Store) RecentBatches(limit int) ([]ImportBatch, error) {
 	for rows.Next() {
 		var b ImportBatch
 		var status string
-		if err := rows.Scan(&b.ID, &b.Filename, &b.Encoding, &b.Delimiter, &b.ColumnMap,
+		if err := rows.Scan(&b.ID, &b.Filename, &b.SourceKind, &b.DestinationKind, &b.DestinationName, &b.Encoding, &b.Delimiter, &b.ColumnMap,
 			&b.TotalRows, &status, &b.CreatedAt, &b.FinishedAt); err != nil {
 			return nil, err
 		}

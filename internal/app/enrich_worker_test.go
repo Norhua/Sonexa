@@ -336,7 +336,7 @@ func createPendingTrack(t *testing.T, app *App, title string) int64 {
 	source, ref := "musicbrainz", "trk-"+title
 	release := "rel-" + title
 	album := "专辑 " + title
-	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{
+	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true,
 		Title: title, MatchSource: &source, MatchRef: &ref, Album: &album,
 		Release: &store.ReleaseInput{Provider: &source, ProviderRef: &release},
 	})

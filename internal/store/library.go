@@ -46,7 +46,9 @@ type TrackView struct {
 	ReleaseRef      *string `json:"releaseRef"`
 	ReleaseGroupRef *string `json:"releaseGroupRef"`
 
-	// AddedAt 为首次入库时间，以 RFC3339 字符串导出，避免 Wails 生成 time.Time 告警。
+	InLibrary bool   `json:"inLibrary"`
+	CreatedAt string `json:"createdAt"`
+	// AddedAt 为首次入库时间；从未入库为空串，以 RFC3339 字符串导出。
 	AddedAt string `json:"addedAt"`
 }
 
@@ -89,12 +91,13 @@ const trackSelectColumns = `
 	r.cover_path, t.match_source, t.match_ref,
 	t.release_id, r.provider_ref,
 	(SELECT rg.provider_ref FROM release_group_read rg WHERE rg.id = r.release_group_id),
-	t.created_at,
+	t.created_at, t.in_library, t.library_added_at,
 	COALESCE((SELECT revision FROM release_cover_selection WHERE release_id=t.release_id),0)`
 
 func scanTrackView(sc interface{ Scan(...any) error }) (*TrackView, error) {
 	var v TrackView
 	var createdAt time.Time
+	var addedAt *time.Time
 	var lockedJSON *string
 	if err := sc.Scan(&v.ID, &v.Title, &v.Artist, &v.Album,
 		&lockedJSON,
@@ -102,10 +105,11 @@ func scanTrackView(sc interface{ Scan(...any) error }) (*TrackView, error) {
 		&v.TrackNumber, &v.TrackTotal, &v.DiscNumber, &v.DurationMS,
 		&v.Genre, &v.MediumFormat, &v.Country, &v.PrimaryType,
 		&v.CoverPath, &v.MatchSource, &v.MatchRef,
-		&v.ReleaseID, &v.ReleaseRef, &v.ReleaseGroupRef, &createdAt, &v.CoverRevision); err != nil {
+		&v.ReleaseID, &v.ReleaseRef, &v.ReleaseGroupRef, &createdAt, &v.InLibrary, &addedAt, &v.CoverRevision); err != nil {
 		return nil, err
 	}
-	v.AddedAt = createdAt.UTC().Format(time.RFC3339)
+	v.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	v.AddedAt = formatOptionalTime(addedAt)
 	locks := ParseLocks(lockedJSON)
 	v.TitleLocked, v.ArtistLocked, v.AlbumLocked = locks["title"], locks["credit"], locks["album"]
 	return &v, nil

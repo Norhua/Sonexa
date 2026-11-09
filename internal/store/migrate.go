@@ -28,7 +28,7 @@ var migrations = []Migration{
 	{Version: 4, Name: "confirmation_context", SQL: migration0004ConfirmationContext},
 }
 
-const ModelGeneration = "upstream-snapshot-v1"
+const ModelGeneration = "streaming-playlists-v1"
 
 var ErrIncompatibleModel = errors.New("数据库模型不兼容，请先备份并清理旧版应用数据；程序不会自动删除数据")
 

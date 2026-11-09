@@ -43,7 +43,7 @@ func TestCVCreditFallbackParsing(t *testing.T) {
 	} {
 		t.Run(credit, func(t *testing.T) {
 			s := openTestStore(t)
-			id, err := s.CreateTrackWithProvenance(NewTrackInput{Title: "Song", Credit: &credit})
+			id, err := s.CreateTrackWithProvenance(NewTrackInput{InLibrary: true, Title: "Song", Credit: &credit})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -74,7 +74,7 @@ func TestCVCreditFallbackParsing(t *testing.T) {
 	} {
 		t.Run("no-fallback/"+credit, func(t *testing.T) {
 			s := openTestStore(t)
-			id, err := s.CreateTrackWithProvenance(NewTrackInput{Title: "Song", Credit: &credit})
+			id, err := s.CreateTrackWithProvenance(NewTrackInput{InLibrary: true, Title: "Song", Credit: &credit})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -219,7 +219,7 @@ func TestCVActorIdentityBoundaries(t *testing.T) {
 func TestCVSameActorIsNotCountedTwice(t *testing.T) {
 	s := openTestStore(t)
 	credit := "角色A(CV.声优) feat. 角色B(CV.声优) & 声优"
-	id, err := s.CreateTrackWithProvenance(NewTrackInput{Title: "Song", Credit: &credit})
+	id, err := s.CreateTrackWithProvenance(NewTrackInput{InLibrary: true, Title: "Song", Credit: &credit})
 	if err != nil {
 		t.Fatal(err)
 	}

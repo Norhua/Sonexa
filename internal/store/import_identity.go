@@ -26,7 +26,7 @@ func stringValue(v *string) string {
 // readImportInputsTx closes its cursor before any write, including on the
 // single-connection SQLite configuration. Source row numbers are not consulted.
 func readImportInputsTx(tx *sql.Tx, where string, args ...any) ([]ImportItem, error) {
-	rows, err := tx.Query(`SELECT id,raw_row,in_title,in_artist,in_album,in_duration_ms,in_disc_no,in_track_no FROM import_item WHERE `+where+` ORDER BY id`, args...)
+	rows, err := tx.Query(`SELECT id,raw_row,in_title,in_artist,in_album,in_duration_ms,in_disc_no,in_track_no,in_year FROM import_item WHERE (`+where+`) AND EXISTS(SELECT 1 FROM import_destination d WHERE d.input_id=import_item.id AND d.state='active') ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func readImportInputsTx(tx *sql.Tx, where string, args ...any) ([]ImportItem, er
 	var items []ImportItem
 	for rows.Next() {
 		var it ImportItem
-		if err := rows.Scan(&it.ID, &it.RawRow, &it.InTitle, &it.InArtist, &it.InAlbum, &it.InDurationMS, &it.InDiscNo, &it.InTrackNo); err != nil {
+		if err := rows.Scan(&it.ID, &it.RawRow, &it.InTitle, &it.InArtist, &it.InAlbum, &it.InDurationMS, &it.InDiscNo, &it.InTrackNo, &it.InYear); err != nil {
 			return nil, err
 		}
 		items = append(items, it)
@@ -60,7 +60,7 @@ func mergeImportTx(tx *sql.Tx, itemID, targetID int64) error {
 	if _, err := tx.Exec(`UPDATE import_item SET merged_item_id=? WHERE merged_item_id=?`, targetID, itemID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE import_item SET updated_at=? WHERE id=?`, time.Now().UTC(), targetID); err != nil {
+	if _, err := tx.Exec(`UPDATE import_item SET revision=revision+1,search_revision=search_revision+1,updated_at=? WHERE id=?`, time.Now().UTC(), targetID); err != nil {
 		return err
 	}
 	_, err := tx.Exec(`UPDATE import_item SET status='merged',merged_item_id=?,next_retry_at=NULL,updated_at=? WHERE id=? AND status IN ('queued','matching','review','failed')`, targetID, time.Now().UTC(), itemID)
@@ -70,28 +70,35 @@ func mergeImportTx(tx *sql.Tx, itemID, targetID int64) error {
 // mergeTextInputTx only coalesces an unambiguous active target. All retained
 // aliases must agree, preventing a missing position from bridging tracks 1/2.
 func mergeTextInputTx(tx *sql.Tx, item ImportItem) error {
-	items, err := readImportInputsTx(tx, `id<>? AND status IN ('queued','matching','review','failed')`, item.ID)
+	rows, err := tx.Query(`SELECT shell.id,i.raw_row,i.in_title,i.in_artist,i.in_album,i.in_duration_ms,i.in_disc_no,i.in_track_no
+ FROM import_item shell JOIN import_item i ON (i.id=shell.id OR i.merged_item_id=shell.id)
+ JOIN import_destination d ON d.input_id=i.id AND d.state='active'
+ WHERE shell.id<>? AND shell.status IN ('queued','matching','review','failed') ORDER BY shell.id,i.id`, item.ID)
+	if err != nil {
+		return err
+	}
+	compatible := map[int64]bool{}
+	for rows.Next() {
+		var shellID int64
+		var input ImportItem
+		if err := rows.Scan(&shellID, &input.RawRow, &input.InTitle, &input.InArtist, &input.InAlbum, &input.InDurationMS, &input.InDiscNo, &input.InTrackNo); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, seen := compatible[shellID]; !seen {
+			compatible[shellID] = true
+		}
+		compatible[shellID] = compatible[shellID] && equivalentImport(item, input)
+	}
+	err = rows.Err()
+	rows.Close()
 	if err != nil {
 		return err
 	}
 	var targets []int64
-	for _, other := range items {
-		if !equivalentImport(item, other) {
-			continue
-		}
-		aliases, err := readImportInputsTx(tx, `merged_item_id=?`, other.ID)
-		if err != nil {
-			return err
-		}
-		compatible := true
-		for _, alias := range aliases {
-			if !equivalentImport(item, alias) {
-				compatible = false
-				break
-			}
-		}
-		if compatible {
-			targets = append(targets, other.ID)
+	for shell, match := range compatible {
+		if match {
+			targets = append(targets, shell)
 		}
 	}
 	if len(targets) == 1 {
@@ -154,6 +161,9 @@ func (s *Store) ResolveImport(itemID int64, candidates []matching.ScoredCandidat
 		inputs, err := readImportInputsTx(tx, `id=? OR merged_item_id=?`, itemID, itemID)
 		if err != nil {
 			return err
+		}
+		if len(inputs) == 0 {
+			return ErrItemNotActive
 		}
 		if selected == nil || selected.MatchRef == "" {
 			return nil

@@ -12,7 +12,7 @@ func TestAddedTimeReachesEveryLibraryRow(t *testing.T) {
 	app, cleanup := newTestApp(t)
 	defer cleanup()
 	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: "Added time", Album: strPtrOrNil("Album"),
+		InLibrary: true, Title: "Added time", Album: strPtrOrNil("Album"),
 		MatchSource: strPtrOrNil("musicbrainz"), MatchRef: strPtrOrNil("owned"),
 		Release: &store.ReleaseInput{Provider: strPtrOrNil("musicbrainz"), ProviderRef: strPtrOrNil("release")},
 	})
@@ -23,7 +23,13 @@ func TestAddedTimeReachesEveryLibraryRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := track.CreatedAt.UTC().Format(time.RFC3339)
+	// Make creation and first admission observably different; every projection
+	// must use library_added_at rather than accidentally passing on equal dates.
+	addedAt := track.CreatedAt.Add(7 * 24 * time.Hour).UTC()
+	if _, err := app.store.DB().Exec(`UPDATE track SET library_added_at=? WHERE id=?`, addedAt, id); err != nil {
+		t.Fatal(err)
+	}
+	want := addedAt.Format(time.RFC3339)
 	page, err := app.ListTracks(store.TrackFilter{})
 	if err != nil || len(page.Tracks) != 1 || page.Tracks[0].AddedAt != want {
 		t.Fatalf("page=%+v err=%v", page, err)
@@ -70,7 +76,7 @@ func TestAddedTimeReachesEveryLibraryRow(t *testing.T) {
 		t.Fatalf("refresh must not change added time: %+v %v", updated, err)
 	}
 
-	localID, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{Title: "Local", Album: strPtrOrNil("Local album")})
+	localID, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true, Title: "Local", Album: strPtrOrNil("Local album")})
 	if err != nil {
 		t.Fatal(err)
 	}

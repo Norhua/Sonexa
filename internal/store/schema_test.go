@@ -49,8 +49,8 @@ func TestMatchRefPartialUnique(t *testing.T) {
 
 	newTrack := func(title string, source, ref any) error {
 		_, err := db.Exec(
-			`INSERT INTO track (match_source, match_ref, created_at, updated_at)
-			 VALUES (?, ?, datetime('now'), datetime('now'))`, source, ref)
+			`INSERT INTO track (match_source, match_ref, in_library, library_added_at, created_at, updated_at)
+			 VALUES (?, ?, 1, datetime('now'), datetime('now'), datetime('now'))`, source, ref)
 		return err
 	}
 

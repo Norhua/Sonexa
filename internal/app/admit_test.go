@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/importer"
@@ -187,8 +188,13 @@ func metaOf(t *testing.T, app *App, id int64) store.TrackMetadata {
 	if err != nil || m == nil {
 		t.Fatalf("读丰富信息失败: %v", err)
 	}
-	// 各路径的曲目 id、match_ref 与发行标识必然不同（候选各带各的），
-	// 歌集行 id 随之不同；比对其余列。
+	for _, value := range []string{m.CreatedAt, m.AddedAt} {
+		if _, err := time.Parse(time.RFC3339, value); err != nil {
+			t.Fatalf("missing admission time: %+v", m)
+		}
+	}
+	// 各实体的身份与创建/首次入库时间可以不同；这里只比较业务字段。
+	m.CreatedAt, m.AddedAt = "", ""
 	m.TrackID, m.MatchRef, m.ReleaseRef, m.ReleaseID = 0, nil, nil, nil
 	return *m
 }

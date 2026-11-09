@@ -344,7 +344,11 @@ func insertAdmissionEntitiesTx(tx *sql.Tx, seed domain.AdmissionSeed, baseline d
 			state = EnrichPending
 		}
 	}
-	row, err := tx.Exec("INSERT INTO track(release_id,match_source,match_ref,matched_at,enrich_state,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", nullableID(result.ReleaseID), source, ref, now, string(state), now, now)
+	inLibrary, err := newImportInLibraryTx(tx, seed.ImportItemID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := tx.Exec("INSERT INTO track(release_id,match_source,match_ref,matched_at,enrich_state,in_library,library_added_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)", nullableID(result.ReleaseID), source, ref, now, string(state), inLibrary, initialLibraryTime(inLibrary, now), now, now)
 	if err != nil {
 		return nil, err
 	}

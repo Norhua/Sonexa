@@ -17,7 +17,7 @@ func TestCoverDTOsShareReleaseAndRevisionWithoutChangingCandidateIdentity(t *tes
 	}
 	defer a.coverSvc.Close()
 	source, ref, title, album := "itunes", "jp:12", "song", "album"
-	trackID, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{
+	trackID, err := a.store.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true,
 		Title: title, Album: &album, MatchSource: &source, MatchRef: strPtrOrNil("jp:1"),
 		Release: &store.ReleaseInput{Provider: &source, ProviderRef: &ref},
 	})

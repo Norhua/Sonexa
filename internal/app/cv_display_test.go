@@ -12,7 +12,7 @@ func TestCVDetailDisplaysEachWholeCreditWithoutChangingStoredRoles(t *testing.T)
 	app, cleanup := newTestApp(t)
 	defer cleanup()
 	credit := "角色A(CV.声优) feat. Guest & 角色B(CV.声优) & 角色A(CV.声优)"
-	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{Title: "Song", Credit: &credit})
+	id, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true, Title: "Song", Credit: &credit})
 	if err != nil {
 		t.Fatal(err)
 	}

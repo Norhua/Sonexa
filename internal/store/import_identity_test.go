@@ -54,8 +54,12 @@ func TestImportInputsCoalesceAcrossBatchesAndKeepDistinctOriginals(t *testing.T)
 		t.Fatal(originals, err)
 	}
 	batch, _ := s.GetBatch(first)
-	if batch.Filename != "" {
-		t.Fatal("filename retained", batch.Filename)
+	if batch.Filename != "" || batch.SourceKind != "file" || batch.DestinationKind != "library" || batch.DestinationName != "音乐库" {
+		t.Fatal("invalid file source/destination", batch)
+	}
+	destinations, err := s.ActiveImportDestinations(item.ID)
+	if err != nil || len(destinations) != 4 {
+		t.Fatal(destinations, err)
 	}
 	if err = s.MarkDiscarded(item.ID); err != nil {
 		t.Fatal(err)
@@ -127,8 +131,16 @@ func TestResolvedTrackMergesDifferentInputsButNotCandidateOverlap(t *testing.T) 
 	if handled, err := s.ResolveImport(i2.ID, nil, &c); !handled || err != nil {
 		t.Fatal(handled, err)
 	}
+	b3 := identityBatch(t, s, identityItem("Song", "Third credit", "Album"))
+	i3, err := s.ClaimNextItem(b3)
+	if err != nil || i3 == nil {
+		t.Fatal(i3, err)
+	}
+	if handled, err := s.ResolveImport(i3.ID, nil, &c); !handled || err != nil {
+		t.Fatal("resolved shell must retain evidence after merge", handled, err)
+	}
 	originals, err := s.OriginalInputs(i1.ID)
-	if err != nil || len(originals) != 2 {
+	if err != nil || len(originals) != 3 {
 		t.Fatal(originals, err)
 	}
 }

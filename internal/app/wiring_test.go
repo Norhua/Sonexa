@@ -108,7 +108,7 @@ func TestApplyDetailToTrackWiresArtistSubsystem(t *testing.T) {
 	const credit = "涼宮ハルヒ(CV:平野綾)"
 	providerID := "musicbrainz"
 	trackID, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title: "God knows...", Credit: strPtrOrNil(credit),
+		InLibrary: true, Title: "God knows...", Credit: strPtrOrNil(credit),
 		Album: strPtrOrNil("涼宮ハルヒの詰合"), AlbumCredit: strPtrOrNil(credit),
 		MatchSource: &providerID,
 		MatchRef:    strPtrOrNil("trk-cd-jp-02"),
@@ -257,7 +257,7 @@ func TestCoverSourceReachesFrontend(t *testing.T) {
 	// 封面是歌集的属性，采用一次即对该歌集全部曲目生效。
 	providerID := "musicbrainz"
 	trackID, err := app.store.CreateTrackWithProvenance(store.NewTrackInput{
-		Title:       "God knows...",
+		InLibrary: true, Title: "God knows...",
 		Album:       strPtrOrNil("涼宮ハルヒの詰合"),
 		MatchSource: &providerID,
 		MatchRef:    strPtrOrNil("trk-cd-jp-02"),

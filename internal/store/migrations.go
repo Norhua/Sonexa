@@ -3,7 +3,7 @@ package store
 // 新代际仅用于空库初始化；当前值与上游事实独立保存。
 const migration0001Init = `
 CREATE TABLE model_generation (id INTEGER PRIMARY KEY CHECK(id=1), generation TEXT NOT NULL);
-INSERT INTO model_generation VALUES(1,'upstream-snapshot-v1');
+INSERT INTO model_generation VALUES(1,'streaming-playlists-v1');
 CREATE TABLE release_group (
  id INTEGER PRIMARY KEY, display_provider TEXT, display_group_ref TEXT, representative_id INTEGER,
  revision INTEGER NOT NULL DEFAULT 1, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL
@@ -52,10 +52,13 @@ CREATE TABLE track (
  enrich_state TEXT NOT NULL DEFAULT 'skipped', enrich_attempts INTEGER NOT NULL DEFAULT 0,
  enrich_error TEXT, credit_review TEXT,
  created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL,
+ in_library INTEGER NOT NULL CHECK(in_library IN (0,1)), library_added_at DATETIME,
+ CHECK(in_library=0 OR library_added_at IS NOT NULL),
  CHECK((match_source IS NULL)=(match_ref IS NULL)), CHECK(match_ref IS NULL OR match_ref<>'')
 );
 CREATE UNIQUE INDEX idx_match_ref ON track(match_source,match_ref) WHERE match_source IS NOT NULL;
 CREATE INDEX idx_track_created ON track(created_at DESC);
+CREATE INDEX idx_track_library_added ON track(library_added_at DESC) WHERE in_library=1;
 CREATE INDEX idx_track_release ON track(release_id) WHERE release_id IS NOT NULL;
 CREATE INDEX idx_track_enrich ON track(enrich_state);
 CREATE TABLE lyrics_file (
@@ -237,17 +240,52 @@ CREATE TABLE release_track (
 CREATE INDEX idx_release_track_ref ON release_track(track_ref)
   WHERE track_ref IS NOT NULL;
 
+-- ========== 只读同步歌单：成员按上游出现身份，不按本地 track 去重 ==========
+CREATE TABLE synced_playlist (
+ id INTEGER PRIMARY KEY,
+ provider TEXT NOT NULL CHECK(provider<>'' AND provider=trim(provider)),
+ playlist_ref TEXT NOT NULL CHECK(playlist_ref<>'' AND playlist_ref=trim(playlist_ref)),
+ upstream_name TEXT NOT NULL CHECK(trim(upstream_name)<>''), alias TEXT NOT NULL DEFAULT '',
+ revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0),
+ last_synced_at DATETIME NOT NULL, fetched_at DATETIME NOT NULL,
+ snapshot_digest TEXT NOT NULL CHECK(snapshot_digest<>''),
+ completeness_json TEXT NOT NULL CHECK(json_valid(completeness_json)),
+ excluded_json TEXT NOT NULL CHECK(json_valid(excluded_json)),
+ UNIQUE(provider,playlist_ref)
+);
+CREATE TABLE synced_playlist_entry (
+ id INTEGER PRIMARY KEY,
+ playlist_id INTEGER NOT NULL REFERENCES synced_playlist(id) ON DELETE CASCADE,
+ entry_key TEXT NOT NULL CHECK(entry_key<>'' AND entry_key=trim(entry_key)),
+ track_ref TEXT NOT NULL CHECK(track_ref<>'' AND track_ref=trim(track_ref)),
+ position INTEGER NOT NULL CHECK(position>0), title TEXT, artists_json TEXT NOT NULL CHECK(json_valid(artists_json)),
+ album TEXT, duration_ms INTEGER CHECK(duration_ms IS NULL OR duration_ms>=0),
+ upstream_present INTEGER NOT NULL CHECK(upstream_present IN (0,1)),
+ local_state TEXT NOT NULL CHECK(local_state IN ('pending','imported','ignored')),
+ track_id INTEGER REFERENCES track(id) ON DELETE RESTRICT,
+ revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0),
+ CHECK((local_state='imported' AND track_id IS NOT NULL) OR (local_state IN ('pending','ignored') AND track_id IS NULL)),
+ CHECK(upstream_present=1 OR local_state='imported'),
+ UNIQUE(playlist_id,entry_key)
+);
+CREATE INDEX idx_synced_entry_track ON synced_playlist_entry(track_id) WHERE track_id IS NOT NULL;
+CREATE INDEX idx_synced_entry_order ON synced_playlist_entry(playlist_id,upstream_present DESC,position,id);
+
 -- ========== 导入与复核队列 ==========
 CREATE TABLE import_batch (
   id          INTEGER PRIMARY KEY,
-  filename    TEXT NOT NULL,
+  filename    TEXT NOT NULL CHECK(filename=''),
+  source_kind TEXT NOT NULL CHECK(source_kind IN ('file','synced_playlist')),
+  destination_kind TEXT NOT NULL CHECK(destination_kind IN ('library','synced_playlist')),
+  destination_name TEXT NOT NULL CHECK(destination_name<>''),
   encoding    TEXT,
   delimiter   TEXT,
   column_map  TEXT,
   total_rows  INTEGER,
   status      TEXT,
   created_at  DATETIME NOT NULL,
-  finished_at DATETIME
+  finished_at DATETIME,
+  CHECK((source_kind='file' AND destination_kind='library') OR (source_kind='synced_playlist' AND destination_kind='synced_playlist'))
 );
 
 CREATE TABLE import_item (
@@ -280,12 +318,40 @@ CREATE TABLE import_item (
   search_provider TEXT NOT NULL DEFAULT '',
   search_country TEXT NOT NULL DEFAULT '',
   search_manual INTEGER NOT NULL DEFAULT 0,
+  revision INTEGER NOT NULL DEFAULT 1,
   updated_at     DATETIME NOT NULL
 );
 CREATE INDEX idx_import_item_queue ON import_item(status, next_retry_at);
 CREATE INDEX idx_import_item_batch ON import_item(batch_id, row_index);
 CREATE INDEX idx_import_item_merged ON import_item(merged_item_id);
 CREATE INDEX idx_import_item_resolved ON import_item(resolved_source, resolved_ref);
+CREATE TRIGGER import_input_immutable BEFORE UPDATE OF raw_row,in_title,in_artist,in_album,in_year,in_track_no,in_disc_no,in_duration_ms,batch_id,row_index ON import_item
+ BEGIN SELECT RAISE(ABORT,'导入原始输入不可改写'); END;
+
+CREATE TABLE import_destination (
+ input_id INTEGER PRIMARY KEY REFERENCES import_item(id) ON DELETE RESTRICT,
+ kind TEXT NOT NULL CHECK(kind IN ('library','synced_playlist')),
+ synced_entry_id INTEGER REFERENCES synced_playlist_entry(id) ON DELETE RESTRICT,
+ state TEXT NOT NULL CHECK(state IN ('active','delivered','cancelled')),
+ revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0),
+ display_name TEXT NOT NULL CHECK(display_name<>''),
+ cancel_reason TEXT,
+ CHECK(kind<>'library' OR synced_entry_id IS NULL),
+ CHECK(kind<>'synced_playlist' OR state<>'active' OR synced_entry_id IS NOT NULL)
+);
+CREATE UNIQUE INDEX idx_import_destination_active_entry ON import_destination(synced_entry_id) WHERE state='active';
+CREATE TRIGGER import_destination_pending_insert BEFORE INSERT ON import_destination
+ WHEN NEW.state='active' AND NEW.kind='synced_playlist'
+ BEGIN
+ SELECT RAISE(ABORT,'同步导入目标必须仍在上游且待处理') WHERE NOT EXISTS
+ (SELECT 1 FROM synced_playlist_entry WHERE id=NEW.synced_entry_id AND upstream_present=1 AND local_state='pending');
+ END;
+CREATE TRIGGER import_destination_pending_update BEFORE UPDATE ON import_destination
+ WHEN NEW.state='active' AND NEW.kind='synced_playlist'
+ BEGIN
+ SELECT RAISE(ABORT,'同步导入目标必须仍在上游且待处理') WHERE NOT EXISTS
+ (SELECT 1 FROM synced_playlist_entry WHERE id=NEW.synced_entry_id AND upstream_present=1 AND local_state='pending');
+ END;
 
 -- ========== 上游响应缓存：先落盘后解析 ==========
 CREATE TABLE provider_cache (
@@ -300,7 +366,7 @@ CREATE TABLE provider_cache (
 CREATE INDEX idx_provider_cache_fetched ON provider_cache(fetched_at);
 
 -- ========== 全文检索 ==========
--- 灰色行（未入库的清单曲目）不进索引：搜索的是用户的收藏，不是上游目录。
+-- 所有已保存 track 均进索引；查询时限定音乐库或同步歌单。仅清单占位和队列输入不进索引。
 -- artist_names 是该曲目全部关联艺术家名的拼接——它让「搜索 平野綾」与
 -- 「搜索 涼宮ハルヒ」都能命中同一首歌。两张关系表都要进：被署名的与
 -- 担任角色的都应当能搜到。

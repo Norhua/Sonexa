@@ -25,7 +25,7 @@ func insertTrackTx(tx *sql.Tx, in NewTrackInput) (int64, error) {
 	if in.MatchSource != nil && in.MatchRef != nil {
 		matchedAt = &now
 	}
-	res, err := tx.Exec(`INSERT INTO track(release_id,match_source,match_ref,matched_at,enrich_state,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`, nullableID(releaseID), in.MatchSource, in.MatchRef, matchedAt, string(InitialEnrichState(in)), now, now)
+	res, err := tx.Exec(`INSERT INTO track(release_id,match_source,match_ref,matched_at,enrich_state,in_library,library_added_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`, nullableID(releaseID), in.MatchSource, in.MatchRef, matchedAt, string(InitialEnrichState(in)), in.InLibrary, initialLibraryTime(in.InLibrary, now), now, now)
 	if err != nil {
 		return 0, err
 	}

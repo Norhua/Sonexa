@@ -223,7 +223,7 @@ func rememberImportConfirmationTx(tx *sql.Tx, itemID, trackID int64, evidence an
 		return err
 	}
 	_, err = tx.Exec(`INSERT INTO import_confirmation(item_id,track_id,binding_key,evidence_json,created_at,target_context)
- SELECT id,?,?,?,?,? FROM import_item WHERE id=? OR merged_item_id=?
+ SELECT id,?,?,?,?,? FROM import_item WHERE (id=? OR merged_item_id=?) AND EXISTS(SELECT 1 FROM import_destination d WHERE d.input_id=import_item.id AND d.state='active')
  ON CONFLICT(item_id) DO UPDATE SET track_id=excluded.track_id,binding_key=excluded.binding_key,evidence_json=excluded.evidence_json,created_at=excluded.created_at,target_context=excluded.target_context`, trackID, key, string(raw), time.Now().UTC(), string(contextJSON), itemID, itemID)
 	return err
 }
