@@ -758,15 +758,7 @@ func mustRelease(t *testing.T, s *Store, id int64) *Release {
 	return release
 }
 
-// TestRepresentativeSurvivesUnownedPick 守 mergeOneGroup 的一处回退。
-//
-// 代表 release 由优选阶梯在**整个发行组**里选（偏好实体载体），而列表的
-// 成员只包含「用户有曲目的」那几条。当阶梯选中的那一条上一首都不剩时，
-// 合并逻辑此前静默退回 members[0]——于是列表上的 RepresentativeRef
-// 与 RepresentativeRelease 给出的不是同一条，而前者正是清单读取的依据。
-//
-// 触发它只需要普通操作：CD 版与数字版各入库一首，再把 CD 版那首删掉。
-// CD 的 release 行作为清单缓存保留，阶梯仍然选它。
+// 展示代表只从仍有已入库曲目的发行选择，隐藏成员保留真实结构。
 func TestRepresentativeSurvivesUnownedPick(t *testing.T) {
 	s := openTestStore(t)
 
@@ -794,16 +786,16 @@ func TestRepresentativeSurvivesUnownedPick(t *testing.T) {
 	cdID := mk("rel-cd", "CD", 12)
 	digitalID := mk("rel-digital", "Digital Media", 12)
 
-	// 阶梯应当偏好实体载体
+	// 无已入库曲目时没有音乐库展示代表。
 	rep, err := s.RepresentativeRelease(groupID)
-	if err != nil || rep == nil {
-		t.Fatalf("选代表失败: %v", err)
+	if err != nil || rep != nil {
+		t.Fatalf("空音乐库不应选择代表: %+v %v", rep, err)
 	}
-	if rep.ID != cdID {
-		t.Fatalf("阶梯应选 CD 版, 得到 release %d", rep.ID)
+	if _, err := s.CreateTrackWithProvenance(NewTrackInput{InLibrary: false, ExistingReleaseID: &cdID, Title: "同步独占 CD"}); err != nil {
+		t.Fatal(err)
 	}
 
-	// 用户只有数字版那一首（CD 版那首已被删，release 行作为清单缓存保留）
+	// 音乐库只有数字版，CD 的同步引用仍保留。
 	if _, err := s.CreateTrackWithProvenance(NewTrackInput{
 		InLibrary: true, Title: "第一首", Album: ptr("某专辑"),
 		MatchSource: ptr("musicbrainz"), MatchRef: ptr("trk-d1"),
@@ -814,7 +806,14 @@ func TestRepresentativeSurvivesUnownedPick(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("入库失败: %v", err)
 	}
-	_ = digitalID
+	rep, err = s.RepresentativeRelease(groupID)
+	if err != nil || rep == nil || rep.ID != digitalID {
+		t.Fatal(rep, err)
+	}
+	members, err := s.ListGroupReleases(groupID)
+	if err != nil || len(members) != 2 {
+		t.Fatal("隐藏成员不应从真实结构删除", members, err)
+	}
 
 	albums, err := s.ListAlbums()
 	if err != nil {
@@ -823,8 +822,8 @@ func TestRepresentativeSurvivesUnownedPick(t *testing.T) {
 	if len(albums) != 1 {
 		t.Fatalf("专辑条目 = %d, 期望 1（同组合为一条）", len(albums))
 	}
-	if albums[0].RepresentativeRef == nil || *albums[0].RepresentativeRef != "rel-cd" {
-		t.Errorf("代表 release = %v, 期望 rel-cd（与 RepresentativeRelease 一致）",
+	if albums[0].RepresentativeRef == nil || *albums[0].RepresentativeRef != "rel-digital" {
+		t.Errorf("代表 release = %v, 期望 rel-digital（与 RepresentativeRelease 一致）",
 			albums[0].RepresentativeRef)
 	}
 	if albums[0].OwnedCount != 1 {

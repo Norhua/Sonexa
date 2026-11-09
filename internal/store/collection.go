@@ -34,6 +34,9 @@ var ErrDuplicateName = errors.New("同名条目已存在")
 //
 // 同名约束在种类内生效：同名的歌单与标签可以并存。
 func (s *Store) CreateCollection(name string, kind CollectionKind, color *string) (int64, error) {
+	if kind != KindPlaylist && kind != KindTag {
+		return 0, fmt.Errorf("不支持的普通集合种类")
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return 0, fmt.Errorf("名称不能为空")
@@ -67,7 +70,7 @@ func kindDisplay(k CollectionKind) string {
 func (s *Store) ListCollections(kind CollectionKind) ([]Collection, error) {
 	rows, err := s.db.Query(`
 		SELECT c.id, c.name, c.kind, c.color, c.sort_order,
-		       (SELECT COUNT(*) FROM collection_item ci WHERE ci.collection_id = c.id)
+		       (SELECT COUNT(*) FROM collection_item ci JOIN track t ON t.id=ci.track_id WHERE ci.collection_id=c.id AND t.in_library=1)
 		FROM collection c WHERE c.kind = ?
 		ORDER BY COALESCE(c.sort_order, 1 << 30), c.name`, string(kind))
 	if err != nil {
@@ -117,6 +120,22 @@ func (s *Store) DeleteCollection(id int64) error {
 // 已有该归属的曲目不产生重复归属。
 func (s *Store) AddToCollection(collectionID int64, trackIDs []int64) error {
 	return s.withTx(func(tx *sql.Tx) error {
+		var kind CollectionKind
+		if err := tx.QueryRow(`SELECT kind FROM collection WHERE id=?`, collectionID).Scan(&kind); err != nil {
+			return err
+		}
+		if kind != KindPlaylist && kind != KindTag {
+			return fmt.Errorf("同步歌单不是可写普通集合")
+		}
+		for _, id := range trackIDs {
+			var inLibrary bool
+			if err := tx.QueryRow(`SELECT in_library FROM track WHERE id=?`, id).Scan(&inLibrary); err != nil {
+				return fmt.Errorf("曲目不存在或未入库: %w", err)
+			}
+			if !inLibrary {
+				return fmt.Errorf("曲目未入库，请先添加到我的音乐库")
+			}
+		}
 		// 歌单需要显式顺序，追加到末尾
 		var nextPos int
 		if err := tx.QueryRow(
@@ -205,7 +224,7 @@ func (s *Store) GetCollection(id int64) (*Collection, error) {
 	var k string
 	err := s.db.QueryRow(`
 		SELECT c.id, c.name, c.kind, c.color, c.sort_order,
-		       (SELECT COUNT(*) FROM collection_item ci WHERE ci.collection_id = c.id)
+		       (SELECT COUNT(*) FROM collection_item ci JOIN track t ON t.id=ci.track_id WHERE ci.collection_id=c.id AND t.in_library=1)
 		FROM collection c WHERE c.id = ?`, id).Scan(
 		&c.ID, &c.Name, &k, &c.Color, &c.SortOrder, &c.TrackCount)
 	if errors.Is(err, sql.ErrNoRows) {

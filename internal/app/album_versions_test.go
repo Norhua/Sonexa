@@ -39,15 +39,18 @@ func TestAlbumVersionsKeepEveryCollectionAndOwnFacts(t *testing.T) {
 	if err != nil || len(albums) != 1 {
 		t.Fatalf("%+v %v", albums, err)
 	}
-	if albums[0].ReleaseID != empty || albums[0].OwnedCount != 3 || albums[0].MemberCount != 3 || albums[0].OwnedReleaseCount != 2 {
+	if albums[0].ReleaseID != sacd || albums[0].OwnedCount != 3 || albums[0].MemberCount != 2 || albums[0].OwnedReleaseCount != 2 {
 		t.Fatalf("summary: %+v", albums[0])
 	}
 	detail, err := a.GetAlbumGroupDetail(group)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.OwnedCount != 3 || len(detail.Releases) != 3 || detail.RepresentativeID != empty {
+	if detail.OwnedCount != 3 || len(detail.Releases) != 2 || detail.RepresentativeID != sacd {
 		t.Fatalf("%+v", detail)
+	}
+	if retained, err := a.store.GetRelease(empty); err != nil || retained == nil {
+		t.Fatal("展示过滤不得删除真实结构", retained, err)
 	}
 	seen := map[int64]bool{}
 	for _, r := range detail.Releases {

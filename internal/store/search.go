@@ -5,7 +5,7 @@ import "fmt"
 // SearchTrackIDs 在全文索引中检索，返回命中的曲目 id（按相关度排序）。
 //
 // 命中范围：曲名、艺术家串、专辑名、曲目级署名原串、全部关联艺术家名。
-// 未入库的清单曲目（灰色行）不在索引中，因此不会出现在结果里。
+// 索引包含所有本地实体，本入口在 LIMIT 之前限定音乐库。
 func (s *Store) SearchTrackIDs(query string, limit int) ([]int64, error) {
 	q := ftsQuery(query)
 	if q == "" {
@@ -15,7 +15,7 @@ func (s *Store) SearchTrackIDs(query string, limit int) ([]int64, error) {
 		limit = 500
 	}
 	rows, err := s.db.Query(
-		`SELECT rowid FROM track_fts WHERE track_fts MATCH ? ORDER BY rank LIMIT ?`, q, limit)
+		`SELECT track_fts.rowid FROM track_fts JOIN track t ON t.id=track_fts.rowid WHERE track_fts MATCH ? AND t.in_library=1 ORDER BY rank LIMIT ?`, q, limit)
 	if err != nil {
 		return nil, fmt.Errorf("检索失败: %w", err)
 	}

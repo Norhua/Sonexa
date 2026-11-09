@@ -328,18 +328,13 @@ func (a *App) CreateTrackManual(title string, artist, album *string) (int64, err
 	return a.commitUnconfirmedAdmission(plan)
 }
 
-// DeleteTracks 删除曲目。
-//
-// 一并清理丰富信息、歌单与标签归属、艺术家关联；不影响发行清单数据——
-// 被删的位置在专辑视图中回落为灰色行。
+// DeleteTracks 从音乐库移除；同步引用保留真实本地实体。
 func (a *App) DeleteTracks(trackIDs []int64) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	for _, id := range trackIDs {
-		if err := a.store.DeleteTrack(id); err != nil {
-			return err
-		}
+	if err := a.store.RemoveFromLibrary(trackIDs); err != nil {
+		return err
 	}
 	a.notifyLibraryChanged()
 	return nil

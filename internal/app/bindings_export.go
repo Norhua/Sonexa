@@ -30,7 +30,7 @@ type ExportResult struct {
 
 // ExportTracks 导出曲目。
 //
-// 只包含已入库的曲目——灰色行没有 track.id，本就不在待导出集合中。
+// 每个范围均在后端检查入库归属；存在本地 track ID 不代表可导出。
 // 导出产物不含任何封面图片。
 func (a *App) ExportTracks(req ExportRequest) (*ExportResult, error) {
 	if err := a.ready(); err != nil {
@@ -96,7 +96,7 @@ func (a *App) resolveExportScope(req ExportRequest) ([]export.Track, error) {
 			if e != nil {
 				return nil, e
 			}
-			if v != nil {
+			if v != nil && v.InLibrary {
 				views = append(views, *v)
 			}
 		}
@@ -111,7 +111,12 @@ func (a *App) resolveExportScope(req ExportRequest) ([]export.Track, error) {
 	}
 
 	out := make([]export.Track, 0, len(views))
+	seen := map[int64]bool{}
 	for _, v := range views {
+		if !v.InLibrary || seen[v.ID] {
+			continue
+		}
+		seen[v.ID] = true
 		t := export.Track{
 			Title: v.Title, Artist: v.Artist, Album: v.Album,
 			Year: v.Year, TrackNumber: v.TrackNumber, DiscNumber: v.DiscNumber,

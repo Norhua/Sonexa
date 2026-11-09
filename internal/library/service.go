@@ -26,15 +26,16 @@ func (systemClock) Now() time.Time { return time.Now() }
 const PlanTTL = 15 * time.Minute
 
 type Service struct {
-	editMu   sync.Mutex
-	mu       sync.Mutex
-	registry *provider.Registry
-	store    *store.Store
-	files    *covers.LibraryImages
-	clock    Clock
-	secret   [32]byte
-	plans    map[string]domain.AdmissionPlan
-	previews map[string]storedEditPreview
+	editMu    sync.Mutex
+	mu        sync.Mutex
+	registry  *provider.Registry
+	store     *store.Store
+	files     *covers.LibraryImages
+	clock     Clock
+	secret    [32]byte
+	plans     map[string]domain.AdmissionPlan
+	previews  map[string]storedEditPreview
+	additions map[string]retainedAddition
 }
 
 func New(registry *provider.Registry, st *store.Store, files *covers.LibraryImages, clock Clock) (*Service, error) {

@@ -162,7 +162,12 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 			if err != nil {
 				return Selection{}, err
 			}
-			existing = release != nil
+			if release != nil {
+				existing, err = s.store.ReleaseInLibrary(release.ID)
+				if err != nil {
+					return Selection{}, err
+				}
+			}
 		}
 		prepared = append(prepared, selectionCandidate{candidate: sc.Candidate, summary: summary, existing: existing})
 	}

@@ -46,7 +46,7 @@ CREATE TABLE release_snapshot (
  fetched_at DATETIME
 );
 CREATE TABLE track (
- id INTEGER PRIMARY KEY, release_id INTEGER REFERENCES release(id) ON DELETE SET NULL,
+ id INTEGER PRIMARY KEY AUTOINCREMENT, release_id INTEGER REFERENCES release(id) ON DELETE SET NULL,
  match_source TEXT, match_ref TEXT, matched_at DATETIME,
  revision INTEGER NOT NULL DEFAULT 1,
  enrich_state TEXT NOT NULL DEFAULT 'skipped', enrich_attempts INTEGER NOT NULL DEFAULT 0,

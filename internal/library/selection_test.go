@@ -8,6 +8,7 @@ import (
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/store"
 )
 
 type summaryProvider struct {
@@ -62,6 +63,20 @@ func TestAutomaticSelectionPrioritizesOwnedReleaseAndKnownTotal(t *testing.T) {
 		t.Fatalf("unique new version must review: %+v %v", selection, err)
 	}
 }
+func TestAutomaticSelectionDoesNotPreferSyncOnlyRelease(t *testing.T) {
+	s, st, _ := newTestService(t)
+	p := &summaryProvider{totals: map[string]int{"a": 10, "b": 20}}
+	s.registry.Register(p)
+	source, release, group := "test", "a", "group"
+	if _, err := st.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: false, Title: "Saved", Album: ptrField(domain.Known("Album")), AlbumCredit: ptrField(domain.Known("Artist")), MatchSource: &source, MatchRef: ptrField(domain.Known("saved")), Release: &store.ReleaseInput{Provider: &source, ProviderRef: &release, ReleaseGroupRef: &group}}); err != nil {
+		t.Fatal(err)
+	}
+	selection, err := s.SelectCandidate(context.Background(), high(candidate("a", "a1", nil), candidate("b", "b1", nil)), 0)
+	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "b1" || selection.Reason != ReasonNewRelease || p.calls != 2 {
+		t.Fatal("hidden release became ownership preference or bypassed admission", selection, err, p.calls)
+	}
+}
+
 func TestAutomaticSelectionAmbiguityUnknownTotalAndWorldTie(t *testing.T) {
 	s, _, _ := newTestService(t)
 	p := &summaryProvider{}

@@ -102,7 +102,7 @@ func (a *App) GetAlbumGroupDetail(groupID int64) (*AlbumGroupDetail, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
-	members, err := a.store.ListGroupReleases(groupID)
+	members, err := a.store.ListLibraryGroupReleases(groupID)
 	if err != nil {
 		return nil, err
 	}

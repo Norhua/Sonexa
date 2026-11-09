@@ -188,7 +188,7 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 		impact.CreatesRelease = impact.TargetReleaseID == 0
 	}
 	if impact.TargetReleaseID != 0 && impact.TargetReleaseID != source.ReleaseID {
-		tracks, err := s.store.ListTracks(store.TrackFilter{ReleaseID: impact.TargetReleaseID})
+		tracks, err := s.store.ReleaseStructureTracks(impact.TargetReleaseID)
 		if err != nil {
 			return nil, err
 		}

@@ -99,29 +99,31 @@ func (s *Store) UpdateTrackFields(id int64, title, credit *string, byUser bool) 
 func (s *Store) DeleteTrack(id int64) error {
 	s.fileMu.Lock()
 	defer s.fileMu.Unlock()
-	err := s.withTx(func(tx *sql.Tx) error {
-		var releaseID *int64
-		if err := tx.QueryRow("SELECT release_id FROM track WHERE id=?", id).Scan(&releaseID); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil
-			}
-			return err
-		}
-		if err := deleteFTS(tx, id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec("DELETE FROM track WHERE id=?", id); err != nil {
-			return fmt.Errorf("删除曲目失败: %w", err)
-		}
-		if releaseID != nil {
-			return deleteOrphanReleaseTx(tx, *releaseID)
-		}
-		return nil
-	})
+	err := s.withTx(func(tx *sql.Tx) error { return deleteTrackTx(tx, id) })
 	if err == nil {
 		_ = s.collectLyrics()
 	}
 	return err
+}
+
+func deleteTrackTx(tx *sql.Tx, id int64) error {
+	var releaseID *int64
+	if err := tx.QueryRow(`SELECT release_id FROM track WHERE id=?`, id).Scan(&releaseID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if err := deleteFTS(tx, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM track WHERE id=?`, id); err != nil {
+		return fmt.Errorf("删除曲目失败: %w", err)
+	}
+	if releaseID != nil {
+		return deleteOrphanReleaseTx(tx, *releaseID)
+	}
+	return nil
 }
 
 // withTx 在事务中执行 fn，出错时回滚。

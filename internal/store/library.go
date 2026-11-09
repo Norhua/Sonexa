@@ -168,7 +168,7 @@ func (s *Store) CountTracks(f TrackFilter) (int, error) {
 func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, error) {
 	var (
 		joins  []string
-		wheres []string
+		wheres = []string{"t.in_library=1"}
 		args   []any
 	)
 
@@ -213,22 +213,11 @@ func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, e
 		args = append(args, f.ReleaseGroupID)
 	}
 
-	// 快速搜索走 FTS
-	if q := strings.TrimSpace(f.Query); q != "" {
-		ids, err := s.SearchTrackIDs(q, 2000)
-		if err != nil {
-			return "", nil, err
-		}
-		if len(ids) == 0 {
-			wheres = append(wheres, "1 = 0")
-		} else {
-			placeholders := make([]string, len(ids))
-			for i, id := range ids {
-				placeholders[i] = "?"
-				args = append(args, id)
-			}
-			wheres = append(wheres, "t.id IN ("+strings.Join(placeholders, ",")+")")
-		}
+	// Apply all scopes in SQL before LIMIT; external matches cannot consume
+	// the current view's result budget.
+	if q := ftsQuery(f.Query); q != "" {
+		wheres = append(wheres, "t.id IN (SELECT rowid FROM track_fts WHERE track_fts MATCH ?)")
+		args = append(args, q)
 	}
 
 	// 高级搜索的三个文本条件：留空的不参与筛选
@@ -269,7 +258,7 @@ func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, e
 	if !countOnly {
 		switch {
 		case f.RecentOnly:
-			sb.WriteString(" ORDER BY t.created_at DESC")
+			sb.WriteString(" ORDER BY t.library_added_at DESC,t.id DESC")
 		case f.CollectionID != 0:
 			// 歌单维护显式顺序
 			sb.WriteString(" ORDER BY (SELECT ci2.position FROM collection_item ci2" +

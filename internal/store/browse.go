@@ -6,7 +6,7 @@ import (
 
 // ReleaseRecordingRefs 提供在库曲目的录音证据，供专辑合并展示使用。
 func (s *Store) ReleaseRecordingRefs(releaseID int64) (map[int64]string, error) {
-	rows, err := s.db.Query("SELECT id,recording_ref FROM track_read WHERE release_id=? AND recording_ref IS NOT NULL", releaseID)
+	rows, err := s.db.Query("SELECT id,recording_ref FROM track_read WHERE release_id=? AND in_library=1 AND recording_ref IS NOT NULL", releaseID)
 	if err != nil {
 		return nil, err
 	}
@@ -46,9 +46,9 @@ type ArtistListItem struct {
 // 仍展示全部角色（见 buildTrackQuery 的 credited 分面），列表成员
 // 与视图内容是两件事。
 const artistListMembers = `
-	SELECT track_id, artist_id FROM track_credit
+	SELECT tc.track_id,tc.artist_id FROM track_credit tc JOIN track t ON t.id=tc.track_id WHERE t.in_library=1
 	UNION
-	SELECT track_id, artist_id FROM track_artist WHERE role = 'vocal'`
+	SELECT ta.track_id,ta.artist_id FROM track_artist ta JOIN track t ON t.id=ta.track_id WHERE ta.role='vocal' AND t.in_library=1`
 
 // ListArtists 列出应出现在艺术家列表中的艺术家，含曲目数。
 func (s *Store) ListArtists() ([]ArtistListItem, error) {
@@ -116,20 +116,20 @@ func (s *Store) RoleFacets(artistID int64) ([]RoleFacet, error) {
 			SELECT track_id FROM track_credit WHERE artist_id = ?
 			UNION
 			SELECT track_id FROM track_artist WHERE artist_id = ?
-		)`, artistID, artistID).Scan(&total); err != nil {
+		) x JOIN track t ON t.id=x.track_id WHERE t.in_library=1`, artistID, artistID).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	var creditedCount int
 	if err := s.db.QueryRow(
-		`SELECT COUNT(DISTINCT track_id) FROM track_credit WHERE artist_id = ?`,
+		`SELECT COUNT(DISTINCT tc.track_id) FROM track_credit tc JOIN track t ON t.id=tc.track_id WHERE tc.artist_id=? AND t.in_library=1`,
 		artistID).Scan(&creditedCount); err != nil {
 		return nil, err
 	}
 
 	rows, err := s.db.Query(`
-		SELECT role, COUNT(DISTINCT track_id) FROM track_artist
-		WHERE artist_id = ? GROUP BY role`, artistID)
+		SELECT ta.role, COUNT(DISTINCT ta.track_id) FROM track_artist ta JOIN track t ON t.id=ta.track_id
+		WHERE ta.artist_id=? AND t.in_library=1 GROUP BY ta.role`, artistID)
 	if err != nil {
 		return nil, err
 	}
@@ -235,9 +235,9 @@ func (a AlbumListItem) CountLabel() string {
 // ListAlbums 按本地组统计收藏，展示代表只提供摘要图片和发行事实。
 func (s *Store) ListAlbums() ([]AlbumListItem, error) {
 	rows, err := s.db.Query(`SELECT g.id, COALESCE(c.title,''), c.credit,
- COUNT(t.id), COUNT(DISTINCT r.id), COUNT(DISTINCT CASE WHEN t.id IS NOT NULL THEN r.id END)
+ COUNT(t.id), COUNT(DISTINCT CASE WHEN t.id IS NOT NULL THEN r.id END), COUNT(DISTINCT CASE WHEN t.id IS NOT NULL THEN r.id END)
  FROM release_group g JOIN release_group_current c ON c.group_id=g.id
- JOIN release r ON r.release_group_id=g.id LEFT JOIN track t ON t.release_id=r.id
+ JOIN release r ON r.release_group_id=g.id LEFT JOIN track t ON t.release_id=r.id AND t.in_library=1
  GROUP BY g.id HAVING COUNT(t.id)>0 ORDER BY c.title,g.id`)
 	if err != nil {
 		return nil, err
@@ -279,6 +279,29 @@ func (s *Store) ListAlbums() ([]AlbumListItem, error) {
 	return out, nil
 }
 
+func (s *Store) ReleaseInLibrary(releaseID int64) (bool, error) {
+	var owned bool
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM track WHERE release_id=? AND in_library=1)`, releaseID).Scan(&owned)
+	return owned, err
+}
+
+func (s *Store) ListLibraryGroupReleases(groupID int64) ([]Release, error) {
+	rows, err := s.db.Query("SELECT "+releaseColumns+" FROM release_read r WHERE r.release_group_id=? AND EXISTS(SELECT 1 FROM track WHERE release_id=r.id AND in_library=1) ORDER BY r.id", groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Release{}
+	for rows.Next() {
+		r, err := scanRelease(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
+}
+
 // ListGroupReleases 返回所有已保存成员，包括暂无收藏的上游发行。
 func (s *Store) ListGroupReleases(groupID int64) ([]Release, error) {
 	rows, err := s.db.Query("SELECT "+releaseColumns+" FROM release_read r WHERE r.release_group_id=? ORDER BY r.id", groupID)
@@ -305,7 +328,7 @@ func (s *Store) ListAlbumsForTag(tagID int64) ([]AlbumListItem, error) {
 	}
 	rows, err := s.db.Query(`SELECT DISTINCT r.id, COALESCE(r.release_group_id, 0)
 		FROM release_read r JOIN track_read t ON t.release_id = r.id
-		JOIN collection_item ci ON ci.track_id = t.id WHERE ci.collection_id = ?`, tagID)
+		JOIN collection_item ci ON ci.track_id = t.id WHERE ci.collection_id = ? AND t.in_library=1`, tagID)
 	if err != nil {
 		return nil, err
 	}

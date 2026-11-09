@@ -115,6 +115,11 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		}
 		// 精确身份或其他来源的已有收藏：事务内使用相同证据结束导入，不修改绑定。
 		if baseline.ExistingTrackID != 0 {
+			if plan.Seed.ImportItemID == 0 {
+				if err := setLibraryMembershipTx(tx, baseline.ExistingTrackID, true, time.Now().UTC()); err != nil {
+					return err
+				}
+			}
 			var releaseID, groupID *int64
 			if err := tx.QueryRow("SELECT t.release_id,r.release_group_id FROM track t LEFT JOIN release r ON r.id=t.release_id WHERE t.id=?", baseline.ExistingTrackID).Scan(&releaseID, &groupID); err != nil {
 				return err

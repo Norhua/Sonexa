@@ -93,6 +93,9 @@ func TestEditSaveReusesTargetWithoutOverwritingUserValues(t *testing.T) {
 	s, st, _ := newTestService(t)
 	source := commit(t, s, prepare(t, s, seed("source", "source-song", "g", "Album", "Artist")), true)
 	target := commit(t, s, prepare(t, s, seed("target", "owned-song", "g", "Album", "Artist")), true)
+	if _, err := st.DB().Exec(`UPDATE track SET in_library=0 WHERE id=?`, target.TrackID); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.UpdateReleaseFields(target.ReleaseID, map[string]string{"title": "用户标题"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +108,10 @@ func TestEditSaveReusesTargetWithoutOverwritingUserValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	draft := domain.EditDraft{TrackID: source.TrackID, Revisions: before.Revisions, BindingAction: "set", PreviewID: preview.ID, Mappings: []domain.EditMapping{{TrackID: source.TrackID, Selected: true, TargetRef: "new-song"}}, Fields: domain.EditFields{"release.title": {State: domain.Value, ValueJSON: `"不应覆盖"`}}}
+	impact, err := s.PreviewEditSave(context.Background(), draft)
+	if err != nil || len(impact.TargetTrackIDs) != 1 || impact.TargetTrackIDs[0] != target.TrackID {
+		t.Fatal("hidden target omitted from edit impact", impact, err)
+	}
 	plan, err := s.PlanEditSave(context.Background(), draft)
 	if err != nil {
 		t.Fatal(err)

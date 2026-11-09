@@ -45,7 +45,16 @@
 Track/TrackView/详情分别投影两种时间；跨前端时间为 RFC3339，未有首次时间的 AddedAt 为空。
 
 `track_read` 与 FTS 内容保留所有本地 track，身份判重、详情、编辑、补全和真实结构引用不得按音乐库过滤。
-列表/计数/搜索/导出和引用感知删除的音乐库范围将在任务 8 集中接入，当前还不能将同步存储暴露为可用 UI。
+音乐库列表/计数/最近添加/艺术家与专辑展示均限定 in_library；`ListSyncedTracks` 专用查询保留 imported 出现及缺席项。
+FTS 在 SQL 查询内施加作用域后再限量，内部身份与结构读模型不复用音乐库过滤。
+`ReleaseStructureTracks` 专用于编辑目标影响，`ListLibraryGroupReleases` 和展示代表仅用于音乐库。
+
+显式批量入库计划按 track ID 去重，提交重读当前状态：并发已入库计 already，物理删除为 stale 并整批不写入。
+track ID 不复用，旧计划不会命中新实体；归属操作不重建曲目或重置首次时间。
+普通集合后端逐项验证已入库，非法混合整批拒绝；既有所有导出范围同样排除未入库曲目。
+`RemoveFromLibrary` 清理普通集合但保护同步引用；`DeleteSyncedPlaylist` 撤销自身需求并仅回收无剩余引用的未入库曲目。
+发行 orphan 查询始终检查全 track，歌词按真实文件引用回收，仍有引用的封面采用/文件记录保留。
+这些后端入口已完成，完整同步 UI 和 App 生命周期接入仍待后续任务。
 
 ## 差异与确认
 
