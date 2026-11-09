@@ -1,4 +1,4 @@
-# Dependency lock draft; Python artifact hash and reproducibility validation are pending.
+# Hash-locked build/runtime dependencies; CPython artifacts: python.lock.json.
 # Generated with uv 0.13.5, CPython 3.12.13, --universal --generate-hashes.
 # Input: internal/provider/spotify/sidecar/requirements.in; index: https://pypi.org/simple
 altgraph==0.17.5 \

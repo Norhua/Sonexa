@@ -1,0 +1,28 @@
+{
+  "playlistRef": "0000000000000000000001",
+  "name": "离线 歌单",
+  "trackTemplate": {
+    "__typename": "Track",
+    "uri": "spotify:track:0000000000000000000001",
+    "name": "测试歌曲",
+    "trackDuration": {"totalMilliseconds": 123456},
+    "artists": {"items": [
+      {"uri": "spotify:artist:0000000000000000000001", "profile": {"name": "第一署名"}},
+      {"uri": "spotify:artist:0000000000000000000002", "profile": {"name": "第二署名"}}
+    ]},
+    "albumOfTrack": {"uri": "spotify:album:0000000000000000000001", "name": "测试专辑"}
+  },
+  "cases": {
+    "large": {"count": 205},
+    "excluded": {"count": 103, "types": {"1": "Episode", "100": "LocalTrack"}},
+    "missing": {"count": 1, "missing": ["name", "artists", "albumOfTrack", "trackDuration"]},
+    "duplicate": {"count": 3, "refs": [1, 2, 1]},
+    "empty": {"count": 0},
+    "truncated": {"count": 205, "truncateAt": 100},
+    "changedTotal": {"count": 205, "totalDeltaAt100": 1},
+    "repeatPage": {"count": 205, "repeatPage": true},
+    "unknown": {"count": 2, "types": {"1": "Unknown"}},
+    "missingIdentity": {"count": 1, "missing": ["uri"]},
+    "embedFallback": {"count": 205, "queryError": true}
+  }
+}

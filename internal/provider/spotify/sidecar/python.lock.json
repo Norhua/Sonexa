@@ -1,0 +1,14 @@
+{
+  "python": "3.12.13",
+  "distribution": "astral-sh/python-build-standalone",
+  "build": "20260807",
+  "checksumSource": "https://releases.astral.sh/github/python-build-standalone/releases/download/20260807/SHA256SUMS",
+  "targets": {
+    "darwin-arm64": {
+      "url": "https://releases.astral.sh/github/python-build-standalone/releases/download/20260807/cpython-3.12.13%2B20260807-aarch64-apple-darwin-install_only_stripped.tar.gz",
+      "sha256": "25baa97c65b3f0aa90e21131b4f9e80aef8899e8144006db8a9d2c1ab9e807e3",
+      "metadataUrl": "https://releases.astral.sh/github/python-build-standalone/releases/download/20260807/cpython-3.12.13%2B20260807-aarch64-apple-darwin-pgo%2Blto-full.tar.zst",
+      "metadataSha256": "4997e7fc7b2c765d24541e21c56d371b984472f7011d4957c7564358ac217998"
+    }
+  }
+}

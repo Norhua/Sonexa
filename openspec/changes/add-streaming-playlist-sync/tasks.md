@@ -1,12 +1,12 @@
 # Tasks
 
-本清单仅为实施计划，全部未开始。行为见本变更 `specs/`，技术取舍与默认值见 `design.md`。每组随实现提交对应测试和使用/架构说明，不把在线、打包或原生验证视作离线测试的隐含结果。
+本清单跟踪实施进度，已完成项按复选框标示。行为见本变更 `specs/`，技术取舍与默认值见 `design.md`。每组随实现提交对应测试和使用/架构说明，不把在线、打包或原生验证视作离线测试的隐含结果。
 
 ## 1. Spotify 依赖与随包方案前置验证
 
-- [ ] 1.1 获取并检查 SpotifyScraper v3 实际依赖源码，锁定 Python、SpotifyScraper、PyInstaller 及传递依赖的精确版本与哈希；交付锁文件、许可证清单及 `internal/provider/spotify/sidecar/README.md`，在隔离构建环境验证锁定安装可复现，不沿用 demo 的宽版本范围。
-- [ ] 1.2 为选定版本验证完整分页、原始位置计数、普通 Track 过滤及局部 transport 扩展点；用超过 100 项、非歌曲、缺字段和 embed 截断 fixture 运行离线验证，记录所需私有 API/兼容补丁及升级风险；不能保证完整性或受控传输时停止并报告阻塞，不回退外部 Python/不受控直连。
-- [ ] 1.3 建立最小 one-folder 冻结 helper 和离线 self-test，在移除 Python/PATH 工具依赖的测试环境启动、解析 fixture、输出版本握手；验证中文/空格安装路径及无运行时下载，并记录当前已验证系统/架构，不冒称全平台完成。
+- [x] 1.1 获取并检查 SpotifyScraper v3 实际依赖源码，锁定 Python、SpotifyScraper、PyInstaller 及传递依赖的精确版本与哈希；交付锁文件、许可证清单及 `internal/provider/spotify/sidecar/README.md`，在隔离构建环境验证锁定安装可复现，不沿用 demo 的宽版本范围。
+- [x] 1.2 为选定版本验证完整分页、原始位置计数、普通 Track 过滤及局部 transport 扩展点；用超过 100 项、非歌曲、缺字段和 embed 截断 fixture 运行离线验证，记录所需私有 API/兼容补丁及升级风险；不能保证完整性或受控传输时停止并报告阻塞，不回退外部 Python/不受控直连。
+- [x] 1.3 建立最小 one-folder 冻结 helper 和离线 self-test，在移除 Python/PATH 工具依赖的测试环境启动、解析 fixture、输出版本握手；验证中文/空格安装路径及无运行时下载，并记录当前已验证系统/架构，不冒称全平台完成。
 
 ## 2. 歌单消费契约与单能力装配
 

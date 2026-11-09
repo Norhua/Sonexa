@@ -1,91 +1,93 @@
-# Spotify 辅助程序：前置验证记录
+# Spotify 辅助程序
 
-**状态：仅依赖锁定草案与源码审计，尚未提供可运行 helper。**
-本目录对应 `add-streaming-playlist-sync` 的任务 1.1–1.3；三项均未完成，不能据此声明 Spotify 支持。
+**状态：已通过前置离线验证；尚未接入应用，不能宣称 Sonexa 已支持 Spotify。**
 
-## 当前文件
+SpotifyScraper `3.9.2` 通过局部适配提供原始分页读取/解析，helper 使用 PyInstaller `6.22.3` one-folder 冻结，携带 CPython `3.12.13`（PBS `20260807`）。用户运行时不需要 Python、pip、uv 或下载。包版本/哈希见 `requirements.lock`，解释器归档及发布校验来源见 `python.lock.json`，许可证见 [LICENSES.md](LICENSES.md)。
 
-- `requirements.in`：候选运行/构建依赖，不启用浏览器、登录、媒体、CLI 或 MCP extras。
-- `requirements.lock`：由 uv 0.13.5 生成的精确版本与 SHA-256，包含平台条件依赖。
-  尚未在隔离环境完成两次锁定安装及比对，**不是已验证的发行锁**。
-- 第三方 wheel、解包源码和隔离 Python 位于 Git 已忽略的 `tmp/_scratch/spotify-audit/`，不随代码提交。
+## 目录与边界
 
-## 依赖与来源
+- `adapter.py`：锁定库版本的分页/字段适配与完整性核对。
+- `protocol.py`：大端 uint32 长度 + UTF-8 JSON 帧；只通过 stdio 请求 Go 代为 HTTP，不实现直连。
+- `helper.py`：版本握手、一次读取和 `--self-test`。外部输入为帧中数据，不作为命令/文件路径。
+- `tests/`：合成原始响应 fixture、HTTP 对端替身、分页/协议保护测试。
+- `collect_licenses.py / freeze.py / verify_frozen.py`：仅开发/构建使用；产物统一位于 Git 忽略的 `build/spotify-helper/`。
 
-| 组件 | 本次选定版本 | 已获得的证据 |
-| --- | --- | --- |
-| CPython | 3.12.13，python-build-standalone 构建 20260807 | uv 成功安装 Darwin arm64 构建；归档 SHA-256 尚未独立取得和锁定 |
-| SpotifyScraper | 3.9.2 | 从 PyPI 获取 wheel 并核验 SHA-256，已阅读歌单读取、分页、解析、匿名会话和传输相关源码 |
-| PyInstaller | 6.22.3 | PyPI 元数据与锁文件；未安装或冻结验证 |
-| 传递依赖 | 见 `requirements.lock` | 解析得到 16 个包（含平台条件）；未完成逐包源码/许可证核对 |
+协议版本为 1，消息携带 `requestId / kind`；HTTP 交换另有递增 sequence。响应 body 使用 Base64，status / headers 单独传递；错误为有限 code 和脱敏信息。当前限制：单帧/最终结果 32 MiB，单响应 8 MiB，累计响应 256 MiB，最多 500 次请求、200 页、20,000 原始项。Go 仍须独立实施超时、每次实际发送计数、允许目标、动态门禁、共享桶和进程取消，Python 检查不能代替任务 3.5–4.2 的生产保护。
 
-SpotifyScraper wheel：
+`helper.py` 的 audit hook 拒绝 Python socket 出网及外部进程启动。这是防误调用的附加保护，不是针对恶意 native 扩展的完整沙箱；本机冻结验证另用 OS sandbox 禁网并禁止访问外部解释器。
 
-```text
-https://files.pythonhosted.org/packages/c4/95/22a70cadd41f73b95988a5818127ee80c9b83129418e960d089a712304a0/spotifyscraper-3.9.2-py3-none-any.whl
-sha256: 8a83af7f6569864f409e406110988adc58ae6d433b9527b4a25be5dfebcd148c
+## 可复现准备与分组测试
+
+以下在仓库根目录执行，仅针对 **macOS arm64**。开发机需要 uv、Python 3.14+（只用于读取 zstd 元数据归档；不会打入 helper）及 Xcode 命令行工具。其他目标必须补充本平台 Python 归档锁和验证，不使用跨平台冻结或 PATH 解释器回退。
+
+### 1. 获取与校验 Python
+
+```bash
+mkdir -p tmp/_scratch/spotify-audit
+python3 internal/provider/spotify/sidecar/prepare_python.py tmp/_scratch/spotify-audit
 ```
 
-上游仓库：[AliAkhtari78/SpotifyScraper](https://github.com/AliAkhtari78/SpotifyScraper)。本次审计对象是已校验的发布 wheel，不是未经核对的仓库分支。
+该准备脚本只下载锁中的 HTTPS 构建资源，先核对归档 SHA-256 再解包，保留元数据/许可证。最初 urllib 请求返回 403 的阻塞已解除：使用构建下载 User-Agent 后取得归档，摘要与发布方 `SHA256SUMS` 一致；没有禁用 TLS 或使用其他未经校验镜像。
 
-### 许可证核对进度
+### 2. 锁定下载与两次离线安装
 
-这不是完整发行许可证清单，不可直接用于发布：
-
-- SpotifyScraper：wheel 中 `spotifyscraper-3.9.2.dist-info/licenses/LICENSE` 为 MIT，版权为 `Copyright (c) 2025 Ali Akhtari`，已阅读完整许可。
-- PyInstaller：PyPI 元数据声明 GPLv2-or-later，附允许分发非自由程序的特殊例外；仍须核对安装包内完整许可和例外文本。
-- CPython、冻结时收集的 native 库以及所有传递依赖：待核对并随实际发行产物收录许可，不以顶层包许可替代。
-
-## SpotifyScraper 3.9.2 源码审计
-
-以下结论来自源码，**不是离线 fixture 或真实来源验收结果**。
-
-### 传输扩展点
-
-`SpotifyClient(transport=...)` 有公开注入点，`http/transport.py` 中的同步 `Transport` 只要求 `get(url, headers=...)` 与 `close()`。
-响应提供 `status_code / headers / text / content / json()`。
-注入 transport 时不会建立默认 `HttpxTransport`，且客户端不负责关闭注入的 transport。
-
-已检查的歌单入口中，embed、pathfinder 分页和匿名 token provider 均使用该 transport。
-后续应实现局部 stdio bridge，由 Go 做真实 HTTP、允许目标、门禁、取消、预算、重试与重定向检查。
-这只证明存在可用扩展点，尚不能代替 socket 拦截测试证明无隐藏直连。
-
-默认 `HttpxTransport` 会跟随重定向并对 403/429 重试，不可用于 Sonexa 生产读取。
-`_fetch_union` 遇 `TokenError` 会刷新 token 再请求，匿名 provider 还含默认 bootstrap track。
-适配时须在 bridge 对鉴权/受限响应立即停止，不能让库的刷新分支绕过限制，也不能自动读取默认样例歌曲。
-
-### 完整性风险
-
-- `get_playlist()` 默认 `max_tracks=100`；传入 `None` 才尝试继续分页。
-- `_paginate` 正确按原始页长推进 offset，但吞掉分页错误、记录警告并返回已取得部分；不重验每页 total 或重复页。
-- `_get_entity` 对 `ParsingError / NetworkError` 降级为 embed；`parse_playlist_embed` 不提供可核对的总数。
-- `parse_playlist_tracks_page` 忽略缺失 `itemV2/data` 和全部非 `Track` 项，不能单从输出歌曲数推断覆盖完整。
-- `_playlist_track` 要求歌曲 URI 与名称，缺少时长则输出 `0`；部分专辑对象缺 URI/名称也会解析失败。因此不能直接把库模型的 `0` 当已知时长，或把基础字段缺失当成员消失。
-
-后续局部适配需要用库读取/解析扩展点保留原始页，独立核对身份、稳定总数、原始位置、明确排除项和重复页；禁止把截断或 embed 降级结果作为可提交快照。
-可能用到 `_fetch_next_data / _fetch_union` 等私有方法，升级必须重新审计并运行契约 fixture。
-基础字段兼容处理仍须保留缺失状态、使用同一稳定 track 补取，不复制 demo 的 CSV、默认歌单或另一套业务解析器。
-
-## 本轮阻塞与验证范围
-
-执行环境为 macOS / arm64。未访问真实 Spotify 或 QQ 歌单。
-
-已执行：
-
-1. 获取 PyPI 发布元数据，下载 SpotifyScraper wheel 并比对发布 SHA-256。
-2. 用 `uv --no-config -v python install cpython-3.12.13-macos-aarch64-none --install-dir <隔离目录> --no-bin --no-registry` 成功准备构建用 Python；未修改用户默认解释器。
-3. 用该 Python 执行 `uv --no-config pip compile ... --universal --generate-hashes --index-url https://pypi.org/simple`，生成包锁草案。
-
-阻塞：尝试从 uv 下载日志给出的同一地址获取归档以记录 SHA-256，返回 **HTTP 403 Forbidden**：
-
-```text
-https://releases.astral.sh/github/python-build-standalone/releases/download/20260807/cpython-3.12.13%2B20260807-aarch64-apple-darwin-install_only_stripped.tar.gz
+```bash
+P="$PWD/tmp/_scratch/spotify-audit/python/bin/python3.12"
+S=internal/provider/spotify/sidecar
+"$P" -I -m pip --isolated download --require-hashes --only-binary=:all: \
+  --index-url https://pypi.org/simple -r "$S/requirements.lock" \
+  -d tmp/_scratch/spotify-audit/wheelhouse
+for suffix in a b; do
+  uv --no-config venv --python "$P" "tmp/_scratch/spotify-audit/venv-$suffix"
+  uv --no-config pip sync --python "tmp/_scratch/spotify-audit/venv-$suffix/bin/python" \
+    --no-index --find-links tmp/_scratch/spotify-audit/wheelhouse \
+    --require-hashes --no-build "$S/requirements.lock"
+done
+uv --no-config pip check --python tmp/_scratch/spotify-audit/venv-a/bin/python
 ```
 
-此前尝试获取 uv 的 GitHub 构建元数据时返回 HTTP 404。当前不能断言这些错误的具体原因；uv 下载成功也不能替代可提交的解释器归档锁与复现证据。
-未把本机已安装文件的哈希冒充发行归档哈希，没有关闭 TLS 校验或回退到用户 Python 作为运行时方案。
+实际验证的两次安装各为 14 包，`pip freeze` 相同；比对 site-packages 中 1,945 个文件的 SHA-256 相同（排除路径相关 RECORD、uv_cache.json 和生成字节码）。这证明依赖安装载荷一致，不承诺平台签名后的整个冻结目录逐字节可复现。
 
-尚未执行：锁定安装复现、完整许可证收集、分页/缺字段/过滤/截断 fixture、socket 拦截、one-folder 冻结、无外部 Python 自检、中文空格路径自检。
-**没有任何系统/架构通过 helper 验收**；macOS arm64 只是本轮准备环境，不代表已支持平台。
+### 3. 许可证、单测与冻结
 
-继续前须解决解释器归档及可信哈希的获取，或由操作者提供可核验的归档/元数据；之后按任务分组实现和测试。当前阻塞不是 SpotifyScraper 方案已被证明不可行，也不允许绕过前置验证直接实现并发布后续业务。
+```bash
+V="$PWD/tmp/_scratch/spotify-audit/venv-a/bin/python"
+S=internal/provider/spotify/sidecar
+"$V" -I "$S/collect_licenses.py" \
+  --wheelhouse tmp/_scratch/spotify-audit/wheelhouse \
+  --python-metadata tmp/_scratch/spotify-audit/python-metadata/python \
+  --output build/spotify-helper/licenses
+"$V" -I -c 'import sys,unittest; sys.path.insert(0,"internal/provider/spotify/sidecar"); r=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover("internal/provider/spotify/sidecar/tests",top_level_dir="internal/provider/spotify/sidecar")); sys.exit(not r.wasSuccessful())'
+"$V" -I "$S/freeze.py"
+"$V" "$S/verify_frozen.py" build/spotify-helper/dist/spotify-helper
+```
+
+许可证收集保留所下载 wheel（包括内嵌依赖）的许可，不虚构当前平台没有安装的包。Windows 条件包的版本/许可已另行核对，发行时须在对应原生环境重新收集。
+
+产物位于 `build/spotify-helper/dist/spotify-helper/`，约 22 MiB；整个目录必须作为单元分发，不能只复制主可执行文件。`manifest.json` 包含文件摘要、平台和版本，后续签名改变文件后必须重新生成摘要。当前仅做 ad-hoc 签名校验，尚无发布签名、公证、Wails bundle 或安装器装配。
+
+## 锁定库源码审计与兼容范围
+
+审计的是 PyPI wheel（SHA-256 `8a83af7f6569864f409e406110988adc58ae6d433b9527b4a25be5dfebcd148c`），来源 [SpotifyScraper](https://github.com/AliAkhtari78/SpotifyScraper)。
+
+- 公开 `SpotifyClient(transport=...)` 覆盖 embed、pathfinder、分页和匿名 token provider；注入时不创建默认 HttpxTransport。库默认传输的 403/429 重试与自动重定向不使用。
+- 不调用 `get_playlist()`：它默认 100 项，`_paginate` 会吞掉中途错误并返回部分结果，`_get_entity` 会降级为不带可靠总数的 embed。
+- 当前局部适配使用 `_fetch_next_data / _fetch_union` 私有扩展点，逐页读取；每页重验歌单 URI、总数、原始页长、重复页与名称一致性。embed 只取得同歌单匿名会话，不作为成员快照降级。
+- `parse_playlist_tracks_page` 的普通 Track 解析复用，原始位置在过滤前核对。仅明确 Episode/LocalTrack 可报告排除；未知类型、缺歌曲身份或无法解释的过滤使整轮失败。
+- 库模型强制 name/album 字符串并把缺时长写 0；适配仅在传给库的副本中使用空字符串兼容，交付时按原始缺失恢复 null，不修改上游数据，不伪造歌曲 ID。详情只补同一稳定 track 的缺字段，已有值不覆盖；详情仍缺字段可为 null。
+- `_fetch_union` 的 TokenError 可触发默认 bootstrap track；bridge 在 HTTP 401/403/429 或 GraphQL errors 时先终止，不进入该刷新分支，不读取默认样例，不请求登录/Cookie。
+- 条目键为 track Ref + 出现序号；重排不换身份。相同副本之间没有可靠原生条目 ID，不能辨认具体删了哪个副本。完全重复的原始页按不完整拒绝，不猜测其真实性。
+
+升级任一锁定组件时须重新审计传输调用、默认回退、过滤/缺失语义、私有扩展点和许可证，再跑同组测试；不能只修改版本号。
+
+## 本轮证据与未完成边界
+
+2026-11-09，macOS 27.2 / arm64：
+
+- 两次离线 hash-locked 安装一致，依赖完整性检查通过。
+- 13 项单测通过：205 项三页、非歌曲原始位置、缺字段及同身份补取、重复出现、明确空列表、截断/重复页/变化总数/未知身份/embed 降级拒绝、鉴权限制无重试、错误帧/请求标识。
+- 单测拦截 socket connect 与 DNS；生产 helper 另有禁止 socket/外部进程的 audit hook。
+- one-folder 冻结及版本握手通过；OS sandbox 禁止网络、构建目录、Nix/uv 外部 Python，PATH 指向不存在目录，HOME 为空，Python 注入变量无效，中文/空格路径正常。自检读取 205 项，产物文件无改变；主 helper 与解释器 ad-hoc 签名校验通过。
+- 初次读取 zstd 归档时系统 tar 缺 zstd，改用开发机 Python 3.14 的标准库仅解包构建元数据；helper 本身没有该依赖。
+
+未请求真实 QQ/Spotify 歌单，未完成生产 Go transport、进程生命周期、安装包或原生 UI 验收。Windows/Linux/其他 macOS 架构未验证；当前结果只解除本机前置可行性阻塞，不代表功能已交付。

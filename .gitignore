@@ -15,6 +15,10 @@ Desktop.ini
 
 # Wails / Go 构建产物；build/ 中图标和打包配置仍需跟踪
 /build/bin/
+/build/spotify-helper/
+# Python 辅助程序构建/测试缓存，冻结产物统一放 build/spotify-helper
+__pycache__/
+*.pyc
 /sonexa
 /sonexa.exe
 *.test
