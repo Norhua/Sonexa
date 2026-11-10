@@ -4,7 +4,7 @@
 
 技术栈：Wails v2 + Go + Vue 3 + TypeScript + Tailwind CSS v4 + Volt + Lucide Icons + Pinia。
 
-基本信息允许缺失；具体发行按本地组聚合，各版本保留自己的收藏、结构和封面，支持合并或拆分展示。编辑器采用两栏草稿、确认“使用”及原子保存；未切换发行上游时可原地修改共享专辑信息，新建或切换上游则逐曲确认迁入，空发行随最后一首收藏迁出或删除而清理。
+基本信息允许缺失；具体发行按本地组聚合，各版本保留自己的收藏、结构和封面，支持合并或拆分展示。编辑器采用两栏草稿、确认“使用”及原子保存；未切换发行上游时可原地修改共享专辑信息，新建或切换上游则逐曲确认迁入，空发行随最后一首真实本地曲目引用迁出或删除而清理（未入库同步曲目也是有效引用）。
 
 当前开发模型 `streaming-playlists-v1` 需要在清空历史应用数据后初始化；旧模型会明确拒绝打开，程序不会自动删除或转换。此前上游/编辑器的原生人工验收已由用户确认，不涵盖当前同步歌单变更；浏览器回归不能代替后续版本的原生验收，证据范围见文档核对记录。
 
@@ -27,6 +27,7 @@ internal/
   library/            归组、准入及编辑保存计划
   matching/           文本处理、评分、入库判定
   importer/           表格解析与持久化导入队列
+  playlists/          只读歌单契约、差异计划与同步编排
   covers/             目录、工作池、缓存与本地服务；sources/ 为消费侧契约
   lyrics/             歌词能力契约、匹配/内容评分与业务编排
   lyricdoc/           公共行词模型、格式解析、通道合并和只读契约校验
@@ -59,7 +60,8 @@ API 配额和封面工作池长期共用。封面目录通过 `MoveRoot` 迁移�
 
 ## 导入、音乐库与同步歌单
 
-同步页面和 App 生命周期已接入，当前通过离线后端与 Chromium/WebKit 分组测试；
+同步页面和 App 生命周期已接入，当前通过离线后端与 Chromium/WebKit 全量回归；
+结果及历史测试失败原因见[离线验收记录](openspec/changes/add-streaming-playlist-sync/implementation-phase11-offline.md)。
 真实来源、完整发行包和原生窗口尚未全部验收。实施状态见
 [`add-streaming-playlist-sync/tasks.md`](openspec/changes/add-streaming-playlist-sync/tasks.md)。
 
@@ -95,8 +97,13 @@ QQ 歌单请求与元数据/封面查询/歌词共用设置配额；Spotify 只�
 
 需要 Go、Node.js/npm、Wails v2 及目标平台构建依赖。
 
+**当前 `wails build` 只构建主应用，不自动装配 Spotify helper。** 开发时须先按
+[helper 准备说明](internal/provider/spotify/sidecar/README.md)生成匹配版本的整个 one-folder 目录，
+再核对[资源位置与构建边界](build/README.md)。目前只有 macOS arm64 helper 离线证据；
+缺失时 Spotify 明确不可用，QQ 和本地功能不受影响。下述构建不是完整 Spotify 发行包验收。
+
 ```sh
-# 首次检出：安装前端依赖，再生成绑定、构建和打包
+# 首次检出：安装前端依赖，再生成绑定并构建主应用
 cd frontend
 npm ci
 cd ..

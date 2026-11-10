@@ -54,7 +54,7 @@ track ID 不复用，旧计划不会命中新实体；归属操作不重建曲�
 普通集合后端逐项验证已入库，非法混合整批拒绝；既有所有导出范围同样排除未入库曲目。
 `RemoveFromLibrary` 清理普通集合但保护同步引用；`DeleteSyncedPlaylist` 撤销自身需求并仅回收无剩余引用的未入库曲目。
 发行 orphan 查询始终检查全 track，歌词按真实文件引用回收，仍有引用的封面采用/文件记录保留。
-这些后端入口已完成，完整同步 UI 和 App 生命周期接入仍待后续任务。
+这些后端入口、同步 UI 和 App 生命周期已接入；平台发行包及原生验收仍独立跟踪。
 
 ## 差异与确认
 
@@ -83,4 +83,7 @@ Runner 在提交后的需求变化通知中取消已失效的在途匹配，有�
 `playlists/{diff,service}_test.go` 验证顺序、完整性、空歌单、token/TTL/容量、取消和生命周期；
 `store/{playlist_sync,import_delivery}_test.go` 验证逐写入阶段回滚、选择恢复、缺席保留、全部终态投递及接受/同步先后竞态。
 `importer/streaming*_test.go` 和 `app/import_destinations_test.go` 经过真实服务/数据库验证导入归属、即时通知、取消和目标 DTO。
-现阶段尚未提供同步页面或完整 App 生命周期装配，不把这些离线证据当作端到端 UI、网络或安装包验收。
+`app/playlists_e2e_test.go` 经真实 App 绑定覆盖双歌单共享与四种导入路径；`store/playlist_restart_test.go`
+组合验证删主绑定、迟到搜索、忽略恢复、事务回滚、并发重复确认及真实数据库重开。
+前端同步／编辑等全量浏览器回归和本机 helper 中断／自检结果见[第 11 组验收记录](../../openspec/changes/add-streaming-playlist-sync/implementation-phase11-offline.md)。
+这些离线证据不替代真实网络、Windows 进程运行、完整安装包或原生窗口验收。

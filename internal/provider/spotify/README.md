@@ -31,4 +31,4 @@ SONEXA_TEST_FROZEN_HELPER=1 go test -count=1 -race ./internal/provider/spotify -
 GOOS=windows GOARCH=amd64 go test -c ./internal/provider/spotify -o tmp/_scratch/spotify-audit/spotify-windows.test.exe
 ```
 
-真实冻结 helper 往返已验证明确空歌单和 205 项三页（含同 track 缺字段补取），全部网络调用经过 Go 替身。尚未做真实歌单、Windows Job Object 运行、完整应用安装包或原生 UI 验收；数据模型、同步计划与导入投递仍待实现，不把读取/装配成功称作可用同步功能。
+真实冻结 helper 往返已验证明确空歌单和 205 项三页（含同 track 缺字段补取），全部网络调用经过 Go 替身。数据模型、同步计划、导入投递及 App/UI 已接入；本轮并发／重启和全量离线结果见[第 11 组验收记录](../../../openspec/changes/add-streaming-playlist-sync/implementation-phase11-offline.md)。仍未做真实歌单、Windows Job Object 运行、完整应用安装包或原生 UI 验收，不把本机离线通过称作完整发行支持。

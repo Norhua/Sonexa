@@ -1,6 +1,6 @@
 # Spotify 辅助程序
 
-**状态：已通过前置离线验证；尚未接入应用，不能宣称 Sonexa 已支持 Spotify。**
+**状态：已接入歌单能力、App 与同步界面，离线验证通过；完整发行包、真实歌单及原生窗口尚未验收。**
 
 SpotifyScraper `3.9.2` 通过局部适配提供原始分页读取/解析，helper 使用 PyInstaller `6.22.3` one-folder 冻结，携带 CPython `3.12.13`（PBS `20260807`）。用户运行时不需要 Python、pip、uv 或下载。包版本/哈希见 `requirements.lock`，解释器归档及发布校验来源见 `python.lock.json`，许可证见 [LICENSES.md](LICENSES.md)。
 
@@ -90,4 +90,4 @@ S=internal/provider/spotify/sidecar
 - one-folder 冻结及版本握手通过；OS sandbox 禁止网络、构建目录、Nix/uv 外部 Python，PATH 指向不存在目录，HOME 为空，Python 注入变量无效，中文/空格路径正常。自检读取 205 项，产物文件无改变；主 helper 与解释器 ad-hoc 签名校验通过。
 - 初次读取 zstd 归档时系统 tar 缺 zstd，改用开发机 Python 3.14 的标准库仅解包构建元数据；helper 本身没有该依赖。
 
-未请求真实 QQ/Spotify 歌单；Go 受控传输、资源定位、进程封装和只读能力装配已实现，并用真实冻结 helper + Go HTTP 替身验证空歌单及 205 项分页/补取往返。尚未完成同步业务、Windows 进程运行、安装包或原生 UI 验收。Windows 仅交叉编译，Linux/其他 macOS 架构未验证；当前结果不代表功能已交付。
+未请求真实 QQ/Spotify 歌单；Go 受控传输、资源定位、进程封装和只读能力装配已实现，并用真实冻结 helper + Go HTTP 替身验证空歌单及 205 项分页/补取往返。同步业务与 App/UI 现已完成离线接入，最新结果见[第 11 组验收记录](../../../../openspec/changes/add-streaming-playlist-sync/implementation-phase11-offline.md)。Windows 进程运行、安装包或原生 UI 验收尚未完成；Windows 仅交叉编译，Linux/其他 macOS 架构未验证，当前结果不代表完整发行支持。
