@@ -131,6 +131,14 @@ func TestFrozenHelperOfflineIntegration(t *testing.T) {
 		t.Skip("prepare frozen helper to run integration")
 	}
 	root, err := filepath.Abs("../../../build/spotify-helper/dist/spotify-helper")
+	if binary := os.Getenv("SONEXA_TEST_APP_BINARY"); binary != "" {
+		// Explicit offline acceptance target, never a production path override.
+		executable, e := filepath.EvalSymlinks(binary)
+		if e != nil {
+			t.Fatal(e)
+		}
+		root = helperRootForExecutable(executable)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

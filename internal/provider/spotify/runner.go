@@ -40,15 +40,19 @@ func helperRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return helperRootForExecutable(executable), nil
+}
+
+func helperRootForExecutable(executable string) string {
 	dir := filepath.Dir(executable)
 	if runtime.GOOS == "darwin" && filepath.Base(dir) == "MacOS" && filepath.Base(filepath.Dir(dir)) == "Contents" {
-		return filepath.Join(filepath.Dir(dir), "Resources", "spotify-helper"), nil
+		return filepath.Join(filepath.Dir(dir), "Resources", "spotify-helper")
 	}
 	// Wails development binary resides in build/bin; never search PATH/cwd.
 	if filepath.Base(dir) == "bin" && filepath.Base(filepath.Dir(dir)) == "build" {
-		return filepath.Join(filepath.Dir(dir), "spotify-helper", "dist", "spotify-helper"), nil
+		return filepath.Join(filepath.Dir(dir), "spotify-helper", "dist", "spotify-helper")
 	}
-	return filepath.Join(dir, "resources", "spotify-helper"), nil
+	return filepath.Join(dir, "resources", "spotify-helper")
 }
 
 func (r *Runner) validate() (string, error) {
@@ -200,15 +204,20 @@ func writeFrame(writer io.Writer, value any) error {
 	}
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], uint32(len(body)))
-	if _, err = writer.Write(header[:]); err != nil {
+	if n, err := writer.Write(header[:]); err != nil {
 		return err
+	} else if n != len(header) {
+		return io.ErrShortWrite
 	}
-	_, err = writer.Write(body)
+	n, err := writer.Write(body)
+	if err == nil && n != len(body) {
+		return io.ErrShortWrite
+	}
 	return err
 }
 
 func (r *Runner) Run(ctx context.Context, ref string, exchange func(context.Context, json.RawMessage) (map[string]any, error)) (json.RawMessage, error) {
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, playlists.FetchTimeout)
 	defer cancel()
 	executable, err := r.validate()
 	if err != nil {
@@ -249,8 +258,9 @@ func (r *Runner) Run(ctx context.Context, ref string, exchange func(context.Cont
 	}
 	var cleanupOnce sync.Once
 	clean := func() { cleanupOnce.Do(cleanup) }
-	watchDone := make(chan struct{})
+	watchDone, watchExited := make(chan struct{}), make(chan struct{})
 	go func() {
+		defer close(watchExited)
 		select {
 		case <-ctx.Done():
 			clean()
@@ -263,13 +273,16 @@ func (r *Runner) Run(ctx context.Context, ref string, exchange func(context.Cont
 	waited := false
 	defer func() {
 		close(watchDone)
+		<-watchExited
 		_ = stdin.Close()
 		_ = stdout.Close()
+		// Close the Windows job (or Unix process group) before waiting:
+		// descendants can otherwise keep inherited pipe handles open.
+		clean()
 		if !waited {
 			_ = terminateProcess(cmd)
 			_ = cmd.Wait()
 		}
-		clean()
 	}()
 	if err = writeFrame(stdin, map[string]any{"protocol": protocolVersion, "kind": "playlist.read", "requestId": requestID, "playlistRef": ref}); err != nil {
 		return nil, mapError(err)
@@ -330,6 +343,7 @@ func (r *Runner) Run(ctx context.Context, ref string, exchange func(context.Cont
 				var extra [1]byte
 				n, e := stdout.Read(extra[:])
 				if n != 0 || e != io.EOF {
+					clean()
 					_ = terminateProcess(cmd)
 					_ = cmd.Wait()
 					finished <- fmt.Errorf("unexpected trailing output")
@@ -344,6 +358,7 @@ func (r *Runner) Run(ctx context.Context, ref string, exchange func(context.Cont
 					return nil, playlists.Failure(playlists.Incomplete, "Spotify 辅助程序异常退出")
 				}
 			case <-time.After(3 * time.Second):
+				clean()
 				_ = terminateProcess(cmd)
 				_ = stdout.Close()
 				<-finished

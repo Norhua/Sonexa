@@ -62,7 +62,7 @@ func runTestProcess(mode string) {
 		for {
 			time.Sleep(time.Hour)
 		}
-	case "tree":
+	case "tree", "tree-bad-frame", "tree-result":
 		executable, _ := os.Executable()
 		cmd := exec.Command(executable)
 		cmd.Env = []string{}
@@ -72,10 +72,19 @@ func runTestProcess(mode string) {
 			}
 		}
 		cmd.Env = append(cmd.Env, "SONEXA_RUNNER_TEST_PROCESS=grandchild")
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Start(); err != nil {
 			os.Exit(3)
 		}
 		_ = os.WriteFile(os.Getenv("SONEXA_RUNNER_TEST_PID"), []byte(fmt.Sprint(cmd.Process.Pid)), 0600)
+		if mode == "tree-bad-frame" {
+			_, _ = os.Stdout.Write([]byte{255, 255, 255, 255})
+			return
+		}
+		if mode == "tree-result" {
+			_ = writeFrame(os.Stdout, map[string]any{"protocol": 1, "kind": "result", "requestId": id, "snapshot": map[string]any{"ok": true}})
+			return
+		}
 		for {
 			time.Sleep(time.Hour)
 		}
