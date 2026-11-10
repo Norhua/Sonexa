@@ -100,7 +100,7 @@ test('unchanged processed counts still update completion, pause, failures and ba
     await expect(page.getByText(`${{ done: '已完成', paused: '已暂停', running: '进行中' }[status]} · 10/10`, { exact: true })).toBeVisible()
     await expect(page.locator('nav').getByRole('button', { name: /复核队列/ })).toHaveText(/复核队列\s*8$/)
   }
-  await expect(page.getByText('导入批次 #2', { exact: true })).toBeVisible()
+  await expect(page.getByRole('paragraph').filter({ hasText: '导入批次 #2' })).toBeVisible()
   await expect(page.getByText('失败歌曲', { exact: true })).toHaveCount(0)
 })
 
@@ -124,7 +124,7 @@ test('import queue coalesces progress bursts and never applies older responses a
   await expect.poll(() => page.evaluate(() => (window as any).__reads)).toBe(2)
   await expect(page.getByText('导入批次 #1', { exact: true })).toHaveCount(0)
   await page.evaluate(() => (window as any).__pending[1](2))
-  await expect(page.getByText('导入批次 #2', { exact: true })).toBeVisible()
+  await expect(page.getByRole('paragraph').filter({ hasText: '导入批次 #2' })).toBeVisible()
 })
 
 test('committed background changes refresh visible library, drawer and album without reentry', async ({ page }) => {

@@ -20,6 +20,12 @@
 预览、来源列表和查询返回的数组为空时仍是 `[]`；时间为 RFC3339 字符串，未曾入库的 `track.addedAt` 为空串。
 候选 `localTrackId` 表示精确本地绑定，`inLibrary` 单独决定搜索动作；复核跳过依然由服务端重查来源 + track，不信任缓存本地 ID。
 
+## 队列读模型
+
+`GetReviewQueue` 保持完整条目/候选 DTO；后端按事实修订跳过无变化的离线整理，并批量解析输入/本地状态，不在前端伪造已接受结果。`GetTaskSummary` 只查询待处置数量，不传输候选快照。
+
+`BatchStats.reviewEntered` 为本批次累计进入复核页（review/failed）的有效输入数；`processedOnce` 为累计已经处理过的有效输入数。两者持久化、重试与人工处置不清零，区别于随当前调度状态变化的 `processed`。历史列表百分数使用前两者；当前“复核中”继续使用 `stats.review`，“失败”使用 `stats.failed`。
+
 ## 事件及失效范围
 
 - `library:changed`：既有通用本地实体失效通知，包含同步专属 track，不代表增加音乐库计数。

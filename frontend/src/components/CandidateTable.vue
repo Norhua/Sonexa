@@ -102,8 +102,8 @@ function onAct(row: Models.app.CandidateRow) {
 </script>
 
 <template>
-  <div class="flex flex-col">
-    <DataTable :value="visibleRows" :loading="loading" row-hover>
+  <div class="flex min-w-0 flex-col">
+    <DataTable :value="visibleRows" :loading="loading" row-hover scrollable resizable-columns column-resize-mode="expand" :table-style="{ minWidth: '1280px', tableLayout: 'fixed' }" :pt="{ table: { 'aria-label': '候选列表' } }">
       <template #empty>
         <div class="px-3 py-8 text-center text-muted-color">
           <slot name="empty">没有候选结果</slot>
@@ -133,21 +133,21 @@ function onAct(row: Models.app.CandidateRow) {
         </template>
       </Column>
 
-      <Column header="标题" class="max-w-0">
+      <Column field="title" header="标题" style="width: 240px; min-width: 100px">
         <template #body="{ data }">
           <div class="truncate" :title="data.title ?? ''">{{ display(data.title) }}</div>
         </template>
       </Column>
 
-      <Column header="艺术家" class="max-w-0">
+      <Column field="artist" header="艺术家" style="width: 220px; min-width: 100px">
         <template #body="{ data }">
           <div class="truncate" :title="data.artist ?? ''">{{ display(data.artist) }}</div>
         </template>
       </Column>
 
-      <Column header="歌集名" class="max-w-0">
+      <Column field="album" header="歌集名" style="width: 300px; min-width: 100px">
         <template #body="{ data }">
-          <div class="truncate">
+          <div class="truncate select-text" :title="[data.album, showPrimaryType && data.primaryType ? `(${data.primaryType})` : ''].filter(Boolean).join(' ')">
             {{ display(data.album) }}
             <span v-if="showPrimaryType && data.primaryType" class="text-xs text-muted-color">
               ({{ data.primaryType }})
@@ -175,7 +175,7 @@ function onAct(row: Models.app.CandidateRow) {
       </Column>
 
       <Column v-if="showMedium" header="载体" class="w-20">
-        <template #body="{ data }">{{ cell(data, 'MediumFormat', data.mediumFormat) }}</template>
+        <template #body="{ data }"><span :title="cell(data, 'MediumFormat', data.mediumFormat)">{{ cell(data, 'MediumFormat', data.mediumFormat) }}</span></template>
       </Column>
 
       <Column v-if="showCountry" header="国家/地区" class="w-20">

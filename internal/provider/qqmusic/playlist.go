@@ -16,6 +16,10 @@ import (
 	"github.com/norhua/sonexa/internal/provider"
 )
 
+// 1,000 entries stay within the existing response byte budget while avoiding
+// ten separate quota waits for the common thousand-track playlist.
+const playlistPageSize = 1000
+
 var playlistPath = regexp.MustCompile(`^/(?:n/ryqq/playlist|n/m/detail/taoge|n/ryqq/taoge)/([0-9]+)/?$`)
 var playlistDigits = regexp.MustCompile(`^[0-9]{1,19}$`)
 
@@ -114,7 +118,7 @@ func (p *Provider) fetchPlaylist(ctx context.Context, ref playlists.Ref) (*playl
 	for page := 1; page <= playlists.MaxPages; page++ {
 		body, err := p.musicu(ctx, provider.NoStore, map[string]any{"playlist": map[string]any{
 			"module": "music.srfDissInfo.DissInfo", "method": "CgiGetDiss",
-			"param": map[string]any{"disstid": id, "song_begin": rawSeen, "song_num": 100},
+			"param": map[string]any{"disstid": id, "song_begin": rawSeen, "song_num": playlistPageSize},
 		}})
 		if err != nil {
 			return nil, err
@@ -162,7 +166,7 @@ func (p *Provider) fetchPlaylist(ctx context.Context, ref playlists.Ref) (*playl
 		// CgiGetDiss subtracts this page's filtered songs from its reported
 		// total, not all filtered songs in the playlist. Restore the raw count
 		// before comparing pages, and advance by raw slots rather than songs.
-		if len(data.Filtered) > 100 || *data.Total > playlists.MaxItems-len(data.Filtered) {
+		if len(data.Filtered) > playlistPageSize || *data.Total > playlists.MaxItems-len(data.Filtered) {
 			return nil, playlists.Failure(playlists.Resource, "QQ 歌单超过条目上限")
 		}
 		pageTotal := *data.Total + len(data.Filtered)
@@ -173,7 +177,7 @@ func (p *Provider) fetchPlaylist(ctx context.Context, ref playlists.Ref) (*playl
 			return nil, playlists.Failure(playlists.Incomplete, "读取期间 QQ 歌单发生变化")
 		}
 		pageSize := len(data.Songs) + len(data.Filtered)
-		if pageSize != min(100, total-rawSeen) || data.HasMore != nil && *data.HasMore != boolInt(rawSeen+pageSize < total) {
+		if pageSize != min(playlistPageSize, total-rawSeen) || data.HasMore != nil && *data.HasMore != boolInt(rawSeen+pageSize < total) {
 			return nil, playlists.Failure(playlists.Incomplete, "QQ 歌单分页覆盖不完整")
 		}
 		encoded, _ := json.Marshal([]any{data.Songs, data.Filtered})

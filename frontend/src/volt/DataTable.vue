@@ -67,6 +67,7 @@
  */
 import { ChevronsLeft as AngleDoubleLeftIcon, ChevronsRight as AngleDoubleRightIcon, ChevronLeft as AngleLeftIcon, ChevronRight as AngleRightIcon, LoaderCircle as SpinnerIcon } from 'lucide-vue-next';
 import DataTable, { type DataTablePassThroughOptions, type DataTableProps } from 'primevue/datatable';
+import type { VirtualScrollerMethods } from 'primevue/virtualscroller';
 import { computed, ref } from 'vue';
 import { usePassThrough } from 'primevue/passthrough';
 import SecondaryButton from './SecondaryButton.vue';
@@ -96,7 +97,7 @@ const theme = ref<DataTablePassThroughOptions>({
     mask: `bg-app text-muted-color absolute inset-0 z-10 flex items-center justify-center`,
     column: {
         root: ``,
-        headerCell: `group py-2 px-2 font-normal text-xs text-start transition-colors duration-200
+        headerCell: `group relative py-2 px-2 font-normal text-xs text-start transition-colors duration-200
             border-b border-surface-200 dark:border-surface-700
             bg-surface-0 dark:bg-surface-900
             text-surface-500 dark:text-surface-400
@@ -203,6 +204,11 @@ const theme = ref<DataTablePassThroughOptions>({
 const mergedTheme = computed(() => usePassThrough(theme.value, props.pt ?? {}, { mergeSections: true, mergeProps: ptViewMerge }));
 const el = ref<InstanceType<typeof DataTable>>();
 defineExpose({
-    exportCSV: () => el.value?.exportCSV()
+    exportCSV: () => el.value?.exportCSV(),
+    scrollToIndex: (index: number) => {
+        // PrimeVue exposes this accessor at runtime; its DataTable .d.ts omits it.
+        const table = el.value as (InstanceType<typeof DataTable> & { getVirtualScrollerRef(): VirtualScrollerMethods }) | undefined;
+        table?.getVirtualScrollerRef()?.scrollToIndex(index);
+    }
 });
 </script>

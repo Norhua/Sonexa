@@ -42,7 +42,7 @@ func libraryAdditionTx(tx *sql.Tx, ids []int64) (*LibraryAddition, error) {
 	return out, nil
 }
 func (s *Store) PreviewLibraryAddition(ids []int64) (*LibraryAddition, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.beginRead()
 	if err != nil {
 		return nil, err
 	}

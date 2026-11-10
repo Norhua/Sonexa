@@ -49,6 +49,7 @@ const country = ref('')
 const countries = ref<Models.app.CountryOption[]>([])
 const hint = ref<Models.app.CountryHint | null>(null)
 const researching = ref(false)
+const acting = ref(false)
 /** 本条目是否已经手动搜过一次——决定改选上游要不要自动重搜。 */
 const searched = ref(false)
 
@@ -154,7 +155,7 @@ function load(background = false): Promise<void> {
     error.value = ''
   }
   if (!queueLoad) {
-    queueLoad = reloadQueue().finally(() => {
+    queueLoad = Promise.resolve().then(reloadQueue).finally(() => {
       queueLoad = null
       if (!disposed) loading.value = false
     })
@@ -245,6 +246,8 @@ async function doResearch() {
 
 /** 只有调用方明确返回 false 才表示取消；Wails 空结果 null 仍代表操作成功。 */
 async function act(fn: () => Promise<void | boolean>) {
+  if (acting.value) return
+  acting.value = true
   const itemId = current.value?.id
   error.value = ''
   try {
@@ -258,6 +261,8 @@ async function act(fn: () => Promise<void | boolean>) {
     }
   } catch (e) {
     error.value = String(e)
+  } finally {
+    acting.value = false
   }
 }
 
@@ -298,7 +303,7 @@ function next() {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
     <!-- 顶部：待处置总数与分项计数 -->
     <header class="flex h-12 shrink-0 items-center gap-3 px-4" style="--wails-draggable: drag">
       <h2 class="text-xl font-bold">复核队列</h2>
@@ -417,10 +422,10 @@ function next() {
           <SecondaryButton variant="outlined" size="small" @click="restoreOriginal">
             恢复原始信息
           </SecondaryButton>
-          <SecondaryButton variant="outlined" size="small" @click="noMatchNeeded">
+          <SecondaryButton variant="outlined" size="small" :disabled="acting" @click="noMatchNeeded">
             无需匹配
           </SecondaryButton>
-          <SecondaryButton variant="outlined" size="small" @click="act(() => App.DiscardReviewItem(current!.id))">
+          <SecondaryButton variant="outlined" size="small" :disabled="acting" @click="act(() => App.DiscardReviewItem(current!.id))">
             移出队列
           </SecondaryButton>
           <ImportDestinations :targets="current.importDestinations ?? []" />
@@ -431,6 +436,7 @@ function next() {
       <section>
         <CandidateTable
           v-model:expanded="expanded"
+          :loading="acting"
           :rows="current.candidates"
           :capabilities="activeCaps"
           :provider-capabilities="providerCaps"

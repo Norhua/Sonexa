@@ -38,27 +38,33 @@ func TestMobilePlaylistShare(t *testing.T) {
 	}
 }
 
-// Sanitized shape of the reported 1067-slot playlist: the first three raw
-// pages each omit one type-13 song. total_song_num subtracts ONLY that page's
+// Sanitized shape of the reported 1067-slot playlist: slots 50/150/250
+// omit type-13 songs. total_song_num subtracts ONLY the current page's
 // filtered count; later pages restore the apparent total to 1067.
 func filteredPlaylistFixture(offset int) map[string]any {
 	d := playlistFixture(1067, offset)
 	songs := d["songlist"].([]any)
 	filtered := []any{}
-	if offset < 300 {
-		filtered = append(filtered, map[string]any{"songid": offset + 50, "songtype": 13})
-		songs = append(songs[:49], songs[50:]...)
+	kept := []any{}
+	for _, song := range songs {
+		id := song.(map[string]any)["id"].(int)
+		if id == 50 || id == 150 || id == 250 {
+			filtered = append(filtered, map[string]any{"songid": id, "songtype": 13})
+		} else {
+			kept = append(kept, song)
+		}
 	}
+	songs = kept
 	d["songlist"], d["filtered_song"] = songs, filtered
 	d["songlist_size"] = len(songs)
 	d["total_song_num"] = 1067 - len(filtered)
-	d["hasmore"] = boolInt(offset+100 < 1067)
+	d["hasmore"] = boolInt(offset+playlistPageSize < 1067)
 	return d
 }
 
 func TestPlaylistFilteredSongsUseRawOffsetsAndTotal(t *testing.T) {
 	p, calls := qqPlaylistServer(t, func(call, offset int) (int, any) {
-		if offset != (call-1)*100 {
+		if offset != (call-1)*playlistPageSize {
 			t.Errorf("wrong raw offset %d on call %d", offset, call)
 		}
 		return 200, playlistEnvelope(filteredPlaylistFixture(offset))
@@ -67,7 +73,7 @@ func TestPlaylistFilteredSongsUseRawOffsetsAndTotal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *calls != 11 || len(s.Entries) != 1064 || len(s.Excluded) != 3 || s.Completeness.RawSeen != 1067 {
+	if *calls != 2 || len(s.Entries) != 1064 || len(s.Excluded) != 3 || s.Completeness.RawSeen != 1067 {
 		t.Fatal(s.Completeness, *calls)
 	}
 	for i, e := range s.Excluded {
@@ -88,7 +94,7 @@ func TestPlaylistFilteredSongsDoNotHideIncompleteResponse(t *testing.T) {
 				if call == 2 {
 					switch mode {
 					case "changed-total":
-						d["total_song_num"] = 1067
+						d["total_song_num"] = 1068
 					case "changed-name":
 						d["dirinfo"].(map[string]any)["title"] = "changed"
 					case "unknown-filter":
@@ -102,10 +108,10 @@ func TestPlaylistFilteredSongsDoNotHideIncompleteResponse(t *testing.T) {
 					case "wrong-size":
 						d["songlist_size"] = 100
 					case "wrong-more":
-						d["hasmore"] = 0
+						d["hasmore"] = 1
 					case "short-page":
-						d["songlist"] = d["songlist"].([]any)[:98]
-						d["songlist_size"] = 98
+						d["songlist"] = d["songlist"].([]any)[:60]
+						d["songlist_size"] = 60
 					case "business":
 						d["subcode"] = 1
 					}

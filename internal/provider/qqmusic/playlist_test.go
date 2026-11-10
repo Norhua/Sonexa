@@ -34,7 +34,7 @@ func TestPlaylistInputs(t *testing.T) {
 
 func playlistFixture(total, offset int) map[string]any {
 	songs := []any{}
-	for n := offset; n < min(total, offset+100); n++ {
+	for n := offset; n < min(total, offset+playlistPageSize); n++ {
 		songs = append(songs, map[string]any{"id": n + 1, "mid": fmt.Sprintf("%014d", n+1), "name": "曲名", "album": map[string]any{"name": "专辑"}, "singer": []any{map[string]any{"name": "署名一"}, map[string]any{"name": "署名二"}}, "interval": 123})
 	}
 	return map[string]any{"disstid": 123456, "dirinfo": map[string]any{"title": "歌单"}, "total_song_num": total, "songlist": songs}
@@ -61,7 +61,7 @@ func qqPlaylistServer(t *testing.T, reply func(int, int) (int, any)) (*Provider,
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
 		}
-		if request.Playlist.Module != "music.srfDissInfo.DissInfo" || request.Playlist.Method != "CgiGetDiss" || request.Playlist.Param.ID != 123456 || request.Playlist.Param.Num != 100 {
+		if request.Playlist.Module != "music.srfDissInfo.DissInfo" || request.Playlist.Method != "CgiGetDiss" || request.Playlist.Param.ID != 123456 || request.Playlist.Param.Num != playlistPageSize {
 			t.Errorf("request=%+v", request)
 		}
 		status, body := reply(calls, request.Playlist.Param.Begin)
@@ -92,14 +92,14 @@ func playlistEnvelope(data any) any {
 }
 
 func TestPlaylistCompletePagesAndEmpty(t *testing.T) {
-	for _, total := range []int{0, 205} {
+	for _, total := range []int{0, 205, 1067, 2105} {
 		t.Run(fmt.Sprint(total), func(t *testing.T) {
 			p, calls := qqPlaylistServer(t, func(_, offset int) (int, any) { return 200, playlistEnvelope(playlistFixture(total, offset)) })
 			s, err := p.FetchPlaylist(context.Background(), playlists.Ref{Provider: p.ID(), ID: "123456"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(s.Entries) != total || s.Completeness.RawSeen != total || *calls != max(1, (total+99)/100) {
+			if len(s.Entries) != total || s.Completeness.RawSeen != total || *calls != max(1, (total+playlistPageSize-1)/playlistPageSize) {
 				t.Fatalf("snapshot=%+v calls=%d", s, *calls)
 			}
 			if total > 0 && (*s.Entries[0].DurationMS != 123000 || len(s.Entries[0].Artists) != 2) {
@@ -119,15 +119,15 @@ func TestPlaylistFailureNeverReturnsSnapshot(t *testing.T) {
 				if mode == "business" {
 					return 200, map[string]any{"code": 0, "playlist": map[string]any{"code": 24001}}
 				}
-				data := playlistFixture(205, offset)
+				data := playlistFixture(2105, offset)
 				switch mode {
 				case "changed-total":
 					if call > 1 {
-						data["total_song_num"] = 206
+						data["total_song_num"] = 2106
 					}
 				case "repeat-page":
 					if call > 1 {
-						data = playlistFixture(205, 0)
+						data = playlistFixture(2105, 0)
 					}
 				case "early-empty":
 					if call > 1 {
@@ -171,7 +171,7 @@ func TestPlaylistMissingFieldsAndRepeatedOccurrences(t *testing.T) {
 }
 
 func TestPlaylistGateAndCancel(t *testing.T) {
-	p, calls := qqPlaylistServer(t, func(_, offset int) (int, any) { return 200, playlistEnvelope(playlistFixture(205, offset)) })
+	p, calls := qqPlaylistServer(t, func(_, offset int) (int, any) { return 200, playlistEnvelope(playlistFixture(2105, offset)) })
 	ctx := provider.WithRequestGate(context.Background(), func() error {
 		if *calls > 0 {
 			return fmt.Errorf("disabled")

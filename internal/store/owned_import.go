@@ -171,7 +171,7 @@ func ownedImportDecisionTx(tx *sql.Tx, itemID int64, candidates []matching.Score
 	if err != nil {
 		return ownedImportDecision{}, err
 	}
-	return decideOwnedImport(inputs, tracks, confirmed, exactOwnedRefs(tracks, candidates)), nil
+	return newOwnedImportIndex(tracks, confirmed).decide(inputs, candidates), nil
 }
 
 func exactOwnedRefs(tracks []ownedImportTrack, candidates []matching.ScoredCandidate) map[int64]bool {
@@ -243,8 +243,20 @@ func (s *Store) ReconcileReviewDuplicates() error {
 // ReconcileReviewDuplicatesChanged reports only committed deliveries, so reads
 // can notify other views without creating an endless read/event loop.
 func (s *Store) ReconcileReviewDuplicatesChanged() (bool, error) {
+	s.reviewMu.Lock()
+	defer s.reviewMu.Unlock()
+	var revision int64
+	if err := s.db.QueryRow(`SELECT revision FROM review_revision WHERE id=1`).Scan(&revision); err != nil {
+		return false, err
+	}
+	if revision == s.reviewRevision {
+		return false, nil
+	}
 	changed := false
 	err := s.withTx(func(tx *sql.Tx) error {
+		if err := tx.QueryRow(`SELECT revision FROM review_revision WHERE id=1`).Scan(&revision); err != nil {
+			return err
+		}
 		rows, err := tx.Query(`SELECT id,candidates FROM import_item WHERE status IN ('review','failed') AND search_manual=0 ORDER BY id`)
 		if err != nil {
 			return err
@@ -278,6 +290,7 @@ func (s *Store) ReconcileReviewDuplicatesChanged() (bool, error) {
 		if err != nil {
 			return err
 		}
+		index := newOwnedImportIndex(tracks, confirmed)
 		for _, item := range items {
 			var scored []matching.ScoredCandidate
 			if item.raw != nil {
@@ -289,7 +302,7 @@ func (s *Store) ReconcileReviewDuplicatesChanged() (bool, error) {
 			if err != nil {
 				return err
 			}
-			decision := decideOwnedImport(inputs, tracks, confirmed, exactOwnedRefs(tracks, scored))
+			decision := index.decide(inputs, scored)
 			if decision.TrackID != 0 {
 				if err = skipOwnedImportTx(tx, item.id, decision); err != nil {
 					return err
@@ -297,7 +310,12 @@ func (s *Store) ReconcileReviewDuplicatesChanged() (bool, error) {
 				changed = true
 			}
 		}
+		// Deliveries create confirmations that may unlock an earlier item on
+		// the next pass; only cache the revision we actually evaluated.
 		return nil
 	})
+	if err == nil {
+		s.reviewRevision = revision
+	}
 	return changed && err == nil, err
 }

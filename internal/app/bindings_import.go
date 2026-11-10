@@ -250,11 +250,11 @@ func (a *App) GetTaskSummary() (*TaskSummary, error) {
 		out.Running = a.runner != nil && a.runner.IsRunning(b.ID)
 	}
 
-	pending, err := a.store.AllReviewItems()
+	pending, err := a.store.ReviewItemCount()
 	if err != nil {
 		return nil, err
 	}
-	out.ReviewPending = len(pending)
+	out.ReviewPending = pending
 	return out, nil
 }
 

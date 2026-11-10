@@ -17,6 +17,14 @@
 无需匹配使用有效代表的字段，原始输入聚合仍保留所有来源供审计；手搜草稿继续按共享主 ID 保存。
 准入计划在服务端封存目标与修订，最终事务在“命中已有身份”的短路前也必须重验。
 
-验证入口：`internal/store/{owned_import,import_identity,import_delivery,confirmation_context}_test.go`、
+## 读取性能与历史复核率
+
+- 离线整理以当前值、有效快照和历史确认原文建立保守曲名索引，取**全部有效输入候选集合的并集**，再使用原证据函数判定；不能只按首输入过滤从而丢失别的输入歧义。
+- `review_revision` 由数据库触发器随相关事实提交/回滚，跨连接生效。同一修订的重复汇总/队列读取不重复整理，封面与响应缓存写入不触发无关判重；实际终态投递仍在写事务内完成。
+- 队列输入/目标使用两个只读查询，候选本地身份/入库/封面修订批量查询；计数不加载候选 JSON。同步列表一条关联查询，不为只读预览抢占 `BEGIN IMMEDIATE` 写锁。
+- `review_entered` 与 `processed_once` 为每次有效输入的历史布尔事实。review/failed 进入复核页时对所有活动共享输入累计一次；合入正在复核的任务也累计。接受、移出、取消及重试不清零；忽略恢复属于新的输入尝试。
+- `BatchStats.reviewEntered / processedOnce` 用于历史介入率；`review` 是当前待选数、`failed` 单列。原 `Processed()` 继续服务调度进度，不把历史完成事实误当作重试已完成。零历史处理显示“—”/“0 / 0”。
+
+验证入口：`internal/store/{review_performance,owned_import,import_identity,import_delivery,confirmation_context}_test.go`、
 `internal/library/{admission,import_targets}_test.go`、`internal/importer/streaming*_test.go`、
 `internal/app/import_destinations_test.go`。这些是离线契约/绑定测试，不替代前端与原生验收。

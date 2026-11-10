@@ -155,7 +155,7 @@ func effectiveImportItemTx(tx *sql.Tx, shell *ImportItem) error {
 }
 
 func (s *Store) EffectiveImportItem(itemID int64) (*ImportItem, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.beginRead()
 	if err != nil {
 		return nil, err
 	}

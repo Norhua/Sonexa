@@ -33,7 +33,7 @@ func readPlaylistStateTx(tx *sql.Tx, id int64) (*playlists.State, error) {
 	return &playlists.State{Binding: *b, Entries: entries}, nil
 }
 func (s *Store) ReadPlaylistState(id int64) (*playlists.State, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.beginRead()
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func playlistOperationResultTx(tx *sql.Tx, id, hash string) (*playlists.CommitRe
 	return &result, nil
 }
 func (s *Store) PlaylistOperationResult(id, hash string) (*playlists.CommitResult, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.beginRead()
 	if err != nil {
 		return nil, err
 	}

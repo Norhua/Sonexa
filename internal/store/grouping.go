@@ -170,7 +170,7 @@ func groupMembersTx(tx *sql.Tx, id int64) (domain.GroupMatch, error) {
 	return group, nil
 }
 func (s *Store) ResolveGroup(snapshot domain.Snapshot) (domain.GroupResolution, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.beginRead()
 	if err != nil {
 		return domain.GroupResolution{}, err
 	}
@@ -293,7 +293,7 @@ func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.Admissio
 	return baseline, nil
 }
 func (s *Store) PreviewAdmission(seed domain.AdmissionSeed) (domain.AdmissionBaseline, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.beginRead()
 	if err != nil {
 		return domain.AdmissionBaseline{}, err
 	}

@@ -63,6 +63,16 @@ const textColumns = computed(() => [
 ].filter(column => hasColumn(column.field as 'title' | 'artist' | 'album')))
 const enrich = useEnrichStore()
 const root = ref<HTMLElement | null>(null)
+const table = ref<InstanceType<typeof DataTable> | null>(null)
+const virtualized = computed(() => props.columnContext === 'syncedPlaylist' && props.rows.length > 200)
+const virtualOptions = computed(() => virtualized.value ? { itemSize: 45, numToleratedItems: 10, onScrollIndexChange: restoreVirtualFocus } : undefined)
+let pendingFocus: string | null = null
+async function restoreVirtualFocus() {
+  await nextTick()
+  if (!pendingFocus || selection.focused.value !== pendingFocus) return
+  const element = renderedFocusRow()
+  if (element) { element.focus({ preventScroll: true }); pendingFocus = null }
+}
 const menu = ref<InstanceType<typeof ContextMenu> | null>(null)
 const menuRow = ref<ListRow | null>(null)
 const orderedRows = computed(() => sortRows(listRows(props.rows), props.fixedOrder ? 'default' : sortKey.value, sortDesc.value))
@@ -72,6 +82,8 @@ const selectedCount = computed(() => selectedRows.value.length)
 const trackCount = computed(() => props.columnContext === 'syncedPlaylist' ? props.rows.length : uniqueTracks(props.rows).length)
 const sortField = computed(() => props.fixedOrder || sortKey.value === 'default' ? undefined : sortKey.value === 'duration' ? 'durationMs' : sortKey.value)
 const tablePT = computed(() => ({
+  virtualScroller: { root: { class: 'relative min-h-0 flex-1 overflow-auto [contain:strict] [transform:translateZ(0)]' } },
+  virtualScrollerSpacer: { class: 'flex pointer-events-none' },
   table: { 'aria-label': '曲目列表', 'aria-multiselectable': 'true' },
   bodyRow: ({ context }: { context: { index: number } }) => {
     const row = orderedRows.value[context.index]
@@ -87,8 +99,10 @@ const tablePT = computed(() => ({
 }))
 watch(selectedRows, rows => emit('selectionChange', rows.map(row => row.id)), { immediate: true })
 watch(() => props.contextKey, () => {
+  pendingFocus = null
   selection.clear()
   selection.focused.value = orderedRows.value.find(row => !row.ghost)?.key ?? null
+  if (virtualized.value) void nextTick(() => table.value?.scrollToIndex(0))
   menu.value?.hide()
   headerMenu.value?.hide()
 })
@@ -110,10 +124,23 @@ function rowAt(target: EventTarget | null) {
 function interactive(target: EventTarget | null) {
   return target instanceof Element && !!target.closest('button, a, input, textarea, select, [contenteditable="true"], [role="combobox"]')
 }
+function renderedFocusRow() {
+  return [...(root.value?.querySelectorAll<HTMLElement>('[data-row-key]') ?? [])]
+    .find(el => el.dataset.rowKey === selection.focused.value)
+}
 async function focusRow() {
   await nextTick()
-  const element = [...(root.value?.querySelectorAll<HTMLElement>('[data-row-key]') ?? [])]
-    .find(el => el.dataset.rowKey === selection.focused.value)
+  const element = renderedFocusRow()
+  if (!element && virtualized.value) {
+    pendingFocus = selection.focused.value
+    const index = orderedRows.value.findIndex(row => row.key === pendingFocus)
+    if (index >= 0) table.value?.scrollToIndex(index)
+    // Native scroll events may arrive after Vue's nextTick, especially WebKit.
+    // The range-change callback restores focus after the target is mounted.
+    void restoreVirtualFocus()
+    return
+  }
+  pendingFocus = null
   element?.focus({ preventScroll: true })
   element?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
@@ -259,8 +286,9 @@ defineExpose({ selectedCount, trackCount, selectedRows })
         <span class="tabular-nums">{{ enrich.label }}</span>
       </div>
     </div>
-    <!-- lazy 只关闭内部排序/过滤；无服务端分页。屏幕与选择共用同一份 orderedRows。 -->
-    <DataTable class="min-h-0 flex-1" :value="orderedRows" data-key="key" lazy scrollable scroll-height="flex" removable-sort
+    <!-- lazy only disables internal sorting/filtering. Virtualization bounds DOM,
+         never the full orderedRows used by selection and batch actions. -->
+    <DataTable ref="table" class="min-h-0 flex-1" :class="{ 'virtual-tracks': virtualized }" :value="orderedRows" :virtual-scroller-options="virtualOptions" data-key="key" lazy scrollable scroll-height="flex" removable-sort
       :selection="selection.selectedRows.value" :pt="tablePT" :loading="loading"
       :sort-field="sortField" :sort-order="sortDesc ? -1 : 1"
       :table-style="{ minWidth: `${columns.widthFor(columnContext)}px`, tableLayout: 'fixed' }" @sort="onSort">
@@ -292,6 +320,8 @@ defineExpose({ selectedCount, trackCount, selectedRows })
 </template>
 
 <style scoped>
+.track-list :deep(.virtual-tracks .track-row) { height: 45px; }
+.track-list :deep(.virtual-tracks td) { height: 45px; overflow: hidden; white-space: nowrap; }
 .track-list :deep(table) { user-select: none; }
 .track-list :deep(.track-row) { cursor: default; }
 .track-list :deep(.track-row:not([data-ghost="true"]):hover) { background: var(--p-content-hover-background); }

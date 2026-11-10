@@ -17,6 +17,8 @@ import (
 
 // Store 持有数据库连接。
 type Store struct {
+	reviewMu          sync.Mutex
+	reviewRevision    int64
 	planMu            sync.RWMutex
 	admissionVerifier func(domain.AdmissionPlan, domain.AdmissionApproval) bool
 	importInvalidated func()

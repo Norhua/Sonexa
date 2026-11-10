@@ -60,7 +60,7 @@ func operationResultTx(tx *sql.Tx, id, hash string) (*domain.AdmissionResult, er
 	return &result, nil
 }
 func (s *Store) AdmissionResult(id, hash string) (*domain.AdmissionResult, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.beginRead()
 	if err != nil {
 		return nil, err
 	}

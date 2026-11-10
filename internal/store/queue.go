@@ -371,10 +371,14 @@ func (s *Store) ResetStaleMatching() error {
 
 // BatchStats 是一次导入的分状态计数。
 type BatchStats struct {
-	Total    int `json:"total"`
-	Queued   int `json:"queued"`
-	Matching int `json:"matching"`
-	Imported int `json:"imported"`
+	Total int `json:"total"`
+	// ReviewEntered and ProcessedOnce count distinct historical inputs; retries
+	// and manual disposition never erase these facts.
+	ReviewEntered int `json:"reviewEntered"`
+	ProcessedOnce int `json:"processedOnce"`
+	Queued        int `json:"queued"`
+	Matching      int `json:"matching"`
+	Imported      int `json:"imported"`
 	// Review 是待复核总数，三种成因都在里面。
 	Review int `json:"review"`
 	// Unmatched 是 Review 中成因为「无结果 / 全部低置信」的那部分。
@@ -396,7 +400,7 @@ func (b BatchStats) Processed() int {
 // Stats 统计某批次各状态的条目数。
 func (s *Store) Stats(batchID int64) (BatchStats, error) {
 	rows, err := s.db.Query(
-		`SELECT CASE WHEN d.state='cancelled' AND i.status<>'merged' THEN 'discarded' ELSE i.status END AS effective_status,COUNT(*)
+		`SELECT CASE WHEN d.state='cancelled' AND i.status<>'merged' THEN 'discarded' ELSE i.status END AS effective_status,COUNT(*),SUM(i.review_entered),SUM(i.processed_once)
  FROM import_item i LEFT JOIN import_destination d ON d.input_id=i.id WHERE i.batch_id=? GROUP BY effective_status`, batchID)
 	if err != nil {
 		return BatchStats{}, err
@@ -406,10 +410,12 @@ func (s *Store) Stats(batchID int64) (BatchStats, error) {
 	var st BatchStats
 	for rows.Next() {
 		var status string
-		var n int
-		if err := rows.Scan(&status, &n); err != nil {
+		var n, entered, processed int
+		if err := rows.Scan(&status, &n, &entered, &processed); err != nil {
 			return BatchStats{}, err
 		}
+		st.ReviewEntered += entered
+		st.ProcessedOnce += processed
 		st.Total += n
 		switch ItemStatus(status) {
 		case StatusQueued:

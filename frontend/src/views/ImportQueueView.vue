@@ -32,6 +32,19 @@ const batches = ref<Models.app.ImportBatchView[]>([])
 const loading = ref(false)
 const error = ref('')
 const logBox = ref<HTMLElement | null>(null)
+const ratioBatches = ref(new Set<number>())
+function toggleRatio(id: number) {
+  const next = new Set(ratioBatches.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  ratioBatches.value = next
+}
+function reviewRate(batch: Models.app.ImportBatchView) {
+  const entered = batch.stats.reviewEntered ?? 0
+  const processed = batch.stats.processedOnce ?? batch.processed
+  return ratioBatches.value.has(batch.id) ? `${entered} / ${processed}`
+    : processed ? `${(entered / processed * 100).toFixed(1)}%` : '—'
+}
 
 /** 当前批次：有正在跑的就是它，否则是最近的那一批。 */
 const current = computed(
@@ -233,26 +246,30 @@ function statusLabel(status: string): string {
       </section>
 
       <!-- 历史批次 -->
-      <section v-if="batches.length > 1" class="p-4">
+      <section v-if="batches.length" class="overflow-x-auto p-4" data-testid="batch-history">
         <h3 class="mb-1.5 text-xs font-medium">历史批次</h3>
-        <table class="w-full border-collapse text-xs">
+        <table class="w-full min-w-[760px] border-collapse text-xs">
           <thead>
             <tr class="border-b text-left text-muted-color">
               <th class="px-2 py-1">批次</th>
               <th class="w-20 px-2 py-1">状态</th>
-              <th class="w-20 px-2 py-1">完成导入</th>
-              <th class="w-20 px-2 py-1">待复核</th>
+              <th class="w-20 px-2 py-1">已导入</th>
+              <th class="w-20 px-2 py-1">复核中</th>
               <th class="w-16 px-2 py-1">失败</th>
+              <th class="w-24 px-2 py-1">复核率</th>
+              <th class="px-2 py-1">目标</th>
               <th class="w-36 px-2 py-1">时间</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="b in batches" :key="b.id" class="border-b">
-              <td class="max-w-0 truncate px-2 py-1">导入批次 #{{ b.id }}<ImportDestinations :targets="[{ kind: b.destinationKind || 'library', displayName: b.destinationName || '音乐库' }]" /></td>
+              <td class="whitespace-nowrap px-2 py-1">导入批次 #{{ b.id }}</td>
               <td class="px-2 py-1">{{ statusLabel(b.status) }}</td>
               <td class="px-2 py-1 tabular-nums">{{ b.stats.imported }}</td>
               <td class="px-2 py-1 tabular-nums">{{ b.stats.review }}</td>
               <td class="px-2 py-1 tabular-nums">{{ b.stats.failed }}</td>
+              <td class="px-2 py-1 tabular-nums"><button type="button" class="cursor-pointer rounded px-1 py-1 hover:bg-surface-100 focus-visible:outline dark:hover:bg-surface-800" :aria-label="`切换批次 ${b.id} 复核率显示`" :aria-pressed="ratioBatches.has(b.id)" title="累计进入复核 / 已处理输入；点击切换百分数与计数" @click="toggleRatio(b.id)">{{ reviewRate(b) }}</button></td>
+              <td class="max-w-64 break-words px-2 py-1" :class="{ 'text-orange-600 dark:text-orange-400': b.destinationKind === 'synced_playlist' }">{{ b.destinationKind === 'synced_playlist' ? b.destinationName : '音乐库' }}</td>
               <td class="px-2 py-1">{{ new Date(b.createdAt).toLocaleString() }}</td>
             </tr>
           </tbody>

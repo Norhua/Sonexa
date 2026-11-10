@@ -26,9 +26,10 @@ var migrations = []Migration{
 	{Version: 2, Name: "cover_catalog", SQL: migration0002CoverCatalog},
 	{Version: 3, Name: "import_evidence", SQL: migration0003ImportEvidence},
 	{Version: 4, Name: "confirmation_context", SQL: migration0004ConfirmationContext},
+	{Version: 5, Name: "review_performance", SQL: reviewPerformanceSchema()},
 }
 
-const ModelGeneration = "streaming-playlists-v1"
+const ModelGeneration = "streaming-playlists-v2"
 
 var ErrIncompatibleModel = errors.New("数据库模型不兼容，请先备份并清理旧版应用数据；程序不会自动删除数据")
 

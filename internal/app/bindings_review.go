@@ -60,7 +60,7 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 	if err := a.reconcileReviewDuplicates(); err != nil {
 		return nil, err
 	}
-	items, err := a.store.AllReviewItems()
+	items, err := a.store.ReadReviewItems()
 	if err != nil {
 		return nil, err
 	}
@@ -74,25 +74,8 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 			AttemptCount: it.AttemptCount,
 			LastError:    it.LastError, LastErrorAt: formatTime(it.LastErrorAt),
 		}
-		effective, effectiveErr := a.store.EffectiveImportItem(it.ID)
-		if effectiveErr != nil {
-			return nil, effectiveErr
-		}
-		if effective != nil {
-			r.InTitle, r.InArtist, r.InAlbum = effective.InTitle, effective.InArtist, effective.InAlbum
-		}
-		r.ImportDestinations, err = a.store.ActiveImportDestinations(it.ID)
-		if err != nil {
-			return nil, err
-		}
-		r.OriginalInputs, err = a.store.OriginalInputs(it.ID)
-		if err != nil {
-			return nil, err
-		}
-		r.SearchProvider, r.SearchCountry, r.Searched, err = a.store.ReviewSearchSource(it.ID)
-		if err != nil {
-			return nil, err
-		}
+		r.ImportDestinations, r.OriginalInputs = it.Destinations, it.OriginalInputs
+		r.SearchProvider, r.SearchCountry, r.Searched = it.SearchProvider, it.SearchCountry, it.Searched
 		if it.TriedVariants != nil {
 			json.Unmarshal([]byte(*it.TriedVariants), &r.TriedVariants)
 		}
@@ -111,6 +94,31 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 		}
 		out.Items = append(out.Items, r)
 	}
+	var keys []store.CandidateLocalKey
+	for _, item := range out.Items {
+		for _, row := range item.Candidates {
+			keys = append(keys, store.CandidateLocalKey{Provider: row.Provider, Ref: row.MatchRef, ReleaseRef: derefOr(row.ReleaseRef, "")})
+		}
+	}
+	states, err := a.store.CandidateLocalStates(keys)
+	if err != nil {
+		return nil, err
+	}
+	index := 0
+	for i := range out.Items {
+		for j := range out.Items[i].Candidates {
+			row := &out.Items[i].Candidates[j]
+			state := states[index]
+			index++
+			row.ReleaseID, row.CoverRevision = state.ReleaseID, state.CoverRevision
+			row.LocalTrackID, row.InLibrary = state.TrackID, state.InLibrary
+			row.Badges, row.Action = []string{row.Provider}, "接受"
+			if state.TrackID != 0 {
+				row.Badges, row.Action = []string{"本地", row.Provider}, "跳过"
+			}
+			row.Note = candidateReviewNote(row.ReviewOnly)
+		}
+	}
 	return out, nil
 }
 
@@ -121,20 +129,21 @@ func (a *App) parseCandidateSnapshot(raw string) []CandidateRow {
 	// 先按管线的评分候选解析
 	var scored []matching.ScoredCandidate
 	if err := json.Unmarshal([]byte(raw), &scored); err == nil && len(scored) > 0 && scored[0].Candidate.MatchRef != "" {
-		// 复核队列的候选必须与上游搜索一样做本地判定，
-		// 否则库里已有的那首不会显示双徽章、动作也不会变成「跳过」。
-		return a.rowsFrom(scored, "接受")
+		// Decode only: automatic import uses MB (no candidate artwork catalog),
+		// while manual search already registered artwork before saving its rows.
+		// A queue read must not repeat the search-time writes in rowsFrom.
+		rows := make([]CandidateRow, 0, len(scored))
+		for _, candidate := range scored {
+			rows = append(rows, rowFrom(candidate))
+		}
+		return rows
 	}
 
 	// 手动搜索快照须完整保留字段，不能降级为简化本地候选。
 	var stored []CandidateRow
 	if err := json.Unmarshal([]byte(raw), &stored); err == nil &&
 		len(stored) > 0 && stored[0].MatchRef != "" {
-		// 本地判定不随快照持久化：入库/合并状态可能在存快照之后变了
-		for i := range stored {
-			c := stored[i].toCandidate()
-			a.applyLocalMatch(&stored[i], c)
-		}
+		// Local state is refreshed in one batch after all snapshots are decoded.
 		return stored
 	}
 
