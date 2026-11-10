@@ -8,6 +8,7 @@ import re
 from collections import Counter
 from datetime import datetime, timezone
 from importlib.metadata import version
+from errors import ReadError
 
 from spotify_scraper import SpotifyClient
 from spotify_scraper.api import parse_embed, parse_entities
@@ -19,12 +20,6 @@ MAX_PAGES = 200
 PAGE_SIZE = 100
 ID = re.compile(r"[A-Za-z0-9]{22}\Z")
 EXCLUDED_TYPES = {"Episode", "LocalTrack"}
-
-
-class ReadError(Exception):
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
 
 
 def text(value):

@@ -83,6 +83,33 @@ test('difference preview is cancellable and ignored restoration is explicit', as
   await expect(page.locator('.track-list [data-row-key]')).toHaveCount(3)
 })
 
+test('identified filtered songs show reasons without fabricated positions in both previews', async ({ page }) => {
+  await page.evaluate(() => {
+    const api = (window as any).go.app.App
+    const excluded = [102182145, 101041088, 214078036].map(id => ({ position: 0, trackRef: String(id), kind: 'unavailable_track', reason: 'QQ 未返回该歌曲详情；已有同步条目保持不变' }))
+    const sync = api.PreparePlaylistSync, bind = api.PreparePlaylistBinding
+    api.PreparePlaylistSync = async (...args: any[]) => { const p = await sync(...args); p.difference.excluded = excluded; return p }
+    api.PreparePlaylistBinding = async (...args: any[]) => { const p = await bind(...args); p.preview.difference.excluded = excluded; return p }
+  })
+  await page.locator('nav').getByRole('button', { name: /同步 A/ }).click()
+  await page.getByRole('button', { name: '刷新同步歌单' }).click()
+  const sync = page.getByRole('dialog', { name: '确认同步差异' })
+  await expect(sync).toContainText('明确排除（3）')
+  await expect(sync.getByText(/原始位置未知 ·/)).toHaveCount(3)
+  await expect(sync).not.toContainText('位置 0')
+  await sync.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(sync).not.toBeVisible()
+  await expect(page.locator('[data-pc-section="mask"]')).toHaveCount(0)
+  const open = page.locator('nav').getByRole('button', { name: '绑定同步歌单', exact: true })
+  await open.focus(); await open.click()
+  const bind = page.getByRole('dialog', { name: '绑定同步歌单' })
+  await bind.getByLabel('歌单链接或 ID', { exact: true }).fill('list')
+  await bind.getByRole('button', { name: '读取歌单', exact: true }).click()
+  await expect(bind.getByTestId('binding-preview')).toContainText('明确排除 3 项')
+  await expect(bind.getByTestId('binding-preview').getByRole('listitem')).toHaveCount(3)
+  await expect(bind).toContainText('102182145 · QQ 未返回该歌曲详情；已有同步条目保持不变')
+})
+
 test('binding uses capability list, shows unavailable runtime, and locates duplicate', async ({ page }) => {
   await page.locator('nav').getByRole('button', { name: '绑定同步歌单', exact: true }).focus()
   await page.locator('nav').getByRole('button', { name: '绑定同步歌单', exact: true }).click()

@@ -12,7 +12,7 @@ PYINSTALLER = "6.22.3"
 
 
 def native_target():
-    arch = {"AMD64": "x86_64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
+    arch = {"amd64": "x86_64", "aarch64": "arm64"}.get(platform.machine().lower(), platform.machine().lower())
     return f"{sys.platform}-{arch}"
 
 
@@ -38,6 +38,23 @@ def resource_path(root, relative):
     return path
 
 
+def materialize_links(root):
+    """PyInstaller on Linux may alias bundled .so files with symlinks.
+
+    Distribute only regular files, consistent with the runtime hash contract.
+    Never copy a link to an external system/build-machine library.
+    """
+    links = [p for p in root.rglob("*") if p.is_symlink()]
+    for path in links:
+        resolved = path.resolve(strict=True)
+        if not resolved.is_relative_to(root.resolve()) or not resolved.is_file():
+            raise ValueError("Frozen symlink is not an internal regular file")
+        data, mode = resolved.read_bytes(), resolved.stat().st_mode
+        path.unlink()
+        path.write_bytes(data)
+        path.chmod(mode)
+
+
 def file_hashes(root):
     files = {}
     for path in sorted(root.rglob("*")):
@@ -49,7 +66,7 @@ def file_hashes(root):
 
 
 def validate_licenses(root, target, lock):
-    inventory = json.loads((root / "licenses" / "inventory.json").read_text())
+    inventory = json.loads((root / "licenses" / "inventory.json").read_text(encoding="utf-8"))
     if (inventory.get("target"), inventory.get("python"), inventory.get("pythonBuild")) != (target, lock["python"], lock["build"]):
         raise ValueError("License inventory target/version mismatch")
     if not inventory.get("packages") or not inventory.get("pythonLicenses"):

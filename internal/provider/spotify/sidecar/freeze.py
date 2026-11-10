@@ -7,7 +7,7 @@ import platform
 from importlib.metadata import version
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from artifacts import native_target, locked_target, write_manifest, validate_licenses
+from artifacts import native_target, locked_target, write_manifest, validate_licenses, materialize_links
 
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[3]
@@ -37,6 +37,7 @@ def build():
         str(ROOT / "helper.py"),
     ], check=True, cwd=ROOT)
     bundle = OUTPUT / "dist" / "spotify-helper"
+    materialize_links(bundle)
     # Installer/cache records contain build-machine paths, not runtime metadata.
     for metadata in bundle.glob("_internal/*.dist-info"):
         for name in ("uv_cache.json", "RECORD", "INSTALLER", "REQUESTED"):

@@ -43,7 +43,7 @@ async function commit() {
           {{ display(change.entry.title) }} · {{ change.entry.artists?.join(' / ') || '—' }}
         </label>
       </details>
-      <section v-if="plan.difference.excluded.length"><h3>明确排除（{{ plan.difference.excluded.length }}）</h3><p v-for="entry in plan.difference.excluded" :key="entry.position">位置 {{ entry.position }} · {{ entry.kind }}</p></section>
+      <section v-if="plan.difference.excluded.length"><h3>明确排除（{{ plan.difference.excluded.length }}）</h3><p v-for="(entry, index) in plan.difference.excluded" :key="index">{{ entry.position ? `位置 ${entry.position}` : '原始位置未知' }} · {{ entry.trackRef || entry.kind }} · {{ entry.reason || entry.kind }}</p></section>
       <Message v-if="error" severity="error">{{ error }}。请取消并重新读取差异。</Message>
     </div>
     <template #footer><SecondaryButton :disabled="saving" @click="emit('close')">取消</SecondaryButton><Button :disabled="saving || !!error" @click="commit">确认同步<span v-if="restore.length">并恢复 {{ restore.length }} 项</span></Button></template>

@@ -29,7 +29,7 @@ PyInstaller 的 `COPYING.txt` 明确允许将未修改 bootloader 及 loader 与
 
 ## Python 及 native 依赖
 
-使用 [python-build-standalone](https://github.com/astral-sh/python-build-standalone) `20260807` 的 CPython `3.12.13` Darwin arm64 构建。可执行归档与完整元数据归档的 SHA-256 均与同次发布 `SHA256SUMS` 核对。解释器二进制及 native 代码由归档摘要整体锁定，不把本机解释器文件哈希冒充上游归档哈希。
+使用 [python-build-standalone](https://github.com/astral-sh/python-build-standalone) `20260807` 的 CPython `3.12.13`，`python.lock.json` 包含 Darwin/Windows/Linux glibc 各 amd64/arm64 目标。可执行归档与完整元数据归档的 SHA-256 均与同次发布 `SHA256SUMS` 核对。解释器二进制及 native 代码由归档摘要整体锁定，不把本机解释器文件哈希冒充上游归档哈希。以下动态库核对结果仅来自 macOS arm64；其他目标构建时分别收集本平台归档许可，不套用 macOS 清单。
 
 - CPython：Python-2.0 / CNRI-Python 及其合并许可，完整 `LICENSE.cpython.txt` 保留。
 - Python 元数据列出的静态/native 组件包括 OpenSSL（Apache-2.0，旧版 OpenSSL 许可文本一并保留）、libffi（MIT）、bzip2、liblzma（0BSD）、mpdecimal（BSD-2-Clause）、expat（MIT）；逐模块关联见生成的 `nativeModules`。

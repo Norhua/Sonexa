@@ -2,7 +2,6 @@ package qqmusic
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/norhua/sonexa/internal/playlists"
@@ -14,7 +13,7 @@ func TestPlaylistReorderAndDuplicateCountUsesOccurrenceIdentity(t *testing.T) {
 		data := playlistFixture(len(order), offset)
 		songs := []any{}
 		for _, id := range order {
-			songs = append(songs, map[string]any{"mid": fmt.Sprintf("%014d", id)})
+			songs = append(songs, map[string]any{"id": id})
 		}
 		data["songlist"] = songs
 		return 200, playlistEnvelope(data)

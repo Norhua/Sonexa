@@ -1,6 +1,12 @@
 # Spotify 辅助程序
 
-**状态：已接入歌单能力、App 与同步界面，离线验证通过；完整发行包、真实歌单及原生窗口尚未验收。**
+**状态：已接入歌单能力、App 与同步界面，离线验证通过；macOS arm64 一键完整构建已验证，Spotify 真实歌单及原生窗口尚未验收。**
+
+## 推荐构建入口
+
+仓库根目录运行 `./build.sh`（macOS/Linux）或 `build.bat`（Windows）。编译机需 Go、Node/npm、Python 3.14+ 及 Wails 原生系统工具链；脚本自动获取哈希锁定解释器/wheel、创建私有环境、冻结、Wails 构建和装配，不需要 uv。产物及完整说明见 [build README](../../../../build/README.md)。
+
+锁中现包含 macOS/Windows/Linux glibc 各 amd64/arm64 六个原生目标，新增摘要来自同版发布方 SHA256SUMS。Linux/Windows 提供空 PATH、中文路径和冻结握手自检，但未在本次 macOS 会话实际运行，不等价于 OS 沙箱或完整发行验收。下方 macOS 手工步骤与历史审计作为底层参考保留，不再是必需的日常构建流程。
 
 SpotifyScraper `3.9.2` 通过局部适配提供原始分页读取/解析，helper 使用 PyInstaller `6.22.3` one-folder 冻结，携带 CPython `3.12.13`（PBS `20260807`）。用户运行时不需要 Python、pip、uv 或下载。包版本/哈希见 `requirements.lock`，解释器归档及发布校验来源见 `python.lock.json`，许可证见 [LICENSES.md](LICENSES.md)。
 
@@ -20,7 +26,7 @@ SpotifyScraper `3.9.2` 通过局部适配提供原始分页读取/解析，helpe
 
 ## 可复现准备与分组测试
 
-以下在仓库根目录执行，仅针对 **macOS arm64**。开发机需要 uv、Python 3.14+（只用于读取 zstd 元数据归档；不会打入 helper）及 Xcode 命令行工具。其他目标必须补充本平台 Python 归档锁和验证，不使用跨平台冻结或 PATH 解释器回退。
+以下是 **macOS arm64 手工准备参考**。开发机需要 uv、Python 3.14+（只用于读取 zstd 元数据归档；不会打入 helper）及 Xcode 命令行工具。新的一键入口无需 uv；其他目标使用锁定的原生归档，不使用跨平台冻结或运行时 PATH 解释器回退。
 
 ### 1. 获取与校验 Python
 
@@ -66,7 +72,7 @@ S=internal/provider/spotify/sidecar
 
 许可证收集保留所下载 wheel（包括内嵌依赖）的许可，不虚构当前平台没有安装的包。Windows 条件包的版本/许可已另行核对，发行时须在对应原生环境重新收集。
 
-产物位于 `build/spotify-helper/dist/spotify-helper/`，约 22 MiB；整个目录必须作为单元分发，不能只复制主可执行文件。`manifest.json` 包含文件摘要、平台和版本；`artifacts.py` 同时核对完整许可文本，拒绝缺失、额外、逃逸或符号链接资源。后续签名改变文件后必须重新生成摘要。显式 `package_app.py` 将当前已锁定目标的资源整体装配进 Wails bundle，内层签名后更新摘要，再签主程序／外层 `.app`。当前只支持 macOS arm64 的 ad-hoc 构建自检，尚无发布签名、公证或 Windows 安装器运行验收。
+产物位于 `build/spotify-helper/dist/spotify-helper/`，约 22 MiB；整个目录必须作为单元分发，不能只复制主可执行文件。`manifest.json` 包含文件摘要、平台和版本；`artifacts.py` 同时核对完整许可文本，拒绝缺失、额外、逃逸或符号链接资源。后续签名改变文件后必须重新生成摘要。显式 `package_app.py` 将当前已锁定原生目标的资源整体装配，macOS 内层签名后更新摘要，再签主程序／外层 `.app`；Windows/Linux 完整目录输出包含 `resources/spotify-helper`。本次只实际验证 macOS arm64 的 ad-hoc 构建自检，尚无发布签名、公证或 Windows 安装器运行验收。
 
 ## 锁定库源码审计与兼容范围
 

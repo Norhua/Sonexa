@@ -55,7 +55,8 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(package_app.resource_directory(binary, "win32-x86_64"), binary.parent / "resources" / "spotify-helper")
 
     def test_no_unverified_or_cross_platform_claim(self):
-        with self.assertRaises(ValueError): package_app.wails_target("windows/amd64")
+        with patch.object(package_app, "native_target", return_value="darwin-arm64"):
+            with self.assertRaises(ValueError): package_app.wails_target("windows/amd64")
         with patch.object(package_app, "native_target", return_value="linux-x86_64"):
             with self.assertRaises(ValueError): package_app.wails_target("darwin/arm64")
 

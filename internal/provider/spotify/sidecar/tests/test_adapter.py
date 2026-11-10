@@ -106,7 +106,7 @@ class AdapterTests(unittest.TestCase):
 
 class ProtocolTests(unittest.TestCase):
     def test_shared_go_python_protocol_fixture(self):
-        fixture = json.loads((Path(__file__).parents[2] / "testdata" / "protocol.json").read_text())
+        fixture = json.loads((Path(__file__).parents[2] / "testdata" / "protocol.json").read_text(encoding="utf-8"))
         for case in fixture["cases"]:
             entry = parse_track(case["raw"])
             entry.update(entryKey=entry["trackRef"] + ":1", position=1)

@@ -78,11 +78,10 @@ def assemble(binary, helper, target):
             subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)], check=True)
         verify(destination)
     else:
-        # No platform is silently accepted without a lock and offline verifier.
-        raise ValueError("This native target still needs a no-external-Python verifier")
+        verify(destination)
     validate_manifest(destination, target)
     print(json.dumps({"binary": str(binary), "helper": str(destination), "target": target,
-                      "signature": "ad-hoc only", "nativeUIAccepted": False}, ensure_ascii=False))
+                      "signature": "ad-hoc only" if target.startswith("darwin-") else "unsigned", "nativeUIAccepted": False}, ensure_ascii=False))
 
 
 def main():
@@ -95,7 +94,9 @@ def main():
         if action in ("assemble", "verify"):
             p.add_argument("--binary", type=Path, required=True)
         if action == "build":
-            p.add_argument("--wails", default="wails", help="Existing Wails v2 CLI; never auto-installed")
+            p.add_argument("--wails", default="wails", help="Existing Wails v2 CLI")
+            p.add_argument("--online", action="store_true", help="Allow Go/npm build dependency downloads")
+            p.add_argument("--tags", default="", help="Wails Go build tags, e.g. webkit2_41 on modern Linux")
     args = parser.parse_args()
     target = wails_target(args.platform)
     helper = args.helper.resolve()
@@ -105,8 +106,8 @@ def main():
             raise ValueError("Expected a built native application binary")
         destination = resource_directory(binary, target)
         validate_manifest(destination, target)
+        verify(destination)
         if target.startswith("darwin-"):
-            verify(destination)
             if binary.parent.name == "MacOS":
                 subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(binary.parent.parent.parent)], check=True)
         return
@@ -117,13 +118,21 @@ def main():
     if args.action == "build":
         # Explicit entry, not a global hook: an ordinary Wails build can still
         # build QQ/local-only development without a prepared Spotify runtime.
-        environment = dict(os.environ, GOPROXY="off", GOSUMDB="off", GOTOOLCHAIN="local",
-                           npm_config_offline="true", npm_config_audit="false", npm_config_fund="false")
-        subprocess.run([args.wails, "build", "-platform", args.platform, "-m", "-nosyncgomod", "-trimpath"],
-                       cwd=REPO, env=environment, check=True)
+        environment = dict(os.environ)
+        if not args.online:
+            environment.update(GOPROXY="off", GOSUMDB="off", GOTOOLCHAIN="local",
+                               npm_config_offline="true")
+        environment.update(npm_config_audit="false", npm_config_fund="false")
+        command = [args.wails, "build", "-platform", args.platform, "-m", "-nosyncgomod", "-trimpath"]
+        if args.tags:
+            command.extend(["-tags", args.tags])
+        subprocess.run(command, cwd=REPO, env=environment, check=True)
         config = json.loads((REPO / "wails.json").read_text())
         name = config["outputfilename"]
-        binary = REPO / "build" / "bin" / f"{name}.app" / "Contents" / "MacOS" / name
+        if target.startswith("darwin-"):
+            binary = REPO / "build" / "bin" / f"{name}.app" / "Contents" / "MacOS" / name
+        else:
+            binary = REPO / "build" / "bin" / (name + (".exe" if target.startswith("win32-") else ""))
     else:
         binary = args.binary.absolute()
     assemble(binary, helper, target)

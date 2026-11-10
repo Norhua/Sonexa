@@ -5,7 +5,7 @@ import base64
 import json
 import struct
 
-from adapter import ReadError
+from errors import ReadError
 
 PROTOCOL = 1
 MAX_FRAME = 32 * 1024 * 1024

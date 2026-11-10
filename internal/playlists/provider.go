@@ -61,8 +61,12 @@ type Entry struct {
 }
 
 type Excluded struct {
+	// Zero means the upstream reports an identified exclusion without its
+	// original position. Entries then retain their readable relative order.
 	Position int    `json:"position"`
 	Kind     string `json:"kind"`
+	TrackRef string `json:"trackRef,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 type Completeness struct {
@@ -122,14 +126,25 @@ func (s *Snapshot) Validate() error {
 		}
 	}
 	previous = 0
+	unpositioned := 0
 	for _, e := range s.Excluded {
-		if !identity(e.Kind) || e.Position <= previous || e.Position > c.RawSeen || positions[e.Position] {
+		if !identity(e.Kind) || !utf8.ValidString(e.Reason) || e.TrackRef != "" && !identity(e.TrackRef) {
 			return bad()
 		}
-		positions[e.Position], previous = true, e.Position
-		bytes += len(e.Kind) + 32
+		if e.Position == 0 {
+			if e.TrackRef == "" {
+				return bad()
+			}
+			unpositioned++
+		} else {
+			if e.Position <= previous || e.Position > c.RawSeen || positions[e.Position] {
+				return bad()
+			}
+			positions[e.Position], previous = true, e.Position
+		}
+		bytes += len(e.Kind) + len(e.TrackRef) + len(e.Reason) + 32
 	}
-	if len(positions) != c.RawSeen {
+	if len(positions)+unpositioned != c.RawSeen {
 		return bad()
 	}
 	for _, diagnostic := range s.Diagnostics {

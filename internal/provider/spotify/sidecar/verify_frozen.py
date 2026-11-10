@@ -1,4 +1,4 @@
-"""Offline frozen artifact check on macOS; not native application acceptance."""
+"""Frozen helper smoke test; macOS additionally uses an OS sandbox."""
 import argparse
 import hashlib
 import io
@@ -21,16 +21,22 @@ def verify(bundle, deny_paths=()):
         root = Path(directory)
         copied = root / "应用 空格" / "spotify-helper"
         shutil.copytree(bundle, copied)
-        executable = copied / "spotify-helper"
+        executable = copied / ("spotify-helper.exe" if sys.platform == "win32" else "spotify-helper")
         before = {p.relative_to(copied).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                   for p in copied.rglob("*") if p.is_file()}
         env = {"PATH": str(root / "no-tools"), "HOME": str(root / "empty-home"),
-               "TMPDIR": str(root), "PYTHONHOME": str(root / "invalid-python"),
+               "TMPDIR": str(root), "TMP": str(root), "TEMP": str(root),
+               "PYTHONHOME": str(root / "invalid-python"),
                "PYTHONPATH": str(root / "invalid-modules")}
-        if sys.platform != "darwin":
-            raise RuntimeError("This sandbox verification is macOS-only; do not claim other platforms.")
+        # Windows needs OS DLL/temporary-directory locations, not PATH Python.
+        for key in ("SystemRoot", "WINDIR", "SYSTEMROOT"):
+            if key in os.environ:
+                env[key] = os.environ[key]
+        command = [str(executable), "--self-test"]
+        sandboxed = sys.platform == "darwin"
         # Deny network, runtime resource writes and external interpreters/libraries.
-        # Tests run under the same OS sandbox as the frozen process, not mocks.
+        # On other targets the helper's audit hook/fixture transport is the
+        # offline guard, not an OS-level sandbox or clean-machine acceptance.
         repo = Path(__file__).resolve().parents[4]
         denied = [repo / "tmp" / "_scratch" / "spotify-audit", Path("/nix"),
                   Path.home() / ".local" / "share" / "uv" / "python", Path("/usr/bin/python3"),
@@ -38,8 +44,9 @@ def verify(bundle, deny_paths=()):
         profile = '(version 1) (allow default) (deny network*) '
         profile += '(deny file-read* ' + ' '.join(f'(subpath {json.dumps(str(p))})' for p in denied) + ') '
         profile += f'(deny file-write* (subpath {json.dumps(str(copied))}))'
-        process = subprocess.run(["/usr/bin/sandbox-exec", "-p", profile, str(executable), "--self-test"],
-                                 env=env, cwd=root, capture_output=True, timeout=20)
+        if sandboxed:
+            command = ["/usr/bin/sandbox-exec", "-p", profile, *command]
+        process = subprocess.run(command, env=env, cwd=root, capture_output=True, timeout=30)
         if process.returncode != 0:
             raise RuntimeError(f"Frozen self-test failed: {process.stderr[:4096]!r}; {process.stdout[:4096]!r}")
         stream = io.BytesIO(process.stdout)
@@ -53,11 +60,13 @@ def verify(bundle, deny_paths=()):
                  for p in copied.rglob("*") if p.is_file()}
         if before != after:
             raise RuntimeError("Runtime modified application resources")
-        subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(executable)], check=True)
-        subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(copied / "_internal" / "libpython3.12.dylib")], check=True)
-        print(json.dumps({"handshake": result, "networkDenied": True, "externalPythonDenied": True,
+        if sandboxed:
+            subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(executable)], check=True)
+            subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(copied / "_internal" / "libpython3.12.dylib")], check=True)
+        print(json.dumps({"handshake": result, "osSandbox": sandboxed, "externalPythonDenied": sandboxed,
                           "pathToolsAbsent": True, "unicodeSpacePath": True, "resourcesUnchanged": True,
-                          "signature": "ad-hoc only, not distribution signing"}, ensure_ascii=False, indent=2))
+                          "signature": "ad-hoc only" if sandboxed else "unsigned",
+                          "nativeUIAccepted": False}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

@@ -35,7 +35,7 @@ func TestPlaylistInputs(t *testing.T) {
 func playlistFixture(total, offset int) map[string]any {
 	songs := []any{}
 	for n := offset; n < min(total, offset+100); n++ {
-		songs = append(songs, map[string]any{"mid": fmt.Sprintf("%014d", n+1), "name": "曲名", "album": map[string]any{"name": "专辑"}, "singer": []any{map[string]any{"name": "署名一"}, map[string]any{"name": "署名二"}}, "interval": 123})
+		songs = append(songs, map[string]any{"id": n + 1, "mid": fmt.Sprintf("%014d", n+1), "name": "曲名", "album": map[string]any{"name": "专辑"}, "singer": []any{map[string]any{"name": "署名一"}, map[string]any{"name": "署名二"}}, "interval": 123})
 	}
 	return map[string]any{"disstid": 123456, "dirinfo": map[string]any{"title": "歌单"}, "total_song_num": total, "songlist": songs}
 }
@@ -158,7 +158,7 @@ func TestPlaylistFailureNeverReturnsSnapshot(t *testing.T) {
 func TestPlaylistMissingFieldsAndRepeatedOccurrences(t *testing.T) {
 	p, _ := qqPlaylistServer(t, func(_, offset int) (int, any) {
 		data := playlistFixture(3, offset)
-		data["songlist"] = []any{map[string]any{"mid": "00000000000001"}, map[string]any{"mid": "00000000000002"}, map[string]any{"mid": "00000000000001"}}
+		data["songlist"] = []any{map[string]any{"id": 1}, map[string]any{"id": 2}, map[string]any{"id": 1}}
 		return 200, playlistEnvelope(data)
 	})
 	s, err := p.FetchPlaylist(context.Background(), playlists.Ref{Provider: p.ID(), ID: "123456"})

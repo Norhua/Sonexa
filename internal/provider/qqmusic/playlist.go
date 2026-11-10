@@ -42,12 +42,15 @@ func (p *Provider) ParsePlaylist(input string) (playlists.Ref, error) {
 	id, err := playlistID(value)
 	if err != nil {
 		u, e := url.Parse(value)
-		if e != nil || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Host != "y.qq.com" || u.Fragment != "" {
+		if e != nil || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || (u.Host != "y.qq.com" && u.Host != "i2.y.qq.com") || u.Fragment != "" {
 			return playlists.Ref{}, playlists.Failure(playlists.Input, "请输入 QQ 官方歌单链接或数字 ID")
+		}
+		if u.Host == "i2.y.qq.com" && u.Path != "/n3/other/pages/details/playlist.html" {
+			return playlists.Ref{}, playlists.Failure(playlists.Input, "链接不是 QQ 歌单")
 		}
 		if path := playlistPath.FindStringSubmatch(u.Path); path != nil {
 			id, err = playlistID(path[1])
-		} else if u.Path == "/n/ryqq/playlist" || u.Path == "/n/m/detail/taoge/index.html" || u.Path == "/n/yqq/playlist.html" || u.Path == "/n2/m/share/details/taoge.html" {
+		} else if u.Path == "/n/ryqq/playlist" || u.Path == "/n/m/detail/taoge/index.html" || u.Path == "/n/yqq/playlist.html" || u.Path == "/n2/m/share/details/taoge.html" || u.Path == "/n3/other/pages/details/playlist.html" {
 			query, e := url.ParseQuery(u.RawQuery)
 			if e != nil {
 				return playlists.Ref{}, playlists.Failure(playlists.Input, "歌单分享参数无效")
@@ -106,12 +109,12 @@ func (p *Provider) fetchPlaylist(ctx context.Context, ref playlists.Ref) (*playl
 		Diagnostics: []string{"条目按歌曲身份和出现序号配对，不能识别相同副本的具体删除"}}
 	seenPages := map[[32]byte]bool{}
 	occurrences := map[string]int{}
-	total := -1
+	total, rawSeen := -1, 0
 	id, _ := strconv.ParseInt(ref.ID, 10, 64)
 	for page := 1; page <= playlists.MaxPages; page++ {
 		body, err := p.musicu(ctx, provider.NoStore, map[string]any{"playlist": map[string]any{
 			"module": "music.srfDissInfo.DissInfo", "method": "CgiGetDiss",
-			"param": map[string]any{"disstid": id, "song_begin": len(s.Entries), "song_num": 100},
+			"param": map[string]any{"disstid": id, "song_begin": rawSeen, "song_num": 100},
 		}})
 		if err != nil {
 			return nil, err
@@ -125,9 +128,19 @@ func (p *Provider) fetchPlaylist(ctx context.Context, ref playlists.Ref) (*playl
 				Title *string     `json:"title"`
 				ID    json.Number `json:"id"`
 			} `json:"dirinfo"`
-			DissID json.Number       `json:"disstid"`
-			Total  *int              `json:"total_song_num"`
-			Songs  []json.RawMessage `json:"songlist"`
+			DissID      json.Number       `json:"disstid"`
+			Total       *int              `json:"total_song_num"`
+			Songs       []json.RawMessage `json:"songlist"`
+			Size        *int              `json:"songlist_size"`
+			HasMore     *int              `json:"hasmore"`
+			Code        int               `json:"code"`
+			Subcode     int               `json:"subcode"`
+			Invalid     []json.RawMessage `json:"invalid_song"`
+			FilterCount int               `json:"filter_song_num"`
+			Filtered    []struct {
+				ID   json.Number `json:"songid"`
+				Type int         `json:"songtype"`
+			} `json:"filtered_song"`
 		}
 		if json.Unmarshal(blocks["playlist"], &data) != nil || data.Total == nil || *data.Total < 0 || data.Songs == nil || data.DirInfo.Title == nil {
 			return nil, playlists.Failure(playlists.Incomplete, "QQ 歌单分页缺少完整性字段")
@@ -140,21 +153,32 @@ func (p *Provider) fetchPlaylist(ctx context.Context, ref playlists.Ref) (*playl
 				return nil, playlists.Failure(playlists.Incomplete, "QQ 返回了不同歌单")
 			}
 		}
-		if *data.Total > playlists.MaxItems {
+		if data.Code != 0 || data.Subcode != 0 {
+			return nil, playlists.Failure(playlists.Restricted, "QQ 歌单来源限制读取")
+		}
+		if len(data.Invalid) != 0 || data.FilterCount != 0 || data.Size != nil && *data.Size != len(data.Songs) {
+			return nil, playlists.Failure(playlists.Incomplete, "QQ 歌单存在无法核对的歌曲")
+		}
+		// CgiGetDiss subtracts this page's filtered songs from its reported
+		// total, not all filtered songs in the playlist. Restore the raw count
+		// before comparing pages, and advance by raw slots rather than songs.
+		if len(data.Filtered) > 100 || *data.Total > playlists.MaxItems-len(data.Filtered) {
 			return nil, playlists.Failure(playlists.Resource, "QQ 歌单超过条目上限")
 		}
+		pageTotal := *data.Total + len(data.Filtered)
 		if total < 0 {
-			total = *data.Total
+			total = pageTotal
 			s.Name = *data.DirInfo.Title
-		} else if total != *data.Total || s.Name != *data.DirInfo.Title {
+		} else if total != pageTotal || s.Name != *data.DirInfo.Title {
 			return nil, playlists.Failure(playlists.Incomplete, "读取期间 QQ 歌单发生变化")
 		}
-		if len(data.Songs) > 100 || len(s.Entries)+len(data.Songs) > total || len(data.Songs) == 0 && len(s.Entries) < total {
-			return nil, playlists.Failure(playlists.Incomplete, "QQ 歌单分页提前结束")
+		pageSize := len(data.Songs) + len(data.Filtered)
+		if pageSize != min(100, total-rawSeen) || data.HasMore != nil && *data.HasMore != boolInt(rawSeen+pageSize < total) {
+			return nil, playlists.Failure(playlists.Incomplete, "QQ 歌单分页覆盖不完整")
 		}
-		encoded, _ := json.Marshal(data.Songs)
+		encoded, _ := json.Marshal([]any{data.Songs, data.Filtered})
 		hash := sha256.Sum256(encoded)
-		if len(data.Songs) > 0 && seenPages[hash] {
+		if pageSize > 0 && seenPages[hash] {
 			return nil, playlists.Failure(playlists.Incomplete, "QQ 返回重复歌单页面")
 		}
 		seenPages[hash] = true
@@ -168,20 +192,35 @@ func (p *Provider) fetchPlaylist(ctx context.Context, ref playlists.Ref) (*playl
 			e.Position = len(s.Entries) + 1
 			s.Entries = append(s.Entries, e)
 		}
-		if len(s.Entries) == total {
-			s.Completeness = playlists.Completeness{Complete: true, DeclaredTotal: total, RawSeen: total, Pages: page, TrackCount: len(s.Entries)}
+		for _, filtered := range data.Filtered {
+			id, err := playlistID(filtered.ID.String())
+			if err != nil || filtered.Type != 13 {
+				return nil, playlists.Failure(playlists.Incomplete, "QQ 歌单过滤项身份或类型无法确认")
+			}
+			s.Excluded = append(s.Excluded, playlists.Excluded{TrackRef: id, Kind: "unavailable_track", Reason: "QQ 未返回该歌曲详情；已有同步条目保持不变"})
+		}
+		rawSeen += pageSize
+		if rawSeen == total {
+			s.Completeness = playlists.Completeness{Complete: true, DeclaredTotal: total, RawSeen: rawSeen, Pages: page, TrackCount: len(s.Entries), ExcludedCount: len(s.Excluded)}
 			return s, nil
 		}
 	}
 	return nil, playlists.Failure(playlists.Resource, "QQ 歌单超过分页上限")
 }
 
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
 func parsePlaylistSong(raw json.RawMessage) (playlists.Entry, error) {
 	var song struct {
-		MID      string  `json:"mid"`
-		SongMID  string  `json:"songmid"`
-		Name     *string `json:"name"`
-		SongName *string `json:"songname"`
+		ID       json.Number `json:"id"`
+		SongID   json.Number `json:"songid"`
+		Name     *string     `json:"name"`
+		SongName *string     `json:"songname"`
 		Album    struct {
 			Name *string `json:"name"`
 		} `json:"album"`
@@ -194,14 +233,17 @@ func parsePlaylistSong(raw json.RawMessage) (playlists.Entry, error) {
 	if json.Unmarshal(raw, &song) != nil {
 		return playlists.Entry{}, playlists.Failure(playlists.Incomplete, "QQ 歌单歌曲结构无效")
 	}
-	ref := song.MID
+	// Numeric song IDs exist in both readable and filtered records. MID is
+	// still used by metadata providers; it cannot match a filtered song here.
+	ref := song.ID
 	if ref == "" {
-		ref = song.SongMID
+		ref = song.SongID
 	}
-	if !ValidMID(ref) || song.MID != "" && song.SongMID != "" && song.MID != song.SongMID {
+	id, err := playlistID(ref.String())
+	if err != nil || song.ID != "" && song.SongID != "" && song.ID != song.SongID {
 		return playlists.Entry{}, playlists.Failure(playlists.Incomplete, "QQ 歌单歌曲身份缺失")
 	}
-	e := playlists.Entry{TrackRef: ref, Title: song.Name, Album: song.Album.Name}
+	e := playlists.Entry{TrackRef: id, Title: song.Name, Album: song.Album.Name}
 	if e.Title == nil {
 		e.Title = song.SongName
 	}

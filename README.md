@@ -75,6 +75,7 @@ API 配额和封面工作池长期共用。封面目录通过 `MoveRoot` 迁移�
 本地候选徽章只表示精确本地绑定，不等于已入库：复核可跳过并投递同步目标，搜索中未入库身份仍可显式添加，不跳往不可见曲库行。
 QQ 歌单请求与元数据/封面查询/歌词共用设置配额；Spotify 只提供公开歌单读取，
 通过随附 SpotifyScraper/CPython helper 工作，不要求用户安装 Python。运行环境不可用时明确拒绝，不自动下载修复。
+QQ 官方移动分享链接可直接输入。上游明确过滤且仍有歌曲 ID 的项目会在绑定/刷新预览中显示数量与原因：首次不入队，刷新不误删已有条目；不明过滤或真正不完整仍拒绝同步。
 
 
 - 本地保存的 track 与音乐库归属分开。同步新建默认未入库，文件新建/普通本地创建入库；
@@ -95,15 +96,19 @@ QQ 歌单请求与元数据/封面查询/歌词共用设置配额；Spotify 只�
 
 ## 开发与验证
 
-需要 Go、Node.js/npm、Wails v2 及目标平台构建依赖。
+需要 Go、Node.js/npm 及目标平台构建依赖。完整构建另需 Python 3.14+（仅编译机用于解包元数据），Wails v2 自动检测或按项目版本安装，不再需要 uv 或手动安装 Python 库。
 
-**普通 `wails build` 只构建主应用，不自动装配 Spotify helper。** 需要带 helper 的 macOS arm64 包时，
-按[完整资源构建说明](build/README.md)先准备锁定环境，再运行显式 `package_app.py build`，它会构建 Wails 应用、
-整体装配 helper/许可、ad-hoc 签名并做无外部 Python 自检。其他目标仍未完成冻结／发行验收。
-缺失 helper 时 Spotify 明确不可用，QQ 和本地功能不受影响；本地包自检不等于发布签名或原生验收。
+**完整应用（含 Spotify helper）：macOS/Linux 运行 `./build.sh`，Windows 运行 `build.bat`。**
+脚本下载校验过的 Python/依赖、冻结 helper、构建 Wails 并装配完整资源；会自动找到 `~/.go/bin/wails`。
+输出在 `build/release/<系统>-<架构>/`，分发整个 `.app` 或 `sonexa/` 目录。
+macOS/Windows/Linux 各提供 amd64、arm64 原生构建入口，不支持交叉冻结；本次只在 macOS arm64 完成运行验证。
+前置系统工具、离线缓存、其他平台未验收边界见[完整构建说明](build/README.md)。
+
+**普通 `wails build` 仍只构建主应用，不自动装配 Spotify helper。** 缺失时 Spotify 明确不可用，QQ 和本地功能不受影响。
+用户运行完整应用不需要 Python；构建自检不等于 Spotify 在线读取、发行签名或原生 UI 验收。
 
 ```sh
-# 首次检出：安装前端依赖，再生成绑定并构建主应用
+# 只构建主应用（不含 Spotify helper）：安装前端依赖并生成绑定
 cd frontend
 npm ci
 cd ..

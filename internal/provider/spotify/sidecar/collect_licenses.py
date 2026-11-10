@@ -9,7 +9,11 @@ import json
 from pathlib import Path
 import re
 import shutil
+import sys
 import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from artifacts import native_target, locked_target
 
 
 def digest(data):
@@ -17,6 +21,10 @@ def digest(data):
 
 
 def collect(wheelhouse, python_metadata, output):
+    target = native_target()
+    python_lock = locked_target(target)
+    if output.exists():
+        shutil.rmtree(output)
     output.mkdir(parents=True, exist_ok=True)
     lock = Path(__file__).with_name("requirements.lock").read_text()
     entries = []
@@ -34,6 +42,9 @@ def collect(wheelhouse, python_metadata, output):
             for name in paths:
                 data = archive.read(name)
                 # Preserve vendored package provenance instead of flattening names.
+                parts = Path(name).parts
+                if Path(name).is_absolute() or ".." in parts or "\\" in name or ":" in name:
+                    raise ValueError("Unsafe wheel license path")
                 relative = Path("packages") / wheel.stem / name
                 dest = output / relative
                 dest.parent.mkdir(parents=True, exist_ok=True)
@@ -42,7 +53,7 @@ def collect(wheelhouse, python_metadata, output):
             entries.append({"name": meta["Name"], "version": meta["Version"],
                             "license": meta["License-Expression"] or meta["License"] or "See license file",
                             "wheel": wheel.name, "sha256": wheel_hash, "files": licenses})
-    pbs = json.loads((python_metadata / "PYTHON.json").read_text())
+    pbs = json.loads((python_metadata / "PYTHON.json").read_text(encoding="utf-8"))
     native = []
     for name, variants in sorted(pbs["build_info"]["extensions"].items()):
         for variant in variants:
@@ -54,10 +65,12 @@ def collect(wheelhouse, python_metadata, output):
         dest = output / "python" / path.name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, dest)
-        python_licenses.append({"path": str(dest.relative_to(output)), "sha256": digest(path.read_bytes())})
-    inventory = {"python": pbs["python_version"], "pythonBuild": "20260807", "target": "darwin-arm64",
+        python_licenses.append({"path": dest.relative_to(output).as_posix(), "sha256": digest(path.read_bytes())})
+    if pbs["python_version"] != python_lock["python"]:
+        raise ValueError("Python metadata version mismatch")
+    inventory = {"python": pbs["python_version"], "pythonBuild": python_lock["build"], "target": target,
                  "packages": entries, "pythonLicenses": python_licenses, "nativeModules": native}
-    (output / "inventory.json").write_text(json.dumps(inventory, ensure_ascii=False, indent=2) + "\n")
+    (output / "inventory.json").write_text(json.dumps(inventory, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

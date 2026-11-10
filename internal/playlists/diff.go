@@ -43,6 +43,12 @@ func Diff(previous *State, next Snapshot) (Difference, error) {
 			old[entry.EntryKey] = entry
 		}
 	}
+	protected := map[string]bool{}
+	for _, excluded := range next.Excluded {
+		if excluded.TrackRef != "" {
+			protected[excluded.TrackRef] = true
+		}
+	}
 	present := map[string]bool{}
 	for _, entry := range next.Entries {
 		present[entry.EntryKey] = true
@@ -65,7 +71,7 @@ func Diff(previous *State, next Snapshot) (Difference, error) {
 	}
 	if previous != nil {
 		for _, prior := range OrderedEntries(previous.Entries) {
-			if present[prior.EntryKey] || !prior.UpstreamPresent {
+			if present[prior.EntryKey] || !prior.UpstreamPresent || protected[prior.TrackRef] {
 				continue
 			}
 			change := Change{Entry: prior.Entry, EntryID: prior.ID, Disposition: "cancel_import"}

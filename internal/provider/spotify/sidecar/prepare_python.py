@@ -1,11 +1,14 @@
 """Build-only artifact preparation. Requires Python 3.14 for zstd metadata."""
 import argparse
-import hashlib
 import json
 from pathlib import Path
-import platform
 import tarfile
+import shutil
+import sys
 import urllib.request
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from artifacts import native_target, sha256
 
 ROOT = Path(__file__).resolve().parent
 
@@ -22,19 +25,19 @@ def download(url, expected, path, offline=False):
             with urllib.request.urlopen(request, timeout=90) as response, partial.open("wb") as output:
                 while chunk := response.read(1024 * 1024):
                     output.write(chunk)
-            if hashlib.sha256(partial.read_bytes()).hexdigest() != expected:
+            if sha256(partial) != expected:
                 raise ValueError("Build artifact SHA-256 mismatch")
             partial.replace(path)
         finally:
             partial.unlink(missing_ok=True)
-    if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+    if sha256(path) != expected:
         raise ValueError("Cached build artifact SHA-256 mismatch")
 
 
 def prepare(destination, offline=False):
     from compression import zstd
     lock = json.loads((ROOT / "python.lock.json").read_text())
-    target = f"{platform.system().lower()}-{platform.machine()}"
+    target = native_target()
     if target not in lock["targets"]:
         raise ValueError("This target has no verified Python artifact lock")
     artifact = lock["targets"][target]
@@ -43,9 +46,15 @@ def prepare(destination, offline=False):
     metadata = destination / "python-full.tar.zst"
     download(artifact["url"], artifact["sha256"], archive, offline)
     download(artifact["metadataUrl"], artifact["metadataSha256"], metadata, offline)
-    if not (destination / "python" / "bin" / "python3.12").exists():
-        with tarfile.open(archive, "r:gz") as source:
-            source.extractall(destination, filter="data")
+    # Re-extract verified archives instead of trusting an old mutable runtime.
+    for name in ("python", "python-metadata"):
+        path = destination / name
+        if path.is_symlink():
+            raise ValueError("Refusing a symlinked Python cache")
+        if path.exists():
+            shutil.rmtree(path)
+    with tarfile.open(archive, "r:gz") as source:
+        source.extractall(destination, filter="data")
     with zstd.open(metadata, "rb") as stream, tarfile.open(fileobj=stream, mode="r|") as source:
         for entry in source:
             if not entry.isfile() or not (entry.name == "python/PYTHON.json" or entry.name.startswith("python/licenses/")):
@@ -56,7 +65,9 @@ def prepare(destination, offline=False):
             path = destination / "python-metadata" / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(source.extractfile(entry).read())
-    print(destination / "python" / "bin" / "python3.12")
+    interpreter = destination / "python" / ("python.exe" if target.startswith("win32-") else "bin/python3.12")
+    print(interpreter)
+    return interpreter
 
 
 if __name__ == "__main__":

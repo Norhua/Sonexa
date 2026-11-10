@@ -71,6 +71,7 @@ async function commit() {
       <div v-if="preview" class="rounded border p-3" data-testid="binding-preview">
         <p>{{ display(preview.name) }} → {{ preview.alias || preview.name }}</p>
         <p>将建立 {{ preview.difference.added.length }} 项导入需求；明确排除 {{ preview.difference.excluded.length }} 项。</p>
+        <ul v-if="preview.difference.excluded.length" class="mt-2 max-h-40 overflow-auto text-muted-color"><li v-for="(entry, index) in preview.difference.excluded" :key="index">{{ entry.trackRef || entry.kind }} · {{ entry.reason || entry.kind }}</li></ul>
       </div>
       <Message v-if="existing" severity="info">该歌单已绑定。<SecondaryButton size="small" @click="emit('bound', existing); visible = false">打开已绑定歌单</SecondaryButton></Message>
       <Message v-if="error" severity="error">{{ error }}</Message>
