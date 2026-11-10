@@ -1,5 +1,14 @@
 import { test, expect, type Page } from './fixtures'
+import type { Locator } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
+
+async function expectPreview(image: Locator, variantId: number, searchId: string) {
+  expect(searchId).toBeTruthy()
+  await expect.poll(() => image.evaluate((el: HTMLImageElement) => {
+    const url = new URL(el.src)
+    return { path: url.pathname, params: Object.fromEntries(url.searchParams) }
+  })).toEqual({ path: '/cover', params: { variantId: String(variantId), searchId } })
+}
 
 async function openSearch(page: Page) {
   await page.locator('.track-list [data-row-key]').first().locator('td').last().dblclick()
@@ -17,6 +26,7 @@ test.beforeEach(async ({ page }) => {
     api.GetTrackDetail = async (id: number) => { const d = await detail(id); return { ...d, track: { ...d.track, releaseId: 20 } } }
     api.StartCoverSearch = async (request: any) => {
       const source = request.sources[0]
+      ;((window as any).__coverSearchIds ??= {})[source] = request.searchId
       const card = (id: number, type: string, variants: any[]) => ({ source, sourceRef: 'album', image: { id, title: `${source} ${type}`, artist: '测试艺术家', primaryType: type, variants } })
       const cards = source === 'caa' ? [
         card(1, 'Front', [{ id: 12, spec: '1200' }, { id: 11, spec: '250' }, { id: 13, spec: 'original' }]),
@@ -50,8 +60,9 @@ test('image12 badges, smallest-only previews, dimensions, separate images and ex
   const qq = view.locator('article').filter({ hasText: 'qq Front' })
   await expect(back).toContainText('原图·尺寸未知')
   await expect(qq).toContainText('800px·待验证')
-  await expect(itunes.locator('img')).toHaveAttribute('src', /variantId=32$/)
-  await expect(front.locator('img')).toHaveAttribute('src', /variantId=11$/)
+  const searchIds = await page.evaluate(() => (window as any).__coverSearchIds)
+  await expectPreview(itunes.locator('img'), 32, searchIds.itunes)
+  await expectPreview(front.locator('img'), 11, searchIds.caa)
   await expect.poll(() => requests.length).toBe(4)
   expect([...requests].sort((a, b) => a - b)).toEqual([11, 21, 32, 41])
   await page.screenshot({ path: info.outputPath('cover-specs-pending.png') })
@@ -67,11 +78,12 @@ test('image12 badges, smallest-only previews, dimensions, separate images and ex
     await page.screenshot({ path: info.outputPath(`image12-grid-${dark ? 'dark' : 'light'}.png`), animations: 'disabled' })
   }
   await front.getByRole('button', { name: '1200px', exact: true }).click()
-  await expect(front.locator('img')).toHaveAttribute('src', /variantId=12$/)
+  await expectPreview(front.locator('img'), 12, searchIds.caa)
   await expect(front.locator('span').filter({ hasText: /^600×400$/ })).toBeVisible()
   await front.getByRole('button', { name: '查看大图', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '封面预览', exact: true })
   await expect(dialog.getByAltText('封面大图')).toHaveCSS('object-fit', 'contain')
+  await expectPreview(dialog.getByAltText('封面大图'), 12, searchIds.caa)
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   await expect(view).toBeVisible()
