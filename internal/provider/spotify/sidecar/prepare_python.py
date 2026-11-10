@@ -10,10 +10,12 @@ import urllib.request
 ROOT = Path(__file__).resolve().parent
 
 
-def download(url, expected, path):
+def download(url, expected, path, offline=False):
     if not url.startswith("https://releases.astral.sh/"):
         raise ValueError("Unexpected build artifact source")
     if not path.exists():
+        if offline:
+            raise ValueError(f"Missing cached artifact in offline mode: {path.name}")
         request = urllib.request.Request(url, headers={"User-Agent": "uv/0.13.5"})
         partial = path.with_suffix(path.suffix + ".partial")
         try:
@@ -29,7 +31,7 @@ def download(url, expected, path):
         raise ValueError("Cached build artifact SHA-256 mismatch")
 
 
-def prepare(destination):
+def prepare(destination, offline=False):
     from compression import zstd
     lock = json.loads((ROOT / "python.lock.json").read_text())
     target = f"{platform.system().lower()}-{platform.machine()}"
@@ -39,8 +41,8 @@ def prepare(destination):
     destination.mkdir(parents=True, exist_ok=True)
     archive = destination / "python.tar.gz"
     metadata = destination / "python-full.tar.zst"
-    download(artifact["url"], artifact["sha256"], archive)
-    download(artifact["metadataUrl"], artifact["metadataSha256"], metadata)
+    download(artifact["url"], artifact["sha256"], archive, offline)
+    download(artifact["metadataUrl"], artifact["metadataSha256"], metadata, offline)
     if not (destination / "python" / "bin" / "python3.12").exists():
         with tarfile.open(archive, "r:gz") as source:
             source.extractall(destination, filter="data")
@@ -60,4 +62,6 @@ def prepare(destination):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("destination", type=Path)
-    prepare(parser.parse_args().destination.resolve())
+    parser.add_argument("--offline", action="store_true", help="Only use hash-verified cached archives; never download")
+    args = parser.parse_args()
+    prepare(args.destination.resolve(), args.offline)

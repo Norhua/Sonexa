@@ -10,14 +10,13 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from artifacts import native_target, validate_manifest
 from protocol import read_frame
 
 
-def verify(bundle):
-    manifest = json.loads((bundle / "manifest.json").read_text())
-    for relative, expected in manifest["files"].items():
-        if hashlib.sha256((bundle / relative).read_bytes()).hexdigest() != expected:
-            raise RuntimeError(f"Resource mismatch: {relative}")
+def verify(bundle, deny_paths=()):
+    manifest = validate_manifest(bundle, native_target())
     with tempfile.TemporaryDirectory(prefix="Sonexa 中文 路径 ") as directory:
         root = Path(directory)
         copied = root / "应用 空格" / "spotify-helper"
@@ -34,7 +33,8 @@ def verify(bundle):
         # Tests run under the same OS sandbox as the frozen process, not mocks.
         repo = Path(__file__).resolve().parents[4]
         denied = [repo / "tmp" / "_scratch" / "spotify-audit", Path("/nix"),
-                  Path.home() / ".local" / "share" / "uv" / "python", Path("/usr/bin/python3")]
+                  Path.home() / ".local" / "share" / "uv" / "python", Path("/usr/bin/python3"),
+                  Path(sys.prefix).resolve(), Path(sys.base_prefix).resolve(), *deny_paths]
         profile = '(version 1) (allow default) (deny network*) '
         profile += '(deny file-read* ' + ' '.join(f'(subpath {json.dumps(str(p))})' for p in denied) + ') '
         profile += f'(deny file-write* (subpath {json.dumps(str(copied))}))'
@@ -63,5 +63,6 @@ def verify(bundle):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("bundle", type=Path)
+    parser.add_argument("--deny-path", action="append", default=[], type=Path, help="Additional build/cache path denied to the helper")
     args = parser.parse_args()
-    verify(args.bundle.resolve())
+    verify(args.bundle.resolve(), [p.resolve() for p in args.deny_path])

@@ -11,6 +11,8 @@ SpotifyScraper `3.9.2` 通过局部适配提供原始分页读取/解析，helpe
 - `helper.py`：版本握手、一次读取和 `--self-test`。外部输入为帧中数据，不作为命令/文件路径。
 - `tests/`：合成原始响应 fixture、HTTP 对端替身、分页/协议保护测试。
 - `collect_licenses.py / freeze.py / verify_frozen.py`：仅开发/构建使用；产物统一位于 Git 忽略的 `build/spotify-helper/`。
+- `artifacts.py / package_app.py`：构建期逐文件与许可校验、显式 Wails 构建／资源装配与 ad-hoc 自检；不进入运行时网络链。
+  从干净检出使用已有 hash-locked 缓存的离线步骤见 [build README](../../../../build/README.md)。
 
 协议版本为 1，消息携带 `requestId / kind`；HTTP 交换另有递增 sequence。响应 body 使用 Base64，status / headers 单独传递；错误为有限 code 和脱敏信息。当前限制：单帧/最终结果 32 MiB，单响应 8 MiB，累计响应 256 MiB，最多 500 次请求、200 页、20,000 原始项。Go 通过 `provider/spotify` 独立实施超时、每次实际发送计数、允许目标、动态门禁、共享桶和进程取消，Python 检查不代替 Go 保护；Windows 实际进程与发行包验收仍未完成。
 
@@ -27,7 +29,7 @@ mkdir -p tmp/_scratch/spotify-audit
 python3 internal/provider/spotify/sidecar/prepare_python.py tmp/_scratch/spotify-audit
 ```
 
-该准备脚本只下载锁中的 HTTPS 构建资源，先核对归档 SHA-256 再解包，保留元数据/许可证。最初 urllib 请求返回 403 的阻塞已解除：使用构建下载 User-Agent 后取得归档，摘要与发布方 `SHA256SUMS` 一致；没有禁用 TLS 或使用其他未经校验镜像。
+该准备脚本只下载锁中的 HTTPS 构建资源，先核对归档 SHA-256 再解包，保留元数据/许可证；加 `--offline` 后只接受已有且摘要正确的归档，缺失直接失败。最初 urllib 请求返回 403 的阻塞已解除：使用构建下载 User-Agent 后取得归档，摘要与发布方 `SHA256SUMS` 一致；没有禁用 TLS 或使用其他未经校验镜像。
 
 ### 2. 锁定下载与两次离线安装
 
@@ -64,7 +66,7 @@ S=internal/provider/spotify/sidecar
 
 许可证收集保留所下载 wheel（包括内嵌依赖）的许可，不虚构当前平台没有安装的包。Windows 条件包的版本/许可已另行核对，发行时须在对应原生环境重新收集。
 
-产物位于 `build/spotify-helper/dist/spotify-helper/`，约 22 MiB；整个目录必须作为单元分发，不能只复制主可执行文件。`manifest.json` 包含文件摘要、平台和版本，后续签名改变文件后必须重新生成摘要。当前仅做 ad-hoc 签名校验，尚无发布签名、公证、Wails bundle 或安装器装配。
+产物位于 `build/spotify-helper/dist/spotify-helper/`，约 22 MiB；整个目录必须作为单元分发，不能只复制主可执行文件。`manifest.json` 包含文件摘要、平台和版本；`artifacts.py` 同时核对完整许可文本，拒绝缺失、额外、逃逸或符号链接资源。后续签名改变文件后必须重新生成摘要。显式 `package_app.py` 将当前已锁定目标的资源整体装配进 Wails bundle，内层签名后更新摘要，再签主程序／外层 `.app`。当前只支持 macOS arm64 的 ad-hoc 构建自检，尚无发布签名、公证或 Windows 安装器运行验收。
 
 ## 锁定库源码审计与兼容范围
 
@@ -91,3 +93,7 @@ S=internal/provider/spotify/sidecar
 - 初次读取 zstd 归档时系统 tar 缺 zstd，改用开发机 Python 3.14 的标准库仅解包构建元数据；helper 本身没有该依赖。
 
 未请求真实 QQ/Spotify 歌单；Go 受控传输、资源定位、进程封装和只读能力装配已实现，并用真实冻结 helper + Go HTTP 替身验证空歌单及 205 项分页/补取往返。同步业务与 App/UI 现已完成离线接入，最新结果见[第 11 组验收记录](../../../../openspec/changes/add-streaming-playlist-sync/implementation-phase11-offline.md)。Windows 进程运行、安装包或原生 UI 验收尚未完成；Windows 仅交叉编译，Linux/其他 macOS 架构未验证，当前结果不代表完整发行支持。
+
+后续按 [build README](../../../../build/README.md) 从干净检出、已有校验缓存重新冻结并装配 macOS arm64 `.app` 已通过；
+Python 离线含构建契约现为 23 项，bundle 资源缺失／额外／错目标／缺许可均拒绝。
+具体命令、源码树及签名边界见[第 4 组构建验收](../../../../openspec/changes/add-streaming-playlist-sync/implementation-phase4-packaging.md)，不把 ad-hoc 构建自检记成原生窗口或发布签名验收。

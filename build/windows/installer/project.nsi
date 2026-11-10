@@ -34,6 +34,26 @@ Unicode true
 ####
 !include "wails_tools.nsh"
 
+# Future native Spotify builds must explicitly opt in with a validated complete
+# directory. No helper is downloaded by NSIS. Dual-arch needs separate payloads.
+!ifdef SONEXA_SPOTIFY_HELPER
+    !if "${ARCH}" == "amd64_arm64"
+        !error "Spotify helper installers must use one native architecture per package"
+    !endif
+    !if /FileExists "${SONEXA_SPOTIFY_HELPER}\manifest.json"
+    !else
+        !error "Spotify helper manifest is missing"
+    !endif
+    !if /FileExists "${SONEXA_SPOTIFY_HELPER}\spotify-helper.exe"
+    !else
+        !error "Spotify helper executable is missing"
+    !endif
+    !if /FileExists "${SONEXA_SPOTIFY_HELPER}\licenses\inventory.json"
+    !else
+        !error "Spotify helper licenses are missing"
+    !endif
+!endif
+
 # The version information for this two must consist of 4 parts
 VIProductVersion "${INFO_PRODUCTVERSION}.0"
 VIFileVersion    "${INFO_PRODUCTVERSION}.0"
@@ -87,6 +107,15 @@ Section
     SetOutPath $INSTDIR
 
     !insertmacro wails.files
+
+    !ifdef SONEXA_SPOTIFY_HELPER
+        # Replace the whole owned resource directory on upgrade; stale native
+        # dependencies must not survive a changed helper manifest.
+        RMDir /r "$INSTDIR\resources\spotify-helper"
+        SetOutPath "$INSTDIR\resources\spotify-helper"
+        File /r "${SONEXA_SPOTIFY_HELPER}\*"
+        SetOutPath $INSTDIR
+    !endif
 
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"

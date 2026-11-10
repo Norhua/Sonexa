@@ -97,10 +97,10 @@ QQ 歌单请求与元数据/封面查询/歌词共用设置配额；Spotify 只�
 
 需要 Go、Node.js/npm、Wails v2 及目标平台构建依赖。
 
-**当前 `wails build` 只构建主应用，不自动装配 Spotify helper。** 开发时须先按
-[helper 准备说明](internal/provider/spotify/sidecar/README.md)生成匹配版本的整个 one-folder 目录，
-再核对[资源位置与构建边界](build/README.md)。目前只有 macOS arm64 helper 离线证据；
-缺失时 Spotify 明确不可用，QQ 和本地功能不受影响。下述构建不是完整 Spotify 发行包验收。
+**普通 `wails build` 只构建主应用，不自动装配 Spotify helper。** 需要带 helper 的 macOS arm64 包时，
+按[完整资源构建说明](build/README.md)先准备锁定环境，再运行显式 `package_app.py build`，它会构建 Wails 应用、
+整体装配 helper/许可、ad-hoc 签名并做无外部 Python 自检。其他目标仍未完成冻结／发行验收。
+缺失 helper 时 Spotify 明确不可用，QQ 和本地功能不受影响；本地包自检不等于发布签名或原生验收。
 
 ```sh
 # 首次检出：安装前端依赖，再生成绑定并构建主应用

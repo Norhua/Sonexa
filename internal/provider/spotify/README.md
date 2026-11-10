@@ -14,7 +14,7 @@ Spotify 只实现 `playlists.Provider`，不进入元数据/封面/歌词注册�
 
 资源位置来自应用二进制，不从 PATH/cwd/用户输入查找：macOS bundle 的 `Contents/Resources/spotify-helper`、Wails 开发 `build/spotify-helper/dist/spotify-helper`、其他安装目录的 `resources/spotify-helper`。清单逐文件 SHA-256、版本与架构核验，拒绝逃逸路径和未列出的文件。完整性摘要不替代平台签名。
 
-固定参数数组启动，不执行 shell、用户 Python、pip/uv 或运行时安装；过滤 Python、动态库注入、PyInstaller 和代理环境。stdio 验证版本、request ID、顺序和消息类型。结果必须随后正常 EOF/退出，尾部输出、崩溃或退出阻塞不能变成功；退出等待最多 3 秒。
+固定参数数组启动，不执行 shell、用户 Python、pip/uv 或运行时安装；过滤 Python、动态库注入、PyInstaller 和代理环境。stdio 验证版本、request ID、顺序和消息类型，帧头／正文短写直接失败。结果必须随后正常 EOF/退出，尾部输出、崩溃或退出阻塞不能变成功；退出等待最多 3 秒，Runner 自身也设置 15 分钟总期限。错误退出先回收整个 Job／进程组再等待，避免后代持有通信管道拖延退出；返回前等待取消监视 goroutine 结束。
 
 Unix 独立进程组，取消/错误清理整个组；Windows 创建 suspended helper，先加入 kill-on-close Job Object 再恢复主线程，取消时关闭 Job。Windows 实现目前只完成交叉编译，未声称运行验收。Python 源码、冻结步骤、许可证及私有 API 风险见 [sidecar/README.md](sidecar/README.md)。
 
@@ -31,4 +31,7 @@ SONEXA_TEST_FROZEN_HELPER=1 go test -count=1 -race ./internal/provider/spotify -
 GOOS=windows GOARCH=amd64 go test -c ./internal/provider/spotify -o tmp/_scratch/spotify-audit/spotify-windows.test.exe
 ```
 
-真实冻结 helper 往返已验证明确空歌单和 205 项三页（含同 track 缺字段补取），全部网络调用经过 Go 替身。数据模型、同步计划、导入投递及 App/UI 已接入；本轮并发／重启和全量离线结果见[第 11 组验收记录](../../../openspec/changes/add-streaming-playlist-sync/implementation-phase11-offline.md)。仍未做真实歌单、Windows Job Object 运行、完整应用安装包或原生 UI 验收，不把本机离线通过称作完整发行支持。
+真实冻结 helper 往返已验证明确空歌单和 205 项三页（含同 track 缺字段补取），全部网络调用经过 Go 替身。数据模型、同步计划、导入投递及 App/UI 已接入；并发／重启和浏览器结果见[第 11 组验收记录](../../../openspec/changes/add-streaming-playlist-sync/implementation-phase11-offline.md)。
+
+后续已补 Windows 原生树／句柄测试（amd64/arm64 仅交叉编译），并通过 macOS arm64 干净检出、重新冻结与完整 `.app` 资源装配、自检及生产 Runner 定位往返，见[第 4 组构建验收](../../../openspec/changes/add-streaming-playlist-sync/implementation-phase4-packaging.md)。
+显式构建入口为 sidecar 的 `package_app.py`；普通 `wails build` 不装配 helper。仍未做真实歌单、Windows Job Object 运行、发布签名／公证、实际安装或原生 UI 验收。

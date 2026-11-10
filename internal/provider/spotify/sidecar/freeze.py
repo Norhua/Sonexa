@@ -1,12 +1,13 @@
 """Native one-folder build, no runtime installation or interpreter fallback."""
-import hashlib
-import json
-from pathlib import Path
-import platform
 import shutil
 import subprocess
 import sys
+from pathlib import Path
+import platform
 from importlib.metadata import version
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from artifacts import native_target, locked_target, write_manifest, validate_licenses
 
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[3]
@@ -14,15 +15,16 @@ OUTPUT = REPO / "build" / "spotify-helper"
 
 
 def build():
-    lock = json.loads((ROOT / "python.lock.json").read_text())
-    target = f"{sys.platform}-{platform.machine()}"
-    if target not in lock["targets"] or platform.python_version() != lock["python"]:
-        raise SystemExit("No validated Python lock for this target; do not cross-freeze.")
+    target = native_target()
+    lock = locked_target(target)
+    if platform.python_version() != lock["python"]:
+        raise SystemExit("Use the locked Python interpreter; do not cross-freeze.")
     if version("PyInstaller") != "6.22.3" or version("SpotifyScraper") != "3.9.2":
         raise SystemExit("Install requirements.lock in the isolated build environment first.")
     licenses = OUTPUT / "licenses"
     if not (licenses / "inventory.json").is_file():
         raise SystemExit("Run collect_licenses.py against verified artifacts first.")
+    validate_licenses(OUTPUT, target, lock)
     work = OUTPUT / "work"
     work.mkdir(parents=True, exist_ok=True)
     subprocess.run([
@@ -40,14 +42,7 @@ def build():
         for name in ("uv_cache.json", "RECORD", "INSTALLER", "REQUESTED"):
             (metadata / name).unlink(missing_ok=True)
     shutil.copytree(licenses, bundle / "licenses", dirs_exist_ok=True)
-    files = {}
-    for path in sorted(bundle.rglob("*")):
-        if path.is_file() and path.name != "manifest.json":
-            files[path.relative_to(bundle).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
-    manifest = {"protocol": 1, "target": target, "python": lock["python"], "pythonBuild": lock["build"],
-                "spotifyScraper": version("SpotifyScraper"), "pyinstaller": version("PyInstaller"),
-                "files": files}
-    (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    write_manifest(bundle, target)
     print(bundle)
 
 
