@@ -97,7 +97,7 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 	var keys []store.CandidateLocalKey
 	for _, item := range out.Items {
 		for _, row := range item.Candidates {
-			keys = append(keys, store.CandidateLocalKey{Provider: row.Provider, Ref: row.MatchRef, ReleaseRef: derefOr(row.ReleaseRef, "")})
+			keys = append(keys, candidateLocalKey(row))
 		}
 	}
 	states, err := a.store.CandidateLocalStates(keys)
@@ -110,13 +110,7 @@ func (a *App) GetReviewQueue() (*ReviewQueue, error) {
 			row := &out.Items[i].Candidates[j]
 			state := states[index]
 			index++
-			row.ReleaseID, row.CoverRevision = state.ReleaseID, state.CoverRevision
-			row.LocalTrackID, row.InLibrary = state.TrackID, state.InLibrary
-			row.Badges, row.Action = []string{row.Provider}, "接受"
-			if state.TrackID != 0 {
-				row.Badges, row.Action = []string{"本地", row.Provider}, "跳过"
-			}
-			row.Note = candidateReviewNote(row.ReviewOnly)
+			applyCandidateLocalState(row, state)
 		}
 	}
 	return out, nil
@@ -197,36 +191,34 @@ func (a *App) ResearchReviewItem(itemID int64, title, artist, album, providerID,
 	return rows, nil
 }
 
-// applyLocalMatch 按一次本地判定填好某行的徽章、动作与附注。
-//
-// 三者本来是三个各自调用 ResolveLocal 的函数——同一条候选要查三遍库，
-// 而 ResolveLocal 每次最多查三张表。一个 200 条的复核队列因此会打出
-// 上千次本来只需三分之一的查询。
-//
-// 仅来源 + track 精确绑定命中时同时标注本地和上游；ISRC 不表示 track 已在库。
+// applyLocalMatch 只查询同来源精确身份；不以发行、组、ISRC 或名称命中
+// 推断 track 已存在。队列读取使用相同投影的一次批量查询。
 func (a *App) applyLocalMatch(row *CandidateRow, c provider.Candidate) {
-	row.InLibrary = false
-	if c.ReleaseRef != nil {
-		if release, err := a.store.GetReleaseByRef(string(c.Provider), *c.ReleaseRef); err == nil && release != nil {
-			row.ReleaseID = release.ID
-			row.CoverRevision = a.CoverRevision(release.ID)
-		}
+	state := store.CandidateLocalState{}
+	states, err := a.store.CandidateLocalStates([]store.CandidateLocalKey{{
+		Provider: string(c.Provider), Ref: c.MatchRef,
+		ReleaseRef: derefOr(c.ReleaseRef, ""), ReleaseGroupRef: derefOr(c.ReleaseGroupRef, ""),
+	}})
+	if err == nil && len(states) == 1 {
+		state = states[0]
 	}
-	local, err := matching.ResolveLocal(a.store, c)
-	if err != nil || local.Kind == matching.LocalNone {
-		row.Badges = []string{string(c.Provider)}
-		row.Action = "接受"
-		row.Note = candidateReviewNote(row.ReviewOnly)
-		row.LocalTrackID = 0
-		return
+	applyCandidateLocalState(row, state)
+}
+
+func candidateLocalKey(row CandidateRow) store.CandidateLocalKey {
+	return store.CandidateLocalKey{Provider: row.Provider, Ref: row.MatchRef,
+		ReleaseRef: derefOr(row.ReleaseRef, ""), ReleaseGroupRef: derefOr(row.ReleaseGroupRef, "")}
+}
+
+func applyCandidateLocalState(row *CandidateRow, state store.CandidateLocalState) {
+	row.ReleaseID, row.CoverRevision = state.ReleaseID, state.CoverRevision
+	row.ReleaseExists, row.ReleaseGroupExists = state.ReleaseID != 0, state.GroupID != 0
+	row.LocalTrackID, row.InLibrary = state.TrackID, state.InLibrary
+	row.Badges, row.Action = []string{row.Provider}, "接受"
+	if state.TrackID != 0 {
+		row.Badges, row.Action = []string{"本地", row.Provider}, "跳过"
 	}
-	row.Badges = local.Badges(c.Provider)
-	row.Action = local.Action()
 	row.Note = candidateReviewNote(row.ReviewOnly)
-	row.LocalTrackID = local.TrackID
-	if track, err := a.store.GetTrackView(local.TrackID); err == nil && track != nil {
-		row.InLibrary = track.InLibrary
-	}
 }
 
 func candidateReviewNote(reviewOnly bool) string {

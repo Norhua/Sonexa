@@ -63,7 +63,7 @@ func TestAutomaticSelectionPrioritizesOwnedReleaseAndKnownTotal(t *testing.T) {
 		t.Fatalf("unique new version must review: %+v %v", selection, err)
 	}
 }
-func TestAutomaticSelectionDoesNotPreferSyncOnlyRelease(t *testing.T) {
+func TestAutomaticSelectionPrefersSyncOnlyRelease(t *testing.T) {
 	s, st, _ := newTestService(t)
 	p := &summaryProvider{totals: map[string]int{"a": 10, "b": 20}}
 	s.registry.Register(p)
@@ -72,8 +72,8 @@ func TestAutomaticSelectionDoesNotPreferSyncOnlyRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	selection, err := s.SelectCandidate(context.Background(), high(candidate("a", "a1", nil), candidate("b", "b1", nil)), 0)
-	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "b1" || selection.Reason != ReasonNewRelease || p.calls != 2 {
-		t.Fatal("hidden release became ownership preference or bypassed admission", selection, err, p.calls)
+	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "a1" || selection.Reason != "" || p.calls != 0 || selection.Plan.Baseline.RequiresConfirmation {
+		t.Fatal("sync-only release not preferred or unnecessarily loaded summaries", selection, err, p.calls)
 	}
 }
 

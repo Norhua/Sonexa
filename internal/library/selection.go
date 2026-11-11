@@ -33,7 +33,8 @@ type selectionCandidate struct {
 	existing  bool
 }
 
-// selectCandidate 是无网络的纯决策；已有发行优先，总数未知不会被当作零。
+// selectCandidate 是无网络的纯决策；先检查曲目/组歧义，再优先本地已有
+// 曲目引用的发行（包含同步专属）。发行存在不证明歌曲相同，总数未知不当零。
 func selectCandidate(candidates []selectionCandidate) Selection {
 	if len(candidates) == 0 {
 		return Selection{Reason: ReasonNoMatch}
@@ -89,14 +90,14 @@ func selectCandidate(candidates []selectionCandidate) Selection {
 		}
 		positions[c.summary.Identity] = c.candidate.MatchRef
 	}
-	owned := []selectionCandidate{}
+	existing := []selectionCandidate{}
 	for _, c := range candidates {
 		if c.existing {
-			owned = append(owned, c)
+			existing = append(existing, c)
 		}
 	}
-	if len(owned) > 0 {
-		candidates = owned
+	if len(existing) > 0 {
+		candidates = existing
 	}
 	if len(candidates) > 1 {
 		for _, c := range candidates {
@@ -143,6 +144,7 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 	prepared := []selectionCandidate{}
 	summaries := map[domain.Identity]domain.ReleaseSummary{}
 	seen := map[string]bool{}
+	keys := []store.CandidateLocalKey{}
 	for _, sc := range matching.AutomaticCandidates(scored) {
 		if seen[candidateKey(sc.Candidate)] {
 			continue
@@ -156,20 +158,17 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 			return Selection{Reason: ReasonGroupInsufficient}, nil
 		}
 		summary := seed.Snapshot.Release.Summary()
-		existing := false
-		if summary.Identity.Ref != "" {
-			release, err := s.store.GetReleaseByRef(string(summary.Identity.Provider), summary.Identity.Ref)
-			if err != nil {
-				return Selection{}, err
-			}
-			if release != nil {
-				existing, err = s.store.ReleaseInLibrary(release.ID)
-				if err != nil {
-					return Selection{}, err
-				}
-			}
-		}
-		prepared = append(prepared, selectionCandidate{candidate: sc.Candidate, summary: summary, existing: existing})
+		keys = append(keys, store.CandidateLocalKey{Provider: string(summary.Identity.Provider), ReleaseRef: summary.Identity.Ref})
+		prepared = append(prepared, selectionCandidate{candidate: sc.Candidate, summary: summary})
+	}
+	// 与候选标记共用精确身份批量查询；不把仅缓存/预览的空发行作为偏好，
+	// 也不因其曲目尚未加入音乐库而排除真实发行。
+	states, err := s.store.CandidateLocalStates(keys)
+	if err != nil {
+		return Selection{}, err
+	}
+	for i, state := range states {
+		prepared[i].existing = state.ReleaseHasTracks
 	}
 	load := func(c *selectionCandidate) error {
 		identity := c.summary.Identity
@@ -206,17 +205,17 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 		}
 		return nil
 	}
-	ownedCount := 0
+	existingCount := 0
 	for _, c := range prepared {
 		if c.existing {
-			ownedCount++
+			existingCount++
 		}
 	}
 	for i := range prepared {
 		c := &prepared[i]
 		title, _ := domain.NameEvidence(c.summary.Title, c.summary.Credit)
 		groupingMissing := c.summary.Group == nil && title == ""
-		comparing := (ownedCount == 0 && len(prepared) > 1) || (ownedCount > 1 && c.existing)
+		comparing := (existingCount == 0 && len(prepared) > 1) || (existingCount > 1 && c.existing)
 		if groupingMissing || (comparing && c.summary.ReleaseTrackTotal.State != domain.Value) {
 			if err := load(c); err != nil {
 				return Selection{}, err

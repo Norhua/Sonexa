@@ -19,7 +19,7 @@ func TestCandidateLocalStatesOrderedExactAndUncollected(t *testing.T) {
 	if _, err = s.db.Exec(`UPDATE track SET in_library=0 WHERE id=?`, id); err != nil {
 		t.Fatal(err)
 	}
-	keys := []CandidateLocalKey{{"qq", "exact", "rel-Album"}, {"qq", "missing", "rel-Album"}, {"itunes", "exact", "rel-Album"}, {"qq", "exact", "rel-Album"}}
+	keys := []CandidateLocalKey{{Provider: "qq", Ref: "exact", ReleaseRef: "rel-Album"}, {Provider: "qq", Ref: "missing", ReleaseRef: "rel-Album"}, {Provider: "itunes", Ref: "exact", ReleaseRef: "rel-Album"}, {Provider: "qq", Ref: "exact", ReleaseRef: "rel-Album"}}
 	states, err := s.CandidateLocalStates(keys)
 	if err != nil || len(states) != 4 {
 		t.Fatal(states, err)

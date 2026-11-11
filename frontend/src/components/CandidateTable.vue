@@ -46,11 +46,13 @@ const props = withDefaults(
     /** 各上游各自声明的能力，用于判断某一行是否支持某列。 */
     providerCapabilities?: Record<string, string[]>
     loading?: boolean
+    /** 复核展示真实发行身份的本地存在状态，不表示 track 已存在或已入库。 */
+    showReleaseState?: boolean
     /** 截断显示的条数；0 表示不截断。 */
     limit?: number
     total?: number
   }>(),
-  { providerCapabilities: () => ({}), loading: false, limit: 0, total: 0 },
+  { providerCapabilities: () => ({}), loading: false, showReleaseState: false, limit: 0, total: 0 },
 )
 
 const emit = defineEmits<{
@@ -110,7 +112,7 @@ function onAct(row: Models.app.CandidateRow) {
         </div>
       </template>
 
-      <Column header="来源" class="w-24">
+      <Column header="来源" :style="{ width: showReleaseState ? '180px' : '96px' }">
         <template #body="{ data }">
           <!-- 来源徽章可叠加：[本地][MB] -->
           <div class="flex flex-wrap gap-1">
@@ -120,6 +122,20 @@ function onAct(row: Models.app.CandidateRow) {
               severity="secondary"
               :title="badge === '本地' ? '精确本地绑定；不代表已加入音乐库' : badge"
               :value="badge"
+              class="px-1.5 py-0.5 text-[10px] font-normal"
+            />
+            <Tag
+              v-if="showReleaseState && data.releaseGroupExists"
+              severity="secondary"
+              value="release group 已存在"
+              title="同来源的原生 release group 身份已存在于本地，包含同步歌单；不表示该发行或曲目已存在"
+              class="px-1.5 py-0.5 text-[10px] font-normal"
+            />
+            <Tag
+              v-if="showReleaseState && data.releaseExists"
+              severity="secondary"
+              value="release 已存在"
+              title="同来源的具体 release 身份已存在于本地，包含同步歌单；不表示该曲目已存在或可自动导入"
               class="px-1.5 py-0.5 text-[10px] font-normal"
             />
           </div>

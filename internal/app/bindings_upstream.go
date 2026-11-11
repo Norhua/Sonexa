@@ -44,6 +44,11 @@ type CandidateRow struct {
 	LocalTrackID int64 `json:"localTrackId"`
 	InLibrary    bool  `json:"inLibrary"`
 
+	// Exact upstream release/group identities exist locally, including sync-only
+	// entities. Neither flag means this candidate track exists or is in_library.
+	ReleaseExists      bool `json:"releaseExists"`
+	ReleaseGroupExists bool `json:"releaseGroupExists"`
+
 	// 封面目标仅按同一发行身份关联，不能借文本疑似命中跨歌集取图。
 	ReleaseID     int64 `json:"releaseId"`
 	CoverRevision int64 `json:"coverRevision"`
