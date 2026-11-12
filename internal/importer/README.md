@@ -21,12 +21,31 @@
 
 实际自动分流由 `Runner → library.SelectCandidate` 决定，`LadderConfig.Decide` 不是最终保存出口：
 
-1. 有效输入/全 track 离线判重；未处理者查询上游并评分，检索后重复核验。
-2. 只取高置信且非 ReviewOnly 候选；存在曲名、艺术家、专辑三字段精确子集则优先该子集。
+1. 有效输入/全 track 离线判重；未处理者查询上游并评分，检索后重复核验。检索阶梯只在已有可自动入库的候选时停止，仅供人工查看的候选不截停它。
+2. 只取高置信、非 ReviewOnly 且**曲名精确**的候选；存在曲名、艺术家、专辑三字段精确子集则优先该子集。已拥有判定的旁证只用这些候选，选版后只用选中的那一条。
 3. 检查组证据、同曲目内容/录音、版本及同发行多位置歧义，不能用已有发行消除这些冲突。
 4. 优先候选中**有本地 track 引用的精确来源发行**，包含音乐库和仅同步歌单的曲目，两种归属同等。不按专辑同名或 recording 推断发行已存在，也不把无 track 的空发行作为偏好。
-5. 已有发行子集唯一时省略总数比较；多个时仍比较发行总曲数、已知非世界国家、provider/release_ref/match_ref 稳定顺序，总数未知按需补摘要，仍未知则复核。无已有发行时沿用全部有效候选选版。
-6. 再次判重/活动合并后准备并提交统一准入计划。复用组内已有发行不要求新增成员确认；新发行、新原生组映射、组冲突仍按原规则复核。提交失效重排，不跳过目标和身份重验。
+5. 已有发行子集唯一时省略总数比较；多个时依次比较曲目引用数、发行总曲数、已知非世界国家、provider/release_ref/match_ref 稳定顺序，总数未知按需补摘要，仍未知则复核。无已有发行时沿用全部有效候选选版。
+6. 组内歌曲解析（见下节）可能把候选替换成组内已有发行的清单条目。
+7. 再次判重/活动合并后准备并提交统一准入计划。提交失效按 1s、2s、3s 退避重排，超过后转普通失败；不跳过目标和身份重验。
+
+## 组内歌曲解析
+
+同一首歌默认只绑定组内一个发行。选出候选后，`library.SelectCandidate` 读取准入基线里的覆盖结论（组内其他**有曲目引用**的发行是否包含这首歌）：
+
+- 组内与候选同来源、清单不完整的发行各取一次详情并保存，之后同组的歌曲不再发请求。请求失败按请求失败处理，不进复核；取回后仍不完整则保持不可判定。空发行不参与、不补取。
+- 已有发行按录音含这首歌，且候选所在发行不是主发行（曲目引用多者 → 清单总曲数多者 → 先建立者）：改为准入主发行的那条清单条目，不新建候选所在的发行。同一录音在主发行里出现多次时取碟号、音轨号与候选相同的那条。
+- 每个已有发行都按录音证明不含这首歌，且候选的上游原生组已经映射到该组：自动新建发行。只经名称命中的组、或只有文本级证据时复核 `new_release`。
+- 疑似（文本级）命中、不可判定、提供者条目没有曲目标识：复核 `song_unresolved`。自动路径永远不带输入确认凭证。
+
+替换之后，下列各处都用**替换后的身份**：
+
+- 已拥有判重（`store.ResolveProvidedImport`）按两段证明：输入与候选一致（用候选自己的专辑、位置，不拿已有发行的去比）；候选与已有曲目是同一来源的同一录音。两段都成立即跳过，证据 `group_recording_provider`；已有曲目已拥有而输入不能证明与候选一致时复核 `ambiguous`。
+- 已解析身份登记提供者条目的曲目标识；补全用曲目实际所挂发行的标识；日志注明“由已有发行提供”，复核证据保留候选原本的身份。
+
+**为什么文本级歌曲身份不用于自动决策。** 当前自动导入默认只使用 MusicBrainz，而 MusicBrainz 为每条曲目提供可追溯的录音标识，所以自动决策只接受录音级相同（同来源、同录音标识）。文本级相同（曲名、时长、署名）只是启发式证据，只在有人在场的交互路径里作为提示。将来若实现多来源自动导入（例如 MusicBrainz 无结果时自动切换其他上游搜索），其他来源没有录音标识，届时必须先实现判断文本级可信度的逻辑，明确哪些文本级相同可以自动入库，再放宽这条限制。判定函数是 `matching.CompareSong`。
+
+带确认的入库提交成功后，同一发行或同一目标组、未手搜、原因为 `new_release` / `song_unresolved` / `group_conflict` 的复核条目会重新排队。手搜过的条目仍按原始输入离线收敛，不读写手搜草稿。
 
 复核来源列分别展示 `release group 已存在` / `release 已存在`，仅按同来源精确原生组/发行身份的实时本地存在性标记。它们不是 track 的“本地”徽章，不改变接受/跳过，不代表已入库或一定可自动导入；组身份未知时不借所属发行猜测标记。读取已有复核不会因这条选版偏好自动接受，手动改搜只更新候选。
 
@@ -39,6 +58,6 @@
 - `review_entered` 与 `processed_once` 为每次有效输入的历史布尔事实。review/failed 进入复核页时对所有活动共享输入累计一次；合入正在复核的任务也累计。接受、移出、取消及重试不清零；忽略恢复属于新的输入尝试。
 - `BatchStats.reviewEntered / processedOnce` 用于历史介入率；`review` 是当前待选数、`failed` 单列。原 `Processed()` 继续服务调度进度，不把历史完成事实误当作重试已完成。零历史处理显示“—”/“0 / 0”。
 
-验证入口：`internal/store/{review_performance,owned_import,import_identity,import_delivery,confirmation_context}_test.go`、
-`internal/library/{admission,import_targets}_test.go`、`internal/importer/streaming*_test.go`、
-`internal/app/import_destinations_test.go`。这些是离线契约/绑定测试，不替代前端与原生验收。
+验证入口：`internal/store/{review_performance,owned_import,import_identity,import_delivery,confirmation_context,change4}_test.go`、
+`internal/library/{admission,import_targets,change4_coverage}_test.go`、`internal/importer/{streaming*,change4,change4_group_song}_test.go`、
+`internal/matching/{change4,song_identity}_test.go`、`internal/app/import_destinations_test.go`。这些是离线契约/绑定测试，不替代前端与原生验收。
