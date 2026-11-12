@@ -51,7 +51,11 @@ func resolveGroupTx(tx *sql.Tx, snapshot domain.Snapshot, current ...*domain.Rel
 	}
 	out.Insufficient = (native == nil || native.Ref == "" || native.Provider == "") && title == ""
 	groups := map[int64]bool{}
-	if native != nil && native.Provider != "" && native.Ref != "" {
+	// anchors 是由强证据（原生组映射、发行已在库）命中的组；名称命中的组要
+	// 先过两道否决才进入结果。
+	anchors := map[int64]bool{}
+	hasNative := native != nil && native.Provider != "" && native.Ref != ""
+	if hasNative {
 		var id int64
 		err := tx.QueryRow("SELECT group_id FROM release_group_ref WHERE provider=? AND group_ref=?", native.Provider, native.Ref).Scan(&id)
 		if err != nil && err != sql.ErrNoRows {
@@ -59,6 +63,7 @@ func resolveGroupTx(tx *sql.Tx, snapshot domain.Snapshot, current ...*domain.Rel
 		}
 		if err == nil {
 			groups[id] = true
+			anchors[id] = true
 			out.Evidence = append(out.Evidence, domain.GroupEvidence{GroupID: id, Kind: "native", SourceID: string(native.Provider) + ":" + native.Ref, Native: native})
 		}
 	}
@@ -73,11 +78,11 @@ func resolveGroupTx(tx *sql.Tx, snapshot domain.Snapshot, current ...*domain.Rel
 	if err != nil {
 		return out, err
 	}
+	named := []domain.GroupEvidence{}
 	for _, e := range evidence {
 		for _, name := range names {
 			if name[0] != "" && name[1] != "" && e.Title == name[0] && e.Credit == name[1] {
-				groups[e.GroupID] = true
-				out.Evidence = append(out.Evidence, e)
+				named = append(named, e)
 				break
 			}
 		}
@@ -95,7 +100,67 @@ func resolveGroupTx(tx *sql.Tx, snapshot domain.Snapshot, current ...*domain.Rel
 		}
 		if err == nil {
 			groups[groupID] = true
+			anchors[groupID] = true
 			out.Evidence = append(out.Evidence, domain.GroupEvidence{GroupID: groupID, Kind: "existing-release", SourceID: strconv.FormatInt(releaseID, 10)})
+		}
+	}
+	// 名称命中的两道否决。结果按组缓存：同一组可能有多条名称证据。
+	verdict := map[int64]string{}
+	for _, e := range named {
+		reason, seen := verdict[e.GroupID]
+		if !seen && !anchors[e.GroupID] {
+			// 1) 同来源原生组否决：上游已经声明这是另一个发行组。候选的原生组没有
+			//    映射到该组，而该组已映射了同一来源的原生组——同名的专辑与单曲
+			//    就是这种情形，名称不构成同组依据。
+			if hasNative {
+				var count int
+				if err := tx.QueryRow("SELECT count(*) FROM release_group_ref WHERE group_id=? AND provider=?", e.GroupID, native.Provider).Scan(&count); err != nil {
+					return out, err
+				}
+				if count > 0 {
+					reason = "native_mismatch"
+				}
+			}
+			// 2) 否定决定：用户判定过该组与某个锚定组不是同一组。只在有锚定组
+			//    时过滤；全新的发行没有锚，仍会被询问一次。
+			if reason == "" {
+				for anchor := range anchors {
+					a, b := anchor, e.GroupID
+					if a > b {
+						a, b = b, a
+					}
+					var count int
+					if err := tx.QueryRow("SELECT count(*) FROM release_group_separation WHERE group_a=? AND group_b=?", a, b).Scan(&count); err != nil {
+						return out, err
+					}
+					if count > 0 {
+						reason = "separated"
+						break
+					}
+				}
+			}
+			verdict[e.GroupID] = reason
+		}
+		if reason != "" {
+			e.Reason = reason
+			out.Rejected = append(out.Rejected, e)
+			continue
+		}
+		groups[e.GroupID] = true
+		out.Evidence = append(out.Evidence, e)
+	}
+	// 名称近似只作提示：没有任何命中时，列出去掉版本后缀与署名附注后同名的组。
+	if len(groups) == 0 && r.Title.State == domain.Value && r.Credit.State == domain.Value {
+		looseTitle, looseCredit := domain.LooseGroupName(r.Title.Value), domain.LooseGroupName(r.Credit.Value.Text)
+		seen := map[int64]bool{}
+		for _, e := range evidence {
+			if seen[e.GroupID] || looseTitle == "" || looseCredit == "" {
+				continue
+			}
+			if domain.LooseGroupName(e.Title) == looseTitle && domain.LooseGroupName(e.Credit) == looseCredit {
+				seen[e.GroupID] = true
+				out.Similar = append(out.Similar, e)
+			}
 		}
 	}
 	ids := make([]int64, 0, len(groups))
@@ -110,16 +175,18 @@ func resolveGroupTx(tx *sql.Tx, snapshot domain.Snapshot, current ...*domain.Rel
 		}
 		out.Groups = append(out.Groups, group)
 	}
-	sort.Slice(out.Evidence, func(i, j int) bool {
-		a, b := out.Evidence[i], out.Evidence[j]
-		if a.GroupID != b.GroupID {
-			return a.GroupID < b.GroupID
-		}
-		if a.Kind != b.Kind {
-			return a.Kind < b.Kind
-		}
-		return a.SourceID < b.SourceID
-	})
+	for _, list := range [][]domain.GroupEvidence{out.Evidence, out.Rejected, out.Similar} {
+		sort.Slice(list, func(i, j int) bool {
+			a, b := list[i], list[j]
+			if a.GroupID != b.GroupID {
+				return a.GroupID < b.GroupID
+			}
+			if a.Kind != b.Kind {
+				return a.Kind < b.Kind
+			}
+			return a.SourceID < b.SourceID
+		})
+	}
 	return out, nil
 }
 func groupMembersTx(tx *sql.Tx, id int64) (domain.GroupMatch, error) {
@@ -243,18 +310,48 @@ func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.Admissio
 		return baseline, err
 	}
 	baseline.Resolution = resolution
-	baseline.Conflict = len(resolution.Groups) > 1 && seed.MergeTargetID == 0
+	actions := 0
+	for _, chosen := range []bool{seed.MergeTargetID != 0, seed.JoinGroupID != 0, seed.KeepSeparate} {
+		if chosen {
+			actions++
+		}
+	}
+	if actions > 1 {
+		return baseline, fmt.Errorf("判组动作互斥")
+	}
+	baseline.Conflict = len(resolution.Groups) > 1 && actions == 0
 	if len(resolution.Groups) == 1 {
 		baseline.TargetGroupID = resolution.Groups[0].ID
 	}
-	if seed.MergeTargetID != 0 {
-		found := false
+	inResolution := func(id int64) bool {
 		for _, group := range resolution.Groups {
-			if group.ID == seed.MergeTargetID {
-				found = true
+			if group.ID == id {
+				return true
 			}
 		}
-		if !found {
+		return false
+	}
+	if seed.JoinGroupID != 0 {
+		if !inResolution(seed.JoinGroupID) {
+			return baseline, fmt.Errorf("加入的组不在当前证据命中范围")
+		}
+		baseline.TargetGroupID = seed.JoinGroupID
+	}
+	if seed.KeepSeparate {
+		// 发行已经在某个组里，或这是整发行换组，就谈不上「独立成组」。
+		if baseline.ExistingReleaseID != 0 || seed.MoveReleaseID != 0 || len(resolution.Groups) == 0 {
+			return baseline, fmt.Errorf("当前发行不能独立成组")
+		}
+		baseline.TargetGroupID = 0
+	}
+	if seed.MergeTargetID != 0 {
+		// 合组目标必须是真实存在的组：命中组之外也允许（用户明确要把两者并到一起，
+		// 例如把先前判为「不是同一组」的两组合并回来）。命中组仍全部并入它。
+		var exists int
+		if err := tx.QueryRow("SELECT count(*) FROM release_group WHERE id=?", seed.MergeTargetID).Scan(&exists); err != nil {
+			return baseline, err
+		}
+		if exists == 0 {
 			return baseline, fmt.Errorf("合组目标不在当前证据命中范围")
 		}
 		baseline.TargetGroupID = seed.MergeTargetID
@@ -272,7 +369,9 @@ func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.Admissio
 			baseline.NewNativeMapping = count == 0
 		}
 	}
-	baseline.RequiresConfirmation = baseline.ExistingTrackID == 0 && (len(resolution.Groups) > 1 || baseline.NewNativeMapping || (baseline.TargetGroupID != 0 && baseline.ExistingReleaseID == 0))
+	// 「保持独立成组」本身就是用户对这次判组的明确决定，不再追加成员确认。
+	groupChange := len(resolution.Groups) > 1 || baseline.NewNativeMapping || (baseline.TargetGroupID != 0 && baseline.ExistingReleaseID == 0)
+	baseline.RequiresConfirmation = baseline.ExistingTrackID == 0 && groupChange && !seed.KeepSeparate
 	return baseline, nil
 }
 func (s *Store) PreviewAdmission(seed domain.AdmissionSeed) (domain.AdmissionBaseline, error) {

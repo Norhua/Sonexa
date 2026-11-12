@@ -162,6 +162,15 @@ func (a *App) commitUnconfirmedAdmission(plan *AdmissionPlanView) (int64, error)
 	return result.TrackID, nil
 }
 
+// ReplanAdmissionGroupChoice 的 action 为 merge / join / separate。
+func (a *App) ReplanAdmissionGroupChoice(id, hash, action string, target int64) (*AdmissionPlanView, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	return admissionView(service.ReplanAdmissionGroupChoice(a.ctx, id, hash, action, target))
+}
+
 func (a *App) ReplanAdmissionGroup(id, hash string, target int64) (*AdmissionPlanView, error) {
 	service, err := a.libraryService()
 	if err != nil {

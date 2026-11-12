@@ -314,7 +314,9 @@ func insertAdmissionEntitiesTx(tx *sql.Tx, seed domain.AdmissionSeed, baseline d
 				return nil, err
 			}
 		}
-		if len(baseline.Resolution.Groups) > 1 {
+		// 只有计划明确带合并目标才合并组；「加入其中一组」「保持独立」不动其余组。
+		// 命中组之外的目标也允许：显式合并时把命中组整体并入目标组。
+		if seed.MergeTargetID != 0 {
 			for _, group := range baseline.Resolution.Groups {
 				if group.ID == result.GroupID {
 					continue
@@ -329,6 +331,21 @@ func insertAdmissionEntitiesTx(tx *sql.Tx, seed domain.AdmissionSeed, baseline d
 					}
 				}
 				if _, err := tx.Exec("DELETE FROM release_group WHERE id=?", group.ID); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if seed.JoinGroupID != 0 || seed.KeepSeparate {
+			// 否定决定按组对保存：这次落入的组与每个未被选中的命中组不是同一组。
+			for _, group := range baseline.Resolution.Groups {
+				if group.ID == result.GroupID {
+					continue
+				}
+				a, b := result.GroupID, group.ID
+				if a > b {
+					a, b = b, a
+				}
+				if _, err := tx.Exec("INSERT INTO release_group_separation(group_a,group_b,created_at) VALUES(?,?,?) ON CONFLICT DO NOTHING", a, b, now); err != nil {
 					return nil, err
 				}
 			}

@@ -30,3 +30,33 @@ func SameGroup(a, b ReleaseSummary) bool {
 	bt, bc := NameEvidence(b.Title, b.Credit)
 	return at != "" && ac != "" && at == bt && ac == bc
 }
+
+// LooseGroupName 用于提示：去掉括号段与 feat. 附注之后再规范化。
+// 它不参与任何判组决定——名称近似不是同一组的证据。
+func LooseGroupName(value string) string {
+	var out []rune
+	depth := 0
+	for _, r := range norm.NFKC.String(value) {
+		switch r {
+		case '(', '[', '【':
+			depth++
+			continue
+		case ')', ']', '】':
+			if depth > 0 {
+				depth--
+			}
+			continue
+		}
+		if depth == 0 {
+			out = append(out, r)
+		}
+	}
+	text := string(out)
+	lower := strings.ToLower(text)
+	for _, marker := range []string{" feat.", " feat ", " ft.", " ft ", " featuring "} {
+		if i := strings.Index(lower, marker); i >= 0 {
+			text, lower = text[:i], lower[:i]
+		}
+	}
+	return NormalizeGroupName(text)
+}

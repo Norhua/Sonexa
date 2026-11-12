@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -189,48 +190,174 @@ func TestExactIdentityConcurrencyReturnsOneTrack(t *testing.T) {
 		t.Fatal(count)
 	}
 }
-func TestDualEvidenceConflictAndExplicitMerge(t *testing.T) {
+func seedFrom(providerID, release, track, native, title, credit string) domain.AdmissionSeed {
+	seed := seed(release, track, native, title, credit)
+	seed.Snapshot.Release.Identity.Provider = domain.ProviderID(providerID)
+	if seed.Snapshot.Release.Group != nil {
+		seed.Snapshot.Release.Group.Provider = domain.ProviderID(providerID)
+	}
+	seed.Snapshot.Track.Identity.Provider = domain.ProviderID(providerID)
+	seed.Snapshot.Track.Release.Provider = domain.ProviderID(providerID)
+	return seed
+}
+
+// D11：同名，但候选的原生组与命中组里同来源的原生组不同 → 直接独立成组，
+// 不冲突、不要求确认。
+func TestSameNameDifferentNativeGroupStaysSeparate(t *testing.T) {
 	s, st, _ := newTestService(t)
-	first := commit(t, s, prepare(t, s, seed("a", "a1", "native-a", "Album A", "Artist A")), false)
-	second := commit(t, s, prepare(t, s, seed("b", "b1", "native-b", "Album B", "Artist B")), false)
-	conflictSeed := seed("c", "c1", "native-a", "Album B", "Artist B")
-	plan := prepare(t, s, conflictSeed)
+	album := commit(t, s, prepare(t, s, seed("album", "album1", "native-album", "Same Name", "Artist")), false)
+	plan := prepare(t, s, seed("single", "single1", "native-single", "Same Name", "Artist"))
+	if plan.Baseline.Conflict || plan.Baseline.TargetGroupID != 0 || plan.Baseline.RequiresConfirmation {
+		t.Fatalf("same-source native mismatch must not ask: %+v", plan.Baseline)
+	}
+	if len(plan.Baseline.Resolution.Rejected) == 0 || plan.Baseline.Resolution.Rejected[0].Reason != "native_mismatch" {
+		t.Fatalf("rejected evidence missing: %+v", plan.Baseline.Resolution)
+	}
+	result := commit(t, s, plan, false)
+	if result.GroupID == album.GroupID {
+		t.Fatal("must not join the album group")
+	}
+	var count int
+	st.DB().QueryRow("SELECT count(*) FROM release_group").Scan(&count)
+	if count != 2 {
+		t.Fatal(count)
+	}
+}
+
+// 跨来源同名（另一来源的组没有本来源的原生组，否决不成立）：仍然要求确认，
+// 三种动作都可执行。
+func TestCrossSourceSameNameConflictActions(t *testing.T) {
+	s, st, _ := newTestService(t)
+	// 两个同名组来自另一个来源，候选来自 test 来源且原生组未映射。
+	first := commit(t, s, prepare(t, s, seedFrom("other", "o1", "o1t", "og1", "Album X", "Artist X")), false)
+	second := commit(t, s, prepare(t, s, seedFrom("other", "o2", "o2t", "og2", "Album X", "Artist X")), false)
+	plan := prepare(t, s, seed("c", "c1", "native-c", "Album X", "Artist X"))
 	if !plan.Baseline.Conflict || len(plan.Baseline.Resolution.Groups) != 2 {
 		t.Fatalf("evidence not unioned: %+v", plan.Baseline)
 	}
 	if _, err := s.ConfirmReleaseAdditions(plan.ID, plan.Hash); !errors.Is(err, store.ErrGroupConflict) {
 		t.Fatal(err)
 	}
-	if _, err := s.ReplanAdmissionGroup(context.Background(), plan.ID, plan.Hash, 99999); !errors.Is(err, store.ErrGroupConflict) {
-		t.Fatalf("unknown merge target: %v", err)
+	if _, err := s.ReplanAdmissionGroupChoice(context.Background(), plan.ID, plan.Hash, GroupActionJoin, 99999); err == nil {
+		t.Fatal("unknown join target accepted")
 	}
-	merged, err := s.ReplanAdmissionGroup(context.Background(), plan.ID, plan.Hash, second.GroupID)
+	// 加入其中一组但不合并：两组保持独立，留下否定决定。
+	joined, err := s.ReplanAdmissionGroupChoice(context.Background(), plan.ID, plan.Hash, GroupActionJoin, second.GroupID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Seed.MergeTargetID != 0 || merged.Seed.Snapshot.Track.Identity != plan.Seed.Snapshot.Track.Identity {
-		t.Fatal("replan mutated candidate")
-	}
-	if _, err := s.CommitAdmission(context.Background(), merged.ID, merged.Hash, domain.AdmissionApproval{}); !errors.Is(err, store.ErrConfirmationRequired) {
-		t.Fatalf("merge bypass: %v", err)
-	}
-	if !merged.Baseline.RequiresConfirmation {
-		t.Fatal("merge bypassed approval")
-	}
-	result := commit(t, s, merged, true)
-	if result.GroupID != second.GroupID {
+	result := commit(t, s, joined, true)
+	if result.GroupID != second.GroupID || len(result.RequeuedBatches) != 0 {
 		t.Fatal(result)
 	}
-	var group int64
-	if err := st.DB().QueryRow("SELECT release_group_id FROM release WHERE id=?", first.ReleaseID).Scan(&group); err != nil || group != second.GroupID {
-		t.Fatal("member not moved", err)
+	var groups int
+	st.DB().QueryRow("SELECT count(*) FROM release_group").Scan(&groups)
+	if groups != 2 {
+		t.Fatal("join must not merge", groups)
 	}
-	var count int
-	st.DB().QueryRow("SELECT count(*) FROM release_group").Scan(&count)
-	if count != 1 {
-		t.Fatal(count)
+	var separations int
+	st.DB().QueryRow("SELECT count(*) FROM release_group_separation").Scan(&separations)
+	if separations != 1 {
+		t.Fatal(separations)
+	}
+	// 之后同一主体（原生组已映射到 second）再判组：只命中自己那组，不再冲突，
+	// 也不再生成迟到事实的归组提议。
+	again := seed("c2", "c2t", "native-c", "Album X", "Artist X")
+	resolution, err := s.ResolveGroup(again.Snapshot)
+	if err != nil || len(resolution.Groups) != 1 || resolution.Groups[0].ID != second.GroupID {
+		t.Fatalf("separated group not filtered: %+v %v", resolution, err)
+	}
+	if len(resolution.Rejected) == 0 {
+		t.Fatalf("rejected evidence: %+v", resolution.Rejected)
+	}
+	for _, rejected := range resolution.Rejected {
+		if rejected.Reason != "separated" || rejected.GroupID != first.GroupID {
+			t.Fatalf("rejected evidence: %+v", resolution.Rejected)
+		}
 	}
 }
+
+// 「保持独立成组」：新建独立的组、不询问，并记下与每个命中组的否定决定。
+func TestKeepSeparateCreatesIndependentGroup(t *testing.T) {
+	s, st, _ := newTestService(t)
+	first := commit(t, s, prepare(t, s, seedFrom("other", "o1", "o1t", "og1", "Album X", "Artist X")), false)
+	second := commit(t, s, prepare(t, s, seedFrom("other", "o2", "o2t", "og2", "Album X", "Artist X")), false)
+	plan := prepare(t, s, seed("d", "d1", "native-d", "Album X", "Artist X"))
+	if !plan.Baseline.Conflict {
+		t.Fatalf("two unmapped name hits must be asked: %+v", plan.Baseline)
+	}
+	separate, err := s.ReplanAdmissionGroupChoice(context.Background(), plan.ID, plan.Hash, GroupActionSeparate, 0)
+	if err != nil || separate.Baseline.TargetGroupID != 0 || separate.Baseline.RequiresConfirmation || separate.Baseline.Conflict {
+		t.Fatalf("keep separate plan: %+v %v", separate.Baseline, err)
+	}
+	third := commit(t, s, separate, false)
+	var groups, separations int
+	st.DB().QueryRow("SELECT count(*) FROM release_group").Scan(&groups)
+	if groups != 3 || third.GroupID == first.GroupID || third.GroupID == second.GroupID {
+		t.Fatal("keep separate must create a third group", groups)
+	}
+	st.DB().QueryRow("SELECT count(*) FROM release_group_separation").Scan(&separations)
+	if separations != 2 {
+		t.Fatal("separate must record both rejections", separations)
+	}
+	// 之后带同一原生组的发行直接落到独立组，不再判组冲突：
+	// 两个同名组都带否定决定（证据里为 separated），不再是「证据命中多个组」。
+	again := prepare(t, s, seed("d2", "d2t", "native-d", "Album X", "Artist X"))
+	if again.Baseline.TargetGroupID != third.GroupID || again.Baseline.Conflict {
+		t.Fatalf("independent group not remembered: %+v", again.Baseline)
+	}
+	for _, rejected := range again.Baseline.Resolution.Rejected {
+		if rejected.Reason != "separated" {
+			t.Fatalf("expected separated rejections: %+v", again.Baseline.Resolution.Rejected)
+		}
+	}
+	// 新发行加入已有组仍需成员确认（D4 的自动例外在阶段 D 按覆盖结论实现）。
+	if !again.Baseline.RequiresConfirmation {
+		t.Fatalf("new release into existing group still confirms: %+v", again.Baseline)
+	}
+}
+
+// 显式合并两组后，涉及这两组的否定决定随组删除级联清除。
+func TestExplicitMergeClearsSeparationDecisions(t *testing.T) {
+	s, st, _ := newTestService(t)
+	commit(t, s, prepare(t, s, seedFrom("other", "o1", "o1t", "og1", "Album Z", "Artist Z")), false)
+	commit(t, s, prepare(t, s, seedFrom("other", "o2", "o2t", "og2", "Album Z", "Artist Z")), false)
+	alone := prepare(t, s, seed("m", "m1", "native-m", "Album Z", "Artist Z"))
+	separate, err := s.ReplanAdmissionGroupChoice(context.Background(), alone.ID, alone.Hash, GroupActionSeparate, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third := commit(t, s, separate, false)
+	var separations int
+	st.DB().QueryRow("SELECT count(*) FROM release_group_separation").Scan(&separations)
+	if separations != 2 {
+		t.Fatal(separations)
+	}
+	// 再显式把第三组并入第一组：命中组之外的目标也允许，合并后否定决定随组消失。
+	plan := prepare(t, s, seed("m2", "m2t", "native-m", "Album Z", "Artist Z"))
+	if plan.Baseline.TargetGroupID != third.GroupID || plan.Baseline.Conflict {
+		t.Fatalf("anchored on its own group: %+v", plan.Baseline)
+	}
+	var target int64
+	st.DB().QueryRow("SELECT release_group_id FROM release WHERE provider='other' AND provider_ref='o1'").Scan(&target)
+	merged, err := s.ReplanAdmissionGroupChoice(context.Background(), plan.ID, plan.Hash, GroupActionMerge, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit(t, s, merged, true)
+	var groups int
+	st.DB().QueryRow("SELECT count(*) FROM release_group").Scan(&groups)
+	if groups != 2 {
+		t.Fatal("merged group must be gone", groups)
+	}
+	st.DB().QueryRow("SELECT count(*) FROM release_group_separation WHERE group_a=" + itoa(third.GroupID) + " OR group_b=" + itoa(third.GroupID)).Scan(&separations)
+	if separations != 0 {
+		t.Fatal("separation must cascade away with the merged group", separations)
+	}
+}
+
+func itoa(v int64) string { return strconv.FormatInt(v, 10) }
+
 func TestMissingFieldsAndNameNormalization(t *testing.T) {
 	s, st, _ := newTestService(t)
 	for i := 0; i < 2; i++ {

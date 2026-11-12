@@ -243,16 +243,38 @@ func (s *Service) ReplanAdmissionGroup(ctx context.Context, id, hash string, tar
 	if err != nil {
 		return nil, err
 	}
-	found := false
-	for _, group := range plan.Baseline.Resolution.Groups {
-		if group.ID == target {
-			found = true
-		}
+	// 合组目标由基线校验：必须存在于库中；命中组之外也允许（把先前判为
+	// 「不是同一组」的两组显式合并回来）。
+	plan.Seed.MergeTargetID, plan.Seed.JoinGroupID, plan.Seed.KeepSeparate = target, 0, false
+	return s.PrepareAdmission(ctx, plan.Seed)
+}
+
+// 判组动作：合并到某组、加入某组但不合并其余、保持独立成组。
+const (
+	GroupActionMerge    = "merge"
+	GroupActionJoin     = "join"
+	GroupActionSeparate = "separate"
+)
+
+// ReplanAdmissionGroupChoice 在服务端已保存的计划上改写判组动作并重新准备。
+// 后两种动作会在提交时留下「不是同一组」的否定决定。
+func (s *Service) ReplanAdmissionGroupChoice(ctx context.Context, id, hash, action string, target int64) (*domain.AdmissionPlan, error) {
+	if action == GroupActionMerge {
+		return s.ReplanAdmissionGroup(ctx, id, hash, target)
 	}
-	if !found {
-		return nil, store.ErrGroupConflict
+	plan, err := s.plan(id, hash)
+	if err != nil {
+		return nil, err
 	}
-	plan.Seed.MergeTargetID = target
+	plan.Seed.MergeTargetID, plan.Seed.JoinGroupID, plan.Seed.KeepSeparate = 0, 0, false
+	switch action {
+	case GroupActionJoin:
+		plan.Seed.JoinGroupID = target
+	case GroupActionSeparate:
+		plan.Seed.KeepSeparate = true
+	default:
+		return nil, fmt.Errorf("未知的判组动作")
+	}
 	return s.PrepareAdmission(ctx, plan.Seed)
 }
 

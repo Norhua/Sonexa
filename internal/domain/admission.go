@@ -8,6 +8,9 @@ type GroupEvidence struct {
 	Title    string    `json:"title"`
 	Credit   string    `json:"credit"`
 	Native   *Identity `json:"native,omitempty"`
+	// Reason 只在被否决的证据上出现："native_mismatch"（同来源原生组不同）
+	// 或 "separated"（用户此前判定这两组不是同一组）。
+	Reason string `json:"reason,omitempty"`
 }
 type ReleaseMember struct {
 	ID       int64     `json:"id"`
@@ -29,6 +32,10 @@ type GroupResolution struct {
 	Evidence     []GroupEvidence `json:"evidence"`
 	Groups       []GroupMatch    `json:"groups"`
 	Insufficient bool            `json:"insufficient"`
+	// Rejected 是名称命中但被否决的证据，只用于展示与日志，不进入 Groups。
+	Rejected []GroupEvidence `json:"rejected,omitempty"`
+	// Similar 是没有命中、但去掉版本后缀与署名附注后同名的组，仅作提示。
+	Similar []GroupEvidence `json:"similar,omitempty"`
 }
 
 // AdmissionSeed 同时承载已归一化的上游事实和本地当前值；空身份层仅用于本地创建。
@@ -44,6 +51,10 @@ type AdmissionSeed struct {
 	AutomaticImport bool             `json:"automaticImport"`
 	ItemStatus      string           `json:"itemStatus"`
 	MergeTargetID   int64            `json:"mergeTargetId"`
+	// JoinGroupID 加入命中的某一组但不合并其余命中组；KeepSeparate 不加入任何
+	// 命中组、独立成组。两者都会留下「不是同一组」的否定决定。三种判组动作互斥。
+	JoinGroupID  int64 `json:"joinGroupId,omitempty"`
+	KeepSeparate bool  `json:"keepSeparate,omitempty"`
 }
 type ImportTarget struct {
 	InputID          int64  `json:"inputId"`
