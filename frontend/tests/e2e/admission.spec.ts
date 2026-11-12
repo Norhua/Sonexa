@@ -14,7 +14,7 @@ test.beforeEach(async ({ page }) => {
     api.PrepareNoMatchNeeded = async (item: number) => { w.__item = item; return w.__makePlan() }
     api.ConfirmReleaseAdditions = async (id: string, hash: string) => ({ planId: id, hash, credential: 'confirmed' })
     api.CommitAdmission = async (id: string, hash: string, approval: any) => { if (w.__stale) { w.__stale = false; throw new Error('plan_stale: 资料已更新') }; w.__commits.push({ id, hash, approval }); return { trackId: 90 } }
-    api.ReplanAdmissionGroup = async (_id: string, _hash: string, target: number) => { const next = w.__makePlan(); next.baseline.conflict = false; next.seed.mergeTargetId = target; return next }
+    api.ReplanAdmissionGroupChoice = async (_id: string, _hash: string, action: string, target: number) => { w.__choice = action; const next = w.__makePlan(); next.baseline.conflict = false; next.seed.mergeTargetId = target; return next }
     api.PrepareGroupProposal = async () => w.__makePlan()
     api.ListGroupProposals = async () => [{ id: 8, releaseId: 20, snapshot: { release: { title: { value: '迟到资料' } } }, resolution: { groups } }]
     const queue = api.GetReviewQueue
@@ -83,6 +83,7 @@ test('proposal conflict previews all members and requires separate final confirm
   await conflict.getByRole('button', { name: '预览合并到此组' }).nth(1).click()
   const confirm = page.getByRole('dialog', { name: '确认发行成员变化' })
   await expect(confirm).toContainText('合并至专辑组 #2')
+  expect(await page.evaluate(() => (window as any).__choice)).toBe('merge')
   expect(await page.evaluate(() => (window as any).__commits)).toEqual([])
   await confirm.getByRole('button', { name: '取消', exact: true }).click()
   await expect(page.getByRole('button', { name: '查看归组提议' })).toBeVisible()

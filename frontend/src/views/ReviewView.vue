@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useAdmissionStore } from '@/stores/admission'
+import { evidenceLabel, providerReleases, rejectedText, reviewReasonText, undecidableReason } from '@/lib/admissionPlan'
 const admission = useAdmissionStore()
 /**
  * 复核队列。
@@ -55,17 +56,15 @@ const searched = ref(false)
 
 const current = computed(() => queue.value?.items[index.value] ?? null)
 
-const reviewReason = computed(() => ({
-  new_release: '新增发行加入已有专辑组，接受后还需确认成员变化',
-  group_insufficient: '判组资料不足，可按已知信息保存', group_conflict: '专辑组证据冲突，需要明确合组方案',
-  unknown_total: '发行总曲数未知，需要人工选版', no_match: '没有高置信匹配', ambiguous: '候选存在歧义', duplicate: '可能与已有收藏重复',
-}[current.value?.reviewReason ?? ''] ?? current.value?.reviewReason ?? ''))
+const reviewReason = computed(() => reviewReasonText(current.value?.reviewReason))
 const reviewEvidence = computed(() => {
   try { return JSON.parse(current.value?.reviewEvidence || 'null') as (Models.domain.AdmissionBaseline & { proposed?: Models.app.PlanReleaseView }) | null }
   catch { return null }
 })
+const reviewProviders = computed(() => providerReleases(reviewEvidence.value))
 const hasReviewEvidence = computed(() => !!(
-  reviewEvidence.value?.resolution?.groups?.length || reviewEvidence.value?.proposed || reviewEvidence.value?.resolution?.evidence?.length
+  reviewEvidence.value?.resolution?.groups?.length || reviewEvidence.value?.proposed || reviewEvidence.value?.resolution?.evidence?.length ||
+  reviewEvidence.value?.resolution?.rejected?.length || reviewEvidence.value?.resolution?.similar?.length
 ))
 
 /** 地区下拉仅在选中需要地区参数的上游时出现。 */
@@ -348,7 +347,11 @@ function next() {
             <p v-for="member in group.members" :key="member.id" class="text-muted-color">已有发行：{{ member.title || '未命名发行' }} · {{ member.identity?.provider || '本地' }} · {{ display(member.identity?.ref) }} · 收藏 {{ member.trackIds?.length || 0 }} 首</p>
           </div>
           <p v-if="reviewEvidence?.proposed">拟加入发行：{{ reviewEvidence.proposed.title?.value || '未命名发行' }} · {{ reviewEvidence.proposed.identity?.provider }} · {{ reviewEvidence.proposed.identity?.ref }}</p>
-          <p v-for="(e, i) in reviewEvidence?.resolution?.evidence ?? []" :key="i">判组依据：{{ e.kind === 'native' ? '相同上游组身份' : '专辑名与专辑艺术家相同' }} · {{ e.title }} · {{ e.credit }}</p>
+          <p v-for="(e, i) in reviewEvidence?.resolution?.evidence ?? []" :key="i">判组依据：{{ e.kind === 'native' ? '相同上游组身份' : e.kind === 'existing-release' ? '发行已在库' : '专辑名与专辑艺术家相同' }}<template v-if="e.title"> · {{ e.title }} · {{ e.credit }}</template></p>
+          <p v-for="(e, i) in reviewEvidence?.resolution?.rejected ?? []" :key="'r' + i" class="text-muted-color">{{ rejectedText(e, reviewEvidence?.proposed?.identity?.provider) }} · {{ e.title }} · {{ e.credit }}</p>
+          <p v-for="(e, i) in reviewEvidence?.resolution?.similar ?? []" :key="'s' + i" class="text-muted-color">名称近似的专辑组 #{{ e.groupId }} · {{ e.title }} · {{ e.credit }}（仅差版本后缀或署名附注，未自动并入）</p>
+          <p v-for="item in reviewProviders" :key="'p' + item.releaseId" data-testid="review-provider">可由已有发行提供：{{ item.title }} · {{ item.source }} · {{ display(item.ref) }} · {{ evidenceLabel(item.entries[0].evidence) }}</p>
+          <p v-for="item in reviewEvidence?.undecidable ?? []" :key="'u' + item.releaseId" class="text-muted-color">无法判定：{{ item.title || '未命名发行' }} · {{ item.identity?.provider || '本地' }} · {{ display(item.identity?.ref) }} · {{ undecidableReason(item.reason) }}</p>
         </div>
         <p v-if="!current.inTitle || !current.inArtist || !current.inAlbum" class="mt-2 text-xs text-muted-color">部分基本信息缺失，仍可选择候选或按已知原始信息无需匹配保存。</p>
         <!-- 逐条浏览保留在条目标题下方。 -->

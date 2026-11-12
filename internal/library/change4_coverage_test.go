@@ -445,3 +445,47 @@ func TestEditorMigrationIsGated(t *testing.T) {
 		t.Fatal("editor confirmation left no coexistence record")
 	}
 }
+
+func TestEditorSaveSupportsKeepSeparate(t *testing.T) {
+	s, st, _ := newTestService(t)
+	// 另一个来源的同名专辑组；被编辑的曲目在一个不同名的发行上。
+	other := &domain.ReleaseSnapshot{Identity: domain.Identity{Provider: "other", Ref: "o"}, Title: domain.Known("Album"), Credit: domain.Known(domain.Credit{Text: "Artist"})}
+	existing := commit(t, s, prepare(t, s, domain.AdmissionSeed{Snapshot: domain.Snapshot{Release: other,
+		Track: &domain.TrackSnapshot{Identity: domain.Identity{Provider: "other", Ref: "o1"}, Release: &other.Identity, Title: domain.Known("Unrelated")}}}), false)
+	source := seed("x", "x1", "group-x", "Different", "Artist")
+	edited := commit(t, s, prepare(t, s, source), false)
+	before, err := st.ReadEditorSession(edited.TrackID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 新建专辑信息并改名为「Album」：名称命中另一个组，需要确认。
+	draft := domain.EditDraft{TrackID: edited.TrackID, Revisions: before.Revisions, AlbumAction: "create",
+		Fields:   domain.EditFields{"release.title": {State: domain.Value, ValueJSON: `"Album"`}},
+		Mappings: []domain.EditMapping{{TrackID: edited.TrackID, Selected: true}}}
+	plan, err := s.PlanEditSave(context.Background(), draft)
+	if err != nil || plan.Baseline.TargetGroupID != existing.GroupID || !plan.Baseline.RequiresConfirmation {
+		t.Fatalf("editor plan: %+v %v", plan, err)
+	}
+	separate, err := s.ReplanAdmissionGroupChoice(context.Background(), plan.ID, plan.Hash, GroupActionSeparate, 0)
+	if err != nil || separate.Baseline.TargetGroupID != 0 || separate.Baseline.RequiresConfirmation || separate.Seed.EditJSON == "" {
+		t.Fatalf("separate plan: %+v %v", separate, err)
+	}
+	result, err := s.SaveEdit(context.Background(), separate.ID, separate.Hash, domain.AdmissionApproval{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.GroupID == existing.GroupID || result.GroupID == 0 {
+		t.Fatalf("release joined the name-matched group: %+v", result)
+	}
+	// 留下否定决定：之后不再把这两组当成同一组来问。
+	a, b := result.GroupID, existing.GroupID
+	if a > b {
+		a, b = b, a
+	}
+	if count(t, st, `SELECT count(*) FROM release_group_separation WHERE group_a=? AND group_b=?`, a, b) != 1 {
+		t.Fatal("separation decision not recorded")
+	}
+	if count(t, st, `SELECT count(*) FROM track WHERE id=? AND release_id=?`, edited.TrackID, result.ReleaseID) != 1 {
+		t.Fatal("track not moved to the new release")
+	}
+}

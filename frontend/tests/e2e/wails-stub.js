@@ -279,6 +279,8 @@
         DiscardEditCover: async () => {},
         ListArtists: async () => [],
         ListGroupProposals: async () => [],
+        ListReleaseMergeProposals: async () => [],
+        DismissReleaseMergeProposal: async () => null,
         ListAlbums: async () => [{ releaseId: 20, groupId: 20, title: '测试专辑', ownedCount: 2, memberCount: 1, ownedReleaseCount: 1, totalCount: 5 }],
         GetAlbumGroupDetail: async (groupId) => {
           const release = await window.go.app.App.GetAlbumDetail(groupId)
