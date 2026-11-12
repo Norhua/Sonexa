@@ -177,23 +177,6 @@ func (s *Store) ResolveGroup(snapshot domain.Snapshot) (domain.GroupResolution, 
 	defer tx.Rollback()
 	return resolveGroupTx(tx, snapshot)
 }
-func rebuildGroupKeysTx(tx *sql.Tx) error {
-	evidence, err := groupNameEvidenceTx(tx)
-	if err != nil {
-		return err
-	}
-	if _, err := tx.Exec("DELETE FROM release_group_match_key"); err != nil {
-		return err
-	}
-	for _, e := range evidence {
-		if _, err := tx.Exec("INSERT INTO release_group_match_key(group_id,source_kind,source_id,normalizer_version,title_key,credit_key) VALUES(?,?,?,?,?,?)", e.GroupID, e.Kind, e.SourceID, domain.GroupNormalizerVersion, e.Title, e.Credit); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-func (s *Store) RebuildGroupEvidence() error { return s.withTx(rebuildGroupKeysTx) }
-
 func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.AdmissionBaseline, error) {
 	var baseline domain.AdmissionBaseline
 	if seed.Snapshot.Track == nil {

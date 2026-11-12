@@ -47,7 +47,7 @@ func TestProgressiveStopsAtFirstHighConfidence(t *testing.T) {
 	}}
 
 	e := testEngine()
-	res, err := e.Run(context.Background(), s, nil, Input{
+	res, err := e.Run(context.Background(), s, Input{
 		Title: "夕立（驟雨）", Artist: "3L", Album: "专辑",
 	})
 	if err != nil {
@@ -74,7 +74,7 @@ func TestProgressiveFallsThroughVariants(t *testing.T) {
 	}}
 
 	e := testEngine()
-	res, err := e.Run(context.Background(), s, nil, Input{
+	res, err := e.Run(context.Background(), s, Input{
 		Title: "夕立（驟雨）", Artist: "3L", Album: "专辑",
 	})
 	if err != nil {
@@ -104,7 +104,7 @@ func TestExhaustiveRunsAllVariants(t *testing.T) {
 	m.VariantStrategy = config.VariantExhaustive
 	e := NewEngine(m)
 
-	if _, err := e.Run(context.Background(), s, nil, Input{
+	if _, err := e.Run(context.Background(), s, Input{
 		Title: "夕立（驟雨）", Artist: "3L（スリーエル）", Album: "专辑",
 	}); err != nil {
 		t.Fatalf("匹配失败: %v", err)
@@ -136,7 +136,7 @@ func TestPoolDedupesByMatchRefKeepingBestScore(t *testing.T) {
 	m.VariantStrategy = config.VariantExhaustive
 	e := NewEngine(m)
 
-	res, err := e.Run(context.Background(), s, nil, Input{
+	res, err := e.Run(context.Background(), s, Input{
 		Title: "夕立（驟雨）", Artist: "3L", Album: "专辑",
 	})
 	if err != nil {
@@ -171,7 +171,7 @@ func TestFourWayDispatch(t *testing.T) {
 		s := &stubSearcher{byTitle: map[string][]provider.Candidate{
 			"曲": {highConfCandidate("a", "曲", "艺术家", "专辑", rg1)},
 		}}
-		res, _ := testEngine().Run(context.Background(), s, nil,
+		res, _ := testEngine().Run(context.Background(), s,
 			Input{Title: "曲", Artist: "艺术家", Album: "专辑"})
 		if res.Decision.Outcome != OutcomeImportUnique {
 			t.Errorf("分流 = %q", res.Decision.Outcome)
@@ -189,7 +189,7 @@ func TestFourWayDispatch(t *testing.T) {
 		s := &stubSearcher{byTitle: map[string][]provider.Candidate{
 			"曲": {digital, cd},
 		}}
-		res, _ := testEngine().Run(context.Background(), s, nil,
+		res, _ := testEngine().Run(context.Background(), s,
 			Input{Title: "曲", Artist: "艺术家", Album: "专辑"})
 
 		if res.Decision.Outcome != OutcomeReviewManyReleases {
@@ -207,7 +207,7 @@ func TestFourWayDispatch(t *testing.T) {
 				highConfCandidate("b", "曲", "艺术家", "专辑", rg2),
 			},
 		}}
-		res, _ := testEngine().Run(context.Background(), s, nil,
+		res, _ := testEngine().Run(context.Background(), s,
 			Input{Title: "曲", Artist: "艺术家", Album: "专辑"})
 
 		if res.Decision.Outcome != OutcomeReviewCrossGroup {
@@ -220,7 +220,7 @@ func TestFourWayDispatch(t *testing.T) {
 
 	t.Run("无结果进复核", func(t *testing.T) {
 		s := &stubSearcher{byTitle: map[string][]provider.Candidate{}}
-		res, _ := testEngine().Run(context.Background(), s, nil,
+		res, _ := testEngine().Run(context.Background(), s,
 			Input{Title: "不存在的曲", Artist: "艺术家", Album: "专辑"})
 
 		if res.Decision.Outcome != OutcomeReviewNoMatch {
@@ -235,7 +235,7 @@ func TestFourWayDispatch(t *testing.T) {
 			Title: sptr("曲"), ArtistName: sptr("艺术家 与其他人"), AlbumTitle: sptr("专辑 特别版"),
 		}
 		s := &stubSearcher{byTitle: map[string][]provider.Candidate{"曲": {low}}}
-		res, _ := testEngine().Run(context.Background(), s, nil,
+		res, _ := testEngine().Run(context.Background(), s,
 			Input{Title: "曲", Artist: "艺术家", Album: "专辑"})
 
 		if res.Decision.Outcome != OutcomeReviewNoMatch {
@@ -252,7 +252,7 @@ func TestTitleMismatchNeverEntersPool(t *testing.T) {
 			Title: sptr("完全不相关的歌"), ArtistName: sptr("艺术家"),
 		}},
 	}}
-	res, _ := testEngine().Run(context.Background(), s, nil,
+	res, _ := testEngine().Run(context.Background(), s,
 		Input{Title: "曲", Artist: "艺术家"})
 
 	if len(res.Scored) != 0 {
@@ -265,7 +265,7 @@ func TestSearchErrorPropagates(t *testing.T) {
 	wantErr := errors.New("503 Service Unavailable")
 	s := &stubSearcher{err: wantErr}
 
-	_, err := testEngine().Run(context.Background(), s, nil, Input{Title: "曲"})
+	_, err := testEngine().Run(context.Background(), s, Input{Title: "曲"})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("错误 = %v, 期望传出原始错误", err)
 	}
@@ -349,7 +349,7 @@ func TestNoCorroborationNeverEntersPool(t *testing.T) {
 	}
 	s := &stubSearcher{byTitle: map[string][]provider.Candidate{"ツバサ": sameName}}
 
-	res, err := testEngine().Run(context.Background(), s, nil, Input{
+	res, err := testEngine().Run(context.Background(), s, Input{
 		Title: "ツバサ（羽翼）", Artist: "4円（ヨエン）", Album: "side-c",
 	})
 	if err != nil {

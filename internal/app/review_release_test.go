@@ -117,7 +117,7 @@ func TestResearchReturnsReleaseMarkersAndKeepsManualCandidate(t *testing.T) {
 		t.Fatal("manual search was auto-accepted or markers lost", queue, err)
 	}
 	// Automatic candidate snapshots use the same projection as manual rows.
-	scored, err := json.Marshal([]matching.ScoredCandidate{{Candidate: candidate, Score: matching.Score{HighConf: true}}})
+	scored, err := json.Marshal([]matching.ScoredCandidate{{Candidate: candidate, Score: matching.Score{HighConf: true, TitleMatch: matching.MatchExact}}})
 	if err != nil {
 		t.Fatal(err)
 	}

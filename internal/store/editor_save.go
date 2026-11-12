@@ -450,9 +450,6 @@ func (s *Store) CommitEdit(ctx context.Context, plan domain.AdmissionPlan, appro
 				return err
 			}
 		}
-		if err := rebuildGroupKeysTx(tx); err != nil {
-			return err
-		}
 		return finishAdmissionTx(tx, plan, result)
 	})
 	if err != nil {

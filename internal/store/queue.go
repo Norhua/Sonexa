@@ -347,6 +347,14 @@ func (s *Store) RetryItem(itemID int64) error {
 	})
 }
 
+// RetryItemAfter 重新排队并设置最早重试时间，不计失败次数。
+func (s *Store) RetryItemAfter(itemID int64, delay time.Duration) error {
+	return s.setStatus(itemID, StatusQueued, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE import_item SET next_retry_at=? WHERE id=?`, time.Now().UTC().Add(delay), itemID)
+		return err
+	})
+}
+
 // ReleaseImportClaim returns only still-active matching work after cancellation.
 // A terminal/removed shell is never made queued again.
 func (s *Store) ReleaseImportClaim(itemID int64) error {

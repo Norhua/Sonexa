@@ -306,9 +306,6 @@ func applyReleaseSnapshotTx(tx *sql.Tx, id int64, snapshot *domain.Snapshot) err
 	if err := syncFTSForRelease(tx, id); err != nil {
 		return err
 	}
-	if err := rebuildGroupKeysTx(tx); err != nil {
-		return err
-	}
 	if err := proposeGroupChangeTx(tx, id, snapshot.Group); err != nil {
 		return err
 	}

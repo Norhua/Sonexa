@@ -262,13 +262,6 @@ func TestMissingFieldsAndNameNormalization(t *testing.T) {
 	if normalized.Baseline.TargetGroupID != base.GroupID || !normalized.Baseline.RequiresConfirmation {
 		t.Fatal("independent normalized path missed", normalized.Baseline)
 	}
-	if err := st.RebuildGroupEvidence(); err != nil {
-		t.Fatal(err)
-	}
-	st.DB().QueryRow("SELECT count(*) FROM release_group_match_key").Scan(&n)
-	if n == 0 {
-		t.Fatal("empty evidence index")
-	}
 }
 
 func TestLateFactsCreateProposalWithoutMovingAndRecheckOnUse(t *testing.T) {
@@ -379,14 +372,6 @@ func TestGroupEvidenceStopsUsingWithdrawnCurrentName(t *testing.T) {
 	p := prepare(t, s, seed("new", "new1", "", "Before", "Artist"))
 	if p.Baseline.TargetGroupID != 0 {
 		t.Fatal("withdrawn name still matched", p.Baseline)
-	}
-	if err := st.RebuildGroupEvidence(); err != nil {
-		t.Fatal(err)
-	}
-	var n int
-	st.DB().QueryRow("SELECT count(*) FROM release_group_match_key WHERE title_key='before'").Scan(&n)
-	if n != 0 {
-		t.Fatal("old index survived rebuild", n)
 	}
 }
 

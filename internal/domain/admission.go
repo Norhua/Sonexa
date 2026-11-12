@@ -81,8 +81,10 @@ type AdmissionApproval struct {
 }
 type AdmissionResult struct {
 	PlaylistIDs []int64 `json:"playlistIds"`
-	TrackID     int64   `json:"trackId"`
-	ReleaseID   int64   `json:"releaseId"`
-	GroupID     int64   `json:"groupId"`
-	Existing    bool    `json:"existing"`
+	// RequeuedBatches 是本次提交顺带重新排队的复核条目所属批次，由应用层启动驱动器。
+	RequeuedBatches []int64 `json:"requeuedBatches,omitempty"`
+	TrackID         int64   `json:"trackId"`
+	ReleaseID       int64   `json:"releaseId"`
+	GroupID         int64   `json:"groupId"`
+	Existing        bool    `json:"existing"`
 }

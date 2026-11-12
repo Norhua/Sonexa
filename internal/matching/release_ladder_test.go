@@ -141,11 +141,11 @@ func TestGroupByReleaseGroup(t *testing.T) {
 	if len(groups) != 3 {
 		t.Fatalf("分组数 = %d, 期望 3: %v", len(groups), groups)
 	}
-	if len(groups["rg-1"]) != 2 {
-		t.Errorf("rg-1 组有 %d 条, 期望 2", len(groups["rg-1"]))
+	if len(groups["\x00rg-1"]) != 2 {
+		t.Errorf("rg-1 组有 %d 条, 期望 2", len(groups["\x00rg-1"]))
 	}
-	if len(groups["rg-2"]) != 1 {
-		t.Errorf("rg-2 组有 %d 条, 期望 1", len(groups["rg-2"]))
+	if len(groups["\x00rg-2"]) != 1 {
+		t.Errorf("rg-2 组有 %d 条, 期望 1", len(groups["\x00rg-2"]))
 	}
 }
 

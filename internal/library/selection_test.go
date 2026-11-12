@@ -39,7 +39,7 @@ func candidate(release, track string, total *int) provider.Candidate {
 func high(c ...provider.Candidate) []matching.ScoredCandidate {
 	out := []matching.ScoredCandidate{}
 	for _, v := range c {
-		out = append(out, matching.ScoredCandidate{Candidate: v, Score: matching.Score{HighConf: true}})
+		out = append(out, matching.ScoredCandidate{Candidate: v, Score: matching.Score{HighConf: true, TitleMatch: matching.MatchExact}})
 	}
 	return out
 }

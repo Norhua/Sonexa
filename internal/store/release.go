@@ -379,9 +379,6 @@ func deleteOrphanReleaseTx(tx *sql.Tx, releaseID int64) error {
 	if err != nil || deleted == 0 {
 		return err
 	}
-	if _, err := tx.Exec("DELETE FROM release_group_match_key WHERE source_kind IN ('release-current','release-snapshot') AND source_id=CAST(? AS TEXT)", releaseID); err != nil {
-		return err
-	}
 	if _, err := tx.Exec("UPDATE release_group SET revision=revision+1, representative_id=CASE WHEN representative_id=? THEN NULL ELSE representative_id END WHERE id=?", releaseID, groupID); err != nil {
 		return err
 	}

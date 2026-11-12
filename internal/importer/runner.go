@@ -60,6 +60,8 @@ type Runner struct {
 	work    sync.WaitGroup
 	running map[int64]context.CancelFunc
 	items   map[int64]runningImport
+	// stale 记录各条目连续遇到计划失效的次数，成功或进入复核后清零。
+	stale map[int64]int
 }
 type runningImport struct {
 	revision int64
@@ -326,7 +328,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		}
 	}
 	// 上游查询与评分；文本疑似和 ISRC 不再提前变成本地候选。
-	res, err := r.engine.Run(ctx, r.searcher, r.store, in)
+	res, err := r.engine.Run(ctx, r.searcher, in)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ""
@@ -344,11 +346,14 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 
 	// Track resolution is independent from release-group admission: a unique
 	// candidate may still need review for missing grouping facts.
+	// 已拥有判定的旁证只取可自动入库的候选：整个候选池里混着仅供人工查看的
+	// 结果时，池子大小不该决定同一首已拥有的歌是「跳过」还是「复核」。
+	eligible := matching.AutomaticCandidates(res.Scored)
 	var resolved *provider.Candidate
-	if eligible := matching.AutomaticCandidates(res.Scored); len(eligible) == 1 {
+	if len(eligible) == 1 {
 		resolved = &eligible[0].Candidate
 	}
-	if handled, err := r.store.ResolveImport(item.ID, res.Scored, resolved); err != nil {
+	if handled, err := r.store.ResolveImport(item.ID, eligible, resolved); err != nil {
 		r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
 		return matching.ErrorLogLine(err)
 	} else if handled {
@@ -366,7 +371,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		return matching.ErrorLogLine(err)
 	}
 	if selection.Candidate != nil {
-		if handled, err := r.store.ResolveImport(item.ID, res.Scored, selection.Candidate); err != nil {
+		if handled, err := r.store.ResolveImport(item.ID, scoredFor(res.Scored, *selection.Candidate), selection.Candidate); err != nil {
 			r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
 			return matching.ErrorLogLine(err)
 		} else if handled {
@@ -383,6 +388,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	if selection.Candidate != nil && selection.Reason == "" {
 		result, err := r.library.CommitAdmission(ctx, selection.Plan.ID, selection.Plan.Hash, domain.AdmissionApproval{})
 		if err == nil {
+			r.clearStale(item.ID)
 			if r.onLibraryChanged != nil {
 				r.onLibraryChanged()
 			}
@@ -396,7 +402,12 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		}
 		if errors.Is(err, store.ErrPlanStale) {
 			// 新输入被吸收或库状态变化后重新决策，不伪报成新增发行复核。
-			if retryErr := r.store.RetryItem(item.ID); retryErr != nil {
+			// 连续失效说明有东西在反复改写基线：短退避重排，超过上限按普通
+			// 失败处理（计次数、指数退避），不无限空转。
+			if n := r.noteStale(item.ID); n > maxStaleRetries {
+				r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
+				return matching.ErrorLogLine(err)
+			} else if retryErr := r.store.RetryItemAfter(item.ID, time.Duration(n)*staleRetryStep); retryErr != nil {
 				return matching.ErrorLogLine(retryErr)
 			}
 			return "[重新核验] " + in.Title
@@ -423,6 +434,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	if err := r.store.MarkReview(item.ID, reason, string(candidatesJSON), string(variantsJSON), evidence); err != nil {
 		return matching.ErrorLogLine(err)
 	}
+	r.clearStale(item.ID)
 
 	return fmt.Sprintf("%s · %s：%s", in.Title, in.Artist, reviewReasonText(reason))
 }
@@ -494,6 +506,38 @@ func (r *Runner) emitProgress(batchID int64, line string, done, paused bool) {
 		Done:      done,
 		Paused:    paused,
 	})
+}
+
+// plan_stale 的连续重排上限与退避步长：1s、2s、3s 之后转入普通失败流程。
+const (
+	maxStaleRetries = 3
+	staleRetryStep  = time.Second
+)
+
+func (r *Runner) noteStale(itemID int64) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.stale == nil {
+		r.stale = map[int64]int{}
+	}
+	r.stale[itemID]++
+	return r.stale[itemID]
+}
+
+func (r *Runner) clearStale(itemID int64) {
+	r.mu.Lock()
+	delete(r.stale, itemID)
+	r.mu.Unlock()
+}
+
+// scoredFor 取选中候选自己的评分记录，作为已拥有判定的唯一旁证。
+func scoredFor(scored []matching.ScoredCandidate, c provider.Candidate) []matching.ScoredCandidate {
+	for _, sc := range scored {
+		if sc.Candidate.Provider == c.Provider && sc.Candidate.MatchRef == c.MatchRef && deref(sc.Candidate.ReleaseRef) == deref(c.ReleaseRef) {
+			return []matching.ScoredCandidate{sc}
+		}
+	}
+	return []matching.ScoredCandidate{{Candidate: c}}
 }
 
 func findScored(scored []matching.ScoredCandidate, ref string) *matching.ScoredCandidate {

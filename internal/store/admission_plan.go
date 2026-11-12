@@ -150,6 +150,16 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 			return err
 		}
 		if baseline.RequiresConfirmation {
+			// 确认过的这一条与其余条目本来描述的是同一个发行/同一个组，重算后
+			// 它们多半不再需要人工。只动状态、不动复核原因与证据：重排后重新
+			// 走匹配，结论由那时的库事实决定。
+			batches, err := requeueSiblingReviewsTx(tx, plan.Seed, *result)
+			if err != nil {
+				return err
+			}
+			result.RequeuedBatches = batches
+		}
+		if baseline.RequiresConfirmation {
 			actions, _ := json.Marshal(struct {
 				Baseline domain.AdmissionBaseline `json:"baseline"`
 				Result   domain.AdmissionResult   `json:"result"`
@@ -159,9 +169,6 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 				return err
 			}
 		}
-		if err := rebuildGroupKeysTx(tx); err != nil {
-			return err
-		}
 		return finishAdmissionTx(tx, plan, result)
 	})
 	if err != nil {
@@ -169,6 +176,70 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 	}
 	return result, nil
 }
+
+// requeueSiblingReviewsTx 把与刚提交的发行/组有关的复核条目改回排队。
+//
+// 只处理未手搜、仍在复核、原因属于三种「等库事实」的条目：复核证据里的提议
+// 发行等于本次提交的发行，或目标组等于本次落入的组。手搜条目与无关条目不动。
+func requeueSiblingReviewsTx(tx *sql.Tx, seed domain.AdmissionSeed, result domain.AdmissionResult) ([]int64, error) {
+	var identity domain.Identity
+	if seed.Snapshot.Release != nil {
+		identity = seed.Snapshot.Release.Identity
+	}
+	if identity.Ref == "" && result.GroupID == 0 {
+		return nil, nil
+	}
+	rows, err := tx.Query(`SELECT id,batch_id,review_evidence FROM import_item
+ WHERE status='review' AND search_manual=0 AND id<>? AND review_evidence IS NOT NULL
+ AND review_reason IN ('new_release','song_unresolved','group_conflict') ORDER BY id`, seed.ImportItemID)
+	if err != nil {
+		return nil, err
+	}
+	type candidate struct {
+		id      int64
+		batchID int64
+		raw     string
+	}
+	var hits []candidate
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.id, &c.batchID, &c.raw); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		var evidence struct {
+			TargetGroupID int64 `json:"targetGroupId"`
+			Proposed      *struct {
+				Identity domain.Identity `json:"identity"`
+			} `json:"proposed"`
+		}
+		if err := json.Unmarshal([]byte(c.raw), &evidence); err != nil {
+			continue
+		}
+		sameRelease := identity.Ref != "" && evidence.Proposed != nil && evidence.Proposed.Identity == identity
+		sameGroup := result.GroupID != 0 && evidence.TargetGroupID == result.GroupID
+		if sameRelease || sameGroup {
+			hits = append(hits, c)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var batches []int64
+	seen := map[int64]bool{}
+	for _, h := range hits {
+		if _, err := tx.Exec(`UPDATE import_item SET status='queued',next_retry_at=NULL,search_revision=search_revision+1,updated_at=? WHERE id=? AND status='review'`, time.Now().UTC(), h.id); err != nil {
+			return nil, err
+		}
+		if !seen[h.batchID] {
+			seen[h.batchID] = true
+			batches = append(batches, h.batchID)
+		}
+	}
+	return batches, nil
+}
+
 func finishAdmissionTx(tx *sql.Tx, plan domain.AdmissionPlan, result *domain.AdmissionResult) error {
 	if plan.Seed.ProposalID != 0 {
 		row, err := tx.Exec("UPDATE group_change_proposal SET status='accepted',updated_at=? WHERE id=? AND release_id=? AND status='pending'", time.Now().UTC(), plan.Seed.ProposalID, plan.Seed.MoveReleaseID)

@@ -248,7 +248,7 @@ func (a *App) matchUpstream(ctx context.Context, p provider.MetadataProvider, in
 		return nil, nil, err
 	}
 	engine := matching.NewEngine(a.settings.Get().Matching)
-	res, err := engine.Run(ctx, p, a.store, in)
+	res, err := engine.Run(ctx, p, in)
 	if err != nil {
 		return nil, nil, err
 	}

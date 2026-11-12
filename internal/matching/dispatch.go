@@ -37,8 +37,10 @@ type Decision struct {
 	HighConfidence []provider.Candidate
 }
 
-// Decide 仅保留置信度分类供旧读取 DTO 使用；最终选版及准入由 library 执行。
-// 载体和国家偏好只用于展示代表，不在这里选择入库版本。
+// Decide 只给日志与旧读取 DTO 提供置信度分类，不决定任何条目的去向。
+// 真正的状态机在 importer.Runner.processItem（流转与出口）、
+// library.SelectCandidate（候选收敛、选版与组内歌曲解析）和
+// store 的准入基线与提交（事务内重验）。
 func (cfg LadderConfig) Decide(scored []ScoredCandidate) Decision {
 	high := AutomaticCandidates(scored)
 	highCands := make([]provider.Candidate, len(high))

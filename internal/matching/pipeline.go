@@ -69,7 +69,7 @@ func NewEngine(m config.MatchingSettings) *Engine {
 // 因此在四处完全一致——各写各的时候，同一个 `原田瞳（原田ひとみ）`
 // 导入查得到而手动检索查不到，搜索页还把 43 条曲名相符的噪音摆给用户。
 // 手动检索只是不看 [4] 的分流结果。
-func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Input) (*Result, error) {
+func (e *Engine) Run(ctx context.Context, s Searcher, in Input) (*Result, error) {
 	res := &Result{}
 
 	variants := e.Rules.GenerateVariants(in.Title, in.Artist, in.Album)
@@ -142,7 +142,12 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 		// 闸门是两道一起算的（曲名 + 一处旁证，见 Score.Plausible）：只过曲名那一道
 		// 也停不下来。代价是上游确实没有的那些行要多花一两次请求把阶梯走完，
 		// 换来的是「未匹配」这个结论真的成立。
-		if len(pool) > 0 {
+		//
+		// 「过得了闸」还不等于「能自动入库」：`雪（Yuki）` 的第一级只捞到
+		// `雪 (Live)`（仅供人工查看），按「池子非空就停」阶梯停在这里，下一级那条
+		// 精确高置信候选从未被查询，条目白白进了复核。所以停止条件是池中已有
+		// 可自动入库的候选；`仅曲名` 是最后一级，有候选即结束。
+		if hasAutomaticCandidate(pool) || (v.TitleOnly && len(pool) > 0) {
 			if e.Strategy != config.VariantExhaustive || v.TitleOnly {
 				break
 			}
@@ -152,6 +157,15 @@ func (e *Engine) Run(ctx context.Context, s Searcher, lookup LocalLookup, in Inp
 	res.Scored = sortedPool(pool)
 	res.Decision = e.Ladder.Decide(res.Scored)
 	return res, nil
+}
+
+func hasAutomaticCandidate(pool map[string]ScoredCandidate) bool {
+	for _, sc := range pool {
+		if isAutomatic(sc.Score) {
+			return true
+		}
+	}
+	return false
 }
 
 // sortedPool 把候选池按分值降序排列；同分时以标识字典序保证稳定。

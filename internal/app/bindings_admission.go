@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/norhua/sonexa/internal/covers"
@@ -61,6 +62,14 @@ func (a *App) CommitAdmission(planID, hash string, approval domain.AdmissionAppr
 	if err == nil {
 		a.notifyLibraryChanged()
 		a.autoStartEnrich()
+		// 同批/同组条目被重新排队后，由各自批次的驱动器继续处理。
+		for _, batchID := range result.RequeuedBatches {
+			if a.runner != nil && !a.runner.IsRunning(batchID) {
+				if err := a.runner.Start(context.Background(), batchID); err != nil {
+					return result, err
+				}
+			}
+		}
 	}
 	return result, err
 }

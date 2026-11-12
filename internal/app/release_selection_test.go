@@ -223,7 +223,7 @@ func ameReplay(t *testing.T, in matching.Input) (*App, []matching.ScoredCandidat
 	p := musicbrainz.New(client, musicbrainz.Config{Contact: "test@example.com", ServerURL: srv.URL}, store.ParamsHash)
 	a.registry.Register(p)
 	a.rebuildRunner(a.settings.Get())
-	res, err := matching.NewEngine(a.settings.Get().Matching).Run(context.Background(), p, a.store, in)
+	res, err := matching.NewEngine(a.settings.Get().Matching).Run(context.Background(), p, in)
 	if err != nil {
 		t.Fatal(err)
 	}

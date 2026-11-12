@@ -168,6 +168,7 @@ func earlierDate(a, b string) bool {
 
 // GroupByReleaseGroup 把候选按 release group 分组。
 // 无 release group 标识的候选各自单独成组（键为其 MatchRef）。
+// 组标识只在来源内有意义，键必须带来源：两个来源恰好用了同一个标识不是同一组。
 func GroupByReleaseGroup(candidates []provider.Candidate) map[string][]provider.Candidate {
 	groups := map[string][]provider.Candidate{}
 	for _, c := range candidates {
@@ -175,6 +176,7 @@ func GroupByReleaseGroup(candidates []provider.Candidate) map[string][]provider.
 		if key == "" {
 			key = "\x00solo:" + c.MatchRef
 		}
+		key = string(c.Provider) + "\x00" + key
 		groups[key] = append(groups[key], c)
 	}
 	return groups

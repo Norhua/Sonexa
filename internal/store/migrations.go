@@ -84,13 +84,6 @@ CREATE TABLE track_identifier (
  PRIMARY KEY(track_id,kind,position)
 );
 CREATE INDEX idx_track_identifier ON track_identifier(kind,value);
-CREATE TABLE release_group_match_key (
- group_id INTEGER NOT NULL REFERENCES release_group(id) ON DELETE CASCADE,
- source_kind TEXT NOT NULL, source_id TEXT NOT NULL, normalizer_version INTEGER NOT NULL,
- title_key TEXT NOT NULL CHECK(title_key<>''), credit_key TEXT NOT NULL CHECK(credit_key<>''),
- PRIMARY KEY(source_kind,source_id)
-);
-CREATE INDEX idx_group_match ON release_group_match_key(title_key,credit_key);
 CREATE TABLE group_change_proposal (
  id INTEGER PRIMARY KEY, release_id INTEGER NOT NULL REFERENCES release(id) ON DELETE CASCADE,
  evidence_json TEXT NOT NULL, evidence_hash TEXT NOT NULL DEFAULT '', baseline_revision INTEGER NOT NULL,

@@ -268,7 +268,7 @@ func TestCSVCandidateClassification(t *testing.T) {
 	var imported, review, unmatched int
 	for _, row := range rows {
 		t.Run(row.title, func(t *testing.T) {
-			res, err := engine.Run(context.Background(), searcher, nil, matching.Input{
+			res, err := engine.Run(context.Background(), searcher, matching.Input{
 				Title: row.title, Artist: row.artist, Album: row.album,
 			})
 			if err != nil {

@@ -77,8 +77,13 @@ func TestReviewCandidatesNeverBecomeAutomatic(t *testing.T) {
 			candidates = append(candidates, highConfCandidate("original", "Song", "Artist", "Album", sptr("group")))
 		}
 		s := &stubSearcher{byTitle: map[string][]provider.Candidate{"Song": candidates}}
-		res, err := testEngine().Run(context.Background(), s, nil, Input{Title: "Song", Artist: "Artist", Album: "Album"})
-		if err != nil || len(res.Scored) != len(candidates) || len(s.queries) != 1 {
+		res, err := testEngine().Run(context.Background(), s, Input{Title: "Song", Artist: "Artist", Album: "Album"})
+		// 只有仅供人工查看的候选时阶梯继续推进（P1），有自动候选时首级即停。
+		wantQueries := 1
+		if onlyReview {
+			wantQueries = 2
+		}
+		if err != nil || len(res.Scored) != len(candidates) || len(s.queries) != wantQueries {
 			t.Fatal(res, err, s.queries)
 		}
 		if onlyReview && res.Decision.Selected != nil || !onlyReview && (res.Decision.Selected == nil || res.Decision.Selected.MatchRef != "original") {

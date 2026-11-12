@@ -257,18 +257,21 @@ func (s *Store) ReconcileReviewDuplicatesChanged() (bool, error) {
 		if err := tx.QueryRow(`SELECT revision FROM review_revision WHERE id=1`).Scan(&revision); err != nil {
 			return err
 		}
-		rows, err := tx.Query(`SELECT id,candidates FROM import_item WHERE status IN ('review','failed') AND search_manual=0 ORDER BY id`)
+		// 手搜过的条目也参与：只用原始输入与当前库事实，不读手搜草稿、候选快照与
+		// 手搜来源，因此不会消费草稿，也不会把用户改搜的意图当成自动决策依据。
+		rows, err := tx.Query(`SELECT id,candidates,search_manual FROM import_item WHERE status IN ('review','failed') ORDER BY id`)
 		if err != nil {
 			return err
 		}
 		type pending struct {
-			id  int64
-			raw *string
+			id     int64
+			raw    *string
+			manual bool
 		}
 		var items []pending
 		for rows.Next() {
 			var p pending
-			if err = rows.Scan(&p.id, &p.raw); err != nil {
+			if err = rows.Scan(&p.id, &p.raw, &p.manual); err != nil {
 				rows.Close()
 				return err
 			}
@@ -293,7 +296,7 @@ func (s *Store) ReconcileReviewDuplicatesChanged() (bool, error) {
 		index := newOwnedImportIndex(tracks, confirmed)
 		for _, item := range items {
 			var scored []matching.ScoredCandidate
-			if item.raw != nil {
+			if item.raw != nil && !item.manual {
 				if err := json.Unmarshal([]byte(*item.raw), &scored); err != nil {
 					scored = nil
 				}

@@ -22,10 +22,14 @@ func sameImportEdition(a, b string) bool {
 // exact match is not made ambiguous by results that only match the artist (e.g.
 // a studio single alongside a live album). Ties still go through track/group and
 // release admission checks; this never selects the highest numeric score.
+//
+// 曲名必须精确：模糊档（Jaro-Winkler）会把 `Interlude` 与 `Interlude 2`、
+// `Song II` 与 `Song III` 判成高置信，输入的那首歌上游没有时，相邻的另一首
+// 会被自动入库。模糊曲名仍是高置信候选，只供人工选择。
 func AutomaticCandidates(scored []ScoredCandidate) []ScoredCandidate {
 	var high, exact []ScoredCandidate
 	for _, sc := range scored {
-		if !sc.Score.HighConf || sc.Score.ReviewOnly {
+		if !isAutomatic(sc.Score) {
 			continue
 		}
 		high = append(high, sc)
@@ -37,6 +41,10 @@ func AutomaticCandidates(scored []ScoredCandidate) []ScoredCandidate {
 		return exact
 	}
 	return high
+}
+
+func isAutomatic(score Score) bool {
+	return score.HighConf && !score.ReviewOnly && score.TitleMatch == MatchExact
 }
 
 // SameImportText is deliberately stricter than search scoring. It accepts

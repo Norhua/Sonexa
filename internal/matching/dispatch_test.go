@@ -171,14 +171,14 @@ func TestCrossGroupNeverAutoSelects(t *testing.T) {
 					MatchRef: "a", RecordingRef: &rec, ReleaseGroupRef: sptr("rg-1"),
 					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
 				},
-				Score: Score{HighConf: true, AlbumMatch: MatchFuzzy},
+				Score: Score{HighConf: true, TitleMatch: MatchExact, AlbumMatch: MatchFuzzy},
 			},
 			{
 				Candidate: provider.Candidate{
 					MatchRef: "b", RecordingRef: &rec, ReleaseGroupRef: sptr("rg-2"),
 					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
 				},
-				Score: Score{HighConf: true, AlbumMatch: MatchNone},
+				Score: Score{HighConf: true, TitleMatch: MatchExact, AlbumMatch: MatchNone},
 			},
 		}
 		got := cfg.Decide(scored)
@@ -198,7 +198,7 @@ func TestCrossGroupNeverAutoSelects(t *testing.T) {
 					ReleaseGroupRef: sptr("rg-1"), AlbumTitle: sptr("3253212"),
 					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
 				},
-				Score: Score{HighConf: true, AlbumMatch: MatchExact},
+				Score: Score{HighConf: true, TitleMatch: MatchExact, AlbumMatch: MatchExact},
 			},
 			{
 				Candidate: provider.Candidate{
@@ -206,7 +206,7 @@ func TestCrossGroupNeverAutoSelects(t *testing.T) {
 					ReleaseGroupRef: sptr("rg-2"), AlbumTitle: sptr("GaLLERy on live"),
 					ReleaseStatus: sptr("Official"), MediumFormat: sptr("CD"),
 				},
-				Score: Score{HighConf: true, AlbumMatch: MatchNone},
+				Score: Score{HighConf: true, TitleMatch: MatchExact, AlbumMatch: MatchNone},
 			},
 		}
 		got := cfg.Decide(scored)

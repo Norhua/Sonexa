@@ -83,7 +83,7 @@ func TestMusicBrainzAlbumRecallAcrossEntrypoints(t *testing.T) {
 	if !found {
 		t.Fatal("target missing from raw parser")
 	}
-	result, err := matching.NewEngine(config.Defaults().Matching).Run(context.Background(), p, nil, matching.Input{Title: title, Artist: artist, Album: album})
+	result, err := matching.NewEngine(config.Defaults().Matching).Run(context.Background(), p, matching.Input{Title: title, Artist: artist, Album: album})
 	if err != nil {
 		t.Fatal(err)
 	}
