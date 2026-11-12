@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/provider"
 	"github.com/norhua/sonexa/internal/store"
 )
@@ -46,12 +47,40 @@ func c4Owned(t *testing.T, st *store.Store, ref, title, artist, album, release, 
 	id, err := st.CreateTrackWithProvenance(store.NewTrackInput{InLibrary: true,
 		Title: title, Credit: sptr(artist), Album: sptr(album), AlbumCredit: sptr(artist),
 		MatchSource: sptr("musicbrainz"), MatchRef: sptr(ref),
-		Release: &store.ReleaseInput{Provider: sptr("musicbrainz"), ProviderRef: sptr(release), ReleaseGroupRef: sptr(group)},
+		Release: &store.ReleaseInput{Provider: sptr("musicbrainz"), ProviderRef: sptr(release), ReleaseGroupRef: c4Ref(group)},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return id
+}
+
+func c4Ref(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+// c4Detail 构造带完整清单的发行详情。entries 依次是 曲目标识、录音标识、曲名。
+func c4Detail(release, group, album, artist string, entries ...[3]string) *domain.Snapshot {
+	identity := domain.Identity{Provider: provider.MusicBrainz, Ref: release}
+	r := &domain.ReleaseSnapshot{Identity: identity, Title: domain.Known(album), Credit: domain.Known(domain.Credit{Text: artist}), TracklistCompleteness: domain.Complete}
+	snapshot := &domain.Snapshot{Release: r}
+	if group != "" {
+		r.Group = &domain.Identity{Provider: provider.MusicBrainz, Ref: group}
+	}
+	list := []domain.TracklistEntry{}
+	for i, e := range entries {
+		entry := domain.TracklistEntry{DiscNumber: 1, TrackNumber: i + 1, Title: domain.Known(e[2]), Credit: domain.Known(domain.Credit{Text: artist}),
+			Track: domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: e[0]})}
+		if e[1] != "" {
+			entry.Recording = domain.Known(domain.Identity{Provider: provider.MusicBrainz, Ref: e[1]})
+		}
+		list = append(list, entry)
+	}
+	r.Tracklist = domain.Known(list)
+	return snapshot
 }
 
 // P3：候选池大小不再决定同一首已拥有曲目是跳过还是复核。
@@ -93,7 +122,10 @@ func TestFuzzySiblingIsNotAutoImported(t *testing.T) {
 // P2：确认同一发行的一首后，其余未手搜的复核条目重新排队并免确认入库。
 func TestConfirmedReleaseRequeuesSiblings(t *testing.T) {
 	st := openStore(t)
-	c4Owned(t, st, "saved", "Existing", "Artist", "Album", "rel-1", "rg-1")
+	// 已有发行只经名称命中（它没有上游原生组映射），所以新发行仍需人工确认一次；
+	// 它的清单已证明不含这三首歌。原生组已映射时这三首会直接自动入库，见
+	// TestGroupSongResolution。
+	c4Owned(t, st, "saved", "Existing", "Artist", "Album", "rel-1", "")
 	byTitle := map[string][]provider.Candidate{}
 	var rows [][3]string
 	var cands []provider.Candidate
@@ -110,12 +142,23 @@ func TestConfirmedReleaseRequeuesSiblings(t *testing.T) {
 	byTitle["Other Title Here"] = []provider.Candidate{other}
 	rows = append(rows, [3]string{"Other Title Here", "Artist", "Elsewhere"})
 	batch := c4Enqueue(t, st, rows)
-	runner := newRunner(st, &recordingSearcher{byTitle: byTitle})
+	runner := newRunner(st, &recordingSearcher{byTitle: byTitle, details: map[string]*domain.Snapshot{
+		"rel-1": c4Detail("rel-1", "", "Album", "Artist", [3]string{"saved", "rec-saved", "Existing"}),
+	}})
 	t.Cleanup(runner.Close)
 	runToCompletion(t, runner, batch)
 	items, _ := st.AllReviewItems()
 	if len(items) != 4 {
 		t.Fatalf("precondition: %d review items", len(items))
+	}
+	for _, it := range items {
+		want := "new_release"
+		if *it.InTitle == "Other Title Here" {
+			want = "song_unresolved" // 那个组的已有发行清单取不到
+		}
+		if it.ReviewReason == nil || *it.ReviewReason != want {
+			t.Fatalf("%s: reason %v want %s", *it.InTitle, it.ReviewReason, want)
+		}
 	}
 	var first store.ImportItem
 	for _, it := range items {

@@ -17,20 +17,28 @@ const (
 	ReasonAmbiguous         = "ambiguous"
 	ReasonGroupInsufficient = "group_insufficient"
 	ReasonGroupConflict     = "group_conflict"
-	ReasonNewRelease        = "new_release"
-	ReasonUnknownTotal      = "unknown_total"
+	// ReasonNewRelease：需要新增发行且不满足自动条件。
+	ReasonNewRelease = "new_release"
+	// ReasonSongUnresolved：无法确认、或疑似组内已有发行提供这首歌。
+	ReasonSongUnresolved = "song_unresolved"
+	ReasonUnknownTotal   = "unknown_total"
 )
 
 type Selection struct {
 	Candidate *provider.Candidate   `json:"candidate"`
 	Reason    string                `json:"reason"`
 	Plan      *domain.AdmissionPlan `json:"plan,omitempty"`
+	// Substitute 非空表示计划已改为准入组内已有发行的这条清单，而不是候选所在的发行。
+	// 之后的已拥有判重、补全、已解析身份与日志都要改用它的身份。
+	Substitute *domain.SongProvider `json:"substitute,omitempty"`
 }
 type selectionCandidate struct {
 	candidate provider.Candidate
 	summary   domain.ReleaseSummary
 	groups    map[int64]bool
 	existing  bool
+	// refs 是该发行已有的曲目引用数（含同步专属曲目）。
+	refs int64
 }
 
 // selectCandidate 是无网络的纯决策；先检查曲目/组歧义，再优先本地已有
@@ -107,6 +115,10 @@ func selectCandidate(candidates []selectionCandidate) Selection {
 		}
 		sort.Slice(candidates, func(i, j int) bool {
 			a, b := candidates[i], candidates[j]
+			// 曲目引用多的发行优先于总曲数多的：共同歌曲持续落在同一个发行上。
+			if a.refs != b.refs {
+				return a.refs > b.refs
+			}
 			if a.summary.ReleaseTrackTotal.Value != b.summary.ReleaseTrackTotal.Value {
 				return a.summary.ReleaseTrackTotal.Value > b.summary.ReleaseTrackTotal.Value
 			}
@@ -169,6 +181,7 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 	}
 	for i, state := range states {
 		prepared[i].existing = state.ReleaseHasTracks
+		prepared[i].refs = state.ReleaseTracks
 	}
 	load := func(c *selectionCandidate) error {
 		identity := c.summary.Identity
@@ -263,7 +276,13 @@ func (s *Service) SelectCandidate(ctx context.Context, scored []matching.ScoredC
 	selection.Plan = plan
 	if plan.Baseline.Conflict {
 		selection.Reason = ReasonGroupConflict
-	} else if plan.Baseline.RequiresConfirmation {
+		return selection, nil
+	}
+	selection, err = s.resolveGroupSong(ctx, selection, selectedSeed)
+	if err != nil {
+		return Selection{}, err
+	}
+	if selection.Reason == "" && selection.Plan.Baseline.RequiresConfirmation {
 		selection.Reason = ReasonNewRelease
 	}
 	return selection, nil

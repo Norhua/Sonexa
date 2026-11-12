@@ -259,6 +259,21 @@ func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.Admissio
 			return baseline, err
 		}
 	}
+	if seed.ReuseTrackID != 0 {
+		// 复用没有上游身份的本地曲目：只接受仍然存在、且确实没有上游身份的那一条。
+		if identity.Ref != "" || seed.EditJSON != "" || seed.MoveReleaseID != 0 {
+			return baseline, ErrSnapshotTarget
+		}
+		var source *string
+		err := tx.QueryRow("SELECT match_source FROM track WHERE id=?", seed.ReuseTrackID).Scan(&source)
+		if err == sql.ErrNoRows || (err == nil && source != nil) {
+			return baseline, ErrPlanStale
+		}
+		if err != nil {
+			return baseline, err
+		}
+		baseline.ExistingTrackID = seed.ReuseTrackID
+	}
 	if seed.ImportItemID != 0 {
 		if err := tx.QueryRow("SELECT status,CAST(revision AS TEXT)||':'||CAST(search_revision AS TEXT)||':'||updated_at FROM import_item WHERE id=?", seed.ImportItemID).Scan(&baseline.ItemState, &baseline.ItemRevision); err != nil {
 			return baseline, err
@@ -369,8 +384,23 @@ func admissionBaselineTx(tx *sql.Tx, seed domain.AdmissionSeed) (domain.Admissio
 			baseline.NewNativeMapping = count == 0
 		}
 	}
+	if err := releaseCoverageTx(tx, seed, &baseline); err != nil {
+		return baseline, err
+	}
+	joinsExistingGroup := baseline.TargetGroupID != 0 && baseline.ExistingReleaseID == 0
+	if joinsExistingGroup && baseline.Coverage == domain.CoverageAbsentProven && len(resolution.Groups) == 1 && !baseline.NewNativeMapping {
+		// 证据充分时新发行加入已有组不再要求确认：上游原生组身份已经映射到该组
+		//（不是名称路径命中，也不是这次才建立的映射），且组内每个已有发行都按录音
+		// 证明了不含这首歌——它是这个发行独有的歌。
+		for _, e := range resolution.Evidence {
+			if e.Kind == "native" && e.GroupID == baseline.TargetGroupID {
+				joinsExistingGroup = false
+				break
+			}
+		}
+	}
 	// 「保持独立成组」本身就是用户对这次判组的明确决定，不再追加成员确认。
-	groupChange := len(resolution.Groups) > 1 || baseline.NewNativeMapping || (baseline.TargetGroupID != 0 && baseline.ExistingReleaseID == 0)
+	groupChange := len(resolution.Groups) > 1 || baseline.NewNativeMapping || joinsExistingGroup
 	baseline.RequiresConfirmation = baseline.ExistingTrackID == 0 && groupChange && !seed.KeepSeparate
 	return baseline, nil
 }

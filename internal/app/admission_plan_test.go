@@ -32,12 +32,30 @@ func TestAppAdmissionCannotBypassExtraReleaseConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.CommitAdmission(p.ID, p.Hash, domain.AdmissionApproval{}); !errors.Is(err, store.ErrConfirmationRequired) {
+	// 组内已有发行的清单没有加载，无法排除它能提供这首歌：必须输入确认词，
+	// 普通成员确认与错误的确认词都不能代替。
+	if !p.Baseline.NeedsTypedConfirm {
+		t.Fatalf("missing typed gate: %+v", p.Baseline)
+	}
+	if _, err := app.CommitAdmission(p.ID, p.Hash, domain.AdmissionApproval{}); !errors.Is(err, store.ErrTypedConfirmationRequired) {
 		t.Fatal("App bypassed confirmation", err)
 	}
-	approval, err := app.ConfirmReleaseAdditions(p.ID, p.Hash)
+	if _, err := app.ConfirmReleaseAdditions(p.ID, p.Hash); !errors.Is(err, store.ErrTypedConfirmationRequired) {
+		t.Fatal("membership approval issued for typed plan", err)
+	}
+	for _, word := range []string{"yes", "YES", "", "Yes!"} {
+		if _, err := app.ConfirmTypedAdmission(p.ID, p.Hash, word); err == nil {
+			t.Fatalf("wrong word %q accepted", word)
+		}
+	}
+	approval, err := app.ConfirmTypedAdmission(p.ID, p.Hash, " Yes ")
 	if err != nil {
 		t.Fatal(err)
+	}
+	forged := *approval
+	forged.Kind = domain.ApprovalMembership
+	if _, err := app.CommitAdmission(p.ID, p.Hash, forged); !errors.Is(err, store.ErrTypedConfirmationRequired) {
+		t.Fatal("typed credential accepted as membership approval", err)
 	}
 	result, err := app.CommitAdmission(p.ID, p.Hash, *approval)
 	if err != nil || result.GroupID != first.GroupID || result.ReleaseID == first.ReleaseID {
@@ -58,7 +76,7 @@ func TestLegacyAdmissionBindingsEnforcePlanAndAtomicQueue(t *testing.T) {
 	row := rowFrom(matching.ScoredCandidate{Candidate: next})
 	itemID := enqueueOneItem(t, a, "原曲名", "原署名", "原专辑")
 	for _, call := range []func() (int64, error){func() (int64, error) { return a.AddToLibrary(row) }, func() (int64, error) { return a.AcceptCandidate(itemID, row) }} {
-		if _, err := call(); !errors.Is(err, store.ErrConfirmationRequired) {
+		if _, err := call(); !errors.Is(err, store.ErrTypedConfirmationRequired) {
 			t.Fatalf("绕过了确认: %v", err)
 		}
 	}
@@ -74,7 +92,7 @@ func TestLegacyAdmissionBindingsEnforcePlanAndAtomicQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 打开后放弃计划不会改变条目；确认后故障必须原子回滚。
-	approval, err := a.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+	approval, err := approveView(a, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,4 +147,12 @@ func TestLocalBindingsAllowEmptyBasicsWithoutInventingAlbumCredit(t *testing.T) 
 	if item.Status != store.StatusImported {
 		t.Fatal("条目未完成")
 	}
+}
+
+// approveView 按基线要求取批准：需要输入确认时输入确认词，否则是普通成员确认。
+func approveView(a *App, plan *AdmissionPlanView) (*domain.AdmissionApproval, error) {
+	if plan.Baseline.NeedsTypedConfirm {
+		return a.ConfirmTypedAdmission(plan.ID, plan.Hash, "Yes")
+	}
+	return a.ConfirmReleaseAdditions(plan.ID, plan.Hash)
 }

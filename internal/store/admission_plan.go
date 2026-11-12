@@ -18,6 +18,45 @@ var ErrPlanStale = errors.New("plan_stale: 计划已失效，请重新预览")
 var ErrConfirmationRequired = errors.New("confirmation_required: 请确认具体发行成员变更")
 var ErrGroupConflict = errors.New("group_conflict: 归组证据命中多个组，请选择明确合组方案")
 
+// ErrTypedConfirmationRequired：组内已有发行能提供（或无法排除能提供）这首歌，
+// 仍要让它进入另一个发行，必须输入确认词。普通成员确认凭证不能代替。
+var ErrTypedConfirmationRequired = errors.New("typed_confirmation_required: 这首歌可由组内已有发行提供，需输入 Yes 确认")
+
+// approvalErr 校验基线要求的批准：输入确认只接受输入确认类型的凭证。
+func (s *Store) approvalErr(plan domain.AdmissionPlan, baseline domain.AdmissionBaseline, approval domain.AdmissionApproval) error {
+	valid := approval.Credential != "" && s.validApproval(plan, approval)
+	if baseline.NeedsTypedConfirm {
+		if !valid || approval.Kind != domain.ApprovalTyped {
+			return ErrTypedConfirmationRequired
+		}
+		return nil
+	}
+	if baseline.RequiresConfirmation && !valid {
+		return ErrConfirmationRequired
+	}
+	return nil
+}
+
+// recordDecisionTx 为需要人确认的提交留痕；输入确认还要记下允许并存的发行对。
+func recordDecisionTx(tx *sql.Tx, plan domain.AdmissionPlan, baseline domain.AdmissionBaseline, result domain.AdmissionResult) error {
+	if !baseline.RequiresConfirmation && !baseline.NeedsTypedConfirm {
+		return nil
+	}
+	now := time.Now().UTC()
+	actions, _ := json.Marshal(struct {
+		Baseline domain.AdmissionBaseline `json:"baseline"`
+		Result   domain.AdmissionResult   `json:"result"`
+	}{baseline, result})
+	evidence, _ := json.Marshal(baseline.Resolution.Evidence)
+	if _, err := tx.Exec("INSERT INTO release_membership_decision(plan_id,content_hash,actions_json,evidence_json,approved_at) VALUES(?,?,?,?,?)", plan.ID, plan.Hash, string(actions), string(evidence), now); err != nil {
+		return err
+	}
+	if baseline.NeedsTypedConfirm && result.ReleaseID != 0 {
+		return recordCoexistenceTx(tx, result.ReleaseID, baseline, now)
+	}
+	return nil
+}
+
 // SetAdmissionVerifier 由用例层组装，不向前端暴露。
 func (s *Store) SetAdmissionVerifier(verify func(domain.AdmissionPlan, domain.AdmissionApproval) bool) {
 	s.planMu.Lock()
@@ -139,8 +178,8 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		if baseline.Conflict {
 			return ErrGroupConflict
 		}
-		if baseline.RequiresConfirmation && (approval.Credential == "" || !s.validApproval(plan, approval)) {
-			return ErrConfirmationRequired
+		if err := s.approvalErr(plan, baseline, approval); err != nil {
+			return err
 		}
 		if plan.Seed.ImportItemID != 0 && ItemStatus(baseline.ItemState).IsTerminal() {
 			return ErrPlanStale
@@ -149,7 +188,7 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 		if err != nil {
 			return err
 		}
-		if baseline.RequiresConfirmation {
+		if baseline.RequiresConfirmation || baseline.NeedsTypedConfirm {
 			// 确认过的这一条与其余条目本来描述的是同一个发行/同一个组，重算后
 			// 它们多半不再需要人工。只动状态、不动复核原因与证据：重排后重新
 			// 走匹配，结论由那时的库事实决定。
@@ -159,13 +198,12 @@ func (s *Store) CommitAdmission(plan domain.AdmissionPlan, approval domain.Admis
 			}
 			result.RequeuedBatches = batches
 		}
-		if baseline.RequiresConfirmation {
-			actions, _ := json.Marshal(struct {
-				Baseline domain.AdmissionBaseline `json:"baseline"`
-				Result   domain.AdmissionResult   `json:"result"`
-			}{baseline, *result})
-			evidence, _ := json.Marshal(baseline.Resolution.Evidence)
-			if _, err := tx.Exec("INSERT INTO release_membership_decision(plan_id,content_hash,actions_json,evidence_json,approved_at) VALUES(?,?,?,?,?)", plan.ID, plan.Hash, string(actions), string(evidence), time.Now().UTC()); err != nil {
+		if err := recordDecisionTx(tx, plan, baseline, *result); err != nil {
+			return err
+		}
+		// 并存记录先于归并提议：刚输入确认词的一对不该立刻被提议归并。
+		if result.ReleaseID != 0 {
+			if err := proposeReleaseMergeTx(tx, result.ReleaseID); err != nil {
 				return err
 			}
 		}

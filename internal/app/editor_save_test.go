@@ -45,7 +45,7 @@ func TestEditSaveLocalMigrationIsAtomicAndSelectedOnly(t *testing.T) {
 	if !reflect.DeepEqual(before, check) {
 		t.Fatal("failed save changed source")
 	}
-	approval, err := a.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+	approval, err := approveView(a, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestEditSaveCoverFailureAndSuccessfulAtomicFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	approval, err := a.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+	approval, err := approveView(a, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestEditSaveKeepsSourceAdoptedCoverForLocalAlbum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	approval, err := a.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+	approval, err := approveView(a, plan)
 	if err != nil {
 		t.Fatal(err)
 	}

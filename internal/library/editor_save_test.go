@@ -41,7 +41,7 @@ func TestEditSaveResearchVersionsBothDirections(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				approval, err := s.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+				approval, err := approve(s, plan)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -138,7 +138,7 @@ func TestEditSaveRejectsChangedPlanAndConcurrentTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	approval, err := s.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+	approval, err := approve(s, plan)
 	if err != nil {
 		t.Fatal(err)
 	}

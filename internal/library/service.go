@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -95,7 +96,16 @@ func (s *Service) verify(plan domain.AdmissionPlan, approval domain.AdmissionApp
 	if approval.Credential == "" {
 		return true
 	}
-	return approval.PlanID == plan.ID && approval.Hash == plan.Hash && hmac.Equal([]byte(approval.Credential), []byte(s.sign("confirmed", plan.ID, plan.Hash)))
+	// 两种凭证按用途用不同前缀签名：普通成员确认不能冒充输入确认，反之亦然。
+	prefix := "confirmed"
+	switch approval.Kind {
+	case domain.ApprovalMembership:
+	case domain.ApprovalTyped:
+		prefix = "typed"
+	default:
+		return false
+	}
+	return approval.PlanID == plan.ID && approval.Hash == plan.Hash && hmac.Equal([]byte(approval.Credential), []byte(s.sign(prefix, plan.ID, plan.Hash)))
 }
 
 func (s *Service) PrepareAdmission(ctx context.Context, seed domain.AdmissionSeed) (*domain.AdmissionPlan, error) {
@@ -174,25 +184,57 @@ func (s *Service) plan(id, hash string) (domain.AdmissionPlan, error) {
 	return clone(plan)
 }
 
-// ConfirmReleaseAdditions 只批准当前计划的具体成员动作；切换候选必须产生新计划。
-func (s *Service) ConfirmReleaseAdditions(id, hash string) (*domain.AdmissionApproval, error) {
+// currentBaseline 取服务端保存的计划并确认基线未变、没有组冲突。
+func (s *Service) currentBaseline(id, hash string) (domain.AdmissionPlan, error) {
 	plan, err := s.plan(id, hash)
 	if err != nil {
-		return nil, err
+		return plan, err
 	}
 	baseline, err := s.store.PreviewAdmission(plan.Seed)
 	if err != nil {
-		return nil, err
+		return plan, err
 	}
 	before, _ := json.Marshal(plan.Baseline)
 	after, _ := json.Marshal(baseline)
 	if string(before) != string(after) {
-		return nil, store.ErrPlanStale
+		return plan, store.ErrPlanStale
 	}
 	if baseline.Conflict {
-		return nil, store.ErrGroupConflict
+		return plan, store.ErrGroupConflict
+	}
+	return plan, nil
+}
+
+// ConfirmReleaseAdditions 只批准当前计划的具体成员动作；切换候选必须产生新计划。
+// 需要输入确认的计划不签发这种凭证。
+func (s *Service) ConfirmReleaseAdditions(id, hash string) (*domain.AdmissionApproval, error) {
+	plan, err := s.currentBaseline(id, hash)
+	if err != nil {
+		return nil, err
+	}
+	if plan.Baseline.NeedsTypedConfirm {
+		return nil, store.ErrTypedConfirmationRequired
 	}
 	return &domain.AdmissionApproval{PlanID: id, Hash: hash, Credential: s.sign("confirmed", id, hash)}, nil
+}
+
+// TypedConfirmWord 是允许同一首歌进入另一个发行时必须输入的确认词。
+const TypedConfirmWord = "Yes"
+
+// ConfirmTypedAdmission 在服务端校验确认词（去首尾空白，区分大小写），通过才签发
+// 输入确认类型的凭证。前端的输入校验只用于启用按钮，不是闸门。
+func (s *Service) ConfirmTypedAdmission(id, hash, word string) (*domain.AdmissionApproval, error) {
+	plan, err := s.currentBaseline(id, hash)
+	if err != nil {
+		return nil, err
+	}
+	if !plan.Baseline.NeedsTypedConfirm {
+		return nil, fmt.Errorf("当前计划不需要输入确认")
+	}
+	if strings.TrimSpace(word) != TypedConfirmWord {
+		return nil, fmt.Errorf("确认词不正确，请输入 %s", TypedConfirmWord)
+	}
+	return &domain.AdmissionApproval{PlanID: id, Hash: hash, Kind: domain.ApprovalTyped, Credential: s.sign("typed", id, hash)}, nil
 }
 func (s *Service) CommitAdmission(ctx context.Context, id, hash string, approval domain.AdmissionApproval) (*domain.AdmissionResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -205,6 +247,9 @@ func (s *Service) CommitAdmission(ctx context.Context, id, hash string, approval
 	plan, err := s.plan(id, hash)
 	if err != nil {
 		return nil, err
+	}
+	if plan.Baseline.NeedsTypedConfirm && (approval.Credential == "" || approval.Kind != domain.ApprovalTyped) {
+		return nil, store.ErrTypedConfirmationRequired
 	}
 	if plan.Baseline.RequiresConfirmation && approval.Credential == "" {
 		return nil, store.ErrConfirmationRequired
@@ -228,11 +273,11 @@ func (s *Service) PrepareGhostAdmission(ctx context.Context, releaseID int64, di
 		if entry.DiscNumber != disc || entry.TrackNumber != position {
 			continue
 		}
-		if entry.Track.State != domain.Value || entry.Track.Value.Ref == "" || entry.Track.Value.Provider != release.Identity.Provider {
-			return nil, store.ErrSnapshotTarget
+		snapshot, err := tracklistSnapshot(release, entry)
+		if err != nil {
+			return nil, err
 		}
-		track := &domain.TrackSnapshot{Identity: entry.Track.Value, Release: &release.Identity, Title: entry.Title, Credit: entry.Credit, DurationMS: entry.DurationMS, Recording: entry.Recording, Identifiers: entry.Identifiers, DiscNumber: domain.Known(disc), TrackNumber: domain.Known(position)}
-		return s.PrepareAdmission(ctx, domain.AdmissionSeed{Snapshot: domain.Snapshot{Release: release, Track: track}})
+		return s.PrepareAdmission(ctx, domain.AdmissionSeed{Snapshot: snapshot})
 	}
 	return nil, fmt.Errorf("该发行清单位置不存在")
 }

@@ -24,6 +24,30 @@ type recordingSearcher struct {
 	byTitle map[string][]provider.Candidate
 	queries []provider.Query
 	failFor map[string]error
+	// details 按发行标识返回发行详情（含清单）；detailErr 让详情请求失败。
+	details     map[string]*domain.Snapshot
+	detailErr   error
+	detailCalls []string
+}
+
+// Complete 模拟一次发行详情请求。未配置时与真实上游「不支持」一致。
+func (s *recordingSearcher) Complete(_ context.Context, target domain.DetailTarget) (*domain.Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.detailCalls = append(s.detailCalls, target.Release.Ref)
+	if s.detailErr != nil {
+		return nil, s.detailErr
+	}
+	if snapshot, ok := s.details[target.Release.Ref]; ok {
+		return snapshot, nil
+	}
+	return nil, provider.ErrUnsupported
+}
+
+func (s *recordingSearcher) detailCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.detailCalls)
 }
 
 func (s *recordingSearcher) SearchTracks(_ context.Context, q provider.Query) ([]provider.Candidate, error) {
@@ -546,7 +570,10 @@ func TestRunnerBatchUsesCommittedMembershipAndFourCounts(t *testing.T) {
 	first := mbCandidate("first", "第一曲", "艺术家", "专辑")
 	next := mbCandidate("next", "第二曲", "艺术家", "专辑")
 	next.ReleaseRef = sptr("another-release")
-	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{"第一曲": {first}, "第二曲": {next}}, failFor: map[string]error{"请求失败": errors.New("offline")}}
+	// 已有发行的清单已取全且不含第二曲；候选没有录音标识，只有文本级证据，
+	// 不足以自动新建发行。
+	searcher := &recordingSearcher{byTitle: map[string][]provider.Candidate{"第一曲": {first}, "第二曲": {next}}, failFor: map[string]error{"请求失败": errors.New("offline")},
+		details: map[string]*domain.Snapshot{"rel-专辑": c4Detail("rel-专辑", "rg-专辑", "专辑", "艺术家", [3]string{"first", "rec-first", "第一曲"})}}
 	batch, err := st.CreateBatch(&store.ImportBatch{Filename: "batch.csv", TotalRows: 4})
 	if err != nil {
 		t.Fatal(err)
@@ -579,7 +606,7 @@ func TestRunnerBatchUsesCommittedMembershipAndFourCounts(t *testing.T) {
 		if err := json.Unmarshal([]byte(*item.ReviewEvidence), &baseline); err != nil {
 			t.Fatal(err)
 		}
-		if !baseline.RequiresConfirmation || len(baseline.Resolution.Groups) != 1 || len(baseline.Resolution.Groups[0].Members) != 1 {
+		if !baseline.RequiresConfirmation || baseline.NeedsTypedConfirm || baseline.Coverage != domain.CoverageAbsentText || len(baseline.Resolution.Groups) != 1 || len(baseline.Resolution.Groups[0].Members) != 1 {
 			t.Fatalf("baseline=%+v", baseline)
 		}
 	}

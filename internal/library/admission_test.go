@@ -49,11 +49,19 @@ func prepare(t *testing.T, s *Service, seed domain.AdmissionSeed) *domain.Admiss
 	}
 	return plan
 }
+
+// approve 按基线要求取批准：需要输入确认时输入确认词，否则是普通成员确认。
+func approve(s *Service, plan *domain.AdmissionPlan) (*domain.AdmissionApproval, error) {
+	if plan.Baseline.NeedsTypedConfirm {
+		return s.ConfirmTypedAdmission(plan.ID, plan.Hash, TypedConfirmWord)
+	}
+	return s.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+}
 func commit(t *testing.T, s *Service, plan *domain.AdmissionPlan, confirm bool) *domain.AdmissionResult {
 	t.Helper()
 	var approval domain.AdmissionApproval
 	if confirm {
-		a, err := s.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+		a, err := approve(s, plan)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -72,7 +80,8 @@ func TestAdmissionRequiresBoundConfirmationAndIsIdempotent(t *testing.T) {
 	if !next.Baseline.RequiresConfirmation || len(next.Baseline.Resolution.Groups) != 1 || len(next.Baseline.Resolution.Groups[0].Members) != 1 {
 		t.Fatalf("missing impact: %+v", next.Baseline)
 	}
-	if _, err := s.CommitAdmission(context.Background(), next.ID, next.Hash, domain.AdmissionApproval{}); !errors.Is(err, store.ErrConfirmationRequired) {
+	// 组内已有发行的清单未加载，无法排除它能提供这首歌：要求输入确认。
+	if _, err := s.CommitAdmission(context.Background(), next.ID, next.Hash, domain.AdmissionApproval{}); !errors.Is(err, store.ErrTypedConfirmationRequired) {
 		t.Fatal(err)
 	}
 	// Editing a returned plan neither mutates the server plan nor produces a valid signature.
@@ -81,12 +90,12 @@ func TestAdmissionRequiresBoundConfirmationAndIsIdempotent(t *testing.T) {
 	if _, err := st.CommitAdmission(changed, domain.AdmissionApproval{}); !errors.Is(err, store.ErrPlanStale) {
 		t.Fatal("changed plan accepted", err)
 	}
-	approval, err := s.ConfirmReleaseAdditions(next.ID, next.Hash)
+	approval, err := approve(s, next)
 	if err != nil {
 		t.Fatal(err)
 	}
 	other := prepare(t, s, seed("c", "c1", "g", "Album", "Artist"))
-	if _, err := s.CommitAdmission(context.Background(), other.ID, other.Hash, *approval); !errors.Is(err, store.ErrConfirmationRequired) {
+	if _, err := s.CommitAdmission(context.Background(), other.ID, other.Hash, *approval); !errors.Is(err, store.ErrTypedConfirmationRequired) {
 		t.Fatal("approval reused for other candidate", err)
 	}
 	result, err := s.CommitAdmission(context.Background(), next.ID, next.Hash, *approval)
@@ -143,7 +152,7 @@ func TestConcurrentNewGroupsAndMembersRevalidate(t *testing.T) {
 	plans := []*domain.AdmissionPlan{prepare(t, s, seed("c", "c1", "", "Album", "Artist")), prepare(t, s, seed("d", "d1", "", "Album", "Artist"))}
 	approvals := make([]*domain.AdmissionApproval, 2)
 	for i, p := range plans {
-		a, err := s.ConfirmReleaseAdditions(p.ID, p.Hash)
+		a, err := approve(s, p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -506,7 +515,7 @@ func TestRevisionChangesInvalidateApprovedPlan(t *testing.T) {
 	s, st, _ := newTestService(t)
 	first := commit(t, s, prepare(t, s, seed("a", "a1", "g", "Album", "Artist")), false)
 	plan := prepare(t, s, seed("b", "b1", "g", "Album", "Artist"))
-	approval, err := s.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+	approval, err := approve(s, plan)
 	if err != nil {
 		t.Fatal(err)
 	}

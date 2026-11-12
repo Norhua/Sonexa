@@ -8,6 +8,7 @@ import (
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/library"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/store"
 )
 
 func (a *App) libraryService() (*library.Service, error) {
@@ -52,6 +53,15 @@ func (a *App) ConfirmReleaseAdditions(planID, hash string) (*domain.AdmissionApp
 		return nil, err
 	}
 	return service.ConfirmReleaseAdditions(planID, hash)
+}
+
+// ConfirmTypedAdmission 校验确认词并签发输入确认凭证；确认词由服务端判定。
+func (a *App) ConfirmTypedAdmission(planID, hash, word string) (*domain.AdmissionApproval, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	return service.ConfirmTypedAdmission(planID, hash, word)
 }
 func (a *App) CommitAdmission(planID, hash string, approval domain.AdmissionApproval) (*domain.AdmissionResult, error) {
 	service, err := a.libraryService()
@@ -160,6 +170,57 @@ func (a *App) commitUnconfirmedAdmission(plan *AdmissionPlanView) (int64, error)
 		return 0, err
 	}
 	return result.TrackID, nil
+}
+
+// UseSongProvider 把当前计划改为准入组内已有发行里的那条清单（「使用发行 A」）。
+func (a *App) UseSongProvider(planID, hash string, releaseID int64) (*AdmissionPlanView, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	return admissionView(service.UseSongProvider(a.ctx, planID, hash, releaseID))
+}
+
+// RefreshAdmissionCoverage 为计划里不可判定的发行各取一次清单并重新预览。
+//
+// 这是显式的交互式网络请求，是「接受不发网络请求」的有限例外：只在组内存在清单
+// 不完整的发行、无法判断它是否已含这首歌时发生。沿用补拉清单的出站闸门与优先级。
+func (a *App) RefreshAdmissionCoverage(planID, hash string) (*AdmissionPlanView, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	if gate := a.CheckOutbound(); !gate.Allowed {
+		return nil, fmt.Errorf("%s", gate.Reason)
+	}
+	done := a.beginInteractive()
+	defer done()
+	plan, err := service.RefreshAdmissionCoverage(provider.WithPriority(context.Background(), provider.PriorityInteractive), planID, hash)
+	if err != nil {
+		return nil, err
+	}
+	a.notifyLibraryChanged()
+	return admissionView(plan, nil)
+}
+
+// ListReleaseMergeProposals 列出「同组两个发行曲目相同」的提议；只有查看与忽略。
+func (a *App) ListReleaseMergeProposals() ([]store.ReleaseMergeProposal, error) {
+	service, err := a.libraryService()
+	if err != nil {
+		return nil, err
+	}
+	return service.ListReleaseMergeProposals()
+}
+func (a *App) DismissReleaseMergeProposal(id int64) error {
+	service, err := a.libraryService()
+	if err != nil {
+		return err
+	}
+	err = service.DismissReleaseMergeProposal(id)
+	if err == nil {
+		a.notifyLibraryChanged()
+	}
+	return err
 }
 
 // ReplanAdmissionGroupChoice 的 action 为 merge / join / separate。

@@ -27,6 +27,10 @@ type PlanSeedView struct {
 	Snapshot      PlanSnapshotView `json:"snapshot"`
 	MoveReleaseID int64            `json:"moveReleaseId"`
 	MergeTargetID int64            `json:"mergeTargetId"`
+	JoinGroupID   int64            `json:"joinGroupId"`
+	KeepSeparate  bool             `json:"keepSeparate"`
+	// IsEdit 为真表示这是编辑器保存计划：不能在弹窗里改用其他发行。
+	IsEdit bool `json:"isEdit"`
 }
 type AdmissionPlanView struct {
 	ID        string                   `json:"id"`
@@ -40,7 +44,8 @@ func admissionView(plan *domain.AdmissionPlan, err error) (*AdmissionPlanView, e
 	if err != nil || plan == nil {
 		return nil, err
 	}
-	view := &AdmissionPlanView{ID: plan.ID, Hash: plan.Hash, ExpiresAt: plan.ExpiresAt, Baseline: plan.Baseline, Seed: PlanSeedView{MoveReleaseID: plan.Seed.MoveReleaseID, MergeTargetID: plan.Seed.MergeTargetID}}
+	view := &AdmissionPlanView{ID: plan.ID, Hash: plan.Hash, ExpiresAt: plan.ExpiresAt, Baseline: plan.Baseline, Seed: PlanSeedView{MoveReleaseID: plan.Seed.MoveReleaseID, MergeTargetID: plan.Seed.MergeTargetID,
+		JoinGroupID: plan.Seed.JoinGroupID, KeepSeparate: plan.Seed.KeepSeparate, IsEdit: plan.Seed.EditJSON != ""}}
 	if r := plan.Seed.Snapshot.Release; r != nil {
 		view.Seed.Snapshot.Release = &PlanReleaseView{Identity: r.Identity, Title: PlanTextField{r.Title.State, r.Title.Value}, Credit: PlanCreditField{r.Credit.State, PlanCredit{r.Credit.Value.Text}}}
 	}

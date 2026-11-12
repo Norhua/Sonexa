@@ -309,5 +309,6 @@ func applyReleaseSnapshotTx(tx *sql.Tx, id int64, snapshot *domain.Snapshot) err
 	if err := proposeGroupChangeTx(tx, id, snapshot.Group); err != nil {
 		return err
 	}
-	return nil
+	// 清单后到才可能发现同组两个发行曲目相同：只提议，不改任何关系。
+	return proposeReleaseMergeTx(tx, id)
 }

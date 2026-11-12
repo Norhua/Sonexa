@@ -200,8 +200,8 @@ func (s *Store) CommitEdit(ctx context.Context, plan domain.AdmissionPlan, appro
 		if baseline.Conflict {
 			return ErrGroupConflict
 		}
-		if baseline.RequiresConfirmation && (approval.Credential == "" || !s.validApproval(plan, approval)) {
-			return ErrConfirmationRequired
+		if err := s.approvalErr(plan, baseline, approval); err != nil {
+			return err
 		}
 		result = &domain.AdmissionResult{TrackID: content.Draft.TrackID, ReleaseID: source.ReleaseID, GroupID: source.GroupID}
 		if migrates {
@@ -438,10 +438,15 @@ func (s *Store) CommitEdit(ctx context.Context, plan domain.AdmissionPlan, appro
 				}
 			}
 		}
-		if baseline.RequiresConfirmation {
+		if baseline.RequiresConfirmation || baseline.NeedsTypedConfirm {
 			actions, _ := json.Marshal(content.Album)
 			evidence, _ := json.Marshal(baseline.Resolution.Evidence)
 			if _, err := tx.Exec("INSERT INTO release_membership_decision(plan_id,content_hash,actions_json,evidence_json,approved_at) VALUES(?,?,?,?,?)", plan.ID, plan.Hash, string(actions), string(evidence), time.Now().UTC()); err != nil {
+				return err
+			}
+		}
+		if baseline.NeedsTypedConfirm && result.ReleaseID != 0 {
+			if err := recordCoexistenceTx(tx, result.ReleaseID, baseline, time.Now().UTC()); err != nil {
 				return err
 			}
 		}

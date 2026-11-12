@@ -176,30 +176,9 @@ func (s *Store) ResolveImport(itemID int64, candidates []matching.ScoredCandidat
 				return nil
 			}
 		}
-		if _, err := tx.Exec(`UPDATE import_item SET resolved_source=?,resolved_ref=? WHERE id=?`, selected.Provider, selected.MatchRef, itemID); err != nil {
-			return err
-		}
-		var target int64
-		err = tx.QueryRow(`SELECT id FROM import_item WHERE id<>? AND resolved_source=? AND resolved_ref=? AND status IN ('queued','matching','review','failed') ORDER BY id LIMIT 1`, itemID, selected.Provider, selected.MatchRef).Scan(&target)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		others, err := readImportInputsTx(tx, `id=? OR merged_item_id=?`, target, target)
-		if err != nil {
-			return err
-		}
-		for _, input := range inputs {
-			for _, other := range others {
-				if !matching.CompatibleImportPosition(importInput(input), importInput(other)) {
-					return nil
-				}
-			}
-		}
-		handled = true
-		return mergeImportTx(tx, itemID, target)
+		merged, err := registerResolvedImportTx(tx, itemID, inputs, string(selected.Provider), selected.MatchRef)
+		handled = merged
+		return err
 	})
 	if err == nil {
 		s.notifyImportInvalidation()
@@ -266,4 +245,132 @@ func (s *Store) ReviewSearchSource(itemID int64) (string, string, bool, error) {
 	var manual bool
 	err := s.db.QueryRow(`SELECT search_provider,search_country,search_manual FROM import_item WHERE id=?`, itemID).Scan(&source, &country, &manual)
 	return source, country, manual, err
+}
+
+// ProvidedImport 描述「候选 C 所在发行不在库（或不是主发行），改由组内已有发行 A 的
+// 清单条目提供」这次替换的两侧身份。
+type ProvidedImport struct {
+	// Candidate 是匹配选中的候选 C，Scored 是它自己的评分记录。
+	Candidate provider.Candidate
+	// ReleaseID / TrackRef 是已有发行 A 及其清单条目的曲目标识。
+	ReleaseID int64
+	TrackRef  string
+}
+
+// ResolveProvidedImport 是替换到已有发行之后的已拥有判重与已解析身份登记。
+//
+// 不能拿 A 的专辑名、版本段与位置去比输入：输入描述的是 C 所在的发行（例如
+// 「专辑（Deluxe）」第 2 碟第 3 首），A 上那首歌已拥有时必然判不出来。改为两段证明：
+//   - 输入 ↔ 候选 C：用 C 自己的曲名、署名、专辑、位置、时长，与「精确绑定已在库」
+//     时同样严格（MatchOwnedInput，exactRef 为真）；
+//   - 候选 C ↔ A 的曲目：录音级相同，且 A 的该清单条目的曲目标识就是本地曲目的绑定。
+//
+// 两段都成立即跳过（证据 group_recording_provider）。A 的曲目已拥有而第一段不成立时
+// 返回 owned=true、handled=false，由调用方送人工复核，不以已有身份绕过。
+// A 的曲目尚未入库时只登记已解析身份（提供者条目的曲目标识），输入与候选上下文的
+// 一致性仍按 C 校验。整个过程在一个事务里完成并重验。
+func (s *Store) ResolveProvidedImport(itemID int64, in ProvidedImport) (handled, owned bool, err error) {
+	c := in.Candidate
+	err = s.withTx(func(tx *sql.Tx) error {
+		var status ItemStatus
+		if err := tx.QueryRow(`SELECT status FROM import_item WHERE id=?`, itemID).Scan(&status); err != nil {
+			return err
+		}
+		if status.IsTerminal() {
+			handled = true
+			return nil
+		}
+		inputs, err := readImportInputsTx(tx, `id=? OR merged_item_id=?`, itemID, itemID)
+		if err != nil {
+			return err
+		}
+		if len(inputs) == 0 {
+			return ErrItemNotActive
+		}
+		// 第二段：清单条目仍在，且与候选是同一来源的同一录音。
+		var recording *string
+		err = tx.QueryRow(`SELECT rt.recording_ref FROM release_track rt JOIN release r ON r.id=rt.release_id
+ WHERE rt.release_id=? AND rt.track_ref=? AND r.provider=?`, in.ReleaseID, in.TrackRef, string(c.Provider)).Scan(&recording)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrPlanStale
+		}
+		if err != nil {
+			return err
+		}
+		if recording == nil || c.RecordingRef == nil || *recording == "" || *recording != *c.RecordingRef {
+			return ErrPlanStale
+		}
+		var trackID int64
+		err = tx.QueryRow(`SELECT id FROM track WHERE match_source=? AND match_ref=? AND release_id=?`, string(c.Provider), in.TrackRef, in.ReleaseID).Scan(&trackID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		candidate := matching.Input{Title: stringValue(c.Title), Artist: stringValue(c.ArtistName), Album: stringValue(c.AlbumTitle), DurationMS: c.DurationMS, DiscNo: c.DiscNumber, TrackNo: c.TrackNumber}
+		if trackID != 0 {
+			owned = true
+			// 输入若本身就与 A 的曲目一致，现有判定已经足够。
+			decision, err := ownedImportDecisionTx(tx, itemID, []matching.ScoredCandidate{{Candidate: provider.Candidate{Provider: c.Provider, MatchRef: in.TrackRef}}})
+			if err != nil {
+				return err
+			}
+			if decision.TrackID == trackID {
+				handled = true
+				return skipOwnedImportTx(tx, itemID, decision)
+			}
+			// 第一段：每条输入都要独立与候选 C 一致。
+			proof := ownedImportDecision{TrackID: trackID, Rule: "group-recording-provider-v1"}
+			for _, input := range inputs {
+				evidence := matching.MatchOwnedInput(importInput(input), candidate, true)
+				if evidence.Rank == 0 {
+					return nil
+				}
+				evidence.Kind = "group_recording_provider"
+				evidence.Facts = append(evidence.Facts, "candidate:"+string(c.Provider)+":"+c.MatchRef, "candidate_release:"+stringValue(c.ReleaseRef),
+					"same_recording:"+*recording, "provider_track:"+in.TrackRef)
+				proof.Inputs = append(proof.Inputs, evidence)
+			}
+			handled = true
+			return skipOwnedImportTx(tx, itemID, proof)
+		}
+		for _, input := range inputs {
+			if !matching.SameTrackContext(importInput(input), candidate) {
+				return nil
+			}
+		}
+		merged, err := registerResolvedImportTx(tx, itemID, inputs, string(c.Provider), in.TrackRef)
+		handled = merged
+		return err
+	})
+	if err == nil {
+		s.notifyImportInvalidation()
+	}
+	return handled, owned, err
+}
+
+// registerResolvedImportTx 登记条目已解析到的曲目身份；另一条活动条目已解析到同一身份
+// 且位置不冲突时把本条并入它。返回是否发生了合并。
+func registerResolvedImportTx(tx *sql.Tx, itemID int64, inputs []ImportItem, source, ref string) (bool, error) {
+	if _, err := tx.Exec(`UPDATE import_item SET resolved_source=?,resolved_ref=? WHERE id=?`, source, ref, itemID); err != nil {
+		return false, err
+	}
+	var target int64
+	err := tx.QueryRow(`SELECT id FROM import_item WHERE id<>? AND resolved_source=? AND resolved_ref=? AND status IN ('queued','matching','review','failed') ORDER BY id LIMIT 1`, itemID, source, ref).Scan(&target)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	others, err := readImportInputsTx(tx, `id=? OR merged_item_id=?`, target, target)
+	if err != nil {
+		return false, err
+	}
+	for _, input := range inputs {
+		for _, other := range others {
+			if !matching.CompatibleImportPosition(importInput(input), importInput(other)) {
+				return false, nil
+			}
+		}
+	}
+	return true, mergeImportTx(tx, itemID, target)
 }

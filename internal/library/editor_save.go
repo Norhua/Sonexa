@@ -139,8 +139,19 @@ func (s *Service) PlanEditSave(ctx context.Context, draft domain.EditDraft) (*do
 	seed := editAdmissionSeed(draft, impact, content.Target)
 	seed.Snapshot.Track = &domain.TrackSnapshot{}
 	if !impact.SharedChange || impact.UpdatesRelease {
+		// 只改字段、不换发行：没有歌曲进入别的发行，覆盖结论不适用。
 		seed.Snapshot = domain.Snapshot{Track: &domain.TrackSnapshot{}}
 		seed.CurrentRelease = nil
+	} else {
+		// 曲目换发行或新建发行：带上被编辑曲目的歌曲事实，否则闸门在编辑器路径形同虚设。
+		seed.CoverageSong = editCoverageSong(draft, impact, content.Target)
+		if content.Album != nil {
+			for _, row := range content.Album.Rows {
+				if !row.Stay && row.TrackID != draft.TrackID {
+					seed.CoverageSong.MovingTrackIDs = append(seed.CoverageSong.MovingTrackIDs, row.TrackID)
+				}
+			}
+		}
 	}
 	body, err := json.Marshal(content)
 	if err != nil {

@@ -44,7 +44,7 @@ func TestEditAlbumActionWithUnchangedUpstream(t *testing.T) {
 				}
 				var approval domain.AdmissionApproval
 				if plan.Baseline.RequiresConfirmation {
-					approved, err := s.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+					approved, err := approve(s, plan)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -129,7 +129,7 @@ func TestEditAlbumActionsKeepChangedUpstream(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			approval, err := s.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+			approval, err := approve(s, plan)
 			if err != nil {
 				t.Fatal(err)
 			}

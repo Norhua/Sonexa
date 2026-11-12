@@ -250,7 +250,11 @@ func (s *Service) PreviewEditSave(ctx context.Context, draft domain.EditDraft) (
 		}
 		membership := snapshot
 		membership.Track = &domain.TrackSnapshot{}
-		baseline, err := s.store.PreviewAdmission(editAdmissionSeed(draft, impact, membership))
+		preview := editAdmissionSeed(draft, impact, membership)
+		if impact.SharedChange && !impact.UpdatesRelease {
+			preview.CoverageSong = editCoverageSong(draft, impact, snapshot)
+		}
+		baseline, err := s.store.PreviewAdmission(preview)
 		if err != nil {
 			return nil, err
 		}
@@ -306,6 +310,59 @@ func (s *Service) editTargetSnapshot(draft domain.EditDraft, impact *domain.Edit
 		return domain.Snapshot{}, err
 	}
 	return domain.Snapshot{Release: &release, Track: &domain.TrackSnapshot{}}, nil
+}
+
+// editCoverageSong 取被编辑曲目的歌曲事实，只用于计算「组内已有发行是否包含这首歌」，
+// 不参与写入。曲名与署名取保存后的当前值；来源、录音标识与时长取上游事实——改绑时
+// 是新的目标曲目，否则是曲目当前有效的快照；解除绑定后只剩文本事实。
+func editCoverageSong(draft domain.EditDraft, impact *domain.EditImpact, target domain.Snapshot) *domain.SongFacts {
+	source := impact.Source
+	facts := &domain.SongFacts{TrackID: source.TrackID}
+	text := func(key string) string {
+		field, ok := draft.Fields[key]
+		if !ok {
+			field = source.Current[key]
+		}
+		var value string
+		if field.State == domain.Value {
+			_ = json.Unmarshal([]byte(field.ValueJSON), &value)
+		}
+		return value
+	}
+	facts.Title, facts.Credit = text("track.title"), text("track.credit")
+	var current *domain.TrackSnapshot
+	var saved domain.Snapshot
+	if source.TrackIdentity != nil && json.Unmarshal([]byte(source.SnapshotJSON), &saved) == nil && saved.Track != nil && saved.Track.Identity == *source.TrackIdentity {
+		current = saved.Track
+	}
+	upstream := current
+	switch draft.BindingAction {
+	case "set":
+		if target.Track != nil && target.Track.Identity.Ref != "" {
+			upstream = target.Track
+		}
+	case "clear_track", "clear_release":
+		upstream = nil
+	}
+	if current != nil && current.DurationMS.State == domain.Value {
+		duration := current.DurationMS.Value
+		facts.DurationMS = &duration
+	}
+	if upstream == nil {
+		return facts
+	}
+	facts.Provider = upstream.Identity.Provider
+	if upstream.Recording.State == domain.Value && upstream.Recording.Value.Provider == facts.Provider {
+		facts.RecordingRef = upstream.Recording.Value.Ref
+	}
+	if upstream.DurationMS.State == domain.Value {
+		duration := upstream.DurationMS.Value
+		facts.DurationMS = &duration
+	}
+	if facts.Title == "" && upstream.Title.State == domain.Value {
+		facts.Title = upstream.Title.Value
+	}
+	return facts
 }
 
 func editAdmissionSeed(draft domain.EditDraft, impact *domain.EditImpact, snapshot domain.Snapshot) domain.AdmissionSeed {

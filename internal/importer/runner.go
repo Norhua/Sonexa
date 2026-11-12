@@ -370,8 +370,21 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 		r.store.RecordFailure(item.ID, err.Error(), backoff, r.retry.MaxAttempts)
 		return matching.ErrorLogLine(err)
 	}
+	// 组内歌曲解析把候选替换成了已有发行的清单条目时，之后的判重、已解析身份、
+	// 补全与日志都改用替换后的身份；候选自己的身份只用来证明输入与它一致。
+	substitute := selection.Substitute
 	if selection.Candidate != nil {
-		if handled, err := r.store.ResolveImport(item.ID, scoredFor(res.Scored, *selection.Candidate), selection.Candidate); err != nil {
+		var handled, owned bool
+		var err error
+		if substitute != nil {
+			handled, owned, err = r.store.ResolveProvidedImport(item.ID, store.ProvidedImport{Candidate: *selection.Candidate, ReleaseID: substitute.ReleaseID, TrackRef: substitute.TrackRef})
+		} else {
+			handled, err = r.store.ResolveImport(item.ID, scoredFor(res.Scored, *selection.Candidate), selection.Candidate)
+		}
+		if errors.Is(err, store.ErrPlanStale) {
+			return r.retryStale(item, in, err)
+		}
+		if err != nil {
 			r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
 			return matching.ErrorLogLine(err)
 		} else if handled {
@@ -381,7 +394,7 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 			return ""
 		}
 		// 精确绑定已在库但输入不能证明一致，交给人工，不以已有身份绕过复核。
-		if selection.Plan != nil && selection.Plan.Baseline.ExistingTrackID != 0 {
+		if owned || (selection.Plan != nil && selection.Plan.Baseline.ExistingTrackID != 0) {
 			selection.Reason = library.ReasonAmbiguous
 		}
 	}
@@ -395,22 +408,25 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 			if result.Existing {
 				return fmt.Sprintf("[复用本地] %s · %s，未自动入库", in.Title, in.Artist)
 			}
+			releaseRef := deref(selection.Candidate.ReleaseRef)
+			if substitute != nil && substitute.Identity != nil {
+				// 补全必须用曲目实际所挂发行的身份，否则快照会因发行身份不一致被拒。
+				releaseRef = substitute.Identity.Ref
+			}
 			if r.fetchOnMatch && r.enricher != nil {
-				r.enricher(result.TrackID, string(selection.Candidate.Provider), deref(selection.Candidate.ReleaseRef))
+				r.enricher(result.TrackID, string(selection.Candidate.Provider), releaseRef)
 			}
-			return matching.LogLine(matching.OutcomeImportUnique, in, findScored(res.Scored, selection.Candidate.MatchRef))
+			line := matching.LogLine(matching.OutcomeImportUnique, in, findScored(res.Scored, selection.Candidate.MatchRef))
+			if substitute != nil {
+				line += fmt.Sprintf("（由已有发行「%s」提供；候选发行 %s 未新建）", deref(substitute.Title), deref(selection.Candidate.ReleaseRef))
+			}
+			return line
 		}
-		if errors.Is(err, store.ErrPlanStale) {
-			// 新输入被吸收或库状态变化后重新决策，不伪报成新增发行复核。
-			// 连续失效说明有东西在反复改写基线：短退避重排，超过上限按普通
-			// 失败处理（计次数、指数退避），不无限空转。
-			if n := r.noteStale(item.ID); n > maxStaleRetries {
-				r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
-				return matching.ErrorLogLine(err)
-			} else if retryErr := r.store.RetryItemAfter(item.ID, time.Duration(n)*staleRetryStep); retryErr != nil {
-				return matching.ErrorLogLine(retryErr)
-			}
-			return "[重新核验] " + in.Title
+		if errors.Is(err, store.ErrTypedConfirmationRequired) {
+			// 自动路径永远不带输入确认凭证：无法确认或疑似已有发行提供这首歌。
+			selection.Reason = library.ReasonSongUnresolved
+		} else if errors.Is(err, store.ErrPlanStale) {
+			return r.retryStale(item, in, err)
 		} else if errors.Is(err, store.ErrConfirmationRequired) {
 			selection.Reason = library.ReasonNewRelease
 		} else {
@@ -425,10 +441,16 @@ func (r *Runner) processItem(ctx context.Context, item *store.ImportItem) string
 	candidatesJSON, _ := json.Marshal(res.Scored)
 	evidence := ""
 	if selection.Plan != nil {
+		// Candidate 只在替换后出现：计划描述的是已有发行，它保留候选原本的身份供排查。
+		var candidate *provider.Candidate
+		if substitute != nil {
+			candidate = selection.Candidate
+		}
 		raw, _ := json.Marshal(struct {
 			domain.AdmissionBaseline
-			Proposed *domain.ReleaseSnapshot `json:"proposed"`
-		}{selection.Plan.Baseline, selection.Plan.Seed.Snapshot.Release})
+			Proposed  *domain.ReleaseSnapshot `json:"proposed"`
+			Candidate *provider.Candidate     `json:"candidate,omitempty"`
+		}{selection.Plan.Baseline, selection.Plan.Seed.Snapshot.Release, candidate})
 		evidence = string(raw)
 	}
 	if err := r.store.MarkReview(item.ID, reason, string(candidatesJSON), string(variantsJSON), evidence); err != nil {
@@ -455,6 +477,8 @@ func reviewReasonText(reason store.ReviewReason) string {
 		return "没有高置信匹配"
 	case library.ReasonNewRelease:
 		return "新增发行加入已有组，需确认"
+	case library.ReasonSongUnresolved:
+		return "无法确认已有发行是否包含这首歌，需复核"
 	case library.ReasonGroupInsufficient:
 		return "判组资料不足，需复核"
 	case library.ReasonGroupConflict:
@@ -513,6 +537,19 @@ const (
 	maxStaleRetries = 3
 	staleRetryStep  = time.Second
 )
+
+// retryStale 处理计划失效：新输入被吸收或库状态变化后重新决策，不伪报成新增发行复核。
+// 连续失效说明有东西在反复改写基线：短退避重排，超过上限按普通失败处理
+// （计次数、指数退避），不无限空转。
+func (r *Runner) retryStale(item *store.ImportItem, in matching.Input, err error) string {
+	if n := r.noteStale(item.ID); n > maxStaleRetries {
+		r.store.RecordFailure(item.ID, err.Error(), r.retry.Backoff(item.AttemptCount+1, err), r.retry.MaxAttempts)
+		return matching.ErrorLogLine(err)
+	} else if retryErr := r.store.RetryItemAfter(item.ID, time.Duration(n)*staleRetryStep); retryErr != nil {
+		return matching.ErrorLogLine(retryErr)
+	}
+	return "[重新核验] " + in.Title
+}
 
 func (r *Runner) noteStale(itemID int64) int {
 	r.mu.Lock()

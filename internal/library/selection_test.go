@@ -15,6 +15,17 @@ type summaryProvider struct {
 	provider.MetadataProvider
 	calls  int
 	totals map[string]int
+	// details 按发行标识返回发行详情（含清单）。
+	details     map[string]*domain.Snapshot
+	detailCalls int
+}
+
+func (p *summaryProvider) Complete(_ context.Context, target domain.DetailTarget) (*domain.Snapshot, error) {
+	p.detailCalls++
+	if snapshot, ok := p.details[target.Release.Ref]; ok {
+		return snapshot, nil
+	}
+	return nil, provider.ErrUnsupported
 }
 
 func (p *summaryProvider) ID() provider.ProviderID { return "test" }
@@ -31,6 +42,20 @@ func (p *summaryProvider) LoadReleaseSummary(ctx context.Context, id domain.Iden
 }
 func (p *summaryProvider) ListVersions(context.Context, domain.Identity, provider.Page) (*provider.VersionPage, error) {
 	return nil, fmt.Errorf("must not enumerate group")
+}
+
+// releaseDetail 构造一份带完整清单的发行详情。entries 依次是 曲目标识、录音标识。
+func releaseDetail(release string, entries ...[2]string) *domain.Snapshot {
+	identity := domain.Identity{Provider: "test", Ref: release}
+	group := domain.Identity{Provider: "test", Ref: "group"}
+	r := &domain.ReleaseSnapshot{Identity: identity, Group: &group, Title: domain.Known("Album"), Credit: domain.Known(domain.Credit{Text: "Artist"}), TracklistCompleteness: domain.Complete}
+	list := []domain.TracklistEntry{}
+	for i, e := range entries {
+		list = append(list, domain.TracklistEntry{DiscNumber: 1, TrackNumber: i + 1, Title: domain.Known("Song"),
+			Track: domain.Known(domain.Identity{Provider: "test", Ref: e[0]}), Recording: domain.Known(domain.Identity{Provider: "test", Ref: e[1]})})
+	}
+	r.Tracklist = domain.Known(list)
+	return &domain.Snapshot{Release: r}
 }
 func candidate(release, track string, total *int) provider.Candidate {
 	title, album, artist, group, recording := "Song", "Album", "Artist", "group", "recording"
@@ -58,9 +83,22 @@ func TestAutomaticSelectionPrioritizesOwnedReleaseAndKnownTotal(t *testing.T) {
 	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "a1" || p.calls != 0 || selection.Plan.Baseline.RequiresConfirmation {
 		t.Fatalf("owned subset: %+v %v calls %d", selection, err, p.calls)
 	}
+	// 已有发行的清单取不到：无法确认它是否含这首歌，不自动新建发行，也不报成新增发行。
 	selection, err = s.SelectCandidate(context.Background(), high(b), 0)
-	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "b1" || selection.Reason != ReasonNewRelease || p.calls != 0 {
+	if err != nil || selection.Candidate == nil || selection.Candidate.MatchRef != "b1" || selection.Reason != ReasonSongUnresolved || p.calls != 0 ||
+		selection.Plan.Baseline.Coverage != domain.CoverageUnknown || !selection.Plan.Baseline.NeedsTypedConfirm {
 		t.Fatalf("unique new version must review: %+v %v", selection, err)
+	}
+	// 清单取到后：已有发行按录音含这首歌，改为准入它的那条清单，不新建发行。
+	p.details = map[string]*domain.Snapshot{"a": releaseDetail("a", [2]string{"owned", "other"}, [2]string{"a1", "recording"})}
+	selection, err = s.SelectCandidate(context.Background(), high(b), 0)
+	if err != nil || selection.Reason != "" || selection.Substitute == nil || selection.Substitute.TrackRef != "a1" ||
+		selection.Plan.Seed.Snapshot.Track.Identity.Ref != "a1" || selection.Plan.Baseline.RequiresConfirmation || selection.Plan.Baseline.NeedsTypedConfirm || p.detailCalls != 2 {
+		t.Fatalf("song not resolved to the existing release: %+v %v details %d", selection, err, p.detailCalls)
+	}
+	// 清单已保存，再次解析不再发请求。
+	if selection, err = s.SelectCandidate(context.Background(), high(b), 0); err != nil || selection.Substitute == nil || p.detailCalls != 2 {
+		t.Fatalf("tracklist refetched: %+v %v details %d", selection, err, p.detailCalls)
 	}
 }
 func TestAutomaticSelectionPrefersSyncOnlyRelease(t *testing.T) {

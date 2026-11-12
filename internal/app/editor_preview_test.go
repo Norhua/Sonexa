@@ -93,7 +93,7 @@ func TestEditorLayerCountsAndEmptyLocalTrack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	approval, err := a.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+	approval, err := approveView(a, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,14 +215,17 @@ func TestEditorSingleTrackStillPreviewsAdmissionAndProtectsExistingTarget(t *tes
 	}
 	draft := domain.EditDraft{TrackID: id, Revisions: before.Revisions, BindingAction: "set", PreviewID: preview.ID}
 	impact, err := a.PreviewEditSave(draft)
-	if err != nil || !impact.NeedsAlbumConfirmation || !impact.CreatesRelease || impact.Admission == nil || !impact.Admission.RequiresConfirmation {
-		t.Fatalf("single skipped membership: %+v %v", impact, err)
+	// 仍然预览准入与专辑迁移。被编辑的是原发行唯一的曲目，迁走后原发行不再有曲目引用、
+	// 不参与覆盖；上游原生组已映射到该组，所以新发行是「已证明独有」，不再追加成员确认。
+	if err != nil || !impact.NeedsAlbumConfirmation || !impact.CreatesRelease || impact.Admission == nil ||
+		impact.Admission.Coverage != domain.CoverageAbsentProven || impact.Admission.RequiresConfirmation || impact.Admission.NeedsTypedConfirm {
+		t.Fatalf("single skipped membership: %+v %+v %v", impact, impact.Admission, err)
 	}
 	plan, err := a.PrepareAdmission(rowFrom(matching.ScoredCandidate{Candidate: c}), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	approval, err := a.ConfirmReleaseAdditions(plan.ID, plan.Hash)
+	approval, err := approveView(a, plan)
 	if err != nil {
 		t.Fatal(err)
 	}

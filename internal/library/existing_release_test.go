@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/norhua/sonexa/internal/domain"
@@ -33,6 +34,9 @@ func TestExistingReleasePreferenceDoesNotBypassAutomaticEvidence(t *testing.T) {
 			a, b := candidate("a", "a-next", &total), candidate("b", "b-next", &total)
 			input := high(a, b)
 			want := ReasonAmbiguous
+			// 已有发行不符合自动条件时不能压过证据：仍选中未入库发行上的候选。它的清单
+			// 取不到，无法确认是否含这首歌，所以进复核的原因是「无法确认」而不是新增发行。
+			newRelease := false
 			switch mode {
 			case "different-recording":
 				input[1].Candidate.RecordingRef = ptrField(domain.Known("another-recording"))
@@ -46,22 +50,22 @@ func TestExistingReleasePreferenceDoesNotBypassAutomaticEvidence(t *testing.T) {
 				input[1].Candidate.Title = ptrField(domain.Known("Song (Live)"))
 			case "review-only":
 				input[0].Score.ReviewOnly = true
-				want = ReasonNewRelease
+				want, newRelease = ReasonSongUnresolved, true
 			case "low-confidence":
 				input[0].Score.HighConf = false
-				want = ReasonNewRelease
+				want, newRelease = ReasonSongUnresolved, true
 			case "exact-subset":
 				input[1].Score.TitleMatch, input[1].Score.CreditMatch, input[1].Score.AlbumMatch = matching.MatchExact, matching.MatchExact, matching.MatchExact
-				want = ReasonNewRelease
+				want, newRelease = ReasonSongUnresolved, true
 			}
 			selection, err := s.SelectCandidate(context.Background(), input, 0)
 			if err != nil || selection.Reason != want {
 				t.Fatal(selection, err)
 			}
-			if want == ReasonNewRelease && (selection.Candidate == nil || selection.Candidate.MatchRef != "b-next" || !selection.Plan.Baseline.RequiresConfirmation) {
+			if newRelease && (selection.Candidate == nil || selection.Candidate.MatchRef != "b-next" || !selection.Plan.Baseline.RequiresConfirmation || !selection.Plan.Baseline.NeedsTypedConfirm) {
 				t.Fatal("ineligible existing release overrode evidence", selection)
 			}
-			if want != ReasonNewRelease && selection.Candidate != nil {
+			if !newRelease && selection.Candidate != nil {
 				t.Fatal("existing release resolved a content ambiguity", selection)
 			}
 		})
@@ -70,7 +74,15 @@ func TestExistingReleasePreferenceDoesNotBypassAutomaticEvidence(t *testing.T) {
 
 func TestMultipleExistingReleasesKeepTotalComparisonAndSourceIsolation(t *testing.T) {
 	s, st, _ := newTestService(t)
-	p := &summaryProvider{}
+	// 两个已有发行都含这首歌（同一录音）：清单补取后，曲目引用相同则总曲数多者为主发行。
+	fill := func(release string, n int) *domain.Snapshot {
+		entries := [][2]string{{release + "-next", "recording"}}
+		for i := 1; i < n; i++ {
+			entries = append(entries, [2]string{release + "-t" + strconv.Itoa(i), release + "-r" + strconv.Itoa(i)})
+		}
+		return releaseDetail(release, entries...)
+	}
+	p := &summaryProvider{details: map[string]*domain.Snapshot{"a": fill("a", 10), "b": fill("b", 12)}}
 	s.registry.Register(p)
 	savedReleaseTrack(t, st, "test", "a", true)
 	savedReleaseTrack(t, st, "test", "b", false)
