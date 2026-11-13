@@ -3,6 +3,7 @@ package matching
 import (
 	"regexp"
 	"strings"
+	"unicode"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -104,19 +105,8 @@ func Alternates(s string) []string { return defaultRules.Alternates(s) }
 var versionMarkerRe = buildVersionMarkerRe()
 
 func buildVersionMarkerRe() *regexp.Regexp {
-	r := DefaultRules()
-	credit := map[string]bool{}
-	for _, k := range r.FeatureKeywords {
-		credit[strings.ToLower(k)] = true
-	}
-	var kept []string
-	for _, k := range r.VersionKeywords {
-		if !credit[strings.ToLower(k)] {
-			kept = append(kept, k)
-		}
-	}
 	return regexp.MustCompile(
-		`(?i)(?:^|[\s\-_/（(［\[【\p{Han}\p{Hiragana}\p{Katakana}])(` + strings.Join(kept, "|") + `)(?:$|[\s\-_/0-9）)］\]】\p{Han}\p{Hiragana}\p{Katakana}])`)
+		`(?i)(?:^|[\s\-_/（(［\[【\p{Han}\p{Hiragana}\p{Katakana}])(` + strings.Join(DefaultRules().versionOnlyKeywords(), "|") + `)(?:$|[\s\-_/0-9）)］\]】\p{Han}\p{Hiragana}\p{Katakana}])`)
 }
 
 // VersionMarkers 返回串中出现的版本标记词集合（标准化后）。
@@ -173,4 +163,75 @@ func (r *Rules) StripNonVersionAnnotations(s string) string {
 // StripNonVersionAnnotations 是包级入口，用默认规则表。
 func StripNonVersionAnnotations(s string) string {
 	return defaultRules.StripNonVersionAnnotations(s)
+}
+
+// SplitVersionDescriptor 把曲名拆成「主干」与「版本描述」两段。
+//
+//	`星の在り処 Harmonica short Ver.` → 主干 `星の在り処 Harmonica`，版本描述 `short Ver.`
+//	`That Girl (DJLIU Remix)`        → 主干 `That Girl`，版本描述 `DJLIU Remix`
+//	`Tetra.`                         → 不可拆分
+//
+// 版本描述是这条录音身份的一部分（见 SearchCore），但它的**写法**并不稳定：
+// 同一条录音在上游的录音名里记作 `星の在り処 (Harmonica Short version)`，
+// 在专辑的曲目名里记作 `星の在り処 Harmonica short Ver.`——加不加括号、
+// `Ver.` 还是 `version`，各处各写各的。拿整串去做逐词相邻的短语检索，
+// 一处写法不同就整条落空；而主干是两种写法共有的那一段。
+//
+// 这个函数只陈述「曲名里哪一段是版本描述」这件事，不决定怎么用它：
+// 判定「是不是同一版」仍是 CompareTitle 的事，那里版本标记不一致照旧不匹配；
+// 检索时要不要放宽、放宽到什么程度，由各上游按自己的检索语义决定。
+//
+// 识别两种形态：
+//
+//	[1] 括号里的版本段      `雪 (Live)`、`Tetra. (off vocal)`
+//	[2] 结尾未加括号的版本词串 `君の知らない物語 TV Size`、`Tetra. -movie ver.-`
+//
+// 第 2 种只认**一直延续到结尾**的版本词：`Live and Let Die`、`Radio Ga Ga`
+// 里的版本词是曲名本身，后面还跟着别的词，不拆。主干剥空时同样不拆——
+// 整个曲名就是一个版本词（`Live`）时没有主干可言。
+func (r *Rules) SplitVersionDescriptor(title string) (base, descriptor string, ok bool) {
+	rest := title
+	var parts []string
+
+	// [1] 括号里的版本段。从后往前删，避免前面的删除改变后面段的偏移
+	segs := FindBracketSegments(rest)
+	for i := len(segs) - 1; i >= 0; i-- {
+		if r.Classify(segs[i]).Kind != KindVersion {
+			continue
+		}
+		if inner := strings.TrimSpace(segs[i].Inner); inner != "" {
+			parts = append([]string{inner}, parts...)
+		}
+		rest = rest[:segs[i].Start] + " " + rest[segs[i].End:]
+	}
+	rest = collapseSpaces(rest)
+
+	// [2] 结尾未加括号的版本词串
+	if loc := r.trailingVersionRe.FindStringSubmatchIndex(rest); loc != nil {
+		if tail := trimVersionDelimiters(rest[loc[2]:]); tail != "" {
+			parts = append([]string{tail}, parts...)
+		}
+		rest = rest[:loc[2]]
+	}
+
+	base = trimVersionDelimiters(rest)
+	if len(parts) == 0 || Normalize(base) == "" {
+		return title, "", false
+	}
+	return base, strings.Join(parts, " "), true
+}
+
+// SplitVersionDescriptor 是包级入口，用默认规则表。
+func SplitVersionDescriptor(title string) (base, descriptor string, ok bool) {
+	return defaultRules.SplitVersionDescriptor(title)
+}
+
+// trimVersionDelimiters 去掉两端的空白与版本分隔符（`-movie ver.-` 外面那对破折号）。
+//
+// 句点只在开头去：结尾的句点可能是内容（`Tetra.`、`Ver.`）。
+func trimVersionDelimiters(s string) string {
+	isDelimiter := func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune("-–—−_/~〜～", r)
+	}
+	return strings.TrimFunc(s, isDelimiter)
 }

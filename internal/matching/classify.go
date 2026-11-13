@@ -41,6 +41,8 @@ type Rules struct {
 	translationRe *regexp.Regexp
 	featureRe     *regexp.Regexp
 	disambigRe    *regexp.Regexp
+	// trailingVersionRe 匹配结尾一串未加括号的版本词，见 SplitVersionDescriptor。
+	trailingVersionRe *regexp.Regexp
 }
 
 // defaultRules 是包级共享的默认规则表。
@@ -87,6 +89,27 @@ func (r *Rules) compile() {
 	r.translationRe = regexp.MustCompile(`(?i)(?:` + join(r.TranslationHints) + `)`)
 	r.featureRe = regexp.MustCompile(`(?i)^\s*(?:` + join(r.FeatureKeywords) + `)\s+(.+)$`)
 	r.disambigRe = regexp.MustCompile(`(?i)` + join(r.DisambiguationPat))
+	r.trailingVersionRe = regexp.MustCompile(`(?i)(?:` + versionBoundary + `|[\p{Han}\p{Hiragana}\p{Katakana}])` +
+		`((?:(?:` + join(r.versionOnlyKeywords()) + `)(?:` + versionBoundary + `|[.0-9])*)+)$`)
+}
+
+// versionBoundary 是版本词前后可以出现的分隔符：空白（含全角空格）、各式破折号与波浪线。
+const versionBoundary = `[\s\p{Z}\-–—−_/~〜～]`
+
+// versionOnlyKeywords 返回真正标「哪一版录音」的关键词，不含 feat. / ft. / with——
+// 那三个标的是参与者（见 versionMarkerRe 的说明）。
+func (r *Rules) versionOnlyKeywords() []string {
+	credit := map[string]bool{}
+	for _, k := range r.FeatureKeywords {
+		credit[strings.ToLower(k)] = true
+	}
+	var kept []string
+	for _, k := range r.VersionKeywords {
+		if !credit[strings.ToLower(k)] {
+			kept = append(kept, k)
+		}
+	}
+	return kept
 }
 
 // Classification 是对一个括号段的分类结果。

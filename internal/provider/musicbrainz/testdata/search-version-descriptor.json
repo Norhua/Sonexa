@@ -1,0 +1,2713 @@
+{
+ "created": "2026-11-13T14:33:16.575Z",
+ "count": 6,
+ "offset": 0,
+ "recordings": [
+  {
+   "id": "8f51c545-eb7a-41d4-80f8-77518c3c6974",
+   "score": 100,
+   "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+   "title": "星の在り処 Harmonica short Ver.",
+   "length": 34000,
+   "disambiguation": "Evolution version",
+   "video": null,
+   "artist-credit": [
+    {
+     "name": "Falcom Sound Team jdk",
+     "artist": {
+      "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+      "name": "Falcom Sound Team jdk",
+      "sort-name": "Falcom Sound Team jdk",
+      "aliases": [
+       {
+        "sort-name": "Falcom Music Staff",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Music Staff",
+        "locale": "en",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": null,
+        "end-date": "1988"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team j.d.k.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1998",
+        "end-date": "1998"
+       },
+       {
+        "sort-name": "サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1995",
+        "end-date": "1997"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": true,
+        "begin-date": "1999",
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1991",
+        "end-date": "1995"
+       },
+       {
+        "sort-name": "ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1988",
+        "end-date": "1990"
+       },
+       {
+        "sort-name": "日本ファルコム",
+        "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+        "name": "日本ファルコム",
+        "locale": null,
+        "type": "Search hint",
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム・サウンド・チーム・JDK",
+        "name": "ファルコム・サウンド・チーム・JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "JDK Sound Team",
+        "name": "JDK Sound Team",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team JDK",
+        "name": "Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Falcom Sound Team JDK",
+        "name": "Falcom Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team Falcom JDK",
+        "name": "Sound Team Falcom JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "first-release-date": "2015-06-11",
+   "releases": [
+    {
+     "id": "c77d0c61-80ce-43d1-a1e1-11a7052d736d",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "英雄伝説 空の軌跡FC Evolution ORIGINAL SOUNDTRACK",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "13c1bf7e-9ffb-4d84-a9b6-21413a268821",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡FC Evolution ORIGINAL SOUNDTRACK",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2015-06-11",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2015-06-11",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "04bc6e08-89ae-393d-acbe-5caa951971b9",
+       "position": 1,
+       "format": "CD",
+       "track": [
+        {
+         "id": "2cc1a3c9-a74e-4e10-92db-4e8a7f367dae",
+         "number": "2",
+         "title": "星の在り処 Harmonica short Ver.",
+         "length": 36533
+        }
+       ],
+       "track-count": 32,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "52ebc07b-a4ed-4af9-94ab-c37444c3b402",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "英雄伝説 空の軌跡FC Evolution オリジナルサウンドトラック",
+     "status": "Official",
+     "disambiguation": "24bit/96kHz",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "13c1bf7e-9ffb-4d84-a9b6-21413a268821",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡FC Evolution ORIGINAL SOUNDTRACK",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2015-06-11",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2015-06-11",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "ac5255d6-f191-3f11-91bb-0a84b179d35c",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "ad9c5bc2-dd90-4fdb-9e41-8d837f006c73",
+         "number": "2",
+         "title": "星の在り処 Harmonica Short Ver.",
+         "length": 34000
+        }
+       ],
+       "track-count": 57,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "d819467b-a93f-4cff-895d-a7affb891cd2",
+     "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "The Legend of Heroes Trails in the Sky FC Evolution Original Soundtrack",
+     "status": "Pseudo-Release",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "13c1bf7e-9ffb-4d84-a9b6-21413a268821",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡FC Evolution ORIGINAL SOUNDTRACK",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "track-count": 57,
+     "media": [
+      {
+       "id": "c9f12eae-79d8-3e95-805e-92051c688749",
+       "position": 1,
+       "format": "CD",
+       "track": [
+        {
+         "id": "925c9da8-6a18-4f94-8a66-d8fba54591c4",
+         "number": "2",
+         "title": "The Whereabouts of Light Harmonica short Ver.",
+         "length": 34000
+        }
+       ],
+       "track-count": 32,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "f1f19354-d418-4dfe-ab23-62bbd95046b3",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "The Legend of Heroes: Sora No Kiseki FC Evolution Original Sound Track",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "13c1bf7e-9ffb-4d84-a9b6-21413a268821",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡FC Evolution ORIGINAL SOUNDTRACK",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2015-06-11",
+     "country": "US",
+     "release-events": [
+      {
+       "date": "2015-06-11",
+       "area": {
+        "id": "489ce91b-6658-3307-9877-795b68554c98",
+        "name": "United States",
+        "sort-name": "United States",
+        "iso-3166-1-codes": [
+         "US"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "adb8d1ab-4bb9-36cc-9a1a-1a9cec3236b9",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "530f1ab1-6a4d-444f-8d07-3d771bd658a1",
+         "number": "2",
+         "title": "Hoshi No Arika Harmonica Short Version.",
+         "length": 34000
+        }
+       ],
+       "track-count": 32,
+       "track-offset": 1
+      }
+     ]
+    }
+   ],
+   "isrcs": [
+    "JPC891500006"
+   ]
+  },
+  {
+   "id": "13bc46a5-0e77-415b-b8df-0ea86ab824e7",
+   "score": 100,
+   "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+   "title": "星の在り処 Harmonica short Ver.",
+   "length": 35000,
+   "disambiguation": "空の軌跡 the 1st",
+   "video": null,
+   "artist-credit": [
+    {
+     "name": "Falcom Sound Team jdk",
+     "artist": {
+      "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+      "name": "Falcom Sound Team jdk",
+      "sort-name": "Falcom Sound Team jdk",
+      "aliases": [
+       {
+        "sort-name": "Falcom Music Staff",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Music Staff",
+        "locale": "en",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": null,
+        "end-date": "1988"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team j.d.k.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1998",
+        "end-date": "1998"
+       },
+       {
+        "sort-name": "サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1995",
+        "end-date": "1997"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": true,
+        "begin-date": "1999",
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1991",
+        "end-date": "1995"
+       },
+       {
+        "sort-name": "ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1988",
+        "end-date": "1990"
+       },
+       {
+        "sort-name": "日本ファルコム",
+        "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+        "name": "日本ファルコム",
+        "locale": null,
+        "type": "Search hint",
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム・サウンド・チーム・JDK",
+        "name": "ファルコム・サウンド・チーム・JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "JDK Sound Team",
+        "name": "JDK Sound Team",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team JDK",
+        "name": "Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Falcom Sound Team JDK",
+        "name": "Falcom Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team Falcom JDK",
+        "name": "Sound Team Falcom JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "first-release-date": "2025-12-22",
+   "releases": [
+    {
+     "id": "b1e16439-755c-4a92-9bea-e6cbd710b789",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "d60399c3-61f0-41db-a348-9975b6b59170",
+       "position": 1,
+       "format": "CD",
+       "track": [
+        {
+         "id": "51b24c47-e781-4910-b83d-0361e6124835",
+         "number": "2",
+         "title": "星の在り処 Harmonica short Ver.",
+         "length": 37533
+        }
+       ],
+       "track-count": 33,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "1a1bbd05-0854-4e71-85d6-8d3b34e0f660",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "Trails in the Sky 1st Chapter Original Soundtrack Vol.1",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "XW",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "525d4e18-3d00-31b9-a58b-a146a916de8f",
+        "name": "[Worldwide]",
+        "sort-name": "[Worldwide]",
+        "iso-3166-1-codes": [
+         "XW"
+        ]
+       }
+      }
+     ],
+     "track-count": 33,
+     "media": [
+      {
+       "id": "59615cc7-d271-4a15-8c94-7d1906460ad6",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "a127d455-b48a-4992-bb92-266c14740fa8",
+         "number": "2",
+         "title": "Hoshi No Arika Harmonica (Short Version.)",
+         "length": 35281
+        }
+       ],
+       "track-count": 33,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "ad2c537e-aa55-4ee0-8f5e-c0466f4e9e11",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "空の軌跡 the 1st オリジナルサウンドトラック Vol.1",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 33,
+     "media": [
+      {
+       "id": "a53b3f1b-49da-430a-ade6-9131dd80485f",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "24b30f0d-d2b5-4def-8986-1595f51cafb0",
+         "number": "2",
+         "title": "星の在り処 Harmonica short Ver.",
+         "length": 35000
+        }
+       ],
+       "track-count": 33,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "87d6f382-0664-4a41-bc3a-5e128fb7356c",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "Trails in the Sky 1st Chapter Original Soundtrack",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "track-count": 57,
+     "media": [
+      {
+       "id": "31f80436-0422-4d0a-bf1f-1d2fb69746d1",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "7be3217c-7263-4e9e-89b3-3299a0b4413d",
+         "number": "2",
+         "title": "Hoshi No Arika Harmonica Short Version.",
+         "length": 35000
+        }
+       ],
+       "track-count": 57,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "eef01a08-34c9-4bca-87ce-7f1c1e3a9fb5",
+     "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "Trails in the Sky: The 1st Chapter Original Soundtrack",
+     "status": "Pseudo-Release",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "XW",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "525d4e18-3d00-31b9-a58b-a146a916de8f",
+        "name": "[Worldwide]",
+        "sort-name": "[Worldwide]",
+        "iso-3166-1-codes": [
+         "XW"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "c67db323-4d0a-4c34-9c6d-82275b8bd779",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "b79c1627-c0f6-48fd-988a-6750fc7a83ac",
+         "number": "2",
+         "title": "Hoshi No Arika Harmonica (short version)",
+         "length": 35000
+        }
+       ],
+       "track-count": 57,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "75314a64-2e5e-413b-8136-6c780f95942d",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+     "status": "Official",
+     "disambiguation": "初回版",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "04b04163-02c3-4235-831f-04093962e963",
+       "position": 1,
+       "format": "CD",
+       "track": [
+        {
+         "id": "338e2d42-a61d-40c7-a120-aa8547e145a7",
+         "number": "2",
+         "title": "星の在り処 Harmonica short Ver.",
+         "length": 35000
+        }
+       ],
+       "track-count": 33,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "fdd27903-a851-4b09-ad2a-7849c1ebc74a",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+     "status": "Official",
+     "disambiguation": "ハイレゾ版",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "e5769050-a814-4972-a438-94373109cca9",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "49bd2690-726c-4c66-a1e9-40370347c8c2",
+         "number": "2",
+         "title": "星の在り処 Harmonica short Ver.",
+         "length": 35000
+        }
+       ],
+       "track-count": 57,
+       "track-offset": 1
+      }
+     ]
+    }
+   ],
+   "isrcs": [
+    "JPC892500178"
+   ]
+  },
+  {
+   "id": "b919f281-7f86-4be5-abb4-4cefef472040",
+   "score": 78,
+   "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+   "title": "星の在り処 (Harmonica Short version)",
+   "length": 34840,
+   "video": null,
+   "artist-credit": [
+    {
+     "name": "Falcom Sound Team jdk",
+     "artist": {
+      "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+      "name": "Falcom Sound Team jdk",
+      "sort-name": "Falcom Sound Team jdk",
+      "aliases": [
+       {
+        "sort-name": "Falcom Music Staff",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Music Staff",
+        "locale": "en",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": null,
+        "end-date": "1988"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team j.d.k.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1998",
+        "end-date": "1998"
+       },
+       {
+        "sort-name": "サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1995",
+        "end-date": "1997"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": true,
+        "begin-date": "1999",
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1991",
+        "end-date": "1995"
+       },
+       {
+        "sort-name": "ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1988",
+        "end-date": "1990"
+       },
+       {
+        "sort-name": "日本ファルコム",
+        "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+        "name": "日本ファルコム",
+        "locale": null,
+        "type": "Search hint",
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム・サウンド・チーム・JDK",
+        "name": "ファルコム・サウンド・チーム・JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "JDK Sound Team",
+        "name": "JDK Sound Team",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team JDK",
+        "name": "Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Falcom Sound Team JDK",
+        "name": "Falcom Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team Falcom JDK",
+        "name": "Sound Team Falcom JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "first-release-date": "2004-07-30",
+   "releases": [
+    {
+     "id": "c2740392-74cc-47e1-b16e-4135caa19f76",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "オリジナルサウンドトラック 「英雄伝説 空の軌跡」",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "b9fa9bbd-4282-34d4-999c-63e52c6fd364",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡 オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2004-07-30",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2004-07-30",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 59,
+     "media": [
+      {
+       "id": "7c952d21-de88-33bb-bc12-e2095d749443",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "835f2c8d-3874-4722-ad0d-4a1be7b62838",
+         "number": "2",
+         "title": "星の在り処 Harmonica short Ver.",
+         "length": 34840
+        }
+       ],
+       "track-count": 59,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "e900802d-9f9e-4446-9798-09bfc0d501b4",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 4,
+     "title": "The Legend of Heroes: Trails In The Sky Original Soundtrack",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "b9fa9bbd-4282-34d4-999c-63e52c6fd364",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡 オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2024-06",
+     "country": "GB",
+     "release-events": [
+      {
+       "date": "2024-06",
+       "area": {
+        "id": "8a754a16-0027-3a29-b6d7-2b40ea0481ed",
+        "name": "United Kingdom",
+        "sort-name": "United Kingdom",
+        "iso-3166-1-codes": [
+         "GB"
+        ]
+       }
+      },
+      {
+       "date": "2024-05",
+       "area": {
+        "id": "489ce91b-6658-3307-9877-795b68554c98",
+        "name": "United States",
+        "sort-name": "United States",
+        "iso-3166-1-codes": [
+         "US"
+        ]
+       }
+      }
+     ],
+     "track-count": 59,
+     "media": [
+      {
+       "id": "51f4afa2-0fa9-3f8e-b2c3-a9b2a1a863ef",
+       "position": 1,
+       "format": "12\" Vinyl",
+       "track": [
+        {
+         "id": "57321b44-8244-4eec-b865-a2c24f8464d3",
+         "number": "A2",
+         "title": "The Whereabouts of Light (Harmonica short Ver.)"
+        }
+       ],
+       "track-count": 15,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "63e30fa8-b7f4-4234-b09a-f1a2187d9b77",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "英雄伝説 空の軌跡 オリジナルサウンドトラック",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "b9fa9bbd-4282-34d4-999c-63e52c6fd364",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡 オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2004-07-30",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2004-07-30",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 59,
+     "media": [
+      {
+       "id": "fa5ec996-422e-3377-a04d-5c4d97d52c0d",
+       "position": 1,
+       "format": "CD",
+       "track": [
+        {
+         "id": "b39a4b8e-974a-3cd3-a7ab-4f6a7fe52287",
+         "number": "2",
+         "title": "星の在り処 Harmonica short Ver.",
+         "length": 34840
+        }
+       ],
+       "track-count": 33,
+       "track-offset": 1
+      }
+     ]
+    },
+    {
+     "id": "4381297a-df62-4291-8ed1-eb92e49d6bbc",
+     "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "The Legend of Heroes Trails in the Sky Original Soundtrack",
+     "status": "Pseudo-Release",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "b9fa9bbd-4282-34d4-999c-63e52c6fd364",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡 オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "track-count": 59,
+     "media": [
+      {
+       "id": "f20ccc0e-582a-3601-a4bf-0038811ae6a1",
+       "position": 1,
+       "format": "CD",
+       "track": [
+        {
+         "id": "df4cb882-a44e-4443-b0e1-819cc135b18b",
+         "number": "2",
+         "title": "The Whereabouts of Light (harmonica short ver.)",
+         "length": 34840
+        }
+       ],
+       "track-count": 33,
+       "track-offset": 1
+      }
+     ]
+    }
+   ],
+   "isrcs": [
+    "JPC890602503"
+   ]
+  },
+  {
+   "id": "a0816f8e-44bd-4fa6-8915-ef8d4424ccfc",
+   "score": 77,
+   "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+   "title": "星の在り処　Harmonica long Ver.",
+   "length": 122000,
+   "video": null,
+   "artist-credit": [
+    {
+     "name": "Falcom Sound Team jdk",
+     "artist": {
+      "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+      "name": "Falcom Sound Team jdk",
+      "sort-name": "Falcom Sound Team jdk",
+      "aliases": [
+       {
+        "sort-name": "Falcom Music Staff",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Music Staff",
+        "locale": "en",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": null,
+        "end-date": "1988"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team j.d.k.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1998",
+        "end-date": "1998"
+       },
+       {
+        "sort-name": "サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1995",
+        "end-date": "1997"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": true,
+        "begin-date": "1999",
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1991",
+        "end-date": "1995"
+       },
+       {
+        "sort-name": "ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1988",
+        "end-date": "1990"
+       },
+       {
+        "sort-name": "日本ファルコム",
+        "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+        "name": "日本ファルコム",
+        "locale": null,
+        "type": "Search hint",
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム・サウンド・チーム・JDK",
+        "name": "ファルコム・サウンド・チーム・JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "JDK Sound Team",
+        "name": "JDK Sound Team",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team JDK",
+        "name": "Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Falcom Sound Team JDK",
+        "name": "Falcom Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team Falcom JDK",
+        "name": "Sound Team Falcom JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "first-release-date": "2004-07-30",
+   "releases": [
+    {
+     "id": "c2740392-74cc-47e1-b16e-4135caa19f76",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "オリジナルサウンドトラック 「英雄伝説 空の軌跡」",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "b9fa9bbd-4282-34d4-999c-63e52c6fd364",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡 オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2004-07-30",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2004-07-30",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 59,
+     "media": [
+      {
+       "id": "7c952d21-de88-33bb-bc12-e2095d749443",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "8175a7c6-e7e8-472d-9066-1bc04348de70",
+         "number": "53",
+         "title": "星の在り処 Harmonica long Ver.",
+         "length": 122000
+        }
+       ],
+       "track-count": 59,
+       "track-offset": 52
+      }
+     ]
+    },
+    {
+     "id": "e900802d-9f9e-4446-9798-09bfc0d501b4",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 4,
+     "title": "The Legend of Heroes: Trails In The Sky Original Soundtrack",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "b9fa9bbd-4282-34d4-999c-63e52c6fd364",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡 オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2024-06",
+     "country": "GB",
+     "release-events": [
+      {
+       "date": "2024-06",
+       "area": {
+        "id": "8a754a16-0027-3a29-b6d7-2b40ea0481ed",
+        "name": "United Kingdom",
+        "sort-name": "United Kingdom",
+        "iso-3166-1-codes": [
+         "GB"
+        ]
+       }
+      },
+      {
+       "date": "2024-05",
+       "area": {
+        "id": "489ce91b-6658-3307-9877-795b68554c98",
+        "name": "United States",
+        "sort-name": "United States",
+        "iso-3166-1-codes": [
+         "US"
+        ]
+       }
+      }
+     ],
+     "track-count": 59,
+     "media": [
+      {
+       "id": "e1098f4d-77b0-32cc-997c-5480b6b569d7",
+       "position": 4,
+       "format": "12\" Vinyl",
+       "track": [
+        {
+         "id": "2d5aa503-1869-40a6-ac92-1353763d8b2f",
+         "number": "G4",
+         "title": "The Whereabouts of Light Harmonica long Ver."
+        }
+       ],
+       "track-count": 10,
+       "track-offset": 3
+      }
+     ]
+    },
+    {
+     "id": "4381297a-df62-4291-8ed1-eb92e49d6bbc",
+     "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "The Legend of Heroes Trails in the Sky Original Soundtrack",
+     "status": "Pseudo-Release",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "b9fa9bbd-4282-34d4-999c-63e52c6fd364",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡 オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "track-count": 59,
+     "media": [
+      {
+       "id": "99da9931-433e-37e5-937c-b85ca046805e",
+       "position": 2,
+       "format": "CD",
+       "track": [
+        {
+         "id": "f9bba04b-5d06-4bdf-90b7-f5c8c2df6a1f",
+         "number": "20",
+         "title": "The Whereabouts of Light (harmonica long ver.)",
+         "length": 122000
+        }
+       ],
+       "track-count": 26,
+       "track-offset": 19
+      }
+     ]
+    },
+    {
+     "id": "63e30fa8-b7f4-4234-b09a-f1a2187d9b77",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "英雄伝説 空の軌跡 オリジナルサウンドトラック",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "b9fa9bbd-4282-34d4-999c-63e52c6fd364",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡 オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2004-07-30",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2004-07-30",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 59,
+     "media": [
+      {
+       "id": "39bf0d21-fdd0-3c7a-980c-533cc027dbb9",
+       "position": 2,
+       "format": "CD",
+       "track": [
+        {
+         "id": "013af339-ba39-35a4-ac82-a36ee7826c66",
+         "number": "20",
+         "title": "星の在り処 Harmonica long Ver.",
+         "length": 122000
+        }
+       ],
+       "track-count": 26,
+       "track-offset": 19
+      }
+     ]
+    }
+   ],
+   "isrcs": [
+    "JPC890602554"
+   ]
+  },
+  {
+   "id": "50002c71-b6a9-4e25-a795-86b0c3d33f77",
+   "score": 56,
+   "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+   "title": "星の在り処 Harmonica long Ver.",
+   "length": 120000,
+   "disambiguation": "Evolution version",
+   "video": null,
+   "artist-credit": [
+    {
+     "name": "Falcom Sound Team jdk",
+     "artist": {
+      "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+      "name": "Falcom Sound Team jdk",
+      "sort-name": "Falcom Sound Team jdk",
+      "aliases": [
+       {
+        "sort-name": "Falcom Music Staff",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Music Staff",
+        "locale": "en",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": null,
+        "end-date": "1988"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team j.d.k.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1998",
+        "end-date": "1998"
+       },
+       {
+        "sort-name": "サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1995",
+        "end-date": "1997"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": true,
+        "begin-date": "1999",
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1991",
+        "end-date": "1995"
+       },
+       {
+        "sort-name": "ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1988",
+        "end-date": "1990"
+       },
+       {
+        "sort-name": "日本ファルコム",
+        "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+        "name": "日本ファルコム",
+        "locale": null,
+        "type": "Search hint",
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム・サウンド・チーム・JDK",
+        "name": "ファルコム・サウンド・チーム・JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "JDK Sound Team",
+        "name": "JDK Sound Team",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team JDK",
+        "name": "Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Falcom Sound Team JDK",
+        "name": "Falcom Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team Falcom JDK",
+        "name": "Sound Team Falcom JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "first-release-date": "2015-06-11",
+   "releases": [
+    {
+     "id": "c77d0c61-80ce-43d1-a1e1-11a7052d736d",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "英雄伝説 空の軌跡FC Evolution ORIGINAL SOUNDTRACK",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "13c1bf7e-9ffb-4d84-a9b6-21413a268821",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡FC Evolution ORIGINAL SOUNDTRACK",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2015-06-11",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2015-06-11",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "6879fbb5-1bbe-3747-b5c9-ffd354f3e76b",
+       "position": 2,
+       "format": "CD",
+       "track": [
+        {
+         "id": "6d95e280-2f47-4d2e-84b4-45183aad6d26",
+         "number": "20",
+         "title": "星の在り処 Harmonica long Ver.",
+         "length": 122893
+        }
+       ],
+       "track-count": 25,
+       "track-offset": 19
+      }
+     ]
+    },
+    {
+     "id": "52ebc07b-a4ed-4af9-94ab-c37444c3b402",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "英雄伝説 空の軌跡FC Evolution オリジナルサウンドトラック",
+     "status": "Official",
+     "disambiguation": "24bit/96kHz",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "13c1bf7e-9ffb-4d84-a9b6-21413a268821",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡FC Evolution ORIGINAL SOUNDTRACK",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2015-06-11",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2015-06-11",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "ac5255d6-f191-3f11-91bb-0a84b179d35c",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "8cd1e677-be4f-4250-804b-05c22492a7af",
+         "number": "52",
+         "title": "星の在り処 Harmonica Long Ver.",
+         "length": 120000
+        }
+       ],
+       "track-count": 57,
+       "track-offset": 51
+      }
+     ]
+    },
+    {
+     "id": "d819467b-a93f-4cff-895d-a7affb891cd2",
+     "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "The Legend of Heroes Trails in the Sky FC Evolution Original Soundtrack",
+     "status": "Pseudo-Release",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "13c1bf7e-9ffb-4d84-a9b6-21413a268821",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡FC Evolution ORIGINAL SOUNDTRACK",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "track-count": 57,
+     "media": [
+      {
+       "id": "fb4190f2-5edf-33d8-8c74-49a94fe35cb3",
+       "position": 2,
+       "format": "CD",
+       "track": [
+        {
+         "id": "f74468c9-3167-41fa-b323-51e9fa6f8b23",
+         "number": "20",
+         "title": "The Whereabouts of Light Harmonica long Ver.",
+         "length": 120000
+        }
+       ],
+       "track-count": 25,
+       "track-offset": 19
+      }
+     ]
+    },
+    {
+     "id": "f1f19354-d418-4dfe-ab23-62bbd95046b3",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "The Legend of Heroes: Sora No Kiseki FC Evolution Original Sound Track",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "13c1bf7e-9ffb-4d84-a9b6-21413a268821",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "英雄伝説 空の軌跡FC Evolution ORIGINAL SOUNDTRACK",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2015-06-11",
+     "country": "US",
+     "release-events": [
+      {
+       "date": "2015-06-11",
+       "area": {
+        "id": "489ce91b-6658-3307-9877-795b68554c98",
+        "name": "United States",
+        "sort-name": "United States",
+        "iso-3166-1-codes": [
+         "US"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "b91b02cb-15dd-3f44-bd1a-91896c072f7e",
+       "position": 2,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "85dfe47f-fbe6-4965-8099-8aea523e8596",
+         "number": "20",
+         "title": "Hoshi No Arika Harmonica Long Ver.",
+         "length": 120000
+        }
+       ],
+       "track-count": 25,
+       "track-offset": 19
+      }
+     ]
+    }
+   ],
+   "isrcs": [
+    "JPC891500056"
+   ]
+  },
+  {
+   "id": "9382dba9-414c-4b57-8331-07edbbb9c5ef",
+   "score": 56,
+   "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+   "title": "星の在り処 Harmonica long Ver.",
+   "length": 137000,
+   "disambiguation": "空の軌跡 the 1st",
+   "video": null,
+   "artist-credit": [
+    {
+     "name": "Falcom Sound Team jdk",
+     "artist": {
+      "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+      "name": "Falcom Sound Team jdk",
+      "sort-name": "Falcom Sound Team jdk",
+      "aliases": [
+       {
+        "sort-name": "Falcom Music Staff",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Music Staff",
+        "locale": "en",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": null,
+        "end-date": "1988"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team j.d.k.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1998",
+        "end-date": "1998"
+       },
+       {
+        "sort-name": "サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1995",
+        "end-date": "1997"
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team jdk",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": true,
+        "begin-date": "1999",
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム サウンドチーム ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Falcom Sound Team J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1991",
+        "end-date": "1995"
+       },
+       {
+        "sort-name": "ジェイディーケイ",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "J.D.K.",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": null,
+        "begin-date": "1988",
+        "end-date": "1990"
+       },
+       {
+        "sort-name": "日本ファルコム",
+        "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+        "name": "日本ファルコム",
+        "locale": null,
+        "type": "Search hint",
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "ファルコム・サウンド・チーム・JDK",
+        "name": "ファルコム・サウンド・チーム・JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "JDK Sound Team",
+        "name": "JDK Sound Team",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team JDK",
+        "name": "Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Falcom Sound Team JDK",
+        "name": "Falcom Sound Team JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Sound Team Falcom JDK",
+        "name": "Sound Team Falcom JDK",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "first-release-date": "2025-12-22",
+   "releases": [
+    {
+     "id": "73bdc867-8e1d-4689-ac67-0487365dc03d",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "Trails in the Sky 1st Chapter Original Soundtrack Vol.2",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "XW",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "525d4e18-3d00-31b9-a58b-a146a916de8f",
+        "name": "[Worldwide]",
+        "sort-name": "[Worldwide]",
+        "iso-3166-1-codes": [
+         "XW"
+        ]
+       }
+      }
+     ],
+     "track-count": 24,
+     "media": [
+      {
+       "id": "6c2aa9d8-b968-473f-87a6-fcac3b4eb0aa",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "28e6fe32-2f48-45ed-a093-bc77ff8d1102",
+         "number": "20",
+         "title": "Hoshi No Arika (Harmonica long version)",
+         "length": 137077
+        }
+       ],
+       "track-count": 24,
+       "track-offset": 19
+      }
+     ]
+    },
+    {
+     "id": "5938bb50-5826-4ccb-ab38-b82cb3b3f123",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "空の軌跡 the 1st オリジナルサウンドトラック Vol.2",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 24,
+     "media": [
+      {
+       "id": "0ff37f96-3c55-44eb-af41-640a204807fb",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "3148c829-1c87-4985-b6e7-10e4a6921704",
+         "number": "20",
+         "title": "星の在り処 Harmonica long Ver.",
+         "length": 137000
+        }
+       ],
+       "track-count": 24,
+       "track-offset": 19
+      }
+     ]
+    },
+    {
+     "id": "87d6f382-0664-4a41-bc3a-5e128fb7356c",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "Trails in the Sky 1st Chapter Original Soundtrack",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "track-count": 57,
+     "media": [
+      {
+       "id": "31f80436-0422-4d0a-bf1f-1d2fb69746d1",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "6cef584a-c08e-4c24-8a54-2bdeb762d374",
+         "number": "53",
+         "title": "Hoshi No Arika Harmonica Long Version",
+         "length": 137000
+        }
+       ],
+       "track-count": 57,
+       "track-offset": 52
+      }
+     ]
+    },
+    {
+     "id": "eef01a08-34c9-4bca-87ce-7f1c1e3a9fb5",
+     "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "Trails in the Sky: The 1st Chapter Original Soundtrack",
+     "status": "Pseudo-Release",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "XW",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "525d4e18-3d00-31b9-a58b-a146a916de8f",
+        "name": "[Worldwide]",
+        "sort-name": "[Worldwide]",
+        "iso-3166-1-codes": [
+         "XW"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "c67db323-4d0a-4c34-9c6d-82275b8bd779",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "c293af2c-71a0-46ef-bf23-7ce2c0bcce60",
+         "number": "53",
+         "title": "Hoshi No Arika (harmonica long version)",
+         "length": 137000
+        }
+       ],
+       "track-count": 57,
+       "track-offset": 52
+      }
+     ]
+    },
+    {
+     "id": "75314a64-2e5e-413b-8136-6c780f95942d",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+     "status": "Official",
+     "disambiguation": "初回版",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "4f32ac25-106b-435b-b15b-7d0957ecceb7",
+       "position": 2,
+       "format": "CD",
+       "track": [
+        {
+         "id": "a65f3fc0-f74f-4038-9d5d-1df91757ddd0",
+         "number": "20",
+         "title": "星の在り処 Harmonica long Ver.",
+         "length": 137000
+        }
+       ],
+       "track-count": 24,
+       "track-offset": 19
+      }
+     ]
+    },
+    {
+     "id": "b1e16439-755c-4a92-9bea-e6cbd710b789",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 2,
+     "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "99b65fd0-3ee1-491f-816a-df4f17b231e5",
+       "position": 2,
+       "format": "CD",
+       "track": [
+        {
+         "id": "fbd09144-1983-4ec4-9989-97f213e86fed",
+         "number": "20",
+         "title": "星の在り処 Harmonica long Ver.",
+         "length": 139320
+        }
+       ],
+       "track-count": 24,
+       "track-offset": 19
+      }
+     ]
+    },
+    {
+     "id": "fdd27903-a851-4b09-ad2a-7849c1ebc74a",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "b18d6e2c-cda9-3fe5-9417-ee96f7bc7a93",
+     "count": 1,
+     "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+     "status": "Official",
+     "disambiguation": "ハイレゾ版",
+     "artist-credit": [
+      {
+       "name": "Falcom Sound Team jdk",
+       "artist": {
+        "id": "c999f4ef-8733-46f8-ae3a-d5628c260ea8",
+        "name": "Falcom Sound Team jdk",
+        "sort-name": "Falcom Sound Team jdk"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "ed86f317-6f76-4b70-ab78-39aeaf046791",
+      "type-id": "22a628ad-c082-3c4f-b1b6-d41665107b88",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "空の軌跡 the 1st オリジナルサウンドトラック",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ],
+      "secondary-type-ids": [
+       "22a628ad-c082-3c4f-b1b6-d41665107b88"
+      ]
+     },
+     "date": "2025-12-22",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2025-12-22",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 57,
+     "media": [
+      {
+       "id": "e5769050-a814-4972-a438-94373109cca9",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "c96b12b3-2908-45f3-ba3a-c35340652eac",
+         "number": "53",
+         "title": "星の在り処 Harmonica long Ver.",
+         "length": 137000
+        }
+       ],
+       "track-count": 57,
+       "track-offset": 52
+      }
+     ]
+    }
+   ],
+   "isrcs": [
+    "JPC892500229"
+   ]
+  }
+ ]
+}

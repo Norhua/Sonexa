@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
 )
 
@@ -171,6 +172,8 @@ const maxArtistAlternates = 2
 // 实测同一批输入：三字段 AND 命中 0 条，并联后各命中 1 条且就是正确那条。
 //
 // TitleOnly 为真时只发曲名一级（阶梯的兜底），锚点全空时同理。
+//
+// 曲名带版本描述时换一种形态，见 buildVersionRelaxedQuery。
 func buildLuceneQuery(q provider.Query) string {
 	title := strings.TrimSpace(q.Title)
 	if title == "" {
@@ -185,11 +188,28 @@ func buildLuceneQuery(q provider.Query) string {
 		return strings.Join(parts, " AND ")
 	}
 
-	recording := `recording:"` + escapeLucene(title) + `"`
-	if q.TitleOnly {
-		return recording
+	var anchors []string
+	if !q.TitleOnly {
+		anchors = buildAnchors(q)
+	}
+	if base, descriptor, ok := matching.SplitVersionDescriptor(title); ok {
+		return buildVersionRelaxedQuery(title, base, descriptor, anchors)
 	}
 
+	recording := `recording:"` + escapeLucene(title) + `"`
+	switch len(anchors) {
+	case 0:
+		return recording
+	case 1:
+		// 只有一个锚点时不加括号：`A AND (B)` 与 `A AND B` 是同一个查询
+		return recording + " AND " + anchors[0]
+	default:
+		return recording + " AND (" + strings.Join(anchors, " OR ") + ")"
+	}
+}
+
+// buildAnchors 返回并联的锚点子句：歌集、歌手、歌手的备选写法，去重后保序。
+func buildAnchors(q provider.Query) []string {
 	var anchors []string
 	seen := map[string]bool{}
 	add := func(field, value string) {
@@ -213,16 +233,67 @@ func buildLuceneQuery(q provider.Query) string {
 		}
 		add("artist", alt)
 	}
+	return anchors
+}
 
+// maxVersionTerms 是最多带几个版本描述词进查询，理由同 maxArtistAlternates。
+const maxVersionTerms = 6
+
+// buildVersionRelaxedQuery 构造带版本描述的曲名的查询串。
+//
+// 形态是「主干必须命中，版本描述只影响排序」：
+//
+//	+recording:"主干" +(锚点…) recording:"完整曲名" recording:("版本词" …)
+//
+// 前两项是必须项，后两项是可选项——命中了加分，没命中不淘汰。
+//
+// 不能把完整曲名当一条短语发出去，这一条同样是实测逼出来的。`recording:` 只索引
+// 录音**自己的**名字，不索引它在各张发行上的曲目名（`recording:"Hoshi No Arika
+// Harmonica Short Version."` 是同一条录音在另一张碟上的曲目名，命中 0 条）；
+// 而版本描述恰恰是这两个名字之间最常写得不一样的那一段：
+//
+//	输入（专辑上的曲目名）  星の在り処 Harmonica short Ver.
+//	上游的录音名            星の在り処 (Harmonica Short version)
+//
+// 短语要求词元逐个相邻相等，`Ver.` ≠ `version`，于是完整短语只命中重制版里
+// 恰好逐字相同的 2 条录音，正确的那条被挡在上游；反倒是只填 `星の在り処` 查得到。
+// 主干是两种写法共有的那一段，拿它做必须项后同一批输入返回 6 条，正确那条在其中。
+//
+// 版本描述不能因此丢掉：裸主干可能有几千条录音（`That Girl` 实测 2838 条），
+// 而每次只取前几十条。两个可选项把写法一致的、版本词对得上的排到最前——
+// 完整曲名逐字命中的仍然是第一名，结果集是旧形态的超集。
+//
+// 放宽的只是召回。返回的候选是不是同一版，仍由本地按曲目名判定。
+func buildVersionRelaxedQuery(title, base, descriptor string, anchors []string) string {
+	var b strings.Builder
+	b.WriteString(`+recording:"` + escapeLucene(base) + `"`)
 	switch len(anchors) {
 	case 0:
-		return recording
 	case 1:
-		// 只有一个锚点时不加括号：`A AND (B)` 与 `A AND B` 是同一个查询
-		return recording + " AND " + anchors[0]
+		b.WriteString(" +" + anchors[0])
 	default:
-		return recording + " AND (" + strings.Join(anchors, " OR ") + ")"
+		b.WriteString(" +(" + strings.Join(anchors, " OR ") + ")")
 	}
+	b.WriteString(` recording:"` + escapeLucene(title) + `"`)
+
+	// 逐词加引号：裸词里的 AND / OR / NOT 会被当成运算符
+	var terms []string
+	seen := map[string]bool{}
+	for _, word := range strings.Fields(descriptor) {
+		key := matching.Normalize(word)
+		if key == "" || seen[key] {
+			continue // 纯标点的词分析后是空的，不构成条件
+		}
+		seen[key] = true
+		terms = append(terms, `"`+escapeLucene(word)+`"`)
+		if len(terms) >= maxVersionTerms {
+			break
+		}
+	}
+	if len(terms) > 0 {
+		b.WriteString(" recording:(" + strings.Join(terms, " ") + ")")
+	}
+	return b.String()
 }
 
 // escapeLucene 转义 Lucene 的特殊字符，避免用户输入被当作查询语法。
