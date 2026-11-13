@@ -6,6 +6,7 @@ import (
 	"github.com/norhua/sonexa/internal/domain"
 	"github.com/norhua/sonexa/internal/matching"
 	"github.com/norhua/sonexa/internal/provider"
+	"github.com/norhua/sonexa/internal/store"
 )
 
 func (a *App) PreviewEditCandidate(row CandidateRow) (*domain.EditPreview, error) {
@@ -41,8 +42,19 @@ func (a *App) SearchEditCandidates(trackID int64, source, title, artist, album, 
 		return nil, err
 	}
 	out := make([]CandidateRow, 0, len(scored))
+	keys := make([]store.CandidateLocalKey, 0, len(scored))
 	for _, candidate := range scored {
-		out = append(out, rowFrom(candidate))
+		row := rowFrom(candidate)
+		out = append(out, row)
+		keys = append(keys, candidateLocalKey(row))
+	}
+	// 与复核共用精确身份投影；只读批量查询，不按名称推断、不写编辑草稿。
+	states, err := a.store.CandidateLocalStates(keys)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		applyCandidateLocalState(&out[i], states[i])
 	}
 	return out, nil
 }

@@ -440,7 +440,6 @@ function next() {
         <CandidateTable
           v-model:expanded="expanded"
           :loading="acting"
-          show-release-state
           :rows="current.candidates"
           :capabilities="activeCaps"
           :provider-capabilities="providerCaps"

@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { CircleAlert, ArrowLeft, RotateCcw, ArrowRight, Search, RefreshCw, ChevronDown, Music2, Disc3, Link2, ImageIcon, Check, LoaderCircle } from 'lucide-vue-next'
-import { App, type Models } from '@/api'
+import { App, Events, EventsOn, type Models } from '@/api'
 import { useSettingsStore } from '@/stores/settings'
 import { useAdmissionStore } from '@/stores/admission'
 import { useEditDraft, valueOf, copy, editableKeys } from '@/lib/useEditDraft'
 import { editorLabels as labels, editorFactLabels, editorFieldText as fieldText, displayEditorValue as display, sameEditorValue } from '@/lib/editorDisplay'
 import { lyricsText } from '@/lib/lyrics'
+import { createRefreshQueue } from '@/lib/refreshQueue'
 import EditCompareField from '@/components/EditCompareField.vue'
 import CoverArt from '@/components/CoverArt.vue'
+import CandidateAlbumName from '@/components/CandidateAlbumName.vue'
 import Dialog from '@/volt/Dialog.vue'
 import Button from '@/volt/Button.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
@@ -22,6 +24,24 @@ const loading = ref(false), error = ref('')
 const preparingUse = ref(false)
 const source = ref(''), region = ref(''), searchTitle = ref(''), searchArtist = ref(''), searchAlbum = ref('')
 const candidates = ref<Models.app.CandidateRow[]>([]), searched = ref(false), showCandidates = ref(true), selectedCandidate = ref('')
+const candidateRefreshError = ref('')
+let candidateGeneration = 0, localRevision = 0, searchingCandidates = false
+const candidateRefresh = createRefreshQueue(async current => {
+  if (searchingCandidates || !candidates.value.length) return
+  const generation = candidateGeneration
+  try {
+    const rows = await App.RefreshSearchCandidates(candidates.value)
+    if (!current() || !alive || generation !== candidateGeneration) return
+    candidates.value = rows ?? []
+    candidateRefreshError.value = ''
+  } catch (e) {
+    if (current() && alive && generation === candidateGeneration) candidateRefreshError.value = String(e)
+  }
+})
+const stopCandidateRefresh = EventsOn(Events.LibraryChanged, () => {
+  localRevision++
+  void candidateRefresh.request()
+})
 const versions = ref<Models.app.EditVersion[]>([]), versionTotal = ref<number | null>(null), showVersions = ref(false), versionsLoaded = ref(false)
 const showTracklist = ref(false), lyricsOpen = ref(false), lyricsPlain = ref(false)
 const useConfirmation = ref<Models.domain.EditPreview | null>(null), useValues = ref(true)
@@ -94,8 +114,8 @@ onMounted(() => run(async () => {
   const preview = await App.PreviewCurrentEditUpstream(props.trackId)
   if (preview && alive) edit.acceptPreview(owner, preview)
 }))
-onBeforeUnmount(() => { alive = false; edit.invalidateRequests(); impactGeneration++; for (const token of tokens) void App.DiscardEditCover(token) })
-watch(source, () => { edit.invalidateRequests(); candidates.value = []; searched.value = false; selectedCandidate.value = ''; edit.preview.value = null }, { flush: 'sync' })
+onBeforeUnmount(() => { alive = false; candidateGeneration++; stopCandidateRefresh(); candidateRefresh.dispose(); edit.invalidateRequests(); impactGeneration++; for (const token of tokens) void App.DiscardEditCover(token) })
+watch(source, () => { candidateGeneration++; candidateRefreshError.value = ''; edit.invalidateRequests(); candidates.value = []; searched.value = false; selectedCandidate.value = ''; edit.preview.value = null }, { flush: 'sync' })
 watch(() => `${previewGroup.value?.provider}:${previewGroup.value?.ref}`, () => { versions.value = []; versionTotal.value = null; showVersions.value = false; versionsLoaded.value = false })
 watch([bindingSource, bindingRegion, trackRef, releaseRef], () => { bindingParsed.value = null }, { flush: 'sync' })
 function close() { if (loading.value) return; if (edit.dirty.value) exitPrompt.value = true; else emit('close') }
@@ -151,11 +171,19 @@ async function applyUse() {
 }
 async function search() {
   const owner = edit.requestOwner()
-  await run(async () => {
-    const rows = await App.SearchEditCandidates(props.trackId, source.value, searchTitle.value, searchArtist.value, searchAlbum.value, region.value)
-    if (!alive || !edit.ownsRequest(owner)) return
-    candidates.value = rows ?? []; searched.value = true; showCandidates.value = true; selectedCandidate.value = ''
-  })
+  const generation = ++candidateGeneration, revision = localRevision
+  searchingCandidates = true
+  try {
+    await run(async () => {
+      const rows = await App.SearchEditCandidates(props.trackId, source.value, searchTitle.value, searchArtist.value, searchAlbum.value, region.value)
+      if (!alive || !edit.ownsRequest(owner)) return
+      candidates.value = rows ?? []; searched.value = true; showCandidates.value = true; selectedCandidate.value = ''; candidateRefreshError.value = ''
+    })
+  } finally {
+    searchingCandidates = false
+    // 搜索期间发生的本地变化不能丢失；刷新不接触编辑请求/草稿/预览。
+    if (alive && generation === candidateGeneration && revision !== localRevision) void candidateRefresh.request()
+  }
 }
 async function choose(row: Models.app.CandidateRow) {
   const owner = edit.requestOwner()
@@ -276,10 +304,15 @@ async function rebase() {
         <p v-if="!settings.outboundAllowed" class="rounded-md border px-3 py-2 text-xs text-muted-color">{{ settings.outboundReason }}；仍可离线编辑。</p>
         <section v-if="searched" class="preview-card">
           <button class="disclosure" :aria-expanded="showCandidates" @click="showCandidates = !showCandidates"><span>搜索结果 <span class="text-muted-color">{{ candidates.length }}</span></span><ChevronDown class="size-4" :class="{ '-rotate-90': !showCandidates }" /></button>
+          <p v-if="candidateRefreshError" role="alert" class="px-3 pb-2 text-xs text-danger-color">候选本地状态刷新失败：{{ candidateRefreshError }}</p>
           <div v-if="showCandidates" class="max-h-56 overflow-y-auto border-t p-1">
             <p v-if="!candidates.length" class="px-3 py-5 text-center text-sm text-muted-color">未找到候选，请调整搜索条件。</p>
             <button v-for="(row, i) in candidates" :key="candidateKey(row) + i" :disabled="loading" :aria-pressed="selectedCandidate === candidateKey(row)" class="candidate-row" :class="{ selected: selectedCandidate === candidateKey(row) }" @click="choose(row)">
-              <span class="min-w-0 flex-1"><span class="block truncate font-medium">{{ row.title || '未命名歌曲' }} · {{ row.artist || '未知署名' }}</span><span class="mt-1 block text-xs text-muted-color">{{ row.album || '未知专辑' }}<template v-if="capabilities.includes('Country') && row.country"> · {{ row.country }}</template><template v-if="capabilities.includes('MediumFormat') && row.mediumFormat"> · {{ row.mediumFormat }}</template><template v-if="row.releaseTrackTotal"> · {{ row.releaseTrackTotal }} 首</template></span><span v-if="row.localTrackId" class="mt-1 block text-xs text-muted-color">已在库中</span></span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate font-medium">{{ row.title || '未命名歌曲' }} · {{ row.artist || '未知署名' }}</span>
+                <span class="mt-1 block text-xs text-muted-color"><CandidateAlbumName :album="row.album" fallback="未知专辑" :release-exists="row.releaseExists" :release-group-exists="row.releaseGroupExists" /><template v-if="capabilities.includes('Country') && row.country"> · {{ row.country }}</template><template v-if="capabilities.includes('MediumFormat') && row.mediumFormat"> · {{ row.mediumFormat }}</template><template v-if="row.releaseTrackTotal"> · {{ row.releaseTrackTotal }} 首</template></span>
+                <span v-if="row.localTrackId" class="mt-1 block text-xs text-muted-color">{{ row.inLibrary ? '已在库中' : '本地已存在，未入库' }}</span>
+              </span>
               <span class="flex shrink-0 items-center gap-1 text-xs text-muted-color"><template v-if="Number.isFinite(row.confidence)">{{ Math.round(row.confidence) }} 分</template><Check v-if="selectedCandidate === candidateKey(row)" class="size-4" /></span>
             </button>
           </div>
