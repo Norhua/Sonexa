@@ -298,25 +298,6 @@ func (a *App) DiscardReviewItem(itemID int64) error {
 	return nil
 }
 
-// NoneMatched 不接受当前结果但把条目保留在队列中。
-//
-// 区别于「无需匹配」：条目仍留在队列中可换上游再试，而不是立即入库并结束。
-func (a *App) NoneMatched(itemID int64) error {
-	if err := a.ready(); err != nil {
-		return err
-	}
-	item, err := a.store.GetItem(itemID)
-	if err != nil || item == nil {
-		return err
-	}
-	// 保持 review 状态，仅清空候选快照
-	if err := a.store.MarkReview(itemID, store.ReviewReasonUnchanged, "", derefOr(item.TriedVariants, "")); err != nil {
-		return err
-	}
-	a.emitEvent(EventImportQueueChanged)
-	return nil
-}
-
 // RetryReviewItem 让失败条目重新进入匹配。
 func (a *App) RetryReviewItem(itemID int64) error {
 	if err := a.ready(); err != nil {

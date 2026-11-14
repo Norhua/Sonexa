@@ -468,15 +468,20 @@ func TestStatsSplitsReviewFromUnmatched(t *testing.T) {
 	}
 }
 
-// TestMarkReviewKeepsReasonWhenUnchanged 覆盖复核队列里「改搜」与「都不匹配」：
-// 它们只更新候选快照，不该把条目当初为什么落到复核里这件事改掉。
-func TestMarkReviewKeepsReasonWhenUnchanged(t *testing.T) {
+// 手动改搜使用专用修订接口，只更新候选快照，不改写原始复核原因。
+func TestReviewSearchKeepsReason(t *testing.T) {
 	s := openTestStore(t)
 	batchID := seedBatch(t, s, 1)
 
 	item, _ := s.ClaimNextItem(batchID)
-	s.MarkReview(item.ID, ReviewNoMatch, `[]`, `[]`)
-	if err := s.MarkReview(item.ID, ReviewReasonUnchanged, `[{"ref":"x"}]`, `["改搜"]`); err != nil {
+	if err := s.MarkReview(item.ID, ReviewNoMatch, `[]`, `[]`); err != nil {
+		t.Fatal(err)
+	}
+	revision, err := s.BeginReviewSearch(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinishReviewSearch(item.ID, revision, "test", "", `[{"ref":"x"}]`, `["改搜"]`); err != nil {
 		t.Fatalf("更新候选快照失败: %v", err)
 	}
 

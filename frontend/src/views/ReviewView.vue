@@ -24,20 +24,21 @@ import { useSettingsStore } from '@/stores/settings'
 import { useLibraryStore } from '@/stores/library'
 import { useSearchStore } from '@/stores/search'
 import { useTasksStore } from '@/stores/tasks'
+import { useReviewStore } from '@/stores/review'
 
 const settings = useSettingsStore()
 const tasks = useTasksStore()
 const library = useLibraryStore()
 const search = useSearchStore()
+const review = useReviewStore()
 
 const emit = defineEmits<{ jumpLocal: [trackId: number]; goSettings: [] }>()
 
 const queue = ref<Models.app.ReviewQueue | null>(null)
-const index = ref(0)
+const index = ref(review.index)
 const loading = ref(false)
 const error = ref('')
 const queueError = ref('')
-const expanded = ref(false)
 
 /** 可改写的重新搜索表单。改写只影响本次查询，不动原始导入值。 */
 const research = ref({ title: '', artist: '', album: '' })
@@ -82,7 +83,7 @@ const activeCaps = computed(() => {
   if (!sources.size) sources.add(researchProvider.value)
   return [...new Set([...sources].flatMap(id => settings.providerById(id)?.capabilities ?? []))]
 })
-const drafts = new Map<number, { research: typeof research.value; provider: string; country: string; searched: boolean; expanded: boolean }>()
+const drafts = new Map<number, { research: typeof research.value; provider: string; country: string; searched: boolean }>()
 
 onMounted(async () => {
   void load()
@@ -124,7 +125,7 @@ onBeforeUnmount(() => {
 watch(() => current.value?.id, (id, previousId) => {
   if (previousId !== undefined) drafts.set(previousId, {
     research: { ...research.value }, provider: researchProvider.value, country: country.value,
-    searched: searched.value, expanded: expanded.value,
+    searched: searched.value,
   })
   researchRequest++
   researching.value = false
@@ -133,7 +134,6 @@ watch(() => current.value?.id, (id, previousId) => {
   if (id === undefined) return
   const draft = drafts.get(id)
   const item = current.value!
-  expanded.value = draft?.expanded ?? false
   searched.value = draft?.searched ?? item.searched ?? false
   const source = draft?.provider || item.searchProvider || item.candidates[0]?.provider
   researchProvider.value = settings.providers.some(p => p.id === source) ? source! : settings.providers[0]?.id || ''
@@ -182,7 +182,7 @@ async function reloadQueue() {
       for (const id of drafts.keys()) if (!next.items.some(row => row.id === id)) drafts.delete(id)
       queueError.value = ''
       queue.value = next
-      index.value = position >= 0 ? position : Math.max(0, Math.min(index.value, next.items.length - 1))
+      index.value = review.reconcile(next.items)
       // 导入事件的全局汇总由 tasks 自身订阅刷新；这里只补进入页面和处理动作。
       if (refreshTasks) {
         refreshTasks = false
@@ -294,10 +294,14 @@ async function onEmptyAction(key: string) {
 }
 
 function prev() {
-  if (index.value > 0) index.value--
+  if (index.value > 0) select(index.value - 1)
 }
 function next() {
-  if (queue.value && index.value < queue.value.items.length - 1) index.value++
+  if (queue.value && index.value < queue.value.items.length - 1) select(index.value + 1)
+}
+function select(position: number) {
+  index.value = position
+  review.remember(current.value?.id ?? null, position)
 }
 </script>
 
@@ -320,61 +324,9 @@ function next() {
       @action="onEmptyAction"
     />
 
-    <div v-else-if="current" class="min-h-0 flex-1 overflow-auto">
-      <!-- 条目标题、入队原因、原始输入与逐条浏览 -->
-      <section class="border-b p-4">
-        <div class="flex items-start gap-3">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-baseline gap-3" data-testid="review-heading">
-              <p class="min-w-0 truncate text-base font-medium" :title="display(current.inTitle)">{{ display(current.inTitle) }}</p>
-              <span v-if="reviewReason" class="min-w-0 truncate text-xs text-muted-color" :title="reviewReason" data-testid="review-reason">{{ reviewReason }}</span>
-            </div>
-            <div class="mt-1 space-y-1 text-xs text-muted-color" data-testid="original-inputs">
-              <p class="font-medium">原始输入</p>
-              <p v-for="(cells, i) in current.originalInputs ?? []" :key="i" class="whitespace-pre-wrap break-words">{{ cells.join('，') }}</p>
-            </div>
-          </div>
-          <Tag
-            class="shrink-0"
-            :severity="current.status === 'failed' ? 'danger' : 'secondary'"
-            :value="current.status === 'failed' ? '失败' : '待选'"
-          />
-        </div>
-
-        <div v-if="hasReviewEvidence" class="mt-3 space-y-2 text-xs" data-testid="review-evidence">
-          <div v-for="group in reviewEvidence?.resolution?.groups ?? []" :key="group.id">
-            <p>已有专辑组：{{ group.title || '未命名专辑' }} · {{ display(group.credit) }}</p>
-            <p v-for="member in group.members" :key="member.id" class="text-muted-color">已有发行：{{ member.title || '未命名发行' }} · {{ member.identity?.provider || '本地' }} · {{ display(member.identity?.ref) }} · 收藏 {{ member.trackIds?.length || 0 }} 首</p>
-          </div>
-          <p v-if="reviewEvidence?.proposed">拟加入发行：{{ reviewEvidence.proposed.title?.value || '未命名发行' }} · {{ reviewEvidence.proposed.identity?.provider }} · {{ reviewEvidence.proposed.identity?.ref }}</p>
-          <p v-for="(e, i) in reviewEvidence?.resolution?.evidence ?? []" :key="i">判组依据：{{ e.kind === 'native' ? '相同上游组身份' : e.kind === 'existing-release' ? '发行已在库' : '专辑名与专辑艺术家相同' }}<template v-if="e.title"> · {{ e.title }} · {{ e.credit }}</template></p>
-          <p v-for="(e, i) in reviewEvidence?.resolution?.rejected ?? []" :key="'r' + i" class="text-muted-color">{{ rejectedText(e, reviewEvidence?.proposed?.identity?.provider) }} · {{ e.title }} · {{ e.credit }}</p>
-          <p v-for="(e, i) in reviewEvidence?.resolution?.similar ?? []" :key="'s' + i" class="text-muted-color">名称近似的专辑组 #{{ e.groupId }} · {{ e.title }} · {{ e.credit }}（仅差版本后缀或署名附注，未自动并入）</p>
-          <p v-for="item in reviewProviders" :key="'p' + item.releaseId" data-testid="review-provider">可由已有发行提供：{{ item.title }} · {{ item.source }} · {{ display(item.ref) }} · {{ evidenceLabel(item.entries[0].evidence) }}</p>
-          <p v-for="item in reviewEvidence?.undecidable ?? []" :key="'u' + item.releaseId" class="text-muted-color">无法判定：{{ item.title || '未命名发行' }} · {{ item.identity?.provider || '本地' }} · {{ display(item.identity?.ref) }} · {{ undecidableReason(item.reason) }}</p>
-        </div>
-        <p v-if="!current.inTitle || !current.inArtist || !current.inAlbum" class="mt-2 text-xs text-muted-color">部分基本信息缺失，仍可选择候选或按已知原始信息无需匹配保存。</p>
-        <!-- 逐条浏览保留在条目标题下方。 -->
-        <div v-if="queue && queue.items.length > 0" class="mt-3 flex items-center gap-2 text-sm">
-          <SecondaryButton variant="outlined" size="small" :disabled="index === 0" @click="prev">
-            ← 上一条
-          </SecondaryButton>
-          <span class="tabular-nums text-muted-color">
-            {{ index + 1 }} / {{ queue.items.length }}
-          </span>
-          <SecondaryButton
-            variant="outlined"
-            size="small"
-            :disabled="index >= queue.items.length - 1"
-            @click="next"
-          >
-            下一条 →
-          </SecondaryButton>
-        </div>
-      </section>
-
+    <div v-else-if="current" class="flex min-h-0 flex-1 flex-col">
       <!-- 重新搜索 -->
-      <section class="border-b p-4">
+      <section class="shrink-0 border-b p-4">
         <div class="flex flex-wrap items-end gap-2">
           <label class="text-xs">曲名
             <InputText v-model="research.title" size="small" class="mt-1 block w-48" />
@@ -435,52 +387,92 @@ function next() {
         </div>
       </section>
 
-      <!-- 候选列表：与上游搜索共用同一组件 -->
-      <section>
+      <!-- 候选列表独立滚动，全量展示；底栏与逐条导航始终可见。 -->
+      <section class="min-h-0 flex-1 overflow-auto" data-testid="review-candidates">
         <CandidateTable
-          v-model:expanded="expanded"
           :loading="acting"
           :rows="current.candidates"
           :capabilities="activeCaps"
           :provider-capabilities="providerCaps"
-          :limit="10"
-          :total="current.candidates.length"
           @act="accept"
           @jump-local="(id) => emit('jumpLocal', id)"
         >
           <template #empty>还没有候选结果，可改写条件或换上游再试</template>
-          <template #footer-actions>
-            <SecondaryButton
-              variant="outlined"
-              size="small"
-              @click="act(() => App.NoneMatched(current!.id))"
-            >
-              无一匹配
-            </SecondaryButton>
-          </template>
         </CandidateTable>
       </section>
+      <p class="shrink-0 border-t px-3 py-2 text-xs text-muted-color" data-testid="review-result-count">
+        返回 {{ current.candidates.length }} 条
+      </p>
 
-      <!-- 状态说明：仅失败状态显示 -->
-      <section v-if="current.status === 'failed'" class="border-t p-4 text-sm">
-        <h3 class="mb-1 font-medium">状态说明</h3>
-        <p class="text-muted-color">
-          已重试 {{ current.attemptCount }} 次
-          <template v-if="current.lastError"> · 最后错误: {{ current.lastError }}</template>
-          <template v-if="current.lastErrorAt">
-            · {{ new Date(current.lastErrorAt).toLocaleTimeString() }}
-          </template>
-        </p>
-        <div class="mt-2 flex gap-2">
-          <SecondaryButton
-            variant="outlined"
-            size="small"
-            @click="act(() => App.RetryReviewItem(current!.id))"
-          >
-            立即重试
+      <!-- 底部条目信息：长原文/证据可滚动，不挤走右下角的逐条导航。 -->
+      <section class="flex max-h-[45%] min-h-0 shrink-0 flex-col border-t" data-testid="review-item">
+        <div class="min-h-0 overflow-auto p-4" data-testid="review-item-details">
+          <div class="flex items-start gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-3" data-testid="review-heading">
+                <p class="min-w-0 truncate text-base font-medium" :title="display(current.inTitle)">{{ display(current.inTitle) }}</p>
+                <span v-if="reviewReason" class="min-w-0 truncate text-xs text-muted-color" :title="reviewReason" data-testid="review-reason">{{ reviewReason }}</span>
+              </div>
+              <div class="mt-1 space-y-1 text-xs text-muted-color" data-testid="original-inputs">
+                <p class="font-medium">原始输入</p>
+                <p v-for="(cells, i) in current.originalInputs ?? []" :key="i" class="whitespace-pre-wrap break-words">{{ cells.join('，') }}</p>
+              </div>
+            </div>
+            <Tag
+              class="shrink-0"
+              :severity="current.status === 'failed' ? 'danger' : 'secondary'"
+              :value="current.status === 'failed' ? '失败' : '待选'"
+            />
+          </div>
+
+          <div v-if="hasReviewEvidence" class="mt-3 space-y-2 text-xs" data-testid="review-evidence">
+            <div v-for="group in reviewEvidence?.resolution?.groups ?? []" :key="group.id">
+              <p>已有专辑组：{{ group.title || '未命名专辑' }} · {{ display(group.credit) }}</p>
+              <p v-for="member in group.members" :key="member.id" class="text-muted-color">已有发行：{{ member.title || '未命名发行' }} · {{ member.identity?.provider || '本地' }} · {{ display(member.identity?.ref) }} · 收藏 {{ member.trackIds?.length || 0 }} 首</p>
+            </div>
+            <p v-if="reviewEvidence?.proposed">拟加入发行：{{ reviewEvidence.proposed.title?.value || '未命名发行' }} · {{ reviewEvidence.proposed.identity?.provider }} · {{ reviewEvidence.proposed.identity?.ref }}</p>
+            <p v-for="(e, i) in reviewEvidence?.resolution?.evidence ?? []" :key="i">判组依据：{{ e.kind === 'native' ? '相同上游组身份' : e.kind === 'existing-release' ? '发行已在库' : '专辑名与专辑艺术家相同' }}<template v-if="e.title"> · {{ e.title }} · {{ e.credit }}</template></p>
+            <p v-for="(e, i) in reviewEvidence?.resolution?.rejected ?? []" :key="'r' + i" class="text-muted-color">{{ rejectedText(e, reviewEvidence?.proposed?.identity?.provider) }} · {{ e.title }} · {{ e.credit }}</p>
+            <p v-for="(e, i) in reviewEvidence?.resolution?.similar ?? []" :key="'s' + i" class="text-muted-color">名称近似的专辑组 #{{ e.groupId }} · {{ e.title }} · {{ e.credit }}（仅差版本后缀或署名附注，未自动并入）</p>
+            <p v-for="item in reviewProviders" :key="'p' + item.releaseId" data-testid="review-provider">可由已有发行提供：{{ item.title }} · {{ item.source }} · {{ display(item.ref) }} · {{ evidenceLabel(item.entries[0].evidence) }}</p>
+            <p v-for="item in reviewEvidence?.undecidable ?? []" :key="'u' + item.releaseId" class="text-muted-color">无法判定：{{ item.title || '未命名发行' }} · {{ item.identity?.provider || '本地' }} · {{ display(item.identity?.ref) }} · {{ undecidableReason(item.reason) }}</p>
+          </div>
+          <p v-if="!current.inTitle || !current.inArtist || !current.inAlbum" class="mt-2 text-xs text-muted-color">部分基本信息缺失，仍可选择候选或按已知原始信息无需匹配保存。</p>
+
+          <!-- 状态说明：仅失败状态显示 -->
+          <div v-if="current.status === 'failed'" class="mt-3 text-sm">
+            <h3 class="mb-1 font-medium">状态说明</h3>
+            <p class="text-muted-color">
+              已重试 {{ current.attemptCount }} 次
+              <template v-if="current.lastError"> · 最后错误: {{ current.lastError }}</template>
+              <template v-if="current.lastErrorAt">
+                · {{ new Date(current.lastErrorAt).toLocaleTimeString() }}
+              </template>
+            </p>
+            <div class="mt-2 flex gap-2">
+              <SecondaryButton
+                variant="outlined"
+                size="small"
+                @click="act(() => App.RetryReviewItem(current!.id))"
+              >
+                立即重试
+              </SecondaryButton>
+              <SecondaryButton variant="outlined" size="small" @click="library.goTo('importQueue')">
+                查看日志
+              </SecondaryButton>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="queue" class="flex shrink-0 items-center justify-end gap-2 px-4 pb-4 text-sm" data-testid="review-navigation">
+          <SecondaryButton variant="outlined" size="small" :disabled="index === 0" @click="prev">
+            ← 上一条
           </SecondaryButton>
-          <SecondaryButton variant="outlined" size="small" @click="library.goTo('importQueue')">
-            查看日志
+          <span class="tabular-nums text-muted-color">
+            {{ index + 1 }} / {{ queue.items.length }}
+          </span>
+          <SecondaryButton variant="outlined" size="small" :disabled="index >= queue.items.length - 1" @click="next">
+            下一条 →
           </SecondaryButton>
         </div>
       </section>

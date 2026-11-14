@@ -8,7 +8,7 @@
  * 表格本体与曲目表格同为 Volt 的 DataTable——两张表的行高、表头、
  * 边框因此天然一致，不靠各写一遍 class 去对齐。
  */
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
 import Column from 'primevue/column'
 import DataTable from '@/volt/DataTable.vue'
 import SecondaryButton from '@/volt/SecondaryButton.vue'
@@ -47,20 +47,14 @@ const props = withDefaults(
     /** 各上游各自声明的能力，用于判断某一行是否支持某列。 */
     providerCapabilities?: Record<string, string[]>
     loading?: boolean
-    /** 截断显示的条数；0 表示不截断。 */
-    limit?: number
-    total?: number
   }>(),
-  { providerCapabilities: () => ({}), loading: false, limit: 0, total: 0 },
+  { providerCapabilities: () => ({}), loading: false },
 )
 
 const emit = defineEmits<{
   act: [row: Models.app.CandidateRow]
   jumpLocal: [trackId: number]
-  showAll: []
 }>()
-
-const expanded = defineModel<boolean>('expanded', { default: false })
 
 /** 能力驱动的列显示：集合内全不支持则隐藏该列。 */
 function columnVisible(cap: string): boolean {
@@ -83,14 +77,7 @@ function cell(row: Models.app.CandidateRow, cap: string, value: unknown): string
   return display(value as string | number | null | undefined)
 }
 
-const visibleRows = computed(() => {
-  if (props.limit > 0 && !expanded.value) return props.rows.slice(0, props.limit)
-  return props.rows
-})
-
-useCandidateCovers(visibleRows)
-
-const truncated = computed(() => props.limit > 0 && !expanded.value && props.rows.length > props.limit)
+useCandidateCovers(toRef(props, 'rows'))
 
 function onAct(row: Models.app.CandidateRow) {
   // 「已在库中」为禁用态，但点击可跳转到该曲目
@@ -104,7 +91,7 @@ function onAct(row: Models.app.CandidateRow) {
 
 <template>
   <div class="flex min-w-0 flex-col">
-    <DataTable :value="visibleRows" :loading="loading" row-hover scrollable resizable-columns column-resize-mode="expand" :table-style="{ minWidth: '1280px', tableLayout: 'fixed' }" :pt="{ table: { 'aria-label': '候选列表' } }">
+    <DataTable :value="rows" :loading="loading" row-hover scrollable resizable-columns column-resize-mode="expand" :table-style="{ minWidth: '1280px', tableLayout: 'fixed' }" :pt="{ table: { 'aria-label': '候选列表' } }">
       <template #empty>
         <div class="px-3 py-8 text-center text-muted-color">
           <slot name="empty">没有候选结果</slot>
@@ -210,21 +197,5 @@ function onAct(row: Models.app.CandidateRow) {
         </template>
       </Column>
     </DataTable>
-
-    <!-- 截断提示与展开 -->
-    <div
-      v-if="truncated"
-      class="flex items-center gap-2 border-t px-3 py-2 text-xs text-muted-color"
-    >
-      <span>返回 {{ total || rows.length }} 条，已按置信度排序，显示前 {{ limit }} 条</span>
-      <SecondaryButton variant="outlined" size="small" @click="expanded = true">
-        显示全部
-      </SecondaryButton>
-      <slot name="footer-actions" />
-    </div>
-    <div v-else-if="$slots['footer-actions']" class="flex items-center gap-2 border-t px-3 py-2 text-xs">
-      <div class="flex-1" />
-      <slot name="footer-actions" />
-    </div>
   </div>
 </template>

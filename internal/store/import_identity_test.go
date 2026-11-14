@@ -144,7 +144,7 @@ func TestResolvedTrackMergesDifferentInputsButNotCandidateOverlap(t *testing.T) 
 		t.Fatal(originals, err)
 	}
 }
-func TestResolvedIdentityRejectsDifferentTrackContextAndClearsOnNoneMatched(t *testing.T) {
+func TestResolvedIdentityRejectsDifferentTrackContextAndClearsOnResearch(t *testing.T) {
 	s := openTestStore(t)
 	b1 := identityBatch(t, s, identityItem("Song", "Artist", "Album"))
 	b2 := identityBatch(t, s, identityItem("Song", "Artist", "Other Album"))
@@ -160,7 +160,7 @@ func TestResolvedIdentityRejectsDifferentTrackContextAndClearsOnNoneMatched(t *t
 	if handled, err := s.ResolveImport(i2.ID, nil, &c); err != nil || handled {
 		t.Fatal("wrong album merged", handled, err)
 	}
-	if err := s.MarkReview(i1.ID, ReviewReasonUnchanged, "", "[]"); err != nil {
+	if _, err := s.BeginReviewSearch(i1.ID); err != nil {
 		t.Fatal(err)
 	}
 	var ref *string

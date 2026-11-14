@@ -35,11 +35,6 @@ const (
 	ReviewAmbiguous ReviewReason = "ambiguous"
 	// ReviewNoMatch 无结果或全部低置信（分流规则 5）。
 	ReviewNoMatch ReviewReason = "no_match"
-	// ReviewReasonUnchanged 表示沿用条目已有的成因，不改写它。
-	//
-	// 复核队列里的「改搜」与「都不匹配」只是更新候选快照，
-	// 条目为什么落到复核里这件事没有变。
-	ReviewReasonUnchanged ReviewReason = ""
 )
 
 // AllStatuses 返回全部状态，供统计与界面使用。
@@ -225,25 +220,12 @@ func (s *Store) MarkImported(itemID, trackID int64) error {
 }
 
 // MarkReview 把条目置为待复核，记录成因并保存候选快照与已尝试变体。
-//
-// reason 为 ReviewReasonUnchanged 时不改写已有成因。
 func (s *Store) MarkReview(itemID int64, reason ReviewReason, candidatesJSON, variantsJSON string, evidence ...string) error {
 	return s.setStatus(itemID, StatusReview, func(tx *sql.Tx) error {
-		if candidatesJSON == "" {
-			if _, err := tx.Exec(`UPDATE import_item SET resolved_source=NULL,resolved_ref=NULL WHERE id=?`, itemID); err != nil {
-				return err
-			}
-		}
 		if len(evidence) > 0 {
 			if _, err := tx.Exec("UPDATE import_item SET review_evidence=? WHERE id=?", evidence[0], itemID); err != nil {
 				return err
 			}
-		}
-		if reason == ReviewReasonUnchanged {
-			_, err := tx.Exec(
-				`UPDATE import_item SET candidates = ?, tried_variants = ? WHERE id = ?`,
-				nullIfEmpty(candidatesJSON), nullIfEmpty(variantsJSON), itemID)
-			return err
 		}
 		_, err := tx.Exec(
 			`UPDATE import_item SET review_reason = ?, candidates = ?, tried_variants = ? WHERE id = ?`,

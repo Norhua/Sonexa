@@ -37,16 +37,14 @@ test.beforeEach(async ({ page }) => {
       state.taskReads++
       return { activeBatch: 0, filename: '', processed: 0, total: 0, stats: null, running: false, reviewPending: pending().length }
     }
-    const action = (name: string, status?: string) => async (itemId: number, targetTrackId?: number) => {
+    const action = (name: string, status: string) => async (itemId: number, targetTrackId?: number) => {
       state.actions.push({ name, itemId, targetTrackId })
       if (state.failure) throw new Error(state.failure)
       const item = state.items.find((item: any) => item.id === itemId)
-      if (status) item.status = status
-      else item.candidates = []
+      item.status = status
       return null
     }
     api.DiscardReviewItem = action('discard', 'discarded')
-    api.NoneMatched = action('none')
     api.SkipReviewCandidate = async (itemId: number, row: any) => action('skip', 'skipped')(itemId, row.localTrackId)
     api.RetryReviewItem = action('retry', 'queued')
     const prepare = (itemId: number) => {
@@ -132,15 +130,28 @@ test('discarding the last position selects the remaining previous item', async (
   expect(await page.evaluate(() => (window as any).__review.actions)).toMatchObject([{ name: 'discard', itemId: 12 }])
 })
 
-test('none matched returning null clears candidates but keeps the item and counts', async ({ page }) => {
+test('all returned candidates render directly and the result footer only shows their count', async ({ page }) => {
+  await page.evaluate(() => {
+    const item = (window as any).__review.items[0]
+    item.candidates = Array.from({ length: 21 }, (_, i) => ({ ...item.candidates[0], title: `候选 ${i + 1}`, matchRef: `candidate-${i}` }))
+  })
   await openReview(page)
-  await expect(page.getByText('复核候选', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '无一匹配', exact: true }).click()
-  await expect(page.getByText('复核候选', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('table', { name: '候选列表' }).locator('tbody tr')).toHaveCount(21)
+  await expect(page.getByTestId('review-result-count')).toHaveText('返回 21 条')
+  for (const name of ['显示全部', '无一匹配']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+  await expect(page.getByText(/显示前|已按置信度排序/)).toHaveCount(0)
+  await page.getByText('候选 21', { exact: true }).scrollIntoViewIfNeeded()
+  await expect(page.getByTestId('review-navigation')).toBeInViewport()
+  await expect(page.getByTestId('review-result-count')).toBeInViewport()
+  await page.getByRole('button', { name: /下一条/ }).click()
+  await expect(page.getByTestId('review-result-count')).toHaveText('返回 0 条')
   await expect(page.getByText('还没有候选结果，可改写条件或换上游再试', { exact: true })).toBeVisible()
-  await expect(page.getByText('ツバサ（羽翼）', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /上一条/ }).click()
+  await page.getByLabel('曲名', { exact: true }).fill('新的候选')
+  await page.getByRole('button', { name: '重新搜索', exact: true }).click()
+  await expect(page.getByTestId('review-result-count')).toHaveText('返回 1 条')
+  await expect(page.getByRole('table', { name: '候选列表' }).locator('tbody tr')).toHaveCount(1)
   await expectCounts(page, 2)
-  expect(await page.evaluate(() => (window as any).__review.queueReads)).toBe(2)
 })
 
 test('skip returning null advances the queue without admitting another track', async ({ page }) => {
@@ -406,7 +417,7 @@ test('import adds an item to an already open empty review queue', async ({ page 
   await expect(page.getByText('复核队列是空的', { exact: true })).toHaveCount(0)
 })
 
-test('background refresh preserves item identity, search draft, provider and expanded candidates', async ({ page }) => {
+test('background refresh preserves item identity, search draft, provider and all candidates', async ({ page }) => {
   await page.evaluate(() => {
     const w = window as any
     w.__review.items[0].candidates = Array.from({ length: 12 }, (_, i) => ({ ...w.__review.items[0].candidates[0], title: `候选 ${i + 1}`, matchRef: `candidate-${i}` }))
@@ -417,7 +428,6 @@ test('background refresh preserves item identity, search draft, provider and exp
   await page.getByLabel('专辑', { exact: true }).fill('尚未提交的专辑')
   await page.getByRole('combobox').click()
   await page.getByRole('option', { name: 'iTunes', exact: true }).click()
-  await page.getByRole('button', { name: '显示全部', exact: true }).click()
   await expect(page.getByText('候选 12', { exact: true })).toBeVisible()
   await page.evaluate(() => {
     const state = (window as any).__review
@@ -554,6 +564,142 @@ test('same-item refresh keeps manual-search history and does not trigger extra s
   await page.getByRole('option', { name: 'QQ 音乐', exact: true }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__lastResearch?.providerID)).toBe('qq')
   await expect(page.getByLabel('曲名', { exact: true })).toHaveValue('手动搜索条件')
+})
+
+test('item information is below candidates with navigation anchored at the bottom right', async ({ page }, testInfo) => {
+  await page.evaluate(() => {
+    const item = (window as any).__review.items[0]
+    item.candidates = Array.from({ length: 21 }, (_, i) => ({ ...item.candidates[0], title: `候选 ${i + 1}`, matchRef: `candidate-${i}` }))
+  })
+  await openReview(page)
+  for (const viewport of [{ width: 1920, height: 1080 }, { width: 960, height: 640 }]) {
+    await page.setViewportSize(viewport)
+    const main = (await page.locator('main').boundingBox())!
+    const candidates = (await page.getByTestId('review-candidates').boundingBox())!
+    const count = (await page.getByTestId('review-result-count').boundingBox())!
+    const details = (await page.getByTestId('review-item').boundingBox())!
+    const next = (await page.getByRole('button', { name: /下一条/ }).boundingBox())!
+    const original = (await page.getByTestId('original-inputs').boundingBox())!
+    expect(candidates.height).toBeGreaterThan(100)
+    expect(count.y).toBeGreaterThanOrEqual(candidates.y + candidates.height - 1)
+    expect(details.y).toBeGreaterThanOrEqual(count.y + count.height - 1)
+    expect(original.y).toBeGreaterThan(details.y)
+    expect(Math.abs(main.x + main.width - next.x - next.width - 16)).toBeLessThan(2)
+    expect(Math.abs(main.y + main.height - next.y - next.height - 16)).toBeLessThan(2)
+    await page.getByText('候选 21', { exact: true }).scrollIntoViewIfNeeded()
+    expect((await page.getByRole('button', { name: /下一条/ }).boundingBox())!.y).toBe(next.y)
+    await expect(page.getByTestId('review-heading')).toBeInViewport()
+    await page.screenshot({ path: testInfo.outputPath(`review-bottom-${viewport.width}.png`) })
+  }
+})
+
+test('long original inputs and failure evidence scroll without hiding candidates or navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 640 })
+  await page.evaluate(() => {
+    Object.assign((window as any).__review.items[0], {
+      status: 'failed', attemptCount: 3, lastError: '仍可查看的失败信息',
+      originalInputs: Array.from({ length: 40 }, (_, i) => [`原始输入 ${i}`, '很长的艺术家与专辑信息'.repeat(8)]),
+    })
+  })
+  await openReview(page, 1, 1)
+  const details = page.getByTestId('review-item-details')
+  expect(await details.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
+  expect((await page.getByTestId('review-candidates').boundingBox())!.height).toBeGreaterThan(100)
+  await expect(page.getByTestId('review-navigation')).toBeInViewport()
+  await page.getByRole('button', { name: '立即重试', exact: true }).scrollIntoViewIfNeeded()
+  await expect(page.getByRole('button', { name: '立即重试', exact: true })).toBeInViewport()
+  await expect(page.getByTestId('review-navigation')).toBeInViewport()
+  await page.getByRole('button', { name: '立即重试', exact: true }).click()
+  await expectSecondItem(page)
+})
+
+async function leaveReview(page: Page) {
+  await page.locator('nav').getByRole('button', { name: '全部曲目', exact: true }).click()
+  await expect(page.locator('.track-list [data-row-key]')).toHaveCount(7)
+}
+
+async function returnToReview(page: Page, title: string, position: string) {
+  await page.locator('nav').getByRole('button', { name: /复核队列/ }).click()
+  await expect(page.getByTestId('review-heading').locator('p')).toHaveText(title)
+  await expect(page.getByTestId('review-navigation')).toContainText(position)
+  await expect(page.getByLabel('曲名', { exact: true })).toHaveValue(title)
+}
+
+test('reentering restores the last item by ID even if earlier items change while away', async ({ page }) => {
+  await openReview(page)
+  await page.getByRole('button', { name: /下一条/ }).click()
+  await leaveReview(page)
+  await returnToReview(page, 'you', '2 / 2')
+  await leaveReview(page)
+  await page.evaluate(() => {
+    const items = (window as any).__review.items
+    items.unshift({ ...structuredClone(items[0]), id: 10, inTitle: '新增前置条目' })
+  })
+  await returnToReview(page, 'you', '3 / 3')
+  await leaveReview(page)
+  await page.evaluate(() => { (window as any).__review.items.splice(0, 2) })
+  await returnToReview(page, 'you', '1 / 1')
+  expect(await page.evaluate(() => (window as any).__calls.filter((name: string) => name === 'ResearchReviewItem'))).toEqual([])
+})
+
+test('missing saved item selects its old position, then the previous last item, and clears an empty cursor', async ({ page }) => {
+  await page.evaluate(() => {
+    const items = (window as any).__review.items
+    items.push({ ...structuredClone(items[0]), id: 13, inTitle: '第三条' })
+  })
+  await openReview(page, 3)
+  await page.getByRole('button', { name: /下一条/ }).click()
+  await leaveReview(page)
+  await page.evaluate(() => { (window as any).__review.items.splice(1, 1) })
+  await returnToReview(page, '第三条', '2 / 2')
+  await leaveReview(page)
+  await page.evaluate(() => { (window as any).__review.items.pop() })
+  await returnToReview(page, 'ツバサ（羽翼）', '1 / 1')
+  await leaveReview(page)
+  await page.evaluate(() => { (window as any).__review.items = [] })
+  await page.locator('nav').getByRole('button', { name: /复核队列/ }).click()
+  await expect(page.getByText('复核队列是空的', { exact: true })).toBeVisible()
+  await leaveReview(page)
+  await page.evaluate(() => {
+    (window as any).__review.items = [21, 22].map(id => ({ id, status: 'review', inTitle: `新条目 ${id}`, candidates: [] }))
+  })
+  await returnToReview(page, '新条目 21', '1 / 2')
+})
+
+test('failed or late reads after leaving cannot reset the saved cursor', async ({ page }) => {
+  await openReview(page)
+  await page.getByRole('button', { name: /下一条/ }).click()
+  await leaveReview(page)
+  await page.evaluate(() => {
+    const api = (window as any).go.app.App, get = api.GetReviewQueue
+    let failed = false
+    api.GetReviewQueue = async () => {
+      if (!failed) { failed = true; throw new Error('读取暂时失败') }
+      return get()
+    }
+  })
+  await page.locator('nav').getByRole('button', { name: /复核队列/ }).click()
+  await expect(page.getByText('Error: 读取暂时失败', { exact: true })).toBeVisible()
+  await leaveReview(page)
+  await returnToReview(page, 'you', '2 / 2')
+  await page.evaluate(() => {
+    const w = window as any, api = w.go.app.App, get = api.GetReviewQueue
+    let hold = true
+    api.GetReviewQueue = async () => {
+      const snapshot = await get()
+      if (!hold) return snapshot
+      hold = false
+      return new Promise(resolve => { w.__finishOldQueue = () => resolve(snapshot) })
+    }
+  })
+  await emitProgress(page)
+  await expect.poll(() => page.evaluate(() => typeof (window as any).__finishOldQueue)).toBe('function')
+  await leaveReview(page)
+  await returnToReview(page, 'you', '2 / 2')
+  await page.getByRole('button', { name: /上一条/ }).click()
+  await page.evaluate(() => (window as any).__finishOldQueue())
+  await leaveReview(page)
+  await returnToReview(page, 'ツバサ（羽翼）', '1 / 2')
 })
 
 test('late queue and search replies cannot restore a previous selection or an unmounted review page', async ({ page }) => {
