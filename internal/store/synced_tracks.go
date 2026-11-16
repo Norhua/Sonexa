@@ -1,7 +1,7 @@
 package store
 
 // SyncedTrackRow keys occurrences independently from local track identity.
-// No generic TrackFilter can request all local entities.
+// Filters preserve occurrences, including retained upstream-missing entries.
 type SyncedTrackRow struct {
 	EntryID         int64     `json:"entryId"`
 	TrackID         int64     `json:"trackId"`
@@ -30,12 +30,16 @@ func (s *Store) SyncedImportedCounts() (map[int64]int, error) {
 }
 
 func (s *Store) ListSyncedTracks(playlistID int64, query string) ([]SyncedTrackRow, error) {
-	where := ""
-	args := []any{playlistID}
-	if q := ftsQuery(query); q != "" {
-		where = " AND e.track_id IN (SELECT rowid FROM track_fts WHERE track_fts MATCH ?)"
-		args = append(args, q)
+	return s.ListSyncedTracksFiltered(playlistID, TrackFilter{IncludeSynced: true, Query: query})
+}
+
+func (s *Store) ListSyncedTracksFiltered(playlistID int64, f TrackFilter) ([]SyncedTrackRow, error) {
+	ids, filterArgs, err := s.matchingTrackIDs(f)
+	if err != nil {
+		return nil, err
 	}
+	args := append([]any{playlistID}, filterArgs...)
+	where := " AND e.track_id IN (" + ids + ")"
 	rows, err := s.db.Query(`SELECT e.id,e.track_id,e.upstream_present,`+trackSelectColumns+`
  FROM synced_playlist_entry e JOIN track_read t ON t.id=e.track_id
  LEFT JOIN release_read r ON r.id=t.release_id

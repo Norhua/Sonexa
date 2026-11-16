@@ -54,6 +54,12 @@ type TrackView struct {
 
 // TrackFilter 描述一次曲目查询的条件。
 type TrackFilter struct {
+	// IncludeSynced 放宽默认音乐库范围，包含同步歌单中已保存的曲目。
+	IncludeSynced bool `json:"includeSynced"`
+	// nil 表示该分类不限制（全选）；非 nil 空数组表示未选任何项。
+	PlaylistIDs       []int64 `json:"playlistIds"`
+	TagIDs            []int64 `json:"tagIds"`
+	SyncedPlaylistIDs []int64 `json:"syncedPlaylistIds"`
 	// CollectionID 非零时限定在该歌单/标签内。
 	CollectionID int64 `json:"collectionId"`
 	// ArtistID 非零时限定为该艺术家关联的曲目（署名 ∪ 全部角色）。
@@ -166,11 +172,48 @@ func (s *Store) CountTracks(f TrackFilter) (int, error) {
 
 // buildTrackQuery 构造查询语句。
 func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, error) {
+	return s.buildTrackProjection(f, countOnly, "DISTINCT "+trackSelectColumns)
+}
+
+// matchingTrackIDs 供名单/分面/出现项复用同一筛选，分页必须在筛选之后。
+func (s *Store) matchingTrackIDs(f TrackFilter) (string, []any, error) {
+	f.Limit, f.Offset = 0, 0
+	return s.buildTrackProjection(f, false, "DISTINCT t.id")
+}
+
+func (s *Store) buildTrackProjection(f TrackFilter, countOnly bool, columns string) (string, []any, error) {
 	var (
 		joins  []string
-		wheres = []string{"t.in_library=1"}
+		wheres []string
 		args   []any
 	)
+	if !f.IncludeSynced {
+		wheres = append(wheres, "t.in_library=1")
+	}
+	for _, facet := range []struct {
+		ids  []int64
+		kind string
+	}{
+		{f.PlaylistIDs, "playlist"}, {f.TagIDs, "tag"}, {f.SyncedPlaylistIDs, "synced"},
+	} {
+		if facet.ids == nil {
+			continue
+		}
+		if len(facet.ids) == 0 {
+			wheres = append(wheres, "0=1")
+			continue
+		}
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(facet.ids)), ",")
+		if facet.kind == "synced" {
+			wheres = append(wheres, "EXISTS (SELECT 1 FROM synced_playlist_entry se WHERE se.track_id=t.id AND se.local_state='imported' AND se.playlist_id IN ("+placeholders+"))")
+		} else {
+			wheres = append(wheres, "EXISTS (SELECT 1 FROM collection_item fi JOIN collection fc ON fc.id=fi.collection_id WHERE fi.track_id=t.id AND fc.kind=? AND fi.collection_id IN ("+placeholders+"))")
+			args = append(args, facet.kind)
+		}
+		for _, id := range facet.ids {
+			args = append(args, id)
+		}
+	}
 
 	if f.CollectionID != 0 {
 		joins = append(joins, "JOIN collection_item ci ON ci.track_id = t.id")
@@ -245,7 +288,7 @@ func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, e
 	if countOnly {
 		sb.WriteString("SELECT COUNT(DISTINCT t.id) FROM track_read t")
 	} else {
-		sb.WriteString("SELECT DISTINCT " + trackSelectColumns + " FROM track_read t")
+		sb.WriteString("SELECT " + columns + " FROM track_read t")
 	}
 	sb.WriteString(" LEFT JOIN release_read r ON r.id = t.release_id")
 	for _, j := range joins {
@@ -258,7 +301,7 @@ func (s *Store) buildTrackQuery(f TrackFilter, countOnly bool) (string, []any, e
 	if !countOnly {
 		switch {
 		case f.RecentOnly:
-			sb.WriteString(" ORDER BY t.library_added_at DESC,t.id DESC")
+			sb.WriteString(" ORDER BY CASE WHEN t.in_library=1 THEN t.library_added_at ELSE t.created_at END DESC,t.id DESC")
 		case f.CollectionID != 0:
 			// 歌单维护显式顺序
 			sb.WriteString(" ORDER BY (SELECT ci2.position FROM collection_item ci2" +

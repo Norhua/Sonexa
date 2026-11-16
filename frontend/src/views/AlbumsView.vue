@@ -76,26 +76,25 @@ const refresh = createRefreshQueue(async () => {
 const offCover = EventsOn(Events.CoverChanged, () => { void refresh.request() })
 const offLibrary = EventsOn(Events.LibraryChanged, () => { void refresh.request() })
 onBeforeUnmount(() => { disposed = true; listRequest++; detailRequest++; selectionRequest++; refresh.dispose(); offCover(); offLibrary() })
-watch(() => library.filter.tagId, load, { immediate: true })
+watch(() => JSON.stringify(library.categoryFilter), () => { void load(); void reloadDetail() }, { immediate: true })
 
 async function load() {
   const request = ++listRequest
   loading.value = true
   error.value = ''
   try {
-    const tagId = library.filter.tagId
-    const result = tagId ? await App.ListAlbumsForTag(tagId) : await App.ListAlbums()
+    const result = await App.ListAlbumsFiltered(library.categoryFilter)
     if (request === listRequest) albums.value = result ?? []
   } catch (e) { if (request === listRequest) error.value = String(e) }
   finally { if (request === listRequest) loading.value = false }
 }
 async function reloadDetail() {
-  const groupId = detail.value?.groupId
-  if (!groupId) return
+  const groupId = library.view === 'album' ? library.contextGroupId : 0
   const request = ++detailRequest
+  if (!groupId) return
   try {
-    const next = await App.GetAlbumGroupDetail(groupId)
-    if (request === detailRequest && detail.value?.groupId === groupId) detail.value = next
+    const next = await App.GetAlbumGroupDetailForScope(groupId, library.categoryFilter.includeSynced)
+    if (request === detailRequest && library.contextGroupId === groupId) detail.value = next
   } catch (e) { if (request === detailRequest) error.value = String(e) }
 }
 async function open(a: Models.store.AlbumListItem) {
@@ -105,12 +104,13 @@ async function open(a: Models.store.AlbumListItem) {
   selected.value.clear()
   emit('selectionChange', [])
   try {
-    const next = await App.GetAlbumGroupDetail(a.groupId)
-    if (request !== selectionRequest) return
-    detail.value = next
-    expanded.value = new Set([next.representativeId])
+    detail.value = null
     await library.goTo('album', { id: a.releaseId, groupId: a.groupId, title: a.title || '未命名专辑' })
     if (request !== selectionRequest) return
+    await reloadDetail()
+    const next = detail.value as Models.app.AlbumGroupDetail | null
+    if (request !== selectionRequest || !next) return
+    expanded.value = new Set([next.representativeId])
     const representative = next.releases.find(r => r.releaseId === next.representativeId)
     if (merged.value && mergedExpanded.value) void completeMergedTracklists()
     else if (representative?.incomplete) void completeTracklist(representative, false)
@@ -161,9 +161,9 @@ function mergedSelectionChanged(ids: number[]) {
 function toRows(release: Models.app.AlbumDetail, showMissing = expanded.value.has(release.releaseId)): AlbumTrackRow[] {
   const taggedIds = new Set(library.tracks.map(track => track.id))
   return release.rows.filter(r => (!r.ghost || showMissing) &&
-    (!library.filter.tagId || (!r.ghost && taggedIds.has(r.trackId))))
+    (!library.hasCategoryFilter || (!r.ghost && taggedIds.has(r.trackId))))
     .map(r => ({ id: r.trackId, rowKey: r.ghost ? `release:${release.releaseId}:${r.discNumber}:${r.trackNumber}:${r.trackRef ?? ''}` : `track:${r.trackId}`,
-      releaseId: release.releaseId, provider: release.provider,
+      releaseId: release.releaseId, provider: release.provider, inLibrary: r.inLibrary,
       title: r.title, artist: r.credit, album: release.title, durationMs: r.durationMs, addedAt: r.addedAt,
       mediumFormat: release.mediumFormat, country: release.country,
       trackNumber: r.trackNumber || null, discNumber: r.discNumber || null, ghost: r.ghost, trackRef: r.trackRef,
@@ -191,10 +191,10 @@ function selectionChanged(id: number, ids: number[]) {
           <div class="min-w-0 flex-1">
             <p class="truncate font-medium">{{ album.title || '未命名专辑' }}</p>
             <p class="truncate text-xs text-muted-color">{{ display(album.credit) }}</p>
-            <p class="text-xs text-muted-color">收藏 {{ album.ownedCount }} 首 · {{ album.memberCount }} 个在库版本</p>
+            <p class="text-xs text-muted-color">收藏 {{ album.ownedCount }} 首<template v-if="library.categoryFilter.includeSynced"> · 已保存 {{ album.savedCount }} 首</template> · {{ album.memberCount }} 个版本</p>
           </div>
         </button>
-        <p v-if="!visibleAlbums.length && !loading" class="px-3 py-4 text-sm text-muted-color">{{ filter || library.filter.tagId ? '没有匹配的专辑' : '还没有专辑' }}</p>
+        <p v-if="!visibleAlbums.length && !loading" class="px-3 py-4 text-sm text-muted-color">{{ filter || library.hasCategoryFilter ? '没有匹配的专辑' : '还没有专辑' }}</p>
       </div>
     </div>
     <div class="flex min-w-0 flex-1 flex-col">
@@ -205,7 +205,7 @@ function selectionChanged(id: number, ids: number[]) {
         <div class="flex shrink-0 items-center gap-3 px-4 pb-3">
           <div class="min-w-0 flex-1">
             <h3 class="text-base font-semibold">{{ detail.title || '未命名专辑' }}</h3>
-            <p class="text-xs text-muted-color">收藏 {{ detail.ownedCount }} 首 · {{ detail.memberCount }} 个在库版本</p>
+            <p class="text-xs text-muted-color">收藏 {{ detail.ownedCount }} 首<template v-if="library.categoryFilter.includeSynced"> · 已保存 {{ detail.savedCount }} 首</template> · {{ detail.memberCount }} 个版本</p>
           </div>
           <SecondaryButton v-if="detail.releases.length > 1" size="small" @click="toggleMerged">{{ merged ? '拆分 group' : '合并 group' }}</SecondaryButton>
         </div>
@@ -237,7 +237,7 @@ function selectionChanged(id: number, ids: number[]) {
                 <h4 class="font-medium">{{ release.title || '未命名发行' }} <span class="text-xs text-muted-color">{{ release.provider || '本地' }}</span></h4>
                 <p class="text-xs text-muted-color">{{ display(release.credit) }}</p>
                 <p class="text-xs text-muted-color">{{ display(albumTypeLabel(release.primaryType)) }} · {{ display(release.year) }} · {{ display(release.mediumFormat) }} · {{ display(release.country) }}</p>
-                <p class="text-xs text-muted-color">收藏 {{ release.ownedCount }} 首 · 发行总数 {{ display(release.totalCount) }}<template v-if="release.discTotal"> · {{ release.discTotal }} 碟</template></p>
+                <p class="text-xs text-muted-color">收藏 {{ release.ownedCount }} 首<template v-if="library.categoryFilter.includeSynced"> · 已保存 {{ release.savedCount }} 首</template> · 发行总数 {{ display(release.totalCount) }}<template v-if="release.discTotal"> · {{ release.discTotal }} 碟</template></p>
                 <p v-if="release.media?.length" class="text-xs text-muted-color">{{ release.media.map(m => `第 ${m.number} 碟 ${display(m.trackTotal)} 首`).join(' · ') }}</p>
                 <p v-if="release.label || release.catalogNumber" class="text-xs text-muted-color">{{ display(release.label) }} · {{ display(release.catalogNumber) }}</p>
                 <p v-if="release.releaseCount" class="text-xs text-muted-color">上游组版本数 {{ release.releaseCount }}</p>
@@ -255,7 +255,7 @@ function selectionChanged(id: number, ids: number[]) {
                 @remove="rows => emit('removeTracks', rows)" @view-upstream="r => emit('viewUpstream', r)"
                 @export-scope="scope => emit('exportScope', scope)" @selection-change="ids => selectionChanged(release.releaseId, ids)" />
             </div>
-            <p v-else class="px-4 pb-3 text-xs text-muted-color">{{ library.filter.tagId ? '此发行没有符合标签的收藏' : '此发行暂无收藏' }}</p>
+            <p v-else class="px-4 pb-3 text-xs text-muted-color">{{ library.hasCategoryFilter ? '此发行没有符合筛选的曲目' : '此发行暂无曲目' }}</p>
             <div v-if="expanded.has(release.releaseId) && release.releaseRef" class="flex items-center gap-2 px-4 pb-3 text-xs text-muted-color">
               <span>{{ release.incomplete ? (release.tracklistError || '清单不完整') : '清单完整' }}</span>
               <span v-if="release.fetchedAt">更新于 {{ new Date(release.fetchedAt).toLocaleDateString() }}</span>

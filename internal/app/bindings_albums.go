@@ -12,7 +12,7 @@ import (
 
 // AlbumRow 是专辑详情中的一行。
 //
-// 两种状态：已入库（正常行）、未入库（灰色行）。
+// 当前范围的已保存曲目为正常行（InLibrary 单独表示入库归属）；其余清单位置为灰色预览。
 // 灰色行的列定义与普通行完全相同。
 type AlbumRow struct {
 	DiscNumber  int     `json:"discNumber"`
@@ -26,7 +26,8 @@ type AlbumRow struct {
 	// State 为 owned | missing。
 	State string `json:"state"`
 	// TrackID 非零时可点开详情；灰色行为 0。
-	TrackID int64 `json:"trackId"`
+	TrackID   int64 `json:"trackId"`
+	InLibrary bool  `json:"inLibrary"`
 	// Ghost 为真表示灰色行：不可选中、单击不开抽屉、右键仅两项、
 	// 不计入选中计数与曲目数、不参与导出。
 	Ghost bool `json:"ghost"`
@@ -75,8 +76,9 @@ type AlbumDetail struct {
 
 	// Rows 固定按碟号、音轨号排序，不受曲目表格默认排序影响。
 	Rows []AlbumRow `json:"rows"`
-	// OwnedCount 不含灰色行；TotalCount 为 nil 时界面呈现为 `n/-`。
+	// OwnedCount 是已入库数；SavedCount 是当前范围已保存数；二者均不含灰色行。
 	OwnedCount int  `json:"ownedCount"`
+	SavedCount int  `json:"savedCount"`
 	TotalCount *int `json:"totalCount"`
 	// Incomplete 为真时末尾显示「清单不完整」与补全动作。
 	Incomplete bool `json:"incomplete"`
@@ -94,15 +96,20 @@ type AlbumGroupDetail struct {
 	Credit           *string        `json:"credit"`
 	RepresentativeID int64          `json:"representativeId"`
 	OwnedCount       int            `json:"ownedCount"`
+	SavedCount       int            `json:"savedCount"`
 	MemberCount      int            `json:"memberCount"`
 	Releases         []*AlbumDetail `json:"releases"`
 }
 
 func (a *App) GetAlbumGroupDetail(groupID int64) (*AlbumGroupDetail, error) {
+	return a.GetAlbumGroupDetailForScope(groupID, false)
+}
+
+func (a *App) GetAlbumGroupDetailForScope(groupID int64, includeSynced bool) (*AlbumGroupDetail, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
-	members, err := a.store.ListLibraryGroupReleases(groupID)
+	members, err := a.store.ListBrowseGroupReleases(groupID, includeSynced)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +125,7 @@ func (a *App) GetAlbumGroupDetail(groupID int64) (*AlbumGroupDetail, error) {
 	if err != nil {
 		return nil, err
 	}
-	rep, err := a.store.RepresentativeRelease(groupID)
+	rep, err := a.store.RepresentativeReleaseForScope(groupID, includeSynced)
 	if err != nil {
 		return nil, err
 	}
@@ -126,12 +133,13 @@ func (a *App) GetAlbumGroupDetail(groupID int64) (*AlbumGroupDetail, error) {
 		result.RepresentativeID = rep.ID
 	}
 	for _, member := range members {
-		detail, err := a.GetAlbumDetail(member.ID)
+		detail, err := a.getAlbumDetailForScope(member.ID, includeSynced)
 		if err != nil {
 			return nil, err
 		}
 		result.Releases = append(result.Releases, detail)
 		result.OwnedCount += detail.OwnedCount
+		result.SavedCount += detail.SavedCount
 	}
 	return result, nil
 }
@@ -144,6 +152,10 @@ func (a *App) GetAlbumGroupDetail(groupID int64) (*AlbumGroupDetail, error) {
 // 参数是歌集 id：专辑升格为实体后不再有查询时现场派生的分组键，
 // 一条列表项就是一条 release。
 func (a *App) GetAlbumDetail(releaseID int64) (*AlbumDetail, error) {
+	return a.getAlbumDetailForScope(releaseID, false)
+}
+
+func (a *App) getAlbumDetailForScope(releaseID int64, includeSynced bool) (*AlbumDetail, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
@@ -190,11 +202,16 @@ func (a *App) GetAlbumDetail(releaseID int64) (*AlbumDetail, error) {
 	}
 
 	// 已入库曲目：立即渲染，不等清单
-	owned, err := a.ownedRowsFor(rel)
+	owned, err := a.savedRowsFor(rel, includeSynced)
 	if err != nil {
 		return nil, err
 	}
-	detail.OwnedCount = len(owned)
+	detail.SavedCount = len(owned)
+	for _, row := range owned {
+		if row.InLibrary {
+			detail.OwnedCount++
+		}
+	}
 
 	// 本地发行只按用户完整填写的碟结构显示总数，不虚构灰色行
 	if rel.ProviderRef == nil || rel.Provider == nil {
@@ -230,7 +247,7 @@ func (a *App) GetAlbumDetail(releaseID int64) (*AlbumDetail, error) {
 	}
 
 	// 清单完整：按曲目标识解析已入库/未入库
-	positions, err := a.store.ResolveTracklist(rel.ID, *rel.Provider)
+	positions, err := a.store.ResolveTracklistForScope(rel.ID, *rel.Provider, includeSynced)
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +292,7 @@ func rowsFromPositions(positions []store.ResolvedPosition) []AlbumRow {
 			DurationMS:  p.Track.DurationMS,
 			State:       string(p.State),
 			TrackID:     p.TrackID,
+			InLibrary:   p.InLibrary,
 			AddedAt:     p.AddedAt,
 			// 未入库即灰色行
 			Ghost:        p.State == store.PositionMissing,
@@ -297,11 +315,10 @@ func countOwned(rows []AlbumRow) int {
 	return n
 }
 
-// ownedRowsFor 返回某专辑已入库曲目的行，按碟号与音轨号排序。
-//
-// 每个分区仅取自己的收藏；录音证据供合并视图判断歌曲，不改变具体发行归属。
-func (a *App) ownedRowsFor(rel *store.Release) ([]AlbumRow, error) {
-	f := store.TrackFilter{ReleaseID: rel.ID}
+// savedRowsFor 返回当前浏览范围的已保存曲目，不把归属与本地身份混同。
+// 每个分区仅取自己的曲目；录音证据供合并视图判断歌曲，不改变具体发行归属。
+func (a *App) savedRowsFor(rel *store.Release, includeSynced bool) ([]AlbumRow, error) {
+	f := store.TrackFilter{ReleaseID: rel.ID, IncludeSynced: includeSynced}
 
 	tracks, err := a.store.ListTracks(f)
 	if err != nil {
@@ -316,7 +333,7 @@ func (a *App) ownedRowsFor(rel *store.Release) ([]AlbumRow, error) {
 	for _, t := range tracks {
 		row := AlbumRow{
 			Title: t.Title, Credit: t.Artist, DurationMS: t.DurationMS,
-			State: string(store.PositionOwned), TrackID: t.ID,
+			State: string(store.PositionOwned), TrackID: t.ID, InLibrary: t.InLibrary,
 			TrackRef: t.MatchRef, AddedAt: &t.AddedAt,
 		}
 		if ref := refs[t.ID]; ref != "" {

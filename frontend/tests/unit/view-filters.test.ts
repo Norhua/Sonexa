@@ -1,0 +1,62 @@
+import { beforeEach, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { App } from '../../src/api'
+import { useLibraryStore } from '../../src/stores/library'
+import { toggleCategory, supportsLibraryScope, supportsSyncedCategory } from '../../src/lib/viewFilters'
+vi.mock('../../src/api', () => ({ App: { ListTracks: vi.fn(), ListCollections: vi.fn() } }))
+beforeEach(() => {
+  setActivePinia(createPinia()); vi.resetAllMocks()
+  vi.mocked(App.ListTracks).mockResolvedValue({ tracks: [], total: 0 })
+})
+it('distinguishes all/unrestricted, empty and subsets; selecting every option becomes unrestricted', () => {
+  expect(toggleCategory(null, 2, [1, 2, 3])).toEqual([1, 3])
+  expect(toggleCategory([1, 3], 1, [1, 2, 3])).toEqual([3])
+  expect(toggleCategory([3], 3, [1, 2, 3])).toEqual([])
+  expect(toggleCategory([], 1, [1, 2, 3])).toEqual([1])
+  expect(toggleCategory([1, 3], 2, [1, 2, 3])).toBeNull()
+  expect(toggleCategory(null, 1, [1])).toEqual([])
+})
+it('uses per-page defaults and preserves category scope within a browse family', async () => {
+  const lib = useLibraryStore()
+  expect(supportsLibraryScope('all')).toBe(false)
+  expect(supportsSyncedCategory('syncedPlaylist')).toBe(false)
+  for (const view of ['artists', 'albums', 'recent'] as const) {
+    await lib.goTo(view)
+    expect(lib.libraryOnly).toBe(true)
+    expect(lib.categoryFilter.includeSynced).toBe(false)
+    await lib.selectAllSongs()
+    expect(lib.categoryFilter.includeSynced).toBe(true)
+    await lib.selectCategory('tagIds', [2], ['X'])
+    await lib.selectCategory('playlistIds', [1, 3], ['A', 'B'])
+    expect(lib.allSongsSelected).toBe(false)
+    await lib.selectLibraryOnly()
+    expect(lib.baseFilter()).toMatchObject({ includeSynced: false, tagIds: [2], playlistIds: [1, 3] })
+    await lib.selectAllSongs()
+    expect(lib.allSongsSelected).toBe(true)
+    expect(lib.baseFilter()).toMatchObject({ includeSynced: true, tagIds: null, playlistIds: null })
+  }
+  await lib.goTo('artists'); await lib.selectAllSongs(); await lib.selectCategory('syncedPlaylistIds', [8])
+  await lib.goTo('artist', { id: 30 })
+  expect(lib.baseFilter()).toMatchObject({ artistId: 30, includeSynced: true, syncedPlaylistIds: [8] })
+  await lib.goTo('all')
+  expect(lib.baseFilter()).toMatchObject({ includeSynced: false, syncedPlaylistIds: null })
+  expect(lib.allSongsSelected).toBe(true)
+  await lib.goTo('syncedPlaylist', { id: 8 })
+  expect(lib.libraryOnly).toBe(false)
+  expect(lib.categoryFilter.includeSynced).toBe(true)
+})
+it('resetting categories does not erase query or role; deleted selections stay empty rather than broadening', async () => {
+  const lib = useLibraryStore()
+  await lib.goTo('artist', { id: 30 })
+  await lib.quickSearch('test')
+  await lib.applyFilter({ role: 'vocal' }, [{ key: 'role', label: '演唱' }])
+  await lib.selectCategory('tagIds', [2], ['X'])
+  lib.refreshCategoryOptions('tagIds', [{ id: 2, name: 'Renamed' }])
+  expect(lib.chips.at(-1)?.label).toBe('标签=Renamed')
+  lib.refreshCategoryOptions('tagIds', [])
+  expect(lib.baseFilter().tagIds).toEqual([])
+  expect(lib.chips.at(-1)?.label).toBe('标签=未选择')
+  await lib.selectAllSongs()
+  expect(lib.baseFilter()).toMatchObject({ query: 'test', role: 'vocal', tagIds: null })
+  expect(lib.chips.map(c => c.key)).toEqual(['query', 'role'])
+})

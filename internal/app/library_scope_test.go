@@ -30,7 +30,7 @@ func TestLibraryScopeExportEmptyStateAndReferenceAwareDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, request := range []ExportRequest{{Scope: "all"}, {Scope: "selection", TrackIDs: []int64{hidden, visible, hidden, visible}}, {Scope: "filtered", Filter: store.TrackFilter{}}, {Scope: "selection", TrackIDs: []int64{hidden}}} {
+	for _, request := range []ExportRequest{{Scope: "all"}, {Scope: "selection", TrackIDs: []int64{hidden, visible, hidden, visible}}, {Scope: "filtered", Filter: store.TrackFilter{}}, {Scope: "filtered", Filter: store.TrackFilter{IncludeSynced: true, Limit: 1}}, {Scope: "selection", TrackIDs: []int64{hidden}}} {
 		tracks, err := a.resolveExportScope(request)
 		if err != nil {
 			t.Fatal(err)

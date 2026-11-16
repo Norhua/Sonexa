@@ -6,8 +6,8 @@
 
 - `ListPlaylistSources`：返回已登记来源与运行环境可用性；禁网原因另读 `CheckOutbound`。
 - `ListSyncedPlaylists`：绑定名称、规范身份、修订、获取/确认时间及已导入**出现项数**。
-- `GetSyncedPlaylistEntries(id, query)`：仅当前绑定的 imported 出现项，包括上游缺席项；不截断为首页。
-  `entryId` 是表格行 key，`trackId` 是本地实体；`upstreamPresent` 与 `inLibrary` 独立。
+- `GetSyncedPlaylistEntriesFiltered(id, filter)`：当前绑定的 imported 出现项叠加曲库/分类/搜索筛选，包括上游缺席项；不截断为首页。
+  `entryId` 是表格行 key，`trackId` 是本地实体；`upstreamPresent` 与 `inLibrary` 独立。旧 `GetSyncedPlaylistEntries(id, query)` 保留为全部成员的封装。
 - `PreparePlaylistBinding(operationID, source, input, alias)`：返回 `preview` 或 `existingPlaylistId`，重复绑定无需解析错误字符串即可定位。
 - `PreparePlaylistSync(operationID, playlistID)`：返回差异、忽略项及服务端计划 ID/hash/过期时间；不写库。
 - `CommitPlaylistBinding` / `CommitPlaylistSync`：仅接收 ID/hash，后者另接收选中的忽略项 ID；不接受前端快照、目标或本地曲目替换。
@@ -22,6 +22,13 @@
 `releaseExists` / `releaseGroupExists` 分别表示候选同来源具体发行/原生组身份已存在于本地，包含同步专属数据。两者独立查询，不按标题或所属发行推测原生组，不把它们当作 track 命中或自动接受资格。复核、上游搜索和编辑搜索候选的专辑名统一着色：release 已存在为绿色，否则原生 release group 已存在为橙色，均不存在保持原色；完整提示和屏幕阅读器说明保留具体含义。来源列只保留上游/精确本地曲目徽章。队列读取、上游搜索、复核改搜和编辑搜索均返回当前本地状态，不信任旧候选快照中的布尔值。
 
 `RefreshSearchCandidates` 离线重查当前身份与封面归属，用于搜索结果及编辑候选的 `library:changed` 刷新。编辑刷新只替换候选展示数据，不重搜、不更换选中候选/上游预览、不改草稿；切源、新搜索和关闭会隔离旧响应。编辑候选的 `localTrackId` 非零但 `inLibrary=false` 显示“本地已存在，未入库”。
+
+## 浏览筛选
+
+- `TrackFilter.includeSynced` 默认 false；`ListTracks` / `ListArtistsFiltered` / `ListAlbumsFiltered` / `GetArtistHeaderFiltered` 共用分类条件。`playlistIds` / `tagIds` / `syncedPlaylistIds` 为 null/省略时不限制，为 `[]` 时匹配零首；分类内 OR，分类间 AND，不将全选翻译成“必须属于某个集合”。
+- `GetAlbumGroupDetailForScope(groupId, includeSynced)` 按范围选择发行及已保存行；全部范围下未入库的本地曲目不是 ghost，`inLibrary` 单独表达归属。`ownedCount` 仍是收藏数，`savedCount` 是当前范围已保存数。分类条件通过同组 `ListTracks` 结果收窄正常行并隐藏清单灰色行。
+- 艺术家/专辑/最近添加默认仅曲库；同浏览族导航保留范围及分类条件。全部曲目保持曲库范围，同步歌单默认当前绑定全部已导入出现项。菜单不是出网入口。
+- 多选菜单与清除条件驱动新读取，列表/详情/同步条目的旧响应不能覆盖新范围；集合重命名更新 chip，删除选中项保留空选择，不悄悄放宽为全部。多数项目被选中时 chip 仅显示数量，完整名称与勾选在子菜单中保留。
 
 ## 队列读模型
 

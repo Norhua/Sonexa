@@ -5,7 +5,7 @@ import { useSyncedPlaylistsStore } from '../../src/stores/syncedPlaylists'
 import { useLibraryStore } from '../../src/stores/library'
 import { listRows, uniqueTracks } from '../../src/lib/trackRows'
 vi.mock('../../src/api', () => ({
-  App: { ListSyncedPlaylists: vi.fn(), GetSyncedPlaylistEntries: vi.fn(), ListTracks: vi.fn() },
+  App: { ListSyncedPlaylists: vi.fn(), GetSyncedPlaylistEntriesFiltered: vi.fn(), ListTracks: vi.fn() },
   Events: { SyncedPlaylistsChanged: 'synced-playlists:changed' }, EventsOn: vi.fn(),
 }))
 const binding = (id: number) => ({ id, name: `歌单 ${id}`, importedCount: 2 }) as Models.app.SyncedPlaylistView
@@ -13,12 +13,12 @@ const rows = (id: number) => [{ entryId: id, trackId: 8, upstreamPresent: false,
 beforeEach(() => {
   setActivePinia(createPinia()); vi.resetAllMocks()
   vi.mocked(App.ListSyncedPlaylists).mockResolvedValue([binding(1), binding(2)])
-  vi.mocked(App.GetSyncedPlaylistEntries).mockImplementation(async id => rows(id))
+  vi.mocked(App.GetSyncedPlaylistEntriesFiltered).mockImplementation(async id => rows(id))
   vi.mocked(App.ListTracks).mockResolvedValue({ tracks: [], total: 0 })
 })
 it('keeps late responses out of a new context and retains data on refresh failure', async () => {
   let resolve!: (rows: Models.store.SyncedTrackRow[]) => void
-  vi.mocked(App.GetSyncedPlaylistEntries).mockReturnValueOnce(new Promise(r => { resolve = r }))
+  vi.mocked(App.GetSyncedPlaylistEntriesFiltered).mockReturnValueOnce(new Promise(r => { resolve = r }))
   const store = useSyncedPlaylistsStore()
   const a = store.activate(1)
   // Let the first request actually start; same-tick requests deliberately coalesce.
@@ -26,7 +26,7 @@ it('keeps late responses out of a new context and retains data on refresh failur
   const b = store.activate(2)
   resolve(rows(1)); await Promise.all([a, b])
   expect(store.entries[0]?.entryId).toBe(2)
-  vi.mocked(App.GetSyncedPlaylistEntries).mockRejectedValueOnce(new Error('offline'))
+  vi.mocked(App.GetSyncedPlaylistEntriesFiltered).mockRejectedValueOnce(new Error('offline'))
   await store.refresh()
   expect(store.entries[0]?.entryId).toBe(2)
   expect(store.error).toContain('offline')

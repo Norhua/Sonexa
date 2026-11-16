@@ -4,8 +4,16 @@ const rows = (page: Page) => page.locator('.track-list [data-row-key]')
 const options = (page: Page) => page.getByRole('button', { name: '视图选项', exact: true })
 async function pickTag(page: Page, name: string) {
   await options(page).click()
-  await page.getByRole('menuitem', { name: '按标签', exact: true }).click()
-  await page.getByRole('menuitemradio', { name, exact: true }).click()
+  await page.getByRole('menuitem', { name: '标签', exact: true }).click()
+  const submenu = page.getByRole('menuitem', { name: '标签', exact: true }).locator('[data-pc-section="submenu"]')
+  await submenu.getByRole('menuitemcheckbox', { name: '全选', exact: true }).click()
+  if (name !== '全部标签') {
+    for (const item of await submenu.getByRole('menuitemcheckbox').all()) {
+      const label = await item.getAttribute('aria-label')
+      if (label !== name && label !== '全选') await item.click()
+    }
+  }
+  await page.keyboard.press('Escape')
 }
 async function showAddedTime(page: Page) {
   await page.locator('.track-list thead th').first().click({ button: 'right' })
@@ -22,8 +30,8 @@ test.beforeEach(async ({ page }) => {
     api.ListTracks = async (filter: any) => {
       ;(window as any).__lastFilter = filter
       const result = await list(filter)
-      const tracks = result.tracks.filter((track: any) => !filter.tagId ||
-        (filter.tagId === 21 ? [1, 3].includes(track.id) : track.id === 2)).map((track: any) => ({
+      const tracks = result.tracks.filter((track: any) => filter.tagIds == null ||
+        filter.tagIds.some((id: number) => id === 21 ? [1, 3].includes(track.id) : track.id === 2)).map((track: any) => ({
         ...track, addedAt: `2026-09-18T0${8 - track.id}:04:05Z`,
       }))
       return { tracks, total: tracks.length }
@@ -46,16 +54,16 @@ test.beforeEach(async ({ page }) => {
   await expect(rows(page)).toHaveCount(7)
 })
 
-test('view options has only tag filters, accessible checked state and composable search scope', async ({ page }, testInfo) => {
+test('view options has cascading multiselect filters, accessible state and composable search scope', async ({ page }, testInfo) => {
   await options(page).click()
-  const tagMenu = page.getByRole('menuitem', { name: '按标签', exact: true })
+  const tagMenu = page.getByRole('menuitem', { name: '标签', exact: true })
   await expect(tagMenu).toHaveAttribute('aria-haspopup', 'menu')
   await expect(tagMenu).toHaveAttribute('aria-expanded', 'false')
   await expect(tagMenu.locator('svg.lucide-chevron-right')).toHaveCount(1)
-  await expect(page.getByRole('menuitemradio')).toHaveCount(0)
+  await expect(page.getByRole('menuitemradio', { name: '全部歌曲', exact: true })).toHaveAttribute('aria-checked', 'true')
   await tagMenu.click()
   await expect(tagMenu).toHaveAttribute('aria-expanded', 'true')
-  await expect(page.getByRole('menuitemradio', { name: '全部标签', exact: true })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('menuitemcheckbox', { name: '全选', exact: true })).toHaveAttribute('aria-checked', 'true')
   await expect(page.getByText('默认顺序', { exact: true })).toHaveCount(0)
   await expect(options(page).locator('svg.lucide-list-filter')).toHaveCount(1)
   await expect(options(page)).toHaveAttribute('aria-expanded', 'true')
@@ -99,15 +107,15 @@ test('view options has only tag filters, accessible checked state and composable
   await page.getByRole('button', { name: /测试歌单/ }).click()
   await pickTag(page, '待听')
   await expect(rows(page)).toHaveCount(1)
-  expect(await page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ collectionId: 10, tagId: 22 })
+  expect(await page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ collectionId: 10, tagIds: [22] })
   await options(page).click()
-  await page.getByRole('menuitem', { name: '按标签', exact: true }).click()
-  await expect(page.getByRole('menuitemradio', { name: '待听', exact: true })).toHaveAttribute('aria-checked', 'true')
+  await page.getByRole('menuitem', { name: '标签', exact: true }).click()
+  await expect(page.getByRole('menuitemcheckbox', { name: '待听', exact: true })).toHaveAttribute('aria-checked', 'true')
   await page.getByRole('button', { name: '最近添加', exact: true }).click()
   await expect(page.getByRole('menuitemradio')).toHaveCount(0)
   await expect(rows(page)).toHaveCount(7)
   await pickTag(page, '收藏')
-  expect(await page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ recentOnly: true, tagId: 21 })
+  expect(await page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ recentOnly: true, tagIds: [21] })
 })
 
 test('tag filters artist/album lists and current tracks without losing browse context', async ({ page }) => {
@@ -117,11 +125,11 @@ test('tag filters artist/album lists and current tracks without losing browse co
   await page.getByRole('button', { name: /Artist A/ }).click()
   await expect(rows(page)).toHaveCount(2)
   await page.getByRole('button', { name: '演唱 2', exact: true }).click()
-  expect(await page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ artistId: 30, tagId: 21, role: 'vocal' })
+  expect(await page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ artistId: 30, tagIds: [21], role: 'vocal' })
   await expect(page.getByLabel('当前筛选')).toContainText('标签=收藏')
   await expect(page.getByLabel('当前筛选')).toContainText('角色=vocal')
   await page.getByLabel('当前筛选').locator('[data-pc-name="chip"]').filter({ hasText: '角色=' }).getByRole('button', { name: '移除筛选' }).click()
-  expect(await page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ artistId: 30, tagId: 21 })
+  expect(await page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ artistId: 30, tagIds: [21] })
   expect(await page.evaluate(() => (window as any).__lastFilter.role)).toBeUndefined()
   await expect(page.getByRole('button', { name: '全部 7', exact: true })).toHaveClass(/bg-highlight/)
   await page.getByRole('button', { name: '专辑', exact: true }).click()
@@ -129,7 +137,7 @@ test('tag filters artist/album lists and current tracks without losing browse co
   await page.getByRole('button', { name: /测试专辑/ }).click()
   await expect(rows(page)).toHaveCount(1)
   await expect(rows(page).first()).toHaveAttribute('data-ghost', 'false')
-  await expect.poll(() => page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ releaseGroupId: 20, tagId: 21 })
+  await expect.poll(() => page.evaluate(() => (window as any).__lastFilter)).toMatchObject({ releaseGroupId: 20, tagIds: [21] })
   await pickTag(page, '全部标签')
   await expect(rows(page)).toHaveCount(5)
   await page.getByRole('button', { name: '收起清单', exact: true }).click()
@@ -155,9 +163,13 @@ test('tag menu empty state, keyboard selection and stale list responses', async 
   await page.keyboard.press('Enter')
   await expect(page.locator('[data-pc-section="rootlist"]')).toBeFocused()
   await page.keyboard.press('Home')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
   await page.keyboard.press('ArrowRight')
-  await expect(page.getByRole('menuitemradio', { name: '全部标签', exact: true })).toBeVisible()
+  await expect(page.getByRole('menuitemcheckbox', { name: '全选', exact: true })).toBeVisible()
   await page.keyboard.press('Enter')
+  await page.keyboard.press('Escape')
   await expect(page.getByRole('button', { name: /Artist A/ })).toBeVisible()
   await page.evaluate(() => {
     ;(window as any).go.app.App.ListCollections = async () => []
@@ -165,7 +177,7 @@ test('tag menu empty state, keyboard selection and stale list responses', async 
   })
   await expect(page.locator('nav').getByText('还没有标签', { exact: true })).toBeVisible()
   await options(page).click()
-  await page.getByRole('menuitem', { name: '按标签', exact: true }).click()
+  await page.getByRole('menuitem', { name: '标签', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: '还没有标签', exact: true })).toHaveAttribute('aria-disabled', 'true')
   await page.getByRole('searchbox').click()
   await expect(page.getByRole('menuitemradio')).toHaveCount(0)
@@ -183,9 +195,11 @@ test('tag submenu supports keyboard return, right-side placement and scrolling m
   await options(page).focus()
   await page.keyboard.press('Enter')
   const root = page.locator('[data-pc-section="rootlist"]')
-  const parent = page.getByRole('menuitem', { name: '按标签', exact: true })
+  const parent = page.getByRole('menuitem', { name: '标签', exact: true })
   await expect(root).toBeFocused()
   await page.keyboard.press('Home')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
   await page.keyboard.press('ArrowRight')
   await expect(parent).toHaveAttribute('aria-expanded', 'true')
   const submenu = page.locator('[data-pc-name="tieredmenu"] [data-pc-section="submenu"]')
@@ -219,8 +233,10 @@ test('tag submenu supports keyboard return, right-side placement and scrolling m
   await page.keyboard.press('ArrowRight')
   await page.keyboard.press('End')
   await page.keyboard.press('Enter')
-  await expect(options(page)).toHaveAttribute('aria-expanded', 'false')
-  await expect(page.getByLabel('当前筛选')).toContainText('标签=长标签 60')
+  await expect(options(page)).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('menuitemcheckbox', { name: /长标签 60 / })).toHaveAttribute('aria-checked', 'false')
+  await expect(parent.locator('svg.lucide-circle-dashed')).toHaveCount(1)
+  await page.keyboard.press('Escape')
 })
 
 test('added time is hidden by default, survives reload, sorts and reaches local search and album rows', async ({ page }) => {

@@ -435,6 +435,13 @@ func (a *App) ListArtistsForTag(tagID int64) ([]store.ArtistListItem, error) {
 	return a.store.ListArtistsForTag(tagID)
 }
 
+func (a *App) ListArtistsFiltered(f store.TrackFilter) ([]store.ArtistListItem, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.store.ListArtistsFiltered(f)
+}
+
 // ArtistHeader 是艺术家视图的头部信息。
 type ArtistHeader struct {
 	ID     int64             `json:"id"`
@@ -444,11 +451,15 @@ type ArtistHeader struct {
 
 // GetArtistHeader 返回艺术家视图的标题与角色分面。
 func (a *App) GetArtistHeader(artistID int64) (*ArtistHeader, error) {
+	return a.GetArtistHeaderFiltered(artistID, store.TrackFilter{})
+}
+
+func (a *App) GetArtistHeaderFiltered(artistID int64, f store.TrackFilter) (*ArtistHeader, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
 
-	artists, err := a.store.ListArtists()
+	artists, err := a.store.ListArtistsFiltered(store.TrackFilter{IncludeSynced: f.IncludeSynced})
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +481,7 @@ func (a *App) GetArtistHeader(artistID int64) (*ArtistHeader, error) {
 		title = artist.Name
 	}
 
-	facets, err := a.store.RoleFacets(artistID)
+	facets, err := a.store.RoleFacetsFiltered(artistID, f)
 	if err != nil {
 		return nil, err
 	}
@@ -494,6 +505,13 @@ func (a *App) ListAlbumsForTag(tagID int64) ([]store.AlbumListItem, error) {
 		return nil, err
 	}
 	return a.store.ListAlbumsForTag(tagID)
+}
+
+func (a *App) ListAlbumsFiltered(f store.TrackFilter) ([]store.AlbumListItem, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.store.ListAlbumsFiltered(f)
 }
 
 // notifyLibraryChanged invalidates all local entities, including uncollected

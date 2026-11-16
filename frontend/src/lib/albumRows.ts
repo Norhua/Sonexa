@@ -26,7 +26,7 @@ export function mergeAlbumRows(rows: AlbumTrackRow[]): AlbumTrackRow[] {
   }
   return groups.map(group => {
     const owned = group.filter(row => !row.ghost)
-    const display = owned[0] ?? group[0]!
+    const display = owned.find(row => row.inLibrary !== false) ?? owned[0] ?? group[0]!
     return { ...display, rowKey: `merged:${group[0]!.rowKey}`, groupMembers: owned.length > 1 ? owned : undefined }
   })
 }

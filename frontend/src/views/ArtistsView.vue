@@ -31,12 +31,12 @@ let headerRequest = 0
 let disposed = false
 async function loadArtists(clear = false) {
   const request = ++listRequest
-  const tagId = library.filter.tagId
+  const scope = library.categoryFilter
   loading.value = true
   error.value = ''
   if (clear) artists.value = []
   try {
-    const result = tagId ? await App.ListArtistsForTag(tagId) : await App.ListArtists()
+    const result = await App.ListArtistsFiltered(scope)
     if (!disposed && request === listRequest) artists.value = result ?? []
   } catch (e) {
     if (!disposed && request === listRequest) error.value = String(e)
@@ -44,7 +44,7 @@ async function loadArtists(clear = false) {
     if (!disposed && request === listRequest) loading.value = false
   }
 }
-watch(() => library.filter.tagId, () => void loadArtists(true), { immediate: true })
+watch(() => JSON.stringify(library.categoryFilter), () => { void loadArtists(true); void loadHeader() }, { immediate: true })
 
 /** 角色艺术家的视图标题从配音关系渲染为「涼宮ハルヒ (CV: 平野綾)」。 */
 function titleOf(a: Models.store.ArtistListItem): string {
@@ -59,7 +59,7 @@ async function loadHeader(clear = false) {
   error.value = ''
   if (library.view !== 'artist' || !id) return
   try {
-    const result = await App.GetArtistHeader(id)
+    const result = await App.GetArtistHeaderFiltered(id, library.categoryFilter)
     if (disposed || request !== headerRequest || library.contextId !== id || library.view !== 'artist') return
     header.value = result
     if (result?.title) library.contextTitle = result.title
@@ -120,7 +120,7 @@ defineExpose({ header, activeRole, pickFacet })
         <span class="text-xs text-muted-color">{{ a.trackCount }}</span>
       </button>
       <p v-if="visibleArtists.length === 0 && !loading" class="px-3 py-4 text-sm text-muted-color">
-        {{ filter || library.filter.tagId ? '没有匹配的艺术家' : '还没有艺术家' }}
+        {{ filter || library.hasCategoryFilter ? '没有匹配的艺术家' : '还没有艺术家' }}
       </p>
       </div>
     </div>

@@ -51,7 +51,7 @@ test('all releases retain collections, tags filter every section and ghost admis
   await page.goto('/')
   await page.evaluate(() => {
     const api = (window as any).go.app.App
-    api.ListCollections = async (kind: string) => kind === 'tag' ? [{ id: 31, name: '测试标签', kind: 'tag' }] : []
+    api.ListCollections = async (kind: string) => kind === 'tag' ? [{ id: 31, name: '测试标签', kind: 'tag' }, { id: 32, name: '其他标签', kind: 'tag' }] : []
     ;(window as any).runtime.EventsEmit('library:changed')
     const releases = [
       { releaseId: 20, title: '数字版', year: 2014, ownedCount: 1, totalCount: 14, tracklistState: 'complete', provider: 'musicbrainz', releaseRef: 'digital', media: [], rows: [
@@ -69,7 +69,7 @@ test('all releases retain collections, tags filter every section and ghost admis
     const list = api.ListTracks
     api.ListTracks = async (filter: any) => {
       const result = await list(filter)
-      return { ...result, tracks: result.tracks.filter((t: any) => !filter.tagId || t.id <= 2) }
+      return { ...result, tracks: result.tracks.filter((t: any) => !filter.tagIds || t.id <= 2) }
     }
     api.PrepareGhostAdmission = async (...args: any[]) => { (window as any).__ghost = args; return { id: 'ghost', hash: 'hash', baseline: {} } }; api.CommitAdmission = async () => ({ trackId: 4 })
   })
@@ -90,8 +90,9 @@ test('all releases retain collections, tags filter every section and ghost admis
   await expect(digital.locator('[data-row-key]')).toHaveCount(1)
   await expect(sacd.locator('[data-row-key]')).toHaveCount(2)
   await page.getByRole('button', { name: '视图选项', exact: true }).click()
-  await page.getByRole('menuitem', { name: '按标签', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: /测试标签/ }).click()
+  await page.getByRole('menuitem', { name: '标签', exact: true }).click()
+  await page.getByRole('menuitemcheckbox', { name: '其他标签', exact: true }).click()
+  await page.keyboard.press('Escape')
   await expect(digital.locator('[data-row-key]')).toHaveCount(1)
   await expect(sacd.locator('[data-row-key]')).toHaveCount(1)
   await expect(sacd).toContainText('White Love')

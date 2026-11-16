@@ -103,7 +103,8 @@ func (a *App) resolveExportScope(req ExportRequest) ([]export.Track, error) {
 	case export.ScopeAll:
 		views, err = a.store.ListTracks(store.TrackFilter{})
 	default:
-		// 当前歌单 / 当前筛选结果都由 Filter 描述
+		// 当前歌单 / 当前筛选结果都由 Filter 描述；浏览范围放宽不改变导出归属。
+		req.Filter.IncludeSynced = false
 		views, err = a.store.ListTracks(req.Filter)
 	}
 	if err != nil {

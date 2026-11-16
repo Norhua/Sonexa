@@ -245,18 +245,22 @@ const menuModel = computed<MenuItem[]>(() => {
     { label: '加入曲库', command: () => emit('addGhostToLibrary', row) },
     { label: '查看上游', command: () => emit('viewUpstream', row) },
   ]
+  const collectionActions: MenuItem[] = [
+    { label: '添加到歌单…', disabled: selectedRows.value.some(r => r.inLibrary === false), command: () => emit('addToCollection', selectedRows.value, 'playlist') },
+    { label: '添加标签…', disabled: selectedRows.value.some(r => r.inLibrary === false), command: () => emit('addToCollection', selectedRows.value, 'tag') },
+  ]
   if (props.columnContext === 'syncedPlaylist') return [
     { label: '打开详情', command: () => emit('open', row) },
     { label: '编辑', command: () => emit('edit', row) },
     { label: '复制信息', command: () => emit('copyInfo', selectedRows.value) },
     { label: '添加到我的音乐库', command: () => emit('addToLibrary', selectedRows.value) },
+    ...collectionActions,
   ]
   return [
     { label: '打开详情', command: () => emit('open', row) },
     { label: '编辑', command: () => emit('edit', row) },
     { separator: true },
-    { label: '添加到歌单…', command: () => emit('addToCollection', selectedRows.value, 'playlist') },
-    { label: '添加标签…', command: () => emit('addToCollection', selectedRows.value, 'tag') },
+    ...collectionActions,
     { label: '在艺术家视图中查看…', command: () => emit('viewArtist', row) },
     { label: '复制信息', command: () => emit('copyInfo', selectedRows.value) },
     ...(props.collectionId ? [{ label: '从当前歌单移除', command: () => emit('removeFromCollection', selectedRows.value) }] : []),

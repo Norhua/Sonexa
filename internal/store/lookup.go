@@ -86,9 +86,9 @@ var _ matching.LocalLookup = (*Store)(nil)
 type TracklistPosition string
 
 const (
-	// PositionOwned 已入库：标识等值比对命中。
+	// PositionOwned 当前浏览范围有精确本地曲目；是否入库另看 InLibrary。
 	PositionOwned TracklistPosition = "owned"
-	// PositionMissing 未入库：曲目标识未命中，呈现为灰色行。
+	// PositionMissing 当前范围未命中：呈现为灰色清单预览。
 	PositionMissing TracklistPosition = "missing"
 )
 
@@ -96,8 +96,9 @@ const (
 type ResolvedPosition struct {
 	Track ReleaseTrack      `json:"track"`
 	State TracklistPosition `json:"state"`
-	// TrackID 是对应的库中曲目；未入库时为 0。
-	TrackID int64 `json:"trackId"`
+	// TrackID 是当前范围精确命中的本地曲目，灰色清单预览为 0。
+	TrackID   int64 `json:"trackId"`
+	InLibrary bool  `json:"inLibrary"`
 	// AddedAt 只属于已入库曲目，不使用发行时间或清单缓存时间冒充。
 	AddedAt *string `json:"addedAt"`
 }
@@ -107,6 +108,10 @@ type ResolvedPosition struct {
 // 只按来源与 track 标识精确判定；同一 recording 的其他 track 不代表已拥有
 // 当前清单位置，也不提供跨版本跳转。
 func (s *Store) ResolveTracklist(releaseID int64, provider string) ([]ResolvedPosition, error) {
+	return s.ResolveTracklistForScope(releaseID, provider, false)
+}
+
+func (s *Store) ResolveTracklistForScope(releaseID int64, provider string, includeSynced bool) ([]ResolvedPosition, error) {
 	tracks, err := s.GetTracklist(releaseID)
 	if err != nil {
 		return nil, err
@@ -116,12 +121,13 @@ func (s *Store) ResolveTracklist(releaseID int64, provider string) ([]ResolvedPo
 	for _, t := range tracks {
 		pos := ResolvedPosition{Track: t, State: PositionMissing}
 
-		// 已入库：标识等值比对（要求来源一致）
+		// 当前范围内按来源及 track 标识精确比对。
 		if t.TrackRef != nil && *t.TrackRef != "" {
 			var id int64
 			var addedAt *time.Time
-			err := s.db.QueryRow(`SELECT id, library_added_at FROM track_read WHERE match_source = ? AND match_ref = ? AND release_id = ? AND in_library=1`,
-				provider, *t.TrackRef, releaseID).Scan(&id, &addedAt)
+			var inLibrary bool
+			err := s.db.QueryRow(`SELECT id, library_added_at, in_library FROM track_read WHERE match_source = ? AND match_ref = ? AND release_id = ? AND (in_library=1 OR ?)`,
+				provider, *t.TrackRef, releaseID, includeSynced).Scan(&id, &addedAt, &inLibrary)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return nil, err
 			}
@@ -130,7 +136,7 @@ func (s *Store) ResolveTracklist(releaseID int64, provider string) ([]ResolvedPo
 					value := formatOptionalTime(addedAt)
 					pos.AddedAt = &value
 				}
-				pos.State, pos.TrackID = PositionOwned, id
+				pos.State, pos.TrackID, pos.InLibrary = PositionOwned, id, inLibrary
 				out = append(out, pos)
 				continue
 			}

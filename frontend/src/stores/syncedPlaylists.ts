@@ -13,17 +13,19 @@ export const useSyncedPlaylistsStore = defineStore('syncedPlaylists', () => {
   function makeQueue() {
     return createRefreshQueue(async current => {
       const id = activeId.value, text = query.value, version = generation
+      const filter = { ...useLibraryStore().categoryFilter, query: text } as Models.store.TrackFilter
       loading.value = true
       try {
         const [list, rows] = await Promise.all([
           App.ListSyncedPlaylists(),
-          id ? App.GetSyncedPlaylistEntries(id, text) : Promise.resolve([]),
+          id ? App.GetSyncedPlaylistEntriesFiltered(id, filter) : Promise.resolve([]),
         ])
         if (!current() || version !== generation) return
         playlists.value = list ?? []
         entries.value = rows ?? []
         error.value = ''
         const library = useLibraryStore()
+        library.refreshCategoryOptions('syncedPlaylistIds', playlists.value)
         if (library.view === 'syncedPlaylist') {
           const active = playlists.value.find(p => p.id === library.contextId)
           if (!active) await library.goTo('all')

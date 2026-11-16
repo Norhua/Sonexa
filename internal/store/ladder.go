@@ -49,8 +49,12 @@ func (s *Store) SetLadderConfig(cfg matching.LadderConfig) { s.ladder = &cfg }
 //
 // 专辑视图选「代表版本」与匹配阶段的多候选优选走同一套阶梯。
 func (s *Store) RepresentativeRelease(groupID int64) (*Release, error) {
+	return s.RepresentativeReleaseForScope(groupID, false)
+}
+
+func (s *Store) RepresentativeReleaseForScope(groupID int64, includeSynced bool) (*Release, error) {
 	rows, err := s.db.Query(
-		"SELECT "+releaseColumns+" FROM release_read r WHERE r.release_group_id = ? AND EXISTS(SELECT 1 FROM track WHERE release_id=r.id AND in_library=1)", groupID)
+		"SELECT "+releaseColumns+" FROM release_read r WHERE r.release_group_id = ? AND EXISTS(SELECT 1 FROM track WHERE release_id=r.id AND (in_library=1 OR ?))", groupID, includeSynced)
 	if err != nil {
 		return nil, err
 	}

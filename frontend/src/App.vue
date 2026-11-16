@@ -133,6 +133,7 @@ const rows = computed<Row[]>(() =>
   library.tracks.map((t) => ({
     id: t.id,
     title: t.title,
+    inLibrary: t.inLibrary,
     artist: t.artist,
     album: t.album,
     year: t.year,
@@ -245,6 +246,10 @@ async function openTrackById(trackId: number) {
 }
 
 async function addToCollection(targets: Row[], kind: 'playlist' | 'tag') {
+  if (targets.some(row => row.inLibrary === false)) {
+    notice.value = '未入库曲目不能添加标签或加入歌单，请先加入音乐库。'
+    return
+  }
   const list = kind === 'playlist' ? library.playlists : library.tags
   const label = kind === 'playlist' ? '歌单' : '标签'
   const name = await ui.prompt({
@@ -478,6 +483,7 @@ async function deleteSynced(id: number) {
         </template>
 
         <SyncedPlaylistView v-else-if="library.view === 'syncedPlaylist'" :drawer-open="drawerOpen"
+          @add-to-collection="addToCollection"
           @open="openDetail" @edit="r => editing = r.id" @copy-info="copyInfo" />
 
         <SearchView

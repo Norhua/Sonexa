@@ -61,7 +61,7 @@ async function commit() {
 <template>
   <Dialog v-model:visible="visible" modal header="绑定同步歌单" :closable="!saving" :close-on-escape="!saving" :style="{ width: 'min(600px, 94vw)' }">
     <div class="space-y-3 text-sm">
-      <p>读取公开歌单后确认绑定。曲目完成导入后只在同步歌单显示，不会自动加入音乐库。</p>
+      <p>读取公开歌单后确认绑定。曲目完成导入后可在同步歌单及选择“全部歌曲”的浏览页面显示，不会自动加入音乐库。</p>
       <label class="block">平台<Select v-model="source" :options="sources" option-label="name" option-value="id" class="mt-1 w-full" aria-label="歌单平台" :disabled="saving" /></label>
       <p v-if="!sources.length" role="status">没有可用的歌单来源</p>
       <Message v-else-if="!available?.available" severity="warn">{{ available?.reason || '来源不可用' }}</Message>

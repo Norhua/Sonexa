@@ -23,6 +23,13 @@ describe('album group display', () => {
     expect(uniqueTracks(rows).map(r => r.id)).toEqual([10, 20])
   })
 
+  it('prefers collected display but retains uncollected members for permission checks', () => {
+    const rows = mergeAlbumRows([{ ...row(1, 'shared', 10), inLibrary: false }, { ...row(2, 'shared', 20), inLibrary: true }])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.id).toBe(20)
+    expect(uniqueTracks(rows).some(row => row.inLibrary === false)).toBe(true)
+  })
+
   it('does not merge repeated recordings in one release or ambiguous matches', () => {
     const repeat = { ...row(1, 'same', 1), rowKey: 'repeat' }
     expect(mergeAlbumRows([row(1, 'same'), repeat, row(2, 'same')])).toHaveLength(3)

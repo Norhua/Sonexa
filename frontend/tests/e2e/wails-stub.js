@@ -85,6 +85,10 @@
         ListSyncedPlaylists: async () => [],
         ListPlaylistSources: async () => [],
         GetSyncedPlaylistEntries: async () => [],
+        GetSyncedPlaylistEntriesFiltered: async (id, filter) => {
+          const rows = await window.go.app.App.GetSyncedPlaylistEntries(id, filter.query)
+          return rows.filter(row => filter.includeSynced || row.inLibrary)
+        },
         CancelPlaylistOperation: async () => null,
         CancelLibraryAddition: async () => null,
         ListCollections: async kind => kind === 'playlist' ? [{ id: 10, kind, name: '测试歌单', trackCount: tracks.length }] : [],
@@ -278,6 +282,12 @@
         LoadEditUpstream: async (provider, releaseRef, trackRef) => ({id:'full-'+trackRef,snapshotJson:JSON.stringify({release:{tracklistCompleteness:'complete',tracklist:{state:'value',value:[]}}}),fields:{'track.title':ef(trackRef==='candidate'?'另一首候选':'上游曲名')},trackIdentity:{provider,ref:trackRef},releaseIdentity:{provider,ref:releaseRef}}),
         DiscardEditCover: async () => {},
         ListArtists: async () => [],
+        ListArtistsFiltered: async f => f.tagIds?.length === 1 && window.go.app.App.ListArtistsForTag
+          ? window.go.app.App.ListArtistsForTag(f.tagIds[0]) : window.go.app.App.ListArtists(),
+        GetArtistHeaderFiltered: async id => window.go.app.App.GetArtistHeader(id),
+        ListAlbumsFiltered: async f => f.tagIds?.length === 1
+          ? window.go.app.App.ListAlbumsForTag(f.tagIds[0]) : window.go.app.App.ListAlbums(),
+        GetAlbumGroupDetailForScope: async id => window.go.app.App.GetAlbumGroupDetail(id),
         ListGroupProposals: async () => [],
         ListReleaseMergeProposals: async () => [],
         DismissReleaseMergeProposal: async () => null,

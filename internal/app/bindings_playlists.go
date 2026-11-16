@@ -86,6 +86,10 @@ func (a *App) ListSyncedPlaylists() ([]SyncedPlaylistView, error) {
 }
 
 func (a *App) GetSyncedPlaylistEntries(playlistID int64, query string) ([]store.SyncedTrackRow, error) {
+	return a.GetSyncedPlaylistEntriesFiltered(playlistID, store.TrackFilter{IncludeSynced: true, Query: query})
+}
+
+func (a *App) GetSyncedPlaylistEntriesFiltered(playlistID int64, f store.TrackFilter) ([]store.SyncedTrackRow, error) {
 	_, _, done, err := a.playlistWork()
 	if err != nil {
 		return nil, err
@@ -101,7 +105,7 @@ func (a *App) GetSyncedPlaylistEntries(playlistID int64, query string) ([]store.
 	if b == nil {
 		return nil, playlists.ErrPlanStale
 	}
-	return a.store.ListSyncedTracks(playlistID, query)
+	return a.store.ListSyncedTracksFiltered(playlistID, f)
 }
 
 // Duplicate binding is data, since Wails serializes errors as messages only.
